@@ -1,0 +1,65 @@
+# Local stack: Postgres + a planning ("fork") and an operational ("production") world per vendor.
+# Separate containers per world because Era fault settings are container-wide.
+# Images are pinned to the multi-arch index digest inspected on 2026-10-18 (amd64 + arm64).
+# Ports bind to 127.0.0.1 only: anyone who can reach a simulator can use its /_admin routes.
+
+x-era-env: &era-env
+  SIMCORE_SEED: "42"
+  SIMCORE_TODAY: "2026-10-01"
+  SIMCORE_STATE: day1
+  SIMCORE_FIDELITY: high
+  SIMCORE_ALLOW_CLIENT_WRITES: "1"
+  SIMCORE_ADMIN_TOKEN: ${ERA_ADMIN_TOKEN:-change-me-local-only}
+
+x-stripe: &stripe
+  image: erabyeon/stripe@sha256:2981ee73e05ecd061a5754e87e5a3775d3e857ef29ea2a3b544de038adf0a599
+  environment: *era-env
+
+x-zendesk: &zendesk
+  image: erabyeon/zendesk@sha256:f91c3190378822f8400caf22a47e0a2107a31ba3aa912251425080829bab6444
+  environment: *era-env
+
+x-slack: &slack
+  image: erabyeon/slack@sha256:33382931f381da5dca51c45ad4ad7c7bfc07644d3240465bfd41e7b7ea2cb75f
+  environment: *era-env
+  profiles: [full]
+
+name: rehearsal
+
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: rehearsal
+      POSTGRES_PASSWORD: rehearsal
+      POSTGRES_DB: rehearsal
+    ports: ["127.0.0.1:5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rehearsal"]
+      interval: 5s
+      retries: 10
+
+  stripe-planning:
+    <<: *stripe
+    ports: ["127.0.0.1:8101:8080"]
+  stripe-operational:
+    <<: *stripe
+    ports: ["127.0.0.1:8102:8080"]
+
+  zendesk-planning:
+    <<: *zendesk
+    ports: ["127.0.0.1:8111:8080"]
+  zendesk-operational:
+    <<: *zendesk
+    ports: ["127.0.0.1:8112:8080"]
+
+  slack-planning:
+    <<: *slack
+    ports: ["127.0.0.1:8121:8080"]
+  slack-operational:
+    <<: *slack
+    ports: ["127.0.0.1:8122:8080"]
+
+volumes:
+  pgdata:

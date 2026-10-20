@@ -1,0 +1,389 @@
+{
+  "planHash": "ebc86a63992693906b6864454042ea499ac6fd0efe2b6b35e06c3926bca3a37b",
+  "bundle": {
+    "schemaVersion": 1,
+    "id": "phantom",
+    "title": "New matching charge appears after approval",
+    "evidence": "fixture",
+    "manifest": {
+      "schemaVersion": 1,
+      "orgId": "org_demo",
+      "incidentId": "INC-BILL-0927",
+      "planId": "plan_phantom",
+      "revision": 1,
+      "parentRevision": null,
+      "target": {
+        "environment": "operational"
+      },
+      "versions": {
+        "planner": {
+          "model": "fixture",
+          "promptVersion": "fixture",
+          "toolSchemaHash": "72285d97492d99ed171cc813f1cc390df8d79b63821723fb0623337d6a0b98c9"
+        },
+        "adapters": {
+          "stripe": "0.0.0",
+          "zendesk": "0.0.0"
+        }
+      },
+      "policies": [
+        {
+          "id": "billing-remedy",
+          "version": 1
+        }
+      ],
+      "observations": [
+        {
+          "id": "obs_charge_001",
+          "world": "planning",
+          "entity": {
+            "vendor": "stripe",
+            "kind": "charge",
+            "id": "ch_fixture_001"
+          },
+          "projectionVersion": "stripe.charge.v1",
+          "projection": {
+            "id": "ch_fixture_001",
+            "customer": "cus_fixture_001",
+            "amount": 4210,
+            "amount_refunded": 0,
+            "currency": "cad",
+            "status": "succeeded"
+          },
+          "fingerprint": "5a30a68f42d5036799fe87dc7232f73f0e3b6dd5aeddebebaf1ccbfa5ef55b05",
+          "capturedAt": "2026-10-01T12:00:00.000Z"
+        },
+        {
+          "id": "obs_ticket_001",
+          "world": "planning",
+          "entity": {
+            "vendor": "zendesk",
+            "kind": "ticket",
+            "id": "5531"
+          },
+          "projectionVersion": "zendesk.ticket.v1",
+          "projection": {
+            "id": "5531",
+            "priority": "normal",
+            "status": "open",
+            "requester_id": "cus_fixture_001"
+          },
+          "fingerprint": "b7a80843d77a3693323c4441e482c628debe81bd84f116b5a8e0fe8463bb23b5",
+          "capturedAt": "2026-10-01T12:00:00.000Z"
+        },
+        {
+          "id": "obs_charge_002",
+          "world": "planning",
+          "entity": {
+            "vendor": "stripe",
+            "kind": "charge",
+            "id": "ch_fixture_002"
+          },
+          "projectionVersion": "stripe.charge.v1",
+          "projection": {
+            "id": "ch_fixture_002",
+            "customer": "cus_fixture_002",
+            "amount": 12500,
+            "amount_refunded": 0,
+            "currency": "cad",
+            "status": "succeeded"
+          },
+          "fingerprint": "9eafdb1f69df894d8c2d3f1696398a19f38c978a78c7435ceaa443f66e79fde3",
+          "capturedAt": "2026-10-01T12:00:00.000Z"
+        },
+        {
+          "id": "obs_ticket_002",
+          "world": "planning",
+          "entity": {
+            "vendor": "zendesk",
+            "kind": "ticket",
+            "id": "5532"
+          },
+          "projectionVersion": "zendesk.ticket.v1",
+          "projection": {
+            "id": "5532",
+            "priority": "normal",
+            "status": "open",
+            "requester_id": "cus_fixture_002"
+          },
+          "fingerprint": "690247134457771ad1ae09ec028bea7946e9f43cc37c359cef284b3290d0974b",
+          "capturedAt": "2026-10-01T12:00:00.000Z"
+        }
+      ],
+      "queryObservations": [
+        {
+          "id": "q_charges_001",
+          "world": "planning",
+          "vendor": "stripe",
+          "predicate": {
+            "kind": "stripe.charges.byCustomerInWindow",
+            "customerId": "cus_fixture_001",
+            "createdGte": "2026-09-01T00:00:00.000Z",
+            "createdLt": "2026-10-01T00:00:00.000Z"
+          },
+          "cutoff": "2026-10-01T12:00:00.000Z",
+          "complete": true,
+          "matchingIds": [
+            "ch_fixture_001"
+          ],
+          "projectionVersion": "stripe.charge.v1",
+          "projections": {
+            "ch_fixture_001": {
+              "id": "ch_fixture_001",
+              "customer": "cus_fixture_001",
+              "amount": 4210,
+              "amount_refunded": 0,
+              "currency": "cad",
+              "status": "succeeded"
+            }
+          },
+          "fingerprint": "839c71fa0a9e67d203156c9ff938a5d922cf7d7958b46a7d2e2d77088c2e6a25",
+          "capturedAt": "2026-10-01T12:00:00.000Z"
+        },
+        {
+          "id": "q_charges_002",
+          "world": "planning",
+          "vendor": "stripe",
+          "predicate": {
+            "kind": "stripe.charges.byCustomerInWindow",
+            "customerId": "cus_fixture_002",
+            "createdGte": "2026-09-01T00:00:00.000Z",
+            "createdLt": "2026-10-01T00:00:00.000Z"
+          },
+          "cutoff": "2026-10-01T12:00:00.000Z",
+          "complete": true,
+          "matchingIds": [
+            "ch_fixture_002"
+          ],
+          "projectionVersion": "stripe.charge.v1",
+          "projections": {
+            "ch_fixture_002": {
+              "id": "ch_fixture_002",
+              "customer": "cus_fixture_002",
+              "amount": 12500,
+              "amount_refunded": 0,
+              "currency": "cad",
+              "status": "succeeded"
+            }
+          },
+          "fingerprint": "8276be551a2a4af0edcb05506105e1849db929cf1a8cad4971839f1b1e9d920b",
+          "capturedAt": "2026-10-01T12:00:00.000Z"
+        }
+      ],
+      "actions": [
+        {
+          "caseId": "case_001",
+          "obligationId": "obl_overcharge_001",
+          "id": "refund_001",
+          "kind": "stripe.refund.create",
+          "dependsOn": [],
+          "requiredRole": "support_lead",
+          "evidence": [
+            "obs_charge_001"
+          ],
+          "queryEvidence": [
+            "q_charges_001"
+          ],
+          "compensation": "compensable_by_new_action",
+          "protection": "native_guard_with_documented_limits",
+          "rationale": "Duplicate September charge ch_fixture_001 under incident INC-BILL-0927.",
+          "args": {
+            "chargeId": "ch_fixture_001",
+            "amount": {
+              "amountMinor": 4210,
+              "currency": "cad"
+            },
+            "reason": "duplicate"
+          }
+        },
+        {
+          "caseId": "case_001",
+          "obligationId": "obl_overcharge_001",
+          "id": "patch_001",
+          "kind": "zendesk.ticket.patchFields",
+          "dependsOn": [],
+          "requiredRole": "support_lead",
+          "evidence": [
+            "obs_ticket_001"
+          ],
+          "queryEvidence": [],
+          "compensation": "conditional_reversible",
+          "protection": "native_guard_with_documented_limits",
+          "rationale": "Raise priority while the remedy is in flight.",
+          "args": {
+            "ticketId": "5531",
+            "set": {
+              "priority": "high"
+            },
+            "before": {
+              "priority": "normal"
+            }
+          }
+        },
+        {
+          "caseId": "case_001",
+          "obligationId": "obl_overcharge_001",
+          "id": "note_001",
+          "kind": "zendesk.ticket.appendPrivateNote",
+          "dependsOn": [
+            "refund_001"
+          ],
+          "requiredRole": "support_lead",
+          "evidence": [
+            "obs_ticket_001"
+          ],
+          "queryEvidence": [],
+          "compensation": "irreversible",
+          "protection": "no_atomic_guard",
+          "rationale": "Record the confirmed refund on the ticket.",
+          "args": {
+            "ticketId": "5531",
+            "public": false,
+            "template": {
+              "id": "refund-confirmed",
+              "version": 1
+            },
+            "bindings": {
+              "refundId": {
+                "$ref": "result",
+                "stepId": "refund_001",
+                "path": "refund.id"
+              },
+              "amountMinor": 4210
+            }
+          }
+        },
+        {
+          "caseId": "case_002",
+          "obligationId": "obl_overcharge_002",
+          "id": "refund_002",
+          "kind": "stripe.refund.create",
+          "dependsOn": [],
+          "requiredRole": "finance_lead",
+          "evidence": [
+            "obs_charge_002"
+          ],
+          "queryEvidence": [
+            "q_charges_002"
+          ],
+          "compensation": "compensable_by_new_action",
+          "protection": "native_guard_with_documented_limits",
+          "rationale": "Duplicate September charge ch_fixture_002 under incident INC-BILL-0927.",
+          "args": {
+            "chargeId": "ch_fixture_002",
+            "amount": {
+              "amountMinor": 12500,
+              "currency": "cad"
+            },
+            "reason": "duplicate"
+          }
+        },
+        {
+          "caseId": "case_002",
+          "obligationId": "obl_overcharge_002",
+          "id": "patch_002",
+          "kind": "zendesk.ticket.patchFields",
+          "dependsOn": [],
+          "requiredRole": "support_lead",
+          "evidence": [
+            "obs_ticket_002"
+          ],
+          "queryEvidence": [],
+          "compensation": "conditional_reversible",
+          "protection": "native_guard_with_documented_limits",
+          "rationale": "Raise priority while the remedy is in flight.",
+          "args": {
+            "ticketId": "5532",
+            "set": {
+              "priority": "high"
+            },
+            "before": {
+              "priority": "normal"
+            }
+          }
+        },
+        {
+          "caseId": "case_002",
+          "obligationId": "obl_overcharge_002",
+          "id": "note_002",
+          "kind": "zendesk.ticket.appendPrivateNote",
+          "dependsOn": [
+            "refund_002"
+          ],
+          "requiredRole": "support_lead",
+          "evidence": [
+            "obs_ticket_002"
+          ],
+          "queryEvidence": [],
+          "compensation": "irreversible",
+          "protection": "no_atomic_guard",
+          "rationale": "Record the confirmed refund on the ticket.",
+          "args": {
+            "ticketId": "5532",
+            "public": false,
+            "template": {
+              "id": "refund-confirmed",
+              "version": 1
+            },
+            "bindings": {
+              "refundId": {
+                "$ref": "result",
+                "stepId": "refund_002",
+                "path": "refund.id"
+              },
+              "amountMinor": 12500
+            }
+          }
+        }
+      ],
+      "excluded": []
+    },
+    "perturbations": [
+      {
+        "kind": "inject_records",
+        "vendor": "stripe",
+        "world": "operational",
+        "at": "before_apply",
+        "records": {
+          "charges": [
+            {
+              "id": "ch_fixture_001_dup",
+              "customer": "cus_fixture_001",
+              "amount": 4210,
+              "amount_refunded": 0,
+              "currency": "cad",
+              "status": "succeeded",
+              "created": 1790294400
+            }
+          ]
+        }
+      }
+    ],
+    "expected": [
+      {
+        "actionId": "refund_001",
+        "outcome": "held"
+      },
+      {
+        "actionId": "patch_001",
+        "outcome": "confirmed"
+      },
+      {
+        "actionId": "note_001",
+        "outcome": "skipped_dependency"
+      },
+      {
+        "actionId": "refund_002",
+        "outcome": "confirmed"
+      },
+      {
+        "actionId": "patch_002",
+        "outcome": "confirmed"
+      },
+      {
+        "actionId": "note_002",
+        "outcome": "confirmed"
+      }
+    ]
+  }
+}

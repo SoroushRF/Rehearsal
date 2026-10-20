@@ -1,0 +1,15 @@
+{
+  "files": {
+    "includes": ["**", "!**/dist", "!**/node_modules", "!ml", "!docs/source", "!scenarios/**/cases"]
+  },
+  "formatter": {
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
+  },
+  "linter": {
+    "rules": {
+      "recommended": true
+    }
+  }
+}

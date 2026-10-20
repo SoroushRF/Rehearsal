@@ -1,0 +1,14 @@
+{
+  "name": "@rehearsal/executor-worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=../../.env src/main.ts",
+    "start": "tsx src/main.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@rehearsal/providers": "workspace:*"
+  }
+}

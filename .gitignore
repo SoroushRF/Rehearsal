@@ -1,0 +1,30 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.vite/
+
+# Secrets — only .env.example is committed
+.env
+.env.*
+!.env.example
+
+# Test/run output
+playwright-report/
+test-results/
+evals/**/runs/
+
+# ML: no weights, checkpoints or raw private traces in git
+ml/.venv/
+ml/outputs/
+ml/checkpoints/
+*.safetensors
+*.bin
+*.gguf
+__pycache__/
+
+# Downloaded third-party implementation layers (pull pinned images instead)
+*.tar.gz
+
+.DS_Store
+Thumbs.db
