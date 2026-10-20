@@ -1,6 +1,14 @@
 {
   "files": {
-    "includes": ["**", "!**/dist", "!**/node_modules", "!ml", "!docs/source", "!scenarios/**/cases"]
+    "includes": [
+      "**",
+      "!!**/.claude",
+      "!**/dist",
+      "!**/node_modules",
+      "!ml",
+      "!docs/source",
+      "!scenarios/**/cases"
+    ]
   },
   "formatter": {
     "indentStyle": "space",
