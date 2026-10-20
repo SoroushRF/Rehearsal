@@ -113,7 +113,7 @@ No `develop` branch and no long-lived per-track branches. Rebase on `main` at le
 **Pull requests.** Everything lands through a PR; nobody pushes to `main`.
 - Small: ideally under ~400 changed lines. Split large work into several PRs.
 - Fill in the template: track, task ID or issue, which demo moment it moves, evidence level, how it was tested.
-- CI green (typecheck, lint, test, web build) and one approval. Squash merge.
+- CI green (typecheck, lint, test, web build). Approval is optional (the author can merge their own PR), but ask for a review when the change is risky. Merge with a regular merge commit; the branch is deleted on merge.
 - These changes need a reviewer **from another track**: `packages/contracts`, the plan hash and canonicalization, guards, executor admission, credential handling.
 - If you have to touch another track's paths, keep the change minimal and say so in the PR description.
 
@@ -131,6 +131,6 @@ No `develop` branch and no long-lived per-track branches. Rebase on `main` at le
 
 - Stay inside the current track's paths unless the task requires otherwise. Say so in the PR when it does.
 - Run `pnpm typecheck && pnpm lint && pnpm test` before proposing a PR.
-- Never push to `main`, force-push a shared branch, or merge without approval.
+- Never push to `main` or force-push a shared branch. Merge only through a PR with green CI.
 - Era `/_admin` routes (inject, reset, faults) are operator tools. Use them only through `scripts/` or tests, never from planner code.
 - When a task is done, update the track file's task table, plus the handoff log if anything is left half-finished.
