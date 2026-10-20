@@ -35,6 +35,7 @@ cp .env.example .env
 pnpm test            # contracts, core, fixtures, API
 pnpm infra:up        # Postgres + 4 Era worlds
 pnpm smoke:era       # day-one gate step 1: all worlds reachable and writable
+ERA_CONFORMANCE=1 pnpm test:providers   # pinned-image conformance; see docs/capability-matrix.md
 pnpm dev             # API :3000 + web :5173
 ```
 

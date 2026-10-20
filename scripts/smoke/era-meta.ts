@@ -26,4 +26,6 @@ for (const [vendor, world] of targets) {
     failed = true;
   }
 }
-process.exit(failed ? 1 : 0);
+// exitCode, not process.exit(): exiting while fetch's sockets close trips a libuv assertion on
+// Windows (Node 24.11), which turns a passing run into exit 0xC0000409.
+process.exitCode = failed ? 1 : 0;
