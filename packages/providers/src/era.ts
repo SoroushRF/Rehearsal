@@ -13,8 +13,38 @@ export async function eraFetch(
   init: RequestInit = {},
 ): Promise<Response> {
   const headers = new Headers(init.headers);
-  headers.set("X-Sim-Tenant", world.tenant);
+  // A plaintext tenant name only selects a tenant on an unsecured simulator; the signed token
+  // selects it everywhere.
+  headers.set("X-Sim-Tenant", world.tenantToken ?? world.tenant);
   return fetch(`${world.baseUrl}${path}`, { ...init, headers });
+}
+
+/**
+ * Operator-only: mint a tenant-bound credential from the simulator's built-in IdP
+ * (client_credentials grant naming the tenant). Tokens are RS256 JWTs carrying a signed `tenant`
+ * claim, valid for `expires_in` seconds (3600 on the pinned images), and survive a tenant reset.
+ * Each container signs its own, so mint once per world.
+ */
+export async function mintTenantToken(
+  world: WorldConfig,
+  adminToken: string,
+): Promise<{ token: string; expiresAt: number }> {
+  const res = await fetch(`${world.baseUrl}/token`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/x-www-form-urlencoded",
+      "x-sim-admin-token": adminToken,
+    },
+    body: new URLSearchParams({
+      grant_type: "client_credentials",
+      client_id: `rehearsal-${world.tenant}`,
+      client_secret: "rehearsal",
+      tenant: world.tenant,
+    }),
+  });
+  if (!res.ok) throw new Error(`POST /token → ${res.status} ${await res.text()}`);
+  const body = (await res.json()) as { access_token: string; expires_in: number };
+  return { token: body.access_token, expiresAt: Date.now() + body.expires_in * 1000 };
 }
 
 export async function eraMeta(world: WorldConfig): Promise<EraMeta> {

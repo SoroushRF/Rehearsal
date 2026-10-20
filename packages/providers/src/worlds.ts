@@ -7,6 +7,12 @@ import type { Vendor, World } from "@rehearsal/contracts";
 export interface WorldConfig {
   baseUrl: string;
   tenant: string;
+  /**
+   * Signed tenant credential from {@link mintTenantToken}. A simulator with SIMCORE_ADMIN_TOKEN
+   * set ignores a plaintext X-Sim-Tenant from clients and serves the "default" tenant, so without
+   * this every client request in a world shares one tenant. See docs/capability-matrix.md.
+   */
+  tenantToken?: string;
 }
 
 const ENV_KEYS: Record<Exclude<Vendor, "slack">, Record<World, string>> = {

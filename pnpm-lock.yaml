@@ -94,6 +94,15 @@ importers:
         specifier: ^8.3.4
         version: 8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)
 
+  evals/providers:
+    dependencies:
+      '@rehearsal/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@rehearsal/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
+
   packages/contracts:
     dependencies:
       zod:
