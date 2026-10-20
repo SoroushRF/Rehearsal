@@ -1,0 +1,45 @@
+# T2 Review & Approve: one informed approval of an exact plan
+
+**Owner:** see the [roster](../../AGENTS.md#roster).
+
+**Demo moment:** the reviewer sees the whole job grouped by customer, with money, reversibility, protection level and evidence. Unchecking a customer drops their dependent note. Refunds over the threshold need the finance lead. The reviewer approves once, and that approval binds to the plan hash.
+
+**Owns:**
+- `apps/web`
+- `apps/api` plan, revision and approval routes, and auth
+- Clerk integration
+- `packages/core/src/policy.ts`
+- Deployment (Render, or the Compose VM fallback)
+- Video and Devpost
+
+**Provides to others:**
+- Stored `ApprovalGrant`s that T3 checks at admission.
+- Run, receipt and hold views for every track's demo moment.
+
+## Acceptance
+
+- The UI renders every fixture bundle in `scenarios/billing/cases/`. It shows the plan hash, a reversibility and protection label per action, and the evidence behind each action.
+- Excluding an action creates a new revision through the API. The UI shows which dependents dropped and the new hash.
+- Approval is refused for each of these, with a test per case: not signed in, wrong organization, missing finance role above the threshold, stale revision or hash, expired grant, revoked grant.
+- The deployed URL works. Judges can open a saved run replay without logging in, and the replay is clearly labelled as saved.
+
+## Tasks
+
+| ID | Task | Milestone | Done when | Issue |
+|---|---|---|---|---|
+| T2.1 | Plan diff view from fixture bundles: per-customer groups, money formatting, labels, evidence drawer, plan hash | M1 | All four bundles render; Playwright smoke test | #10 |
+| T2.2 | API: store plans; `GET /api/plans/:id`; `POST /api/plans/:id/revisions` (uses `excludeActions`) with expected-hash check | M1–M2 | Excluding `refund_001` returns revision 2 without `note_001` | #11 |
+| T2.3 | Clerk sign-in, `support_lead` / `finance_lead` roles, and server-side checks | M2 | Two demo users; role shown in the UI | #12 |
+| T2.4 | `POST /api/plans/:id/approvals`: grant bound to org, revision, hash, actor and expiry; full refusal test matrix | M2 | Refusal tests green; grant visible to T3 | #13 |
+| T2.5 | Deploy thin slice: API + web, workers, Postgres, private simulators. Prove the cloud workers can reach the simulators. | M2 | Public URL plus a smoke script; the fallback is decided if this fails | #14 |
+| T2.6 | Run timeline, receipts and held-step views (polling `GET /api/runs/:id/events`) | M3 | Phantom and conflict runs read clearly to a stranger | #15 |
+| T2.7 | Two-minute video script, recording, Devpost page | M4–M5 | Submitted | #16 |
+| T2.8 | _Stretch:_ thin Expo approver app on the same API | after M4 | Only if everything else is frozen | #17 |
+
+## Decisions
+
+_(add dated entries)_
+
+## Handoff log
+
+_(newest first: date, who, state, open PRs or branches, next step, gotchas)_

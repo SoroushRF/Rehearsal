@@ -28,3 +28,9 @@ __pycache__/
 
 .DS_Store
 Thumbs.db
+
+# Personal agent instructions (template: AGENTS.local.example.md)
+AGENTS.local.md
+
+# Claude Code session worktrees
+.claude/worktrees/
