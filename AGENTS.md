@@ -97,7 +97,7 @@ Never keep task state only in `AGENTS.local.md` or in your head. If it isn't in 
 
 ## Workflow
 
-**Tasks.** Each task has an ID in its track file (`T3.2`). Status is tracked as GitHub Issues labelled `track:Tn` with milestone `Mn`. Until the issues exist, the track files are the list.
+**Tasks.** Each task has an ID in its track file (`T3.2`) and a GitHub Issue labelled `track:Tn` (plus `stretch` where it applies) with milestone `Mn`; the track file links it in the Issue column. New tasks get a row in the track file and an issue. Put `Closes #N` in the PR.
 
 **Branches.** Trunk-based with short-lived branches off `main`:
 

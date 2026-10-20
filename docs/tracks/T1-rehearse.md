@@ -28,14 +28,14 @@
 
 | ID | Task | Milestone | Done when | Issue |
 |---|---|---|---|---|
-| T1.1 | Era day-one gate: writable worlds, refund idempotency, guarded Zendesk update, private note, tenant reset | M1 | Conformance tests pass with `ERA_CONFORMANCE=1`; capability matrix written | |
-| T1.2 | Seed the incident: 5–10 overcharged customers, plus benign controls, injected identically into both worlds; `pnpm demo:reset` | M1 | Reset → identical worlds every time; fixtures copied from real GET responses | |
-| T1.3 | Read adapters: get charge, get ticket, and the two query predicates, with full pagination and `complete` set honestly | M1 | Unit tests against recorded responses, plus one live test | |
-| T1.4 | Typed planning tools that record evidence and add dependency edges themselves (the model can't define its own evidence) | M2 | A tool call produces observations and actions matching contracts v1 | |
-| T1.5 | Bounded Claude tool loop: pinned model, versioned prompt, step limit, no shell, browser or raw HTTP; planner worker consumes `plan` jobs | M2 | Real plan for the seeded cohort is stored and viewable in T2's UI | |
-| T1.6 | ~20 benign and trap tasks, plus baselines (no review; per-call approval counts) for the scorecard | M3–M4 | `pnpm eval:scorecard` prints the comparison table | |
-| T1.7 | _Stretch:_ Slack summary step (`slack.message.postSummary`) | after M3 | Behind the trim decision | |
-| T1.8 | _Stretch:_ SurrealDB precedents (explicit promotion, recall with trace) | after M3 | Behind the trim decision | |
+| T1.1 | Era day-one gate: writable worlds, refund idempotency, guarded Zendesk update, private note, tenant reset | M1 | Conformance tests pass with `ERA_CONFORMANCE=1`; capability matrix written | #2 |
+| T1.2 | Seed the incident: 5–10 overcharged customers, plus benign controls, injected identically into both worlds; `pnpm demo:reset` | M1 | Reset → identical worlds every time; fixtures copied from real GET responses | #3 |
+| T1.3 | Read adapters: get charge, get ticket, and the two query predicates, with full pagination and `complete` set honestly | M1 | Unit tests against recorded responses, plus one live test | #4 |
+| T1.4 | Typed planning tools that record evidence and add dependency edges themselves (the model can't define its own evidence) | M2 | A tool call produces observations and actions matching contracts v1 | #5 |
+| T1.5 | Bounded Claude tool loop: pinned model, versioned prompt, step limit, no shell, browser or raw HTTP; planner worker consumes `plan` jobs | M2 | Real plan for the seeded cohort is stored and viewable in T2's UI | #6 |
+| T1.6 | ~20 benign and trap tasks, plus baselines (no review; per-call approval counts) for the scorecard | M3–M4 | `pnpm eval:scorecard` prints the comparison table | #7 |
+| T1.7 | _Stretch:_ Slack summary step (`slack.message.postSummary`) | after M3 | Behind the trim decision | #8 |
+| T1.8 | _Stretch:_ SurrealDB precedents (explicit promotion, recall with trace) | after M3 | Behind the trim decision | #9 |
 
 ## Decisions
 
