@@ -45,7 +45,9 @@ export interface FakeRefund {
 export type FakeFault =
   | { kind: "reject"; status: number; retryable: boolean; retryAfterMs?: number }
   /** Apply the effect, then lose the response (a lost-response-after-commit). */
-  | { kind: "drop_response_after_commit" };
+  | { kind: "drop_response_after_commit" }
+  /** Fail before handling, like Era's injected 5xx: no effect, and the outcome reads as unknown. */
+  | { kind: "server_error" };
 
 /**
  * In-memory Stripe + Zendesk "operational world" behind one ProviderPort per vendor. Mirrors the
@@ -112,6 +114,9 @@ export class FakeWorld {
           }
         },
       }),
+      ...(vendor === "stripe" && {
+        idempotentResend: (action: Action) => action.kind === "stripe.refund.create",
+      }),
       prepare: (action, bindings, operationKey, pre) =>
         this.#prepare(action, bindings, operationKey, pre ?? {}),
       dispatch: async (request) => this.#dispatch(request),
@@ -169,6 +174,9 @@ export class FakeWorld {
 
   #dispatch(req: PreparedRequest): DispatchResult {
     const fault = this.#takeFault(req.path);
+    if (fault?.kind === "server_error") {
+      return { kind: "unknown", error: "provider answered 500; effect unknown (injected)" };
+    }
     if (fault?.kind === "reject") {
       return {
         kind: "rejected",
