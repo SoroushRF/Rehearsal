@@ -1,4 +1,6 @@
+import type { BillingPolicyV1 } from "@rehearsal/core";
 import { createDb, type PgBoss, startQueue } from "@rehearsal/db";
+import policy from "../../../scenarios/billing/policy.v1.json" with { type: "json" };
 import { buildApp } from "./app";
 import type { ApplyDeps } from "./apply";
 import { bearerReviewer, clerkFromEnv, type ReviewerResolver } from "./auth";
@@ -23,7 +25,15 @@ async function applyDeps(): Promise<ApplyDeps | undefined> {
 const apply = await applyDeps();
 const boss: PgBoss | undefined = apply?.boss;
 const plans = apply && { db: apply.db, auth: reviewer };
-const app = buildApp({ apply, plans, reviewer, tenantTokens: tenantTokenDepsFromEnv() });
+// The same policy file the executor loads, so approval refuses what admission would refuse.
+const approvals = apply && { db: apply.db, reviewer, policies: [policy as BillingPolicyV1] };
+const app = buildApp({
+  apply,
+  plans,
+  approvals,
+  reviewer,
+  tenantTokens: tenantTokenDepsFromEnv(),
+});
 const port = Number(process.env.API_PORT ?? process.env.PORT ?? 3000);
 
 for (const signal of ["SIGTERM", "SIGINT"] as const) {
