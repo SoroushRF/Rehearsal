@@ -16,7 +16,7 @@ AGENTS.md says an unknown outcome "is reconciled through reads, never blindly re
    - When the replay confirms, the earlier unknown attempts are marked `reconciled`.
    - Zendesk notes are appends and are never re-sent this way. Zendesk patches aren't either: a guarded patch that already landed would answer 409 and be misread as rejected.
    - Everything else waits for T3.5 (reconcile through reads).
-4. The guards run once per step, before the first send, not before each retry.
+4. Guards run before the first send and again after backoff before a fresh send following a definite refusal. An unresolved earlier send is resolved only by identical provider-idempotent replay; its own possible effect must not be mistaken for external drift.
 
 5. If any send of a step had an unknown outcome and none confirmed, the step is `unknown_outcome`, even when a later re-send was refused (a 429, say). Money may have moved, so it is never reported as `rejected`.
 

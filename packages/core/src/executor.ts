@@ -659,6 +659,16 @@ async function applyLocked(
     const retried = (n: number) => (n > 1 ? [`sent ${n} times with identical bytes`] : []);
 
     for (let n = 1; ; n++) {
+      // A definite refusal did nothing. Revalidate before another fresh send after backoff.
+      // Unknown sends use only an identical provider-idempotent replay: our earlier effect
+      // may already be visible and must be resolved rather than mistaken for external drift.
+      if (n > 1 && unknownSends.length === 0 && deps.guard) {
+        const reason = await deps.guard(action, {
+          manifest,
+          confirmedReceipts: [...confirmedByAction.values()],
+        });
+        if (reason) return hold(action, reason);
+      }
       if (!attemptId) {
         attemptId = deps.newId("att");
         attemptNo += 1;
