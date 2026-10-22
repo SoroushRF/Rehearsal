@@ -11,6 +11,7 @@
     "e2e": "playwright test"
   },
   "dependencies": {
+    "@clerk/react": "6.17.8",
     "@rehearsal/contracts": "workspace:*",
     "@tanstack/react-query": "^5.104.4",
     "react": "^19.3.1",

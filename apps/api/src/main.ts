@@ -1,13 +1,19 @@
 import { createDb, type PgBoss, startQueue } from "@rehearsal/db";
 import { buildApp } from "./app";
-import { type ApplyDeps, noAuth } from "./apply";
+import type { ApplyDeps } from "./apply";
+import { bearerReviewer, clerkFromEnv, type ReviewerResolver } from "./auth";
 import { tenantTokenDepsFromEnv } from "./tenant-tokens";
+
+/** Without Clerk keys every command is refused as unauthenticated. */
+const authenticate = clerkFromEnv();
+if (!authenticate) console.warn("Clerk keys not set; every command will be refused (401)");
+const reviewer: ReviewerResolver = authenticate ? bearerReviewer(authenticate) : () => null;
 
 /** Command routes need Postgres. Without it the API still starts in core mode and serves health. */
 async function applyDeps(): Promise<ApplyDeps | undefined> {
   if (!process.env.DATABASE_URL) return undefined;
   try {
-    return { db: createDb(), boss: await startQueue(), auth: noAuth };
+    return { db: createDb(), boss: await startQueue(), auth: reviewer };
   } catch (err) {
     console.error("database unavailable; starting without command routes", err);
     return undefined;
@@ -16,8 +22,8 @@ async function applyDeps(): Promise<ApplyDeps | undefined> {
 
 const apply = await applyDeps();
 const boss: PgBoss | undefined = apply?.boss;
-const plans = apply && { db: apply.db, auth: apply.auth };
-const app = buildApp({ apply, plans, tenantTokens: tenantTokenDepsFromEnv() });
+const plans = apply && { db: apply.db, auth: reviewer };
+const app = buildApp({ apply, plans, reviewer, tenantTokens: tenantTokenDepsFromEnv() });
 const port = Number(process.env.API_PORT ?? process.env.PORT ?? 3000);
 
 for (const signal of ["SIGTERM", "SIGINT"] as const) {

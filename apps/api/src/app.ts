@@ -4,6 +4,7 @@ import fastifyStatic from "@fastify/static";
 import { CONTRACTS_VERSION, type HealthResponse } from "@rehearsal/contracts";
 import Fastify, { type FastifyReply } from "fastify";
 import { type ApplyDeps, registerApplyRoute } from "./apply";
+import { type ReviewerResolver, registerMeRoute } from "./auth";
 import { type PlanDeps, registerPlanRoutes } from "./plans";
 import { registerTenantTokenRoute, type TenantTokenDeps } from "./tenant-tokens";
 
@@ -17,6 +18,8 @@ export function buildApp(
   deps: {
     apply?: ApplyDeps;
     plans?: PlanDeps;
+    /** Clerk-backed in production; without it nobody is signed in. */
+    reviewer?: ReviewerResolver;
     tenantTokens?: TenantTokenDeps;
     webRoot?: string | null;
   } = {},
@@ -31,6 +34,7 @@ export function buildApp(
       contractsVersion: CONTRACTS_VERSION,
     }),
   );
+  registerMeRoute(app, deps.reviewer ?? (() => null));
 
   // Command routes need Postgres; health stays available without it (core mode with no DB).
   // Without it they say "unavailable", not 404, so clients don't mistake an outage for a missing plan.
