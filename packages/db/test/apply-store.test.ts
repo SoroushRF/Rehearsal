@@ -111,6 +111,35 @@ describe.skipIf(!process.env.DB_TESTS)("PgApplyStore (real Postgres)", () => {
     await next?.();
   });
 
+  it("doesn't pile up error listeners on pooled connections", async () => {
+    const s = await seed();
+    const warnings: string[] = [];
+    const onWarning = (w: Error) => warnings.push(w.name);
+    process.on("warning", onWarning);
+    try {
+      const store = new PgApplyStore(db);
+      for (let i = 0; i < 15; i++) {
+        const release = await store.lockPlan(s.orgId, s.planId);
+        await release?.();
+      }
+      const client = await db.$client.connect();
+      expect(client.listenerCount("error")).toBeLessThanOrEqual(1);
+      client.release();
+    } finally {
+      process.off("warning", onWarning);
+    }
+    expect(warnings).not.toContain("MaxListenersExceededWarning");
+  });
+
+  it("moves a run's state only from the expected states", async () => {
+    const s = await seed();
+    const store = new PgApplyStore(db);
+    expect(await store.transitionRun(s.orgId, s.runId, ["approved"], "applying")).toBe(true);
+    expect(await store.transitionRun(s.orgId, s.runId, ["approved"], "applying")).toBe(false);
+    expect(await store.transitionRun("org_other", s.runId, ["applying"], "completed")).toBe(false);
+    expect(await store.runState(s.orgId, s.runId)).toBe("applying");
+  });
+
   it("updates only the run's state", async () => {
     const s = await seed();
     await new PgApplyStore(db).setRunState(s.orgId, s.runId, "partial");

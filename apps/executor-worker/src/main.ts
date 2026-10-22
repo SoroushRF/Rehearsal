@@ -1,4 +1,4 @@
-import { APPLY_QUEUE, createDb, startQueue } from "@rehearsal/db";
+import { APPLY_QUEUE, APPLY_QUEUE_OPTIONS, createDb, startQueue } from "@rehearsal/db";
 import {
   primeTokens,
   stripeReader,
@@ -60,13 +60,26 @@ const boss = await startQueue();
 // One job at a time per worker: a run holds its plan's lock, and runs of one plan serialize anyway.
 await boss.work(APPLY_QUEUE, { batchSize: 1 }, async ([job]) => {
   if (!job) return;
-  const outcome = await handleApplyJob(job.data, ctx);
-  console.log(`run ${outcome.state}${outcome.refusal ? ` (${outcome.refusal})` : ""}`);
+  const result = await handleApplyJob(job.data, ctx, {
+    retryCount: job.retryCount,
+    retryLimit: APPLY_QUEUE_OPTIONS.retryLimit,
+  });
+  console.log(
+    result.kind === "skipped"
+      ? `job ${job.id} skipped: ${result.reason}`
+      : `run ${result.outcome.state}${result.outcome.refusal ? ` (${result.outcome.refusal})` : ""}`,
+  );
 });
 
 for (const signal of ["SIGTERM", "SIGINT"] as const) {
   process.once(signal, async () => {
-    await boss.stop({ graceful: true });
+    // Let the active run finish (it is bounded by retries and timeouts); if it can't, the journal
+    // keeps it safe and the job is retried.
+    try {
+      await boss.stop({ graceful: true, timeout: 120_000 });
+    } catch (err) {
+      console.error("pg-boss stop failed", err);
+    }
     process.exit(0);
   });
 }

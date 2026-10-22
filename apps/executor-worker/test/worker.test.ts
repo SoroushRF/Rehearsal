@@ -14,7 +14,10 @@ import {
 import { billingManifest, FakeClock, type FakeWorld, worldFromManifest } from "@rehearsal/testkit";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import policy from "../../../scenarios/billing/policy.v1.json" with { type: "json" };
-import { handleApplyJob, RetryLater, type WorkerContext } from "../src/worker";
+import { type ApplyJobResult, handleApplyJob, RetryLater, type WorkerContext } from "../src/worker";
+
+const stateOf = (r: ApplyJobResult) =>
+  r.kind === "ran" ? r.outcome.state : `skipped: ${r.reason}`;
 
 const NOW = new Date("2026-10-22T12:00:00.000Z");
 
@@ -127,7 +130,7 @@ describe.skipIf(!process.env.DB_TESTS)(
       expect(r.world.refunds).toHaveLength(2);
     }, 30_000);
 
-    it("a job delivered twice is a no-op the second time", async () => {
+    it("a job delivered twice is skipped the second time", async () => {
       const r = await approvedRun();
       const ctx = contextFor(r.world);
       const data = {
@@ -137,9 +140,9 @@ describe.skipIf(!process.env.DB_TESTS)(
         revision: 1,
         planHash: r.hash,
       };
-      expect((await handleApplyJob(data, ctx)).state).toBe("completed");
+      expect(stateOf(await handleApplyJob(data, ctx))).toBe("completed");
       const effects = r.world.effects.length;
-      expect((await handleApplyJob(data, ctx)).state).toBe("completed");
+      expect(stateOf(await handleApplyJob(data, ctx))).toBe("skipped: run is completed");
       expect(r.world.effects.length).toBe(effects);
       expect(await runState(r.runId)).toBe("completed");
     });
@@ -174,14 +177,89 @@ describe.skipIf(!process.env.DB_TESTS)(
         revision: 1,
         planHash: r.hash,
       };
-      expect((await handleApplyJob(data, contextFor(r.world))).state).toBe("partial");
+      expect(stateOf(await handleApplyJob(data, contextFor(r.world)))).toBe("partial");
       expect(await runState(r.runId)).toBe("partial");
     });
 
-    it("refuses a malformed job payload before touching anything", async () => {
+    it("skips a malformed job payload without retrying or touching anything", async () => {
       const r = await approvedRun();
-      await expect(handleApplyJob({ runId: r.runId }, contextFor(r.world))).rejects.toThrow();
+      expect(await handleApplyJob({ runId: r.runId }, contextFor(r.world))).toEqual({
+        kind: "skipped",
+        reason: "malformed apply job",
+      });
       expect(await runState(r.runId)).toBe("approved");
+    });
+
+    const jobOf = (r: Awaited<ReturnType<typeof approvedRun>>) => ({
+      orgId: r.orgId,
+      runId: r.runId,
+      planId: r.planId,
+      revision: 1,
+      planHash: r.hash,
+    });
+
+    it("never applies a cancelled run, and leaves it cancelled", async () => {
+      const r = await approvedRun();
+      await new PgApplyStore(db).setRunState(r.orgId, r.runId, "cancelled");
+      expect(await handleApplyJob(jobOf(r), contextFor(r.world))).toEqual({
+        kind: "skipped",
+        reason: "run is cancelled",
+      });
+      expect(r.world.effects).toEqual([]);
+      expect(await runState(r.runId)).toBe("cancelled");
+    });
+
+    it("a redelivered job for a held run is skipped, even with a newer active run of that hash", async () => {
+      const r = await approvedRun();
+      await new PgApplyStore(db).setRunState(r.orgId, r.runId, "held");
+      const newer = await requestApply(db, boss, {
+        orgId: r.orgId,
+        userId: "user_finance",
+        planId: r.planId,
+        revision: 1,
+        planHash: r.hash,
+        now: NOW,
+      });
+      expect(newer).toMatchObject({ kind: "accepted", existing: false });
+      expect(await handleApplyJob(jobOf(r), contextFor(r.world))).toEqual({
+        kind: "skipped",
+        reason: "run is held",
+      });
+      expect(await runState(r.runId)).toBe("held");
+    });
+
+    it("skips a job whose payload doesn't match the stored run", async () => {
+      const r = await approvedRun();
+      const result = await handleApplyJob(
+        { ...jobOf(r), planHash: "f".repeat(64) },
+        contextFor(r.world),
+      );
+      expect(result).toEqual({ kind: "skipped", reason: "job does not match a stored run" });
+      expect(await runState(r.runId)).toBe("approved");
+    });
+
+    it("on the last retry, a run still blocked by the plan lock ends failed so it can be re-applied", async () => {
+      const r = await approvedRun();
+      const release = await new PgApplyStore(createDb(url)).lockPlan(r.orgId, r.planId);
+      try {
+        const result = await handleApplyJob(jobOf(r), contextFor(r.world), {
+          retryCount: 50,
+          retryLimit: 50,
+        });
+        expect(stateOf(result)).toBe("failed");
+        expect(await runState(r.runId)).toBe("failed");
+      } finally {
+        await release?.();
+      }
+      const again = await requestApply(db, boss, {
+        orgId: r.orgId,
+        userId: "user_finance",
+        planId: r.planId,
+        revision: 1,
+        planHash: r.hash,
+        now: NOW,
+      });
+      expect(again).toMatchObject({ kind: "accepted", existing: false });
     });
   },
 );

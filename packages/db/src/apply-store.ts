@@ -1,6 +1,6 @@
 import type { ApprovalGrant, Role, RunState } from "@rehearsal/contracts";
 import type { ApplyStore, StoredRun } from "@rehearsal/core";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { Db } from "./index";
 import { approvalGrants, planVersions, runs } from "./schema";
 
@@ -70,20 +70,26 @@ export class PgApplyStore implements ApplyStore {
     const client = await this.db.$client.connect();
     // Without a listener, a dropped lock connection is an unhandled 'error' that kills the worker.
     // Postgres has then released the lock; the run's own journal writes fail if the DB is gone.
-    client.on("error", (err) => {
+    // The listener is removed before the client goes back to the pool, so none pile up.
+    const onError = (err: Error) => {
       console.error(`apply lock connection for ${planId} lost: ${err.message}`);
-    });
+    };
+    client.on("error", onError);
+    const giveBack = (err?: Error) => {
+      client.off("error", onError);
+      client.release(err);
+    };
     try {
       const { rows } = await client.query<{ ok: boolean }>(
         "select pg_try_advisory_lock(hashtextextended($1, 0)) as ok",
         [key],
       );
       if (!rows[0]?.ok) {
-        client.release();
+        giveBack();
         return null;
       }
     } catch (err) {
-      client.release();
+      giveBack(err as Error);
       throw err;
     }
     let released = false;
@@ -92,15 +98,42 @@ export class PgApplyStore implements ApplyStore {
       released = true;
       try {
         await client.query("select pg_advisory_unlock(hashtextextended($1, 0))", [key]);
-        client.release();
+        giveBack();
       } catch (err) {
         // A broken connection already dropped the lock; discard it rather than reuse it.
-        client.release(err as Error);
+        giveBack(err as Error);
       }
     };
   }
 
-  /** `state` is the only mutable column of a run. */
+  async runState(orgId: string, runId: string): Promise<RunState | null> {
+    const [row] = await this.db
+      .select({ state: runs.state })
+      .from(runs)
+      .where(and(eq(runs.orgId, orgId), eq(runs.id, runId)));
+    return (row?.state as RunState | undefined) ?? null;
+  }
+
+  /**
+   * Compare-and-set on a run's state: moves it to `to` only if it is currently one of `from`.
+   * Returns whether it moved. A stale or duplicate job therefore can't revive a finished or
+   * cancelled run, or collide with a newer active run of the same hash.
+   */
+  async transitionRun(
+    orgId: string,
+    runId: string,
+    from: readonly RunState[],
+    to: RunState,
+  ): Promise<boolean> {
+    const moved = await this.db
+      .update(runs)
+      .set({ state: to, updatedAt: new Date() })
+      .where(and(eq(runs.orgId, orgId), eq(runs.id, runId), inArray(runs.state, [...from])))
+      .returning({ id: runs.id });
+    return moved.length > 0;
+  }
+
+  /** Unconditional; for operators and tests. The worker uses transitionRun. */
   async setRunState(orgId: string, runId: string, state: RunState): Promise<void> {
     await this.db
       .update(runs)
