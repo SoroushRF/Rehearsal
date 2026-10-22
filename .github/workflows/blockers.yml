@@ -2,18 +2,15 @@ name: blocker-board
 
 # Rebuilds BLOCKERS.md on the unprotected `status` branch. main needs a PR and green CI, which the
 # Actions bot can't satisfy, so the generated board lives on its own branch.
+# No pull_request/create/delete triggers: they would add a check to every PR. New PRs and branches
+# are picked up by the 10-minute schedule; merges arrive as pushes to main.
 on:
   issues:
     types: [opened, closed, reopened, edited, deleted, milestoned]
-  pull_request:
-    types: [opened, closed, reopened, edited, ready_for_review, converted_to_draft]
   push:
     branches: [main]
-    paths: [docs/tracks/**, AGENTS.md, scripts/blockers/**, .github/workflows/blockers.yml]
-  create:
-  delete:
   schedule:
-    - cron: "*/30 * * * *"
+    - cron: "*/10 * * * *"
   workflow_dispatch:
 
 permissions:

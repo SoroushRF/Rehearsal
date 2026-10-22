@@ -7,13 +7,7 @@
 
 ## How it stays current
 
-A GitHub Action ([`blocker-board`](../.github/workflows/blockers.yml)) regenerates the board whenever any of these happens:
-- An issue is opened, closed, reopened or edited.
-- A PR is opened, closed or edited.
-- A branch is created or deleted.
-- The track files change on `main`.
-
-It also runs every 30 minutes as a backstop. It publishes to the `status` branch because `main` only accepts PRs with green CI, which the Actions bot can't open for itself.
+A GitHub Action ([`blocker-board`](../.github/workflows/blockers.yml)) regenerates the board when an issue is opened, closed, reopened or edited, and on every push to `main`, which includes every merge. It also runs every 10 minutes, and that run picks up newly opened PRs and pushed branches. It deliberately doesn't run on PR events, so it never adds a check to anyone's PR. It publishes to the `status` branch because `main` only accepts PRs with green CI, which the Actions bot can't open for itself.
 
 Status comes from GitHub:
 
