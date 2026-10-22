@@ -146,6 +146,62 @@ describe("happy-path bundle on the fake provider", () => {
     expect(await s.journal.attemptsFor(s.hash, "refund_001")).toHaveLength(1);
     expect(s.world.effects).toHaveLength(1);
   });
+
+  it.each([{ id: "other" }, { priority: "urgent" }, { status: "invalid" }])(
+    "keeps a contradictory ticket patch response unknown: %j",
+    async (change) => {
+      const s = setup(happyPathBundle());
+      const dispatch = s.deps.providers.zendesk.dispatch;
+      s.deps.providers.zendesk.dispatch = async (req, ctx) => {
+        const result = await dispatch(req, ctx);
+        if (result.kind !== "confirmed") return result;
+        const body = result.body as { ticket: object };
+        return { ...result, body: { ticket: { ...body.ticket, ...change } } };
+      };
+      expect((await s.run()).receipts.find((r) => r.actionId === "patch_001")?.outcome).toBe(
+        "unknown_outcome",
+      );
+    },
+  );
+  it.each([
+    { status: "failed" },
+    { status: "pending" },
+    { amount: 1 },
+    { charge: "ch_other" },
+    { currency: "usd" },
+    { id: "" },
+  ])("never confirms or announces a contradictory refund response: %j", async (change) => {
+    const s = setup(happyPathBundle());
+    s.deps.retry = { maxAttempts: 1 };
+    const dispatch = s.deps.providers.stripe.dispatch;
+    s.deps.providers.stripe.dispatch = async (req, ctx) => {
+      const result = await dispatch(req, ctx);
+      return result.kind === "confirmed"
+        ? { ...result, body: { ...(result.body as object), ...change } }
+        : result;
+    };
+    const out = await s.run();
+    expect(out.receipts.find((r) => r.actionId === "refund_001")?.outcome).toBe("unknown_outcome");
+    expect(out.receipts.find((r) => r.actionId === "note_001")?.outcome).toBe("skipped_dependency");
+    expect(s.world.tickets.get("5531")?.comments).toHaveLength(0);
+  });
+
+  it("holds a contradictory refund reconciliation instead of releasing its note", async () => {
+    const s = setup(happyPathBundle());
+    s.deps.retry = { maxAttempts: 1 };
+    s.world.fault("/v1/refunds", { kind: "drop_response_after_commit" });
+    await s.run();
+    const reconcile = s.deps.providers.stripe.reconcile;
+    s.deps.providers.stripe.reconcile = async (...args) => {
+      const result = await reconcile(...args);
+      return result.kind === "applied"
+        ? { ...result, effect: { ...result.effect, "refund.status": "failed" } }
+        : result;
+    };
+    const out = await s.run();
+    expect(out.receipts.find((r) => r.actionId === "refund_001")?.outcome).toBe("held");
+    expect(s.world.tickets.get("5531")?.comments).toHaveLength(0);
+  });
   it("applies every action and matches the expected outcomes", async () => {
     const bundle = happyPathBundle();
     const { run, world, manifest } = setup(bundle);
