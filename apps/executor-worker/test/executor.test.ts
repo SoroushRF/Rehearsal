@@ -1293,6 +1293,43 @@ describe("cancellation and lock order (T3.6)", () => {
     expect(s.world.tickets.get("5531")?.comments).toHaveLength(0);
   });
 
+  it("repeated read-only passes over an unresolved note add no duplicate holds", async () => {
+    const s = setup(happyPathBundle());
+    const zendesk = s.deps.providers.zendesk;
+    s.deps.providers.zendesk = {
+      ...zendesk,
+      dispatch: async (req, ctx) =>
+        req.body.includes('"comment"')
+          ? { kind: "unknown", error: "lost before it landed (injected)" }
+          : zendesk.dispatch(req, ctx),
+    };
+    await s.run();
+    s.store.cancelled.add(RUN);
+    for (let i = 0; i < 3; i++) await s.run();
+    const holds = s.journal.receipts.filter(
+      (r) => r.outcome === "held" && r.actionId === "note_001",
+    );
+    expect(holds).toHaveLength(1);
+    expect((await s.journal.attemptsFor(s.hash, "note_001")).map((a) => a.state)).toEqual([
+      "unknown_outcome",
+    ]);
+  });
+
+  it("a cancelled run never closes an unfound refund as rejected (no replay will follow)", async () => {
+    const s = setup(happyPathBundle());
+    s.deps.retry = { maxAttempts: 1 };
+    s.world.fault("/v1/refunds", { kind: "server_error" }); // no effect; outcome unknown
+    await s.run();
+    s.store.cancelled.add(RUN);
+    (s.deps.clock as FakeClock).advance(3_600_000);
+    const result = await s.run();
+    expect(outcomes(result.receipts)).toMatchObject({ refund_001: "held" });
+    expect((await s.journal.attemptsFor(s.hash, "refund_001")).map((a) => a.state)).toEqual([
+      "unknown_outcome",
+    ]);
+    expect(s.world.refunds).toHaveLength(1); // only case 002's refund; refund_001 never re-sent
+  });
+
   it("a delivery whose grant has since expired defers to a running delivery instead of failing", async () => {
     const s = setup(happyPathBundle(), { expiresAt: "2026-10-21T11:59:00.000Z" });
     const release = await s.store.lockPlan(s.manifest.orgId, s.manifest.planId);

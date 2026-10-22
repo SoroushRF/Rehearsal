@@ -120,6 +120,25 @@ describe.skipIf(!process.env.DB_TESTS)("run commands: cancel and reaper (real Po
     const reaped = await reapStuckRuns(db, boss, { now: new Date(), staleAfterMs: 60_000 });
     expect(reaped).toContain(withSend.id);
     expect(reaped).not.toContain(quiet.id);
+
+    // Its job runs and finishes without resolving the send (the read stays inconclusive)...
+    await db.execute(
+      sql`update pgboss.job set state = 'completed' where name = ${APPLY_QUEUE} and data->>'runId' = ${withSend.id}`,
+    );
+    // ...within the day the reaper tries again; after a day it stops (an operator takes over).
+    const soon = await reapStuckRuns(db, boss, {
+      now: new Date(Date.now() + 3_600_000),
+      staleAfterMs: 60_000,
+    });
+    expect(soon).toContain(withSend.id);
+    await db.execute(
+      sql`update pgboss.job set state = 'completed' where name = ${APPLY_QUEUE} and data->>'runId' = ${withSend.id}`,
+    );
+    const muchLater = await reapStuckRuns(db, boss, {
+      now: new Date(Date.now() + 2 * 24 * 3_600_000),
+      staleAfterMs: 60_000,
+    });
+    expect(muchLater).not.toContain(withSend.id);
   });
 
   it("concurrent reapers enqueue a stuck run once", async () => {

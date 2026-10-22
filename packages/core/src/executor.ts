@@ -361,8 +361,13 @@ async function applyLocked(
   };
   /** Latest confirmed receipt per action for this hash (earlier runs included), never duplicated. */
   const confirmedByAction = new Map<string, Receipt>();
+  /** Attempts this hash already holds as unresolved; a reconcile-only pass doesn't re-hold them. */
+  const heldUnresolved = new Set<string>();
   for (const r of await journal.receiptsFor(job.planHash)) {
     if (r.outcome === "confirmed") confirmedByAction.set(r.actionId, r);
+    if (r.outcome === "held" && r.holdReason?.kind === "unresolved_outcome") {
+      heldUnresolved.add(r.holdReason.attemptId);
+    }
   }
   /** An attempt marked dispatched whose outcome isn't settled yet (for honest error labelling). */
   let inFlightAttempt: string | null = null;
@@ -536,7 +541,10 @@ async function applyLocked(
     // identical replay protected by the provider's idempotency guarantee.
     const sentAt = Date.parse(newest.dispatchedAt ?? newest.preparedAt);
     const oldEnough = clock.now().getTime() - sentAt >= (deps.reconcileAfterMs ?? 60_000);
+    // A cancelled run never replays, so the replay that makes "not applied" safe to act on never
+    // comes: keep the attempts in flight (a late landing is still found later) and hold.
     if (
+      !reconcileOnly &&
       result.kind === "not_applied" &&
       oldEnough &&
       sameAsNewest &&
@@ -552,7 +560,13 @@ async function applyLocked(
       }
       return "resend";
     }
-    await hold(action, { kind: "unresolved_outcome", attemptId: inFlight[0]?.id ?? newest.id });
+    const heldAttempt = inFlight[0]?.id ?? newest.id;
+    if (reconcileOnly && heldUnresolved.has(heldAttempt)) {
+      // Already held for this exact attempt: a repeated read-only pass adds no duplicate receipt.
+      settled.set(action.id, "held");
+      return "settled";
+    }
+    await hold(action, { kind: "unresolved_outcome", attemptId: heldAttempt });
     return "settled";
   }
 

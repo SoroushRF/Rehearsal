@@ -36,6 +36,9 @@ export async function requestCancel(
   return row ? { kind: "not_active", state: row.state } : { kind: "not_found" };
 }
 
+/** How long the reaper keeps re-trying a cancelled run's read-only reconcile of a send in flight. */
+export const CANCELLED_RECONCILE_FOR_MS = 24 * 3_600_000;
+
 /** pg-boss job states that mean someone will still run the job. */
 const LIVE_JOB_STATES = ["created", "retry", "active"];
 
@@ -70,6 +73,8 @@ export async function reapStuckRuns(
                 select 1 from ${stepAttempts} a
                 where a.org_id = ${runs.orgId} and a.plan_hash = ${runs.planHash}
                   and a.state in ('dispatched', 'unknown_outcome')
+                  -- Retry a cancelled run's read-only reconcile for a day, not forever.
+                  and a.dispatched_at > ${new Date(opts.now.getTime() - CANCELLED_RECONCILE_FOR_MS)}
               )`,
             ),
           ),
