@@ -139,13 +139,13 @@ export class PlanningSession {
   }
 
   get observations(): Observation[] {
-    return [...this.#observations.values()];
+    return structuredClone([...this.#observations.values()]);
   }
   get queryObservations(): QueryObservation[] {
-    return [...this.#queries.values()];
+    return structuredClone([...this.#queries.values()]);
   }
   get actions(): Action[] {
-    return [...this.#actions];
+    return structuredClone(this.#actions);
   }
 
   /** The recorded evidence and proposed actions as a revision-1 manifest. */
@@ -228,16 +228,27 @@ export class PlanningSession {
       entity.vendor === "stripe" ? this.#opts.readers.stripe : this.#opts.readers.zendesk;
     const obs = await reader.observe(entity, this.#opts.ctx);
     if (obs.world !== "planning") throw new Error(`reader returned a ${obs.world} observation`);
-    // Same ID, newer read: the plan depends on the latest thing the planner saw.
-    this.#observations.set(obs.id, obs);
-    return obs;
+    return this.#snapshot(this.#observations, obs);
   }
 
   async #record(pending: Promise<QueryObservation>): Promise<QueryObservation> {
     const q = await pending;
     if (q.world !== "planning") throw new Error(`reader returned a ${q.world} query`);
-    this.#queries.set(q.id, q);
-    return q;
+    return this.#snapshot(this.#queries, q);
+  }
+
+  /** Existing actions keep their evidence forever; a changed read creates another snapshot. */
+  #snapshot<T extends { id: string; capturedAt: string }>(store: Map<string, T>, value: T): T {
+    const semantic = (v: T) => fingerprint({ ...v, id: undefined, capturedAt: undefined });
+    const first = store.get(value.id);
+    const id =
+      !first || semantic(first) === semantic(value) ? value.id : `${value.id}_${semantic(value)}`;
+    let snapshot = store.get(id);
+    if (!snapshot) {
+      snapshot = structuredClone({ ...value, id });
+      store.set(id, snapshot);
+    }
+    return structuredClone(snapshot);
   }
 
   #customerCharges(customerId: string): Promise<QueryObservation> {

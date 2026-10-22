@@ -124,6 +124,23 @@ const outcomes = (receipts: { actionId: string; outcome: string }[]) =>
   Object.fromEntries(receipts.map((r) => [r.actionId, r.outcome]));
 
 describe("read guard in the executor", () => {
+  it("preserves an edit made while capturing the provider precondition", async () => {
+    const s = setup(happyPathBundle());
+    const preconditions = s.providers.zendesk.preconditions;
+    s.providers.zendesk.preconditions = async (action, ctx) => {
+      if (action.kind === "zendesk.ticket.patchFields" && action.args.ticketId === "5531") {
+        s.world.teammateEdit("5531", "priority", "urgent");
+      }
+      return preconditions?.(action, ctx) ?? {};
+    };
+    const result = await s.run();
+    expect(result.receipts.find((r) => r.actionId === "patch_001")).toMatchObject({
+      outcome: "held",
+      holdReason: { kind: "row_changed", fields: ["priority"] },
+    });
+    expect(s.world.tickets.get("5531")?.priority).toBe("urgent");
+  });
+
   it("holds a phantom introduced during a definite 429 backoff", async () => {
     const s = setup(happyPathBundle());
     s.world.fault("/v1/refunds", { kind: "reject", status: 429, retryable: true, retryAfterMs: 1 });
