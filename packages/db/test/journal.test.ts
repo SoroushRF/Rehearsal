@@ -137,6 +137,45 @@ describe.skipIf(!process.env.DB_TESTS)("PgJournal (real Postgres)", () => {
     expect(await journal.bindings(HASH)).toEqual([{ planHash: HASH, ref, value: "re_1" }]);
   });
 
+  it("settles a transition, bindings and receipt all-or-nothing", async () => {
+    const journal = journalFor();
+    const a = attempt();
+    await journal.prepareAttempt(a);
+    await journal.transition(a.id, "prepared", "dispatched");
+    const ref = { $ref: "result", stepId: "refund_001", path: "refund.id" } as const;
+    const receipt: Receipt = {
+      id: `rcp_${randomUUID()}`,
+      actionId: "refund_001",
+      planHash: HASH,
+      approvalId: "appr_1",
+      outcome: "confirmed",
+      providerRef: { vendor: "stripe", kind: "refund", id: "re_1" },
+      observedEffect: {},
+      protection: "native_guard_with_documented_limits",
+      holdReason: null,
+      limitations: [],
+      recordedAt: "2026-10-21T12:00:03.000Z",
+    };
+    // Wrong `from` state: the whole settle rolls back, so no binding is left behind.
+    await expect(
+      journal.settle({
+        transition: { attemptId: a.id, from: "prepared", to: "dispatched" },
+        bindings: [{ planHash: HASH, ref, value: "re_1" }],
+        receipt,
+      }),
+    ).rejects.toThrow(JournalConflictError);
+    expect(await journal.bindings(HASH)).toEqual([]);
+
+    await journal.settle({
+      transition: { attemptId: a.id, from: "dispatched", to: "confirmed" },
+      bindings: [{ planHash: HASH, ref, value: "re_1" }],
+      receipt,
+    });
+    expect(await journal.bindings(HASH)).toEqual([{ planHash: HASH, ref, value: "re_1" }]);
+    const [settled] = await journal.attemptsForKey(a.operationKey);
+    expect(settled?.state).toBe("confirmed");
+  });
+
   it("records receipts and ordered run events", async () => {
     const journal = journalFor();
     const receipt: Receipt = {

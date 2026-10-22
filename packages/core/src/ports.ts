@@ -64,6 +64,17 @@ export interface ProviderPort {
   reconcile(attempt: Attempt, action: Action, ctx: WorldContext): Promise<ReconcileResult>;
 }
 
+export interface SettleStep {
+  transition?: {
+    attemptId: string;
+    from: AttemptState;
+    to: AttemptState;
+    patch?: Partial<Pick<Attempt, "providerStatus" | "error" | "dispatchedAt" | "settledAt">>;
+  };
+  bindings: ObjectBinding[];
+  receipt: Receipt;
+}
+
 export interface JournalPort {
   /** Persist intent + exact request BEFORE dispatch. */
   prepareAttempt(attempt: Attempt): Promise<void>;
@@ -75,6 +86,14 @@ export interface JournalPort {
     patch?: Partial<Pick<Attempt, "providerStatus" | "error" | "dispatchedAt" | "settledAt">>,
   ): Promise<Attempt>;
   attemptsFor(planHash: string, actionId: string): Promise<Attempt[]>;
+  /** Every attempt with this operation key (any plan revision), ordered by attemptNo. */
+  attemptsForKey(operationKey: string): Promise<Attempt[]>;
+  /**
+   * Atomically settle a step: an optional compare-and-set transition, its write-once result
+   * bindings and its receipt. All or nothing, so a crash can't leave a confirmed attempt without
+   * the receipt and bindings later steps depend on.
+   */
+  settle(step: SettleStep): Promise<void>;
   recordReceipt(receipt: Receipt): Promise<void>;
   bind(binding: ObjectBinding): Promise<void>;
   bindings(planHash: string): Promise<ObjectBinding[]>;

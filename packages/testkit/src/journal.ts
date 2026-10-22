@@ -6,7 +6,7 @@ import type {
   Receipt,
   RunEvent,
 } from "@rehearsal/contracts";
-import type { ApplyStore, JournalPort, StoredRun } from "@rehearsal/core";
+import type { ApplyStore, JournalPort, SettleStep, StoredRun } from "@rehearsal/core";
 
 /** Same transition table as the Postgres journal, so fakes can't allow what production refuses. */
 const LEGAL: Record<AttemptState, readonly AttemptState[]> = {
@@ -55,6 +55,40 @@ export class MemoryJournal implements JournalPort {
       .filter((a) => a.planHash === planHash && a.actionId === actionId)
       .sort((a, b) => a.attemptNo - b.attemptNo)
       .map((a) => structuredClone(a));
+  }
+
+  async attemptsForKey(operationKey: string): Promise<Attempt[]> {
+    return [...this.attempts.values()]
+      .filter((a) => a.operationKey === operationKey)
+      .sort((a, b) => a.attemptNo - b.attemptNo)
+      .map((a) => structuredClone(a));
+  }
+
+  /** Set to make the next `settle` throw before writing anything (a crash mid-settle). */
+  failNextSettle = false;
+
+  async settle(step: SettleStep): Promise<void> {
+    if (this.failNextSettle) {
+      this.failNextSettle = false;
+      throw new Error("journal unavailable (injected)");
+    }
+    // Validate everything first so the write is all-or-nothing, like the Postgres transaction.
+    const t = step.transition;
+    if (t) {
+      if (!LEGAL[t.from].includes(t.to))
+        throw new Error(`illegal attempt transition ${t.from} -> ${t.to}`);
+      if (this.attempts.get(t.attemptId)?.state !== t.from) {
+        throw new Error(`attempt ${t.attemptId} is not in state ${t.from}`);
+      }
+    }
+    for (const b of step.bindings) {
+      const existing = this.#bindings.get(`${b.planHash}:${b.ref.stepId}:${b.ref.path}`);
+      if (existing && existing.value !== b.value)
+        throw new Error("binding already holds a different value");
+    }
+    if (t) await this.transition(t.attemptId, t.from, t.to, t.patch);
+    for (const b of step.bindings) await this.bind(b);
+    await this.recordReceipt(step.receipt);
   }
 
   async recordReceipt(receipt: Receipt): Promise<void> {

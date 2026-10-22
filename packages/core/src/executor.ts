@@ -1,8 +1,10 @@
 import {
   type Action,
   type ApprovalGrant,
+  type Attempt,
   type EntityRef,
   type HoldReason,
+  type ObjectBinding,
   PlanManifest,
   type Receipt,
   type ReceiptOutcome,
@@ -20,6 +22,7 @@ import type {
   PreparedRequest,
   ProviderPort,
   ResolvedBindings,
+  SettleStep,
   WorldContext,
 } from "./ports";
 
@@ -69,6 +72,8 @@ export interface RunOutcome {
   state: RunState;
   receipts: Receipt[];
   refusal: string | null;
+  /** Set when the run stopped early on an unexpected error; later steps were not attempted. */
+  error: string | null;
 }
 
 export const bindingKey = (ref: Pick<ResultRef, "stepId" | "path">) => `${ref.stepId}:${ref.path}`;
@@ -88,12 +93,20 @@ function targetOf(action: Action): EntityRef {
 }
 
 /**
- * Stable per org + target + action kind + obligation, NOT per plan revision: if a changed plan is
- * re-approved, the same refund keeps the same idempotency key and can't be issued twice.
+ * Idempotency key for one action. Stable across revisions of the same plan (revisions keep action
+ * IDs), so a re-approved revision finds the earlier attempt instead of issuing a second refund;
+ * unique per action within a plan, so two notes on one ticket never share a key.
  */
-export function operationKey(orgId: string, action: Action): string {
+export function operationKey(orgId: string, planId: string, action: Action): string {
   const t = targetOf(action);
-  return `op_${fingerprint({ orgId, kind: action.kind, obligationId: action.obligationId, target: t }).slice(0, 32)}`;
+  return `op_${fingerprint({
+    orgId,
+    planId,
+    actionId: action.id,
+    kind: action.kind,
+    obligationId: action.obligationId,
+    target: t,
+  }).slice(0, 32)}`;
 }
 
 /** Allowlisted values a confirmed response yields for later steps, plus the created object. */
@@ -158,6 +171,8 @@ async function admit(
     return { ok: false, detail: "grant is for a different plan, revision or hash" };
   }
   if (grant.revokedAt !== null) return { ok: false, detail: "grant was revoked" };
+  if (Date.parse(grant.grantedAt) > now)
+    return { ok: false, detail: "grant is dated in the future" };
   if (Date.parse(grant.expiresAt) <= now) return { ok: false, detail: "grant expired" };
   const missing = [...new Set(manifest.actions.map((a) => a.requiredRole))].filter(
     (r) => !grant.roles.includes(r),
@@ -188,7 +203,7 @@ export async function executeRun(job: ApplyJobInput, deps: ExecutorDeps): Promis
 
   if (!admission.ok) {
     await journal.appendEvent(job.runId, "run.refused", { detail: admission.detail });
-    return { state: "failed", receipts: [], refusal: admission.detail };
+    return { state: "failed", receipts: [], refusal: admission.detail, error: null };
   }
   const { manifest, grant } = admission;
   await journal.appendEvent(job.runId, "run.admitted", {
@@ -202,70 +217,78 @@ export async function executeRun(job: ApplyJobInput, deps: ExecutorDeps): Promis
     (await journal.bindings(job.planHash)).map((b) => [bindingKey(b.ref), b.value]),
   );
 
-  const record = async (
+  const receiptFor = (
     action: Action,
     outcome: ReceiptOutcome,
     extra: Partial<
       Pick<Receipt, "providerRef" | "observedEffect" | "holdReason" | "limitations">
     > = {},
+  ): Receipt => ({
+    id: deps.newId("rcp"),
+    actionId: action.id,
+    planHash: job.planHash,
+    approvalId: grant.id,
+    outcome,
+    providerRef: extra.providerRef ?? null,
+    observedEffect: extra.observedEffect ?? {},
+    protection: action.protection,
+    holdReason: extra.holdReason ?? null,
+    limitations: extra.limitations ?? [],
+    recordedAt: at(),
+  });
+
+  /** Journal the receipt (with any transition and bindings) atomically, then publish it. */
+  const settle = async (
+    action: Action,
+    receipt: Receipt,
+    opts: { transition?: SettleStep["transition"]; results?: Record<string, string | number> } = {},
   ) => {
-    const receipt: Receipt = {
-      id: deps.newId("rcp"),
-      actionId: action.id,
-      planHash: job.planHash,
-      approvalId: grant.id,
-      outcome,
-      providerRef: extra.providerRef ?? null,
-      observedEffect: extra.observedEffect ?? {},
-      protection: action.protection,
-      holdReason: extra.holdReason ?? null,
-      limitations: extra.limitations ?? [],
-      recordedAt: at(),
-    };
-    await journal.recordReceipt(receipt);
+    const newBindings: ObjectBinding[] = Object.entries(opts.results ?? {}).map(
+      ([path, value]) => ({
+        planHash: job.planHash,
+        ref: { $ref: "result", stepId: action.id, path: path as ResultRef["path"] },
+        value,
+      }),
+    );
+    await journal.settle({ transition: opts.transition, bindings: newBindings, receipt });
+    for (const b of newBindings) bindings.set(bindingKey(b.ref), b.value);
     await journal.appendEvent(job.runId, "step.receipt", receipt);
     receipts.push(receipt);
-    settled.set(action.id, outcome);
+    settled.set(action.id, receipt.outcome);
   };
+  const hold = (action: Action, holdReason: HoldReason) =>
+    settle(action, receiptFor(action, "held", { holdReason }));
 
-  for (const action of topoOrder(manifest.actions)) {
-    const blocked = action.dependsOn.find((d) => settled.get(d) !== "confirmed");
-    if (blocked) {
-      await record(action, "skipped_dependency", {
-        holdReason: { kind: "predecessor_not_confirmed", stepId: blocked },
-      });
-      continue;
-    }
+  const sameRequest = (a: Attempt, req: PreparedRequest, sha: string) =>
+    a.request.method === req.method && a.request.path === req.path && a.request.bodySha256 === sha;
 
-    const key = operationKey(job.orgId, action);
-    const prior = await journal.attemptsFor(job.planHash, action.id);
-    if (prior.some((a) => a.state === "confirmed" || a.state === "reconciled")) {
-      // Already applied in an earlier run of this job; its receipt and bindings exist.
+  async function step(action: Action): Promise<void> {
+    const key = operationKey(job.orgId, job.planId, action);
+    const prior = await journal.attemptsForKey(key);
+    const latest = prior.at(-1);
+
+    if (
+      latest &&
+      (latest.state === "confirmed" || latest.state === "reconciled") &&
+      latest.planHash === job.planHash
+    ) {
+      // Applied by an earlier run of this plan hash; settle() wrote its receipt and bindings.
       settled.set(action.id, "confirmed");
-      continue;
+      return;
     }
     const inFlight = prior.find((a) => a.state === "dispatched" || a.state === "unknown_outcome");
     if (inFlight) {
       // TODO(T3.5): reconcile through reads. Until then never re-send; hold for an operator.
-      await record(action, "held", {
-        holdReason: { kind: "unresolved_outcome", attemptId: inFlight.id },
-      });
-      continue;
+      return hold(action, { kind: "unresolved_outcome", attemptId: inFlight.id });
     }
 
-    const hold = deps.guard ? await deps.guard(action, manifest) : null;
-    if (hold) {
-      await record(action, "held", { holdReason: hold });
-      continue;
-    }
+    const guardHold = deps.guard ? await deps.guard(action, manifest) : null;
+    if (guardHold) return hold(action, guardHold);
 
     const refs = resultRefsOf(action);
     const unresolved = refs.find((r) => !bindings.has(bindingKey(r)));
     if (unresolved) {
-      await record(action, "held", {
-        holdReason: { kind: "predecessor_not_confirmed", stepId: unresolved.stepId },
-      });
-      continue;
+      return hold(action, { kind: "predecessor_not_confirmed", stepId: unresolved.stepId });
     }
     const resolved: ResolvedBindings = new Map(
       refs.map((r) => [bindingKey(r), bindings.get(bindingKey(r)) as string | number]),
@@ -278,25 +301,61 @@ export async function executeRun(job: ApplyJobInput, deps: ExecutorDeps): Promis
 
     const request: PreparedRequest = provider.prepare(action, resolved, key);
     const bodySha256 = sha256Hex(request.body);
-    const reusable = prior.find((a) => a.state === "prepared");
-    if (reusable && reusable.request.bodySha256 !== bodySha256) {
-      await record(action, "held", {
-        holdReason: {
+
+    if (latest && latest.state !== "prepared") {
+      if (!sameRequest(latest, request, bodySha256)) {
+        return hold(action, {
           kind: "approval_invalid",
-          detail: "re-prepared request differs from the journaled bytes",
-        },
-      });
-      continue;
+          detail: `operation ${key} was already attempted (${latest.state}) with different content; a new action is needed`,
+        });
+      }
+      if (latest.state === "rejected") {
+        // Never auto-resend a rejected request outside the bounded retry policy (T3.4).
+        return settle(
+          action,
+          receiptFor(action, "rejected", {
+            observedEffect: { status: latest.providerStatus },
+            limitations: [`rejected by attempt ${latest.id}; not re-sent`],
+          }),
+        );
+      }
+      // Confirmed under an earlier revision of this plan with identical bytes: adopt its results.
+      const earlier = (await journal.bindings(latest.planHash)).filter(
+        (b) => b.ref.stepId === latest.actionId,
+      );
+      const results = Object.fromEntries(earlier.map((b) => [b.ref.path, b.value]));
+      const refund = results["refund.id"];
+      return settle(
+        action,
+        receiptFor(action, "confirmed", {
+          providerRef:
+            typeof refund === "string"
+              ? { vendor: "stripe", kind: "refund", id: refund }
+              : targetOf(action),
+          observedEffect: results,
+          limitations: [
+            `applied by attempt ${latest.id} under plan hash ${latest.planHash}; not re-sent`,
+          ],
+        }),
+        { results },
+      );
     }
 
-    const attemptId = reusable?.id ?? deps.newId("att");
-    if (!reusable) {
+    if (latest?.state === "prepared" && !sameRequest(latest, request, bodySha256)) {
+      return hold(action, {
+        kind: "approval_invalid",
+        detail: "re-prepared request differs from the journaled bytes",
+      });
+    }
+
+    const attemptId = latest?.state === "prepared" ? latest.id : deps.newId("att");
+    if (latest?.state !== "prepared") {
       await journal.prepareAttempt({
         id: attemptId,
         actionId: action.id,
         planHash: job.planHash,
         operationKey: key,
-        attemptNo: (prior.at(-1)?.attemptNo ?? 0) + 1,
+        attemptNo: (latest?.attemptNo ?? 0) + 1,
         state: "prepared",
         request: {
           method: request.method,
@@ -323,37 +382,94 @@ export async function executeRun(job: ApplyJobInput, deps: ExecutorDeps): Promis
     }
 
     if (result.kind === "confirmed") {
-      const { providerRef, results } = resultsOf(action, result.body);
-      await journal.transition(attemptId, "dispatched", "confirmed", {
-        providerStatus: result.status,
-        settledAt: at(),
-      });
-      for (const [path, value] of Object.entries(results)) {
-        await journal.bind({
-          planHash: job.planHash,
-          ref: { $ref: "result", stepId: action.id, path: path as ResultRef["path"] },
-          value,
-        });
-        bindings.set(bindingKey({ stepId: action.id, path: path as ResultRef["path"] }), value);
+      let parsed: ReturnType<typeof resultsOf> | null = null;
+      try {
+        parsed = resultsOf(action, result.body);
+      } catch (err) {
+        // The provider says it worked but we can't read what it did: treat it as unknown.
+        result = {
+          kind: "unknown",
+          error: `unreadable confirmed response: ${(err as Error).message}`,
+        };
       }
-      await record(action, "confirmed", {
-        providerRef,
-        observedEffect: results,
-        limitations: ["effect taken from the write response; no read-back yet"],
-      });
-    } else if (result.kind === "rejected") {
+      if (parsed && result.kind === "confirmed") {
+        const { providerRef, results } = parsed;
+        return settle(
+          action,
+          receiptFor(action, "confirmed", {
+            providerRef,
+            observedEffect: results,
+            limitations: ["effect taken from the write response; no read-back yet"],
+          }),
+          {
+            transition: {
+              attemptId,
+              from: "dispatched",
+              to: "confirmed",
+              patch: { providerStatus: result.status, settledAt: at() },
+            },
+            results,
+          },
+        );
+      }
+    }
+    if (result.kind === "rejected") {
       // TODO(T3.4): bounded retries with the identical request when `retryable`.
-      await journal.transition(attemptId, "dispatched", "rejected", {
-        providerStatus: result.status,
-        error: JSON.stringify(result.body).slice(0, 500),
-        settledAt: at(),
-      });
-      await record(action, "rejected", { observedEffect: { status: result.status } });
-    } else {
-      await journal.transition(attemptId, "dispatched", "unknown_outcome", { error: result.error });
-      await record(action, "unknown_outcome", {
+      return settle(
+        action,
+        receiptFor(action, "rejected", { observedEffect: { status: result.status } }),
+        {
+          transition: {
+            attemptId,
+            from: "dispatched",
+            to: "rejected",
+            patch: {
+              providerStatus: result.status,
+              error: JSON.stringify(result.body).slice(0, 500),
+              settledAt: at(),
+            },
+          },
+        },
+      );
+    }
+    return settle(
+      action,
+      receiptFor(action, "unknown_outcome", {
         holdReason: { kind: "unresolved_outcome", attemptId },
-      });
+      }),
+      {
+        transition: {
+          attemptId,
+          from: "dispatched",
+          to: "unknown_outcome",
+          patch: { error: result.kind === "unknown" ? result.error : null },
+        },
+      },
+    );
+  }
+
+  let error: string | null = null;
+  for (const action of topoOrder(manifest.actions)) {
+    const blocked = action.dependsOn.find((d) => settled.get(d) !== "confirmed");
+    try {
+      if (blocked) {
+        await settle(
+          action,
+          receiptFor(action, "skipped_dependency", {
+            holdReason: { kind: "predecessor_not_confirmed", stepId: blocked },
+          }),
+        );
+        continue;
+      }
+      await step(action);
+    } catch (err) {
+      // Unexpected failure (journal down, adapter bug). Stop: the remaining steps are not attempted,
+      // and anything already dispatched stays in the journal as dispatched, so it is never re-sent.
+      error = `${action.id}: ${(err as Error).message}`;
+      await journal
+        .appendEvent(job.runId, "step.error", { actionId: action.id, error })
+        .catch(() => {});
+      break;
     }
   }
 
@@ -364,9 +480,9 @@ export async function executeRun(job: ApplyJobInput, deps: ExecutorDeps): Promis
       ? "completed"
       : confirmed > 0
         ? "partial"
-        : outcomes.some((o) => o === "held" || o === "unknown_outcome")
+        : error === null && outcomes.some((o) => o === "held" || o === "unknown_outcome")
           ? "held"
           : "failed";
-  await journal.appendEvent(job.runId, "run.finished", { state });
-  return { state, receipts, refusal: null };
+  await journal.appendEvent(job.runId, "run.finished", { state, error }).catch(() => {});
+  return { state, receipts, refusal: null, error };
 }

@@ -51,11 +51,15 @@ _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
 - **2026-10-21, Artin (T3.2).** Branch `t3/T3.2-executor-loop`, stacked on `fix/T3.1-review`. `executeRun` in `packages/core/src/executor.ts`:
   - **Run-level admission** re-checks the stored run, the stored and recomputed hash, and the grant (same plan, revision and hash, not revoked or expired, roles cover every step). It also checks policy and graph. Any failure means nothing is dispatched.
   - **Steps** run in topological order. Each one: guard hook (T4), resolve bindings, prepare, journal, mark `dispatched`, dispatch, then confirm or reject or unknown, then receipt. Dependents of anything not confirmed get `skipped_dependency`, and the run state is honest (`completed`, `partial`, `held` or `failed`).
-  - **Operation keys** are per org + target + kind + obligation, not per revision.
+  - **Operation keys** are per org + plan + action (+ kind, obligation, target): stable across revisions of one plan, unique within it. Prior attempts are looked up by key, so a re-approved identical revision adopts earlier results instead of re-sending, and a changed one is held.
+  - **`JournalPort` gained `attemptsForKey` and `settle`** (additive). `settle` writes the transition, bindings and receipt in one transaction.
   - **Testkit additions:** `FakeWorld` (Stripe idempotency on exact bytes, scripted reject and drop-after-commit faults), `MemoryJournal` and `MemoryApplyStore`. The `happy-path` bundle passes on the fake.
   - **Next:** T3.3 real Era write adapters, then wire the executor worker to consume `apply` jobs with a Postgres `ApplyStore`.
   - **Gotchas:**
     - A `dispatched` or `unknown_outcome` attempt is held and never re-sent, until T3.5 adds reconcile.
+    - A rejected attempt is never re-sent by a later run; T3.4 adds bounded in-run retries.
+    - An unexpected error stops the run (`step.error` event, `RunOutcome.error`); remaining steps get no receipt.
+    - The note template formats CAD only, matching policy v1.
     - Rejected-but-retryable steps aren't retried yet (T3.4).
     - Confirmed receipts carry a limitation saying the effect came from the write response, not a read-back.
     - Admission is a cross-track-review path.

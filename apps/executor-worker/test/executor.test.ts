@@ -109,9 +109,9 @@ describe("happy-path bundle on the fake provider", () => {
       ...stripe,
       dispatch: async (req, ctx) => {
         const [attempt] = await journal.attemptsFor(hash, "refund_001");
-        if (attempt && seen.length === 0) {
-          expect(attempt.state).toBe("dispatched");
-          expect(attempt.request.body).toBe(req.body);
+        if (seen.length === 0) {
+          expect(attempt?.state).toBe("dispatched");
+          expect(attempt?.request.body).toBe(req.body);
         }
         seen.push(req.body);
         return stripe.dispatch(req, ctx);
@@ -147,6 +147,13 @@ describe("admission refuses and dispatches nothing", () => {
       (s) => {
         const g = s.store.grants.get(APPROVAL);
         if (g) s.store.grants.set(APPROVAL, { ...g, expiresAt: "2026-10-21T11:59:59.000Z" });
+      },
+    ],
+    [
+      "a grant dated in the future",
+      (s) => {
+        const g = s.store.grants.get(APPROVAL);
+        if (g) s.store.grants.set(APPROVAL, { ...g, grantedAt: "2026-10-21T12:00:01.000Z" });
       },
     ],
     [
@@ -214,14 +221,129 @@ describe("partial outcomes are honest", () => {
   });
 });
 
-describe("operation keys", () => {
-  it("stay the same across plan revisions for the same obligation", () => {
-    const { manifest } = setup(happyPathBundle());
-    const refund = manifest.actions[0];
-    if (!refund) throw new Error("fixture has no actions");
-    expect(operationKey("org_demo", refund)).toBe(
-      operationKey("org_demo", { ...refund, id: "renamed" }),
+/** Store revision 2 of the same plan (optionally changed) with its own run and grant. */
+function addRevision(s: ReturnType<typeof setup>, change: (m: PlanManifest) => void = () => {}) {
+  const manifest = structuredClone({ ...s.manifest, revision: 2, parentRevision: 1 });
+  change(manifest);
+  const hash = planHash(manifest);
+  s.store.plans.set(`${manifest.planId}@2`, { planHash: hash, manifest });
+  s.store.runs.set("run_2", {
+    planId: manifest.planId,
+    revision: 2,
+    planHash: hash,
+    approvalId: "grant_2",
+  });
+  const grant = s.store.grants.get(APPROVAL);
+  if (!grant) throw new Error("setup has no grant");
+  s.store.grants.set("grant_2", { ...grant, id: "grant_2", revision: 2, planHash: hash });
+  const job = {
+    orgId: manifest.orgId,
+    runId: "run_2",
+    planId: manifest.planId,
+    revision: 2,
+    planHash: hash,
+  };
+  return { manifest, run: () => executeRun(job, s.deps) };
+}
+
+describe("re-approved revisions", () => {
+  it("adopt confirmed effects of an identical earlier revision instead of re-sending", async () => {
+    const s = setup(happyPathBundle());
+    await s.run();
+    const effects = s.world.effects.length;
+    const rev2 = await addRevision(s).run();
+    expect(rev2.state).toBe("completed");
+    expect(rev2.error).toBeNull();
+    expect(s.world.effects.length).toBe(effects);
+    expect(rev2.receipts.every((r) => r.limitations.some((l) => l.includes("not re-sent")))).toBe(
+      true,
     );
-    expect(operationKey("org_demo", refund)).not.toBe(operationKey("org_other", refund));
+  });
+
+  it("hold a step whose content changed after it was applied", async () => {
+    const s = setup(happyPathBundle());
+    await s.run();
+    const rev2 = await addRevision(s, (m) => {
+      const refund = m.actions.find((a) => a.id === "refund_001");
+      if (refund?.kind === "stripe.refund.create") refund.args.amount.amountMinor = 4000;
+    }).run();
+    expect(outcomes(rev2.receipts)).toMatchObject({
+      refund_001: "held",
+      note_001: "skipped_dependency",
+    });
+    expect(s.world.refunds.filter((r) => r.charge === "ch_fixture_001")).toHaveLength(1);
+  });
+});
+
+describe("failures inside the executor", () => {
+  it("a crash while settling a confirmed step leaves it in flight, never re-sent", async () => {
+    const s = setup(happyPathBundle());
+    s.journal.failNextSettle = true;
+    const first = await s.run();
+    expect(first.error).toMatch(/journal unavailable/);
+    expect(s.journal.events.at(-1)?.type).toBe("run.finished");
+
+    const second = await s.run();
+    expect(outcomes(second.receipts)).toMatchObject({
+      refund_001: "held",
+      note_001: "skipped_dependency",
+    });
+    expect(s.world.refunds.filter((r) => r.charge === "ch_fixture_001")).toHaveLength(1);
+  });
+
+  it("an unreadable confirmed response is recorded as unknown_outcome", async () => {
+    const s = setup(happyPathBundle());
+    const stripe = s.deps.providers.stripe;
+    let first = true;
+    s.deps.providers.stripe = {
+      ...stripe,
+      dispatch: async (req, ctx) => {
+        const res = await stripe.dispatch(req, ctx);
+        if (!first) return res;
+        first = false;
+        return { kind: "confirmed", status: 200, body: { unexpected: true } };
+      },
+    };
+    const result = await s.run();
+    expect(outcomes(result.receipts)).toMatchObject({
+      refund_001: "unknown_outcome",
+      note_001: "skipped_dependency",
+    });
+    expect(result.error).toBeNull();
+  });
+
+  it("a rejected request is not re-sent when the job runs again", async () => {
+    const s = setup(happyPathBundle());
+    s.world.fault("/v1/refunds", { kind: "reject", status: 402, retryable: false });
+    await s.run();
+    const refunds = s.world.refunds.length;
+    const again = await s.run();
+    expect(outcomes(again.receipts)).toMatchObject({ refund_001: "rejected" });
+    expect(s.world.refunds.length).toBe(refunds);
+  });
+});
+
+describe("operation keys", () => {
+  it("are stable across revisions, unique per action, and org-scoped", () => {
+    const { manifest } = setup(happyPathBundle());
+    const [refund, patch] = manifest.actions;
+    if (!refund || !patch) throw new Error("fixture has no actions");
+    const key = operationKey("org_demo", manifest.planId, refund);
+    expect(operationKey("org_demo", manifest.planId, structuredClone(refund))).toBe(key);
+    expect(operationKey("org_demo", manifest.planId, { ...refund, id: "refund_other" })).not.toBe(
+      key,
+    );
+    expect(operationKey("org_other", manifest.planId, refund)).not.toBe(key);
+  });
+
+  it("two notes on the same ticket in one plan both apply", async () => {
+    const bundle = happyPathBundle();
+    const note = bundle.manifest.actions.find((a) => a.id === "note_001");
+    if (!note) throw new Error("fixture has no note_001");
+    bundle.manifest.actions.push({ ...structuredClone(note), id: "note_001b" });
+    const s = setup(bundle);
+    const result = await s.run();
+    expect(result.state).toBe("completed");
+    expect(s.world.tickets.get("5531")?.comments).toHaveLength(2);
   });
 });

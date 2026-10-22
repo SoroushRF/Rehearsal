@@ -1,5 +1,5 @@
 import type { Attempt, AttemptState, ObjectBinding, Receipt, RunEvent } from "@rehearsal/contracts";
-import type { JournalPort } from "@rehearsal/core";
+import type { JournalPort, SettleStep } from "@rehearsal/core";
 import { and, asc, eq } from "drizzle-orm";
 import type { Db } from "./index";
 import { objectBindings, runEvents, stepAttempts, stepReceipts } from "./schema";
@@ -122,6 +122,28 @@ export class PgJournal implements JournalPort {
       )
       .orderBy(asc(stepAttempts.attemptNo));
     return rows.map(toAttempt);
+  }
+
+  async attemptsForKey(operationKey: string): Promise<Attempt[]> {
+    const rows = await this.db
+      .select()
+      .from(stepAttempts)
+      .where(and(eq(stepAttempts.orgId, this.orgId), eq(stepAttempts.operationKey, operationKey)))
+      .orderBy(asc(stepAttempts.attemptNo));
+    return rows.map(toAttempt);
+  }
+
+  async settle(step: SettleStep): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      // A transaction exposes the same query API; reuse this journal's methods inside it.
+      const inTx = new PgJournal(tx as unknown as Db, this.orgId);
+      if (step.transition) {
+        const t = step.transition;
+        await inTx.transition(t.attemptId, t.from, t.to, t.patch);
+      }
+      for (const binding of step.bindings) await inTx.bind(binding);
+      await inTx.recordReceipt(step.receipt);
+    });
   }
 
   async recordReceipt(receipt: Receipt): Promise<void> {

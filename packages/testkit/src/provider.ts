@@ -153,7 +153,8 @@ export class FakeWorld {
       const key = req.headers["Idempotency-Key"];
       if (!key)
         return { kind: "rejected", status: 400, body: { error: "missing key" }, retryable: false };
-      const bodySha = fingerprint(req.body);
+      // Era fingerprints path + raw body bytes under the key.
+      const bodySha = fingerprint({ path: req.path, body: req.body });
       const seen = this.#idempotency.get(key);
       if (seen) {
         if (seen.bodySha !== bodySha) {
