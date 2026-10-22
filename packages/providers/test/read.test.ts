@@ -47,6 +47,21 @@ const byRequester: QueryPredicate = { kind: "zendesk.tickets.byRequester", reque
 const CUTOFF = "2026-10-01T12:00:00.000Z";
 
 describe("stripeReader", () => {
+  it.each(["created", "customer", "amount_refunded", "id"])(
+    "cannot prove completeness when %s is unreadable",
+    async (field) => {
+      const charge = fixture("stripe.charge.json");
+      delete charge[field];
+      serve({ data: [charge], has_more: false });
+      expect((await stripeReader(target()).query(august, CUTOFF, ctx)).complete).toBe(false);
+    },
+  );
+
+  it("does not claim complete enumeration after duplicate records across pages", async () => {
+    const charge = fixture("stripe.charge.json");
+    serve({ data: [charge], has_more: true }, { data: [charge], has_more: false });
+    expect((await stripeReader(target()).query(august, CUTOFF, ctx)).complete).toBe(false);
+  });
   it("observes a charge as its v1 projection", async () => {
     serve(fixture("stripe.charge.json"));
     const obs = await stripeReader(target()).observe(
@@ -129,6 +144,21 @@ describe("stripeReader", () => {
 });
 
 describe("zendeskReader", () => {
+  it.each([{ tickets: [] }, { tickets: [], next_page: null }, { tickets: [], count: 0 }])(
+    "refuses missing pagination metadata: %j",
+    async (body) => {
+      serve(body);
+      expect((await zendeskReader(target()).query(byRequester, CUTOFF, ctx)).complete).toBe(false);
+    },
+  );
+
+  it("refuses a count that changes between pages", async () => {
+    serve(recorded("zendesk.requested.p1.json"), {
+      ...recorded("zendesk.requested.p2.json"),
+      count: 7,
+    });
+    expect((await zendeskReader(target()).query(byRequester, CUTOFF, ctx)).complete).toBe(false);
+  });
   it("observes a ticket as its v1 projection, without comments", async () => {
     serve(fixture("zendesk.ticket.json"));
     const obs = await zendeskReader(target()).observe(

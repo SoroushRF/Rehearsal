@@ -6,6 +6,7 @@ import type {
   World,
 } from "@rehearsal/contracts";
 import { type Clock, fingerprint, type ProviderPort, type WorldContext } from "@rehearsal/core";
+import { z } from "zod";
 import { eraFetch } from "./era";
 import type { WorldConfig } from "./worlds";
 
@@ -27,6 +28,31 @@ export interface ReadTarget {
 
 export const STRIPE_CHARGE_PROJECTION = "stripe.charge.v2";
 export const ZENDESK_TICKET_PROJECTION = "zendesk.ticket.v2";
+
+const ChargeRecord = z.object({
+  id: z.string().min(1),
+  customer: z.string().min(1),
+  amount: z.int().nonnegative(),
+  amount_refunded: z.int().nonnegative(),
+  currency: z.string().regex(/^[a-z]{3}$/),
+  status: z.enum(["succeeded", "pending", "failed"]),
+  invoice: z.string().nullable(),
+  created: z.int().nonnegative(),
+});
+const TicketId = z.union([z.int().positive(), z.string().regex(/^\d+$/)]);
+const TicketRecord = z.object({
+  id: TicketId,
+  priority: z.enum(["low", "normal", "high", "urgent"]).nullable(),
+  status: z.enum(["new", "open", "pending", "hold", "solved", "closed"]),
+  requester_id: TicketId.nullable(),
+  external_id: z.string().nullable(),
+});
+const ChargePage = z.object({ data: z.array(ChargeRecord), has_more: z.boolean() });
+const TicketPage = z.object({
+  tickets: z.array(TicketRecord),
+  next_page: z.string().min(1).nullable(),
+  count: z.int().nonnegative(),
+});
 
 /** The fields a plan depends on. Everything else (billing details, comment timestamps) is noise. */
 export function stripeChargeProjection(c: Record<string, unknown>): Record<string, unknown> {
@@ -127,7 +153,9 @@ export function stripeReader(target: ReadTarget): ProviderReader {
       if (entity.vendor !== "stripe" || entity.kind !== "charge") {
         throw new Error(`stripe can't observe ${entity.vendor}.${entity.kind}`);
       }
-      const charge = await getJson(target, `/v1/charges/${encodeURIComponent(entity.id)}`);
+      const charge = ChargeRecord.parse(
+        await getJson(target, `/v1/charges/${encodeURIComponent(entity.id)}`),
+      );
       if (charge.id !== entity.id)
         throw new Error(`asked for charge ${entity.id}, got ${charge.id}`);
       return observation(target, entity, STRIPE_CHARGE_PROJECTION, stripeChargeProjection(charge));
@@ -148,6 +176,7 @@ export function stripeReader(target: ReadTarget): ProviderReader {
       const records = new Map<string, Record<string, unknown>>();
       let complete = false;
       let after: string | undefined;
+      const seenIds = new Set<string>();
       for (let page = 0; page < (target.maxPages ?? 50); page++) {
         const params = new URLSearchParams(base);
         if (after) params.set("starting_after", after);
@@ -157,21 +186,28 @@ export function stripeReader(target: ReadTarget): ProviderReader {
         } catch {
           break;
         }
-        const data = Array.isArray(body.data) ? (body.data as Record<string, unknown>[]) : null;
-        if (!data) break;
+        const parsed = ChargePage.safeParse(body);
+        if (!parsed.success) break;
+        const { data, has_more } = parsed.data;
+        if (
+          data.some((c) => seenIds.has(c.id)) ||
+          new Set(data.map((c) => c.id)).size !== data.length
+        )
+          break;
         for (const c of data) {
+          seenIds.add(c.id);
           // Keep only true matches, whatever the server returned.
           const created = Number(c.created);
           if (c.customer === predicate.customerId && created >= gte && created < lt) {
             records.set(String(c.id), stripeChargeProjection(c));
           }
         }
-        if (body.has_more === false) {
+        if (!has_more) {
           complete = true;
           break;
         }
         const last = data.at(-1)?.id;
-        if (body.has_more !== true || typeof last !== "string" || last === after) break;
+        if (typeof last !== "string" || last === after) break;
         after = last;
       }
       return queryObservation(
@@ -200,9 +236,9 @@ export function zendeskReader(target: ReadTarget): ProviderReader {
         throw new Error(`zendesk can't observe ${entity.vendor}.${entity.kind} ${entity.id}`);
       }
       const body = await getJson(target, `/api/v2/tickets/${entity.id}.json`);
-      const ticket = body.ticket as Record<string, unknown> | undefined;
-      if (!ticket || String(ticket.id) !== entity.id) {
-        throw new Error(`asked for ticket ${entity.id}, got ${ticket?.id}`);
+      const ticket = TicketRecord.parse(body.ticket);
+      if (String(ticket.id) !== entity.id) {
+        throw new Error(`asked for ticket ${entity.id}, got ${ticket.id}`);
       }
       return observation(
         target,
@@ -225,6 +261,8 @@ export function zendeskReader(target: ReadTarget): ProviderReader {
       let path: string | undefined =
         `/api/v2/users/${predicate.requesterId}/tickets/requested.json?per_page=${target.pageSize ?? 100}`;
       const seen = new Set<string>();
+      const seenIds = new Set<string>();
+      let expectedCount: number | undefined;
       for (let page = 0; path && page < (target.maxPages ?? 50); page++) {
         seen.add(path);
         let body: Record<string, unknown>;
@@ -233,22 +271,33 @@ export function zendeskReader(target: ReadTarget): ProviderReader {
         } catch {
           break;
         }
-        const tickets = Array.isArray(body.tickets)
-          ? (body.tickets as Record<string, unknown>[])
-          : null;
-        if (!tickets) break;
+        const parsed = TicketPage.safeParse(body);
+        if (!parsed.success) break;
+        const { tickets, count, next_page: next } = parsed.data;
+        expectedCount ??= count;
+        if (
+          count !== expectedCount ||
+          tickets.some((t) => seenIds.has(String(t.id))) ||
+          new Set(tickets.map((t) => String(t.id))).size !== tickets.length
+        )
+          break;
         for (const t of tickets) {
+          seenIds.add(String(t.id));
           if (String(t.requester_id) === predicate.requesterId) {
             records.set(String(t.id), zendeskTicketProjection(t));
           }
         }
-        const next = body.next_page;
-        if (next === null || next === undefined) {
-          complete = body.count === undefined || body.count === records.size;
+        if (next === null) {
+          complete = count === records.size;
           break;
         }
         if (typeof next !== "string") break;
-        const url = new URL(next, origin);
+        let url: URL;
+        try {
+          url = new URL(next, origin);
+        } catch {
+          break;
+        }
         if (url.origin !== origin) break;
         path = `${url.pathname}${url.search}`;
         if (seen.has(path)) break;
