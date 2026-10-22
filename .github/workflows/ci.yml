@@ -34,5 +34,5 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm lint
-      - run: pnpm test
       - run: pnpm --filter @rehearsal/web build
+      - run: pnpm test

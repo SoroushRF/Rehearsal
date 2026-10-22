@@ -12,7 +12,9 @@ const webDist = fileURLToPath(new URL("../../web/dist/", import.meta.url));
  * HTTP commands store intent and return IDs; long-running work happens in the workers.
  * Clerk auth and the plan/approval/apply routes land here (owner: C).
  */
-export function buildApp(deps: { apply?: ApplyDeps; tenantTokens?: TenantTokenDeps } = {}) {
+export function buildApp(
+  deps: { apply?: ApplyDeps; tenantTokens?: TenantTokenDeps; webRoot?: string | null } = {},
+) {
   const app = Fastify({ logger: process.env.NODE_ENV !== "test" });
 
   app.get(
@@ -37,13 +39,19 @@ export function buildApp(deps: { apply?: ApplyDeps; tenantTokens?: TenantTokenDe
   if (deps.tenantTokens) registerTenantTokenRoute(app, deps.tenantTokens);
 
   // Serve the built web app from the same origin in production.
-  if (existsSync(webDist)) {
-    app.register(fastifyStatic, { root: webDist });
-    app.setNotFoundHandler((req, reply) =>
-      req.url.startsWith("/api/")
-        ? reply.code(404).send({ error: "not_found" })
-        : reply.sendFile("index.html"),
-    );
+  const root = deps.webRoot === undefined ? webDist : deps.webRoot;
+  if (root && existsSync(root)) {
+    app.register(fastifyStatic, { root });
+    app.setNotFoundHandler((req, reply) => {
+      const path = new URL(req.url, "http://localhost").pathname;
+      const navigation =
+        (req.method === "GET" || req.method === "HEAD") &&
+        req.headers.accept?.includes("text/html") &&
+        !/^\/(api|internal)(\/|$)/.test(path);
+      return navigation
+        ? reply.sendFile("index.html")
+        : reply.code(404).send({ error: "not_found" });
+    });
   }
 
   return app;
