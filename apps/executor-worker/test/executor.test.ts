@@ -563,6 +563,44 @@ describe("guarded patches whose stamp moves (T3.3 review)", () => {
     expect(s.world.effects.length).toBe(effects);
   });
 
+  it.each(["patch_001", "note_001"])(
+    "%s: a revision whose prepared row trails another revision's confirmed send adopts it, never re-sends",
+    async (stepId) => {
+      const s = setup(happyPathBundle());
+      const rev2 = addRevision(s);
+      const crashOnceBeforeDispatch = () => {
+        let done = false;
+        s.journal.beforeTransition = async (attemptId, to) => {
+          if (
+            !done &&
+            to === "dispatched" &&
+            s.journal.attempts.get(attemptId)?.actionId === stepId
+          ) {
+            done = true;
+            throw new Error("crash before dispatched (injected)");
+          }
+        };
+      };
+      crashOnceBeforeDispatch();
+      await s.run(); // rev1 leaves a prepared row
+      crashOnceBeforeDispatch();
+      await rev2.run(); // rev2 leaves its own prepared row, after rev1's
+      s.journal.beforeTransition = null;
+      expect((await s.run()).state).toBe("completed"); // rev1 sends its row
+
+      const ticketWrites = () => s.world.effects.filter((e) => e.path.includes("5531")).length;
+      const comments = () => s.world.tickets.get("5531")?.comments.length;
+      const [writes, notes] = [ticketWrites(), comments()];
+      const result = await rev2.run();
+      expect(result.state).toBe("completed");
+      expect(result.receipts.find((r) => r.actionId === stepId)?.limitations.join(" ")).toMatch(
+        /not re-sent/,
+      );
+      expect(ticketWrites()).toBe(writes);
+      expect(comments()).toBe(notes);
+    },
+  );
+
   it("refuses to apply when a vendor is configured for the planning world", async () => {
     const s = setup(happyPathBundle());
     s.deps.worlds = { ...s.deps.worlds, zendesk: { world: "planning", tenant: "test" } };

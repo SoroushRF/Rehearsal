@@ -103,9 +103,13 @@ export class FakeWorld {
             ? { updated_stamp: this.#stamp(action.args.ticketId) }
             : {},
         preconditionsOf: (request: Attempt["request"]): Preconditions => {
-          const stamp = (JSON.parse(request.body) as { ticket?: { updated_stamp?: string } }).ticket
-            ?.updated_stamp;
-          return stamp ? { updated_stamp: stamp } : {};
+          try {
+            const stamp = (JSON.parse(request.body) as { ticket?: { updated_stamp?: string } })
+              .ticket?.updated_stamp;
+            return stamp ? { updated_stamp: stamp } : {};
+          } catch {
+            return {};
+          }
         },
       }),
       prepare: (action, bindings, operationKey, pre) =>

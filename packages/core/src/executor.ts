@@ -344,9 +344,15 @@ async function applyLocked(
     }
     const key = operationKey(job.orgId, job.planId, action);
     const prior = await journal.attemptsForKey(key);
-    // A prepared attempt from another plan hash was never sent; it neither blocks nor gets reused.
-    const relevant = prior.filter((a) => a.state !== "prepared" || a.planHash === job.planHash);
-    const latest = relevant.at(-1);
+    /**
+     * Decisions follow the newest attempt that was actually sent, under any revision. Prepared rows
+     * were never sent: they matter only when nothing for this key has been sent yet, and then only
+     * this hash's own (another revision's prepared row neither blocks nor gets reused).
+     */
+    const latest = prior.filter((a) => a.state !== "prepared").at(-1);
+    const ownPrepared = latest
+      ? undefined
+      : prior.filter((a) => a.state === "prepared" && a.planHash === job.planHash).at(-1);
 
     if (
       latest &&
@@ -387,11 +393,15 @@ async function applyLocked(
      * Our own writes move values like Zendesk's updated_stamp, so a fresh read can't be compared.
      */
     const sameContent = (a: Attempt) => {
-      const { req, sha } = prepareWith(provider.preconditionsOf?.(a.request) ?? {});
-      return sameRequest(a, req, sha);
+      try {
+        const { req, sha } = prepareWith(provider.preconditionsOf?.(a.request) ?? {});
+        return sameRequest(a, req, sha);
+      } catch {
+        return false; // Can't rebuild it from the journaled request: treat as different, so hold.
+      }
     };
 
-    if (latest && latest.state !== "prepared") {
+    if (latest) {
       if (!sameContent(latest)) {
         return hold(action, {
           kind: "approval_invalid",
@@ -453,9 +463,9 @@ async function applyLocked(
     // precondition moved (same content, new stamp), supersede it with a fresh attempt; it was
     // never sent, so it can't have had an effect.
     let reuse: Attempt | null = null;
-    if (latest?.state === "prepared") {
-      if (sameRequest(latest, request, bodySha256)) reuse = latest;
-      else if (!sameContent(latest)) {
+    if (ownPrepared) {
+      if (sameRequest(ownPrepared, request, bodySha256)) reuse = ownPrepared;
+      else if (!sameContent(ownPrepared)) {
         return hold(action, {
           kind: "approval_invalid",
           detail: "re-prepared request differs from the journaled bytes",
