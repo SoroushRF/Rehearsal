@@ -25,6 +25,12 @@ export function buildApp(deps: { apply?: ApplyDeps } = {}) {
 
   // Command routes need Postgres; health stays available without it (core mode with no DB).
   if (deps.apply) registerApplyRoute(app, deps.apply);
+  else {
+    // Say "unavailable", not 404, so clients don't mistake an outage for a missing plan.
+    app.post("/api/plans/:id/apply", async (_req, reply) =>
+      reply.code(503).send({ error: "database_unavailable" }),
+    );
+  }
 
   // Serve the built web app from the same origin in production.
   if (existsSync(webDist)) {
