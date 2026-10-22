@@ -8,14 +8,14 @@ import type {
   Vendor,
 } from "@rehearsal/contracts";
 import {
-  bindingKey,
   type DispatchResult,
   fingerprint,
+  noteBodyFor,
+  type Preconditions,
   type PreparedRequest,
   type ProviderPort,
   type ReconcileResult,
   type ResolvedBindings,
-  renderNote,
 } from "@rehearsal/core";
 
 export interface FakeCharge {
@@ -61,6 +61,23 @@ export class FakeWorld {
   readonly #faults = new Map<string, FakeFault[]>();
   #refundSeq = 0;
   #commentSeq = 0;
+  /** Zendesk-style `updated_at` per ticket: moves on every write, ours or a teammate's. */
+  readonly #stamps = new Map<string, number>();
+
+  #stamp(ticketId: string): string {
+    return `stamp-${this.#stamps.get(ticketId) ?? 0}`;
+  }
+  #touch(ticketId: string): void {
+    this.#stamps.set(ticketId, (this.#stamps.get(ticketId) ?? 0) + 1);
+  }
+
+  /** A teammate edits a ticket field directly (outside any plan); it moves the stamp. */
+  teammateEdit(ticketId: string, field: "priority" | "status", value: string): void {
+    const ticket = this.tickets.get(ticketId);
+    if (!ticket) throw new Error(`no ticket ${ticketId}`);
+    ticket[field] = value;
+    this.#touch(ticketId);
+  }
 
   /** Queue a fault for the next dispatch whose path starts with `pathPrefix`. */
   fault(pathPrefix: string, fault: FakeFault): void {
@@ -79,13 +96,35 @@ export class FakeWorld {
       vendor,
       observe: async (entity) => this.#observe(entity),
       query: async (predicate, cutoff) => this.#query(predicate, cutoff),
-      prepare: (action, bindings, operationKey) => this.#prepare(action, bindings, operationKey),
+      // Like the real Zendesk writer: a field patch is guarded by the stamp read just before.
+      ...(vendor === "zendesk" && {
+        preconditions: async (action: Action): Promise<Preconditions> =>
+          action.kind === "zendesk.ticket.patchFields"
+            ? { updated_stamp: this.#stamp(action.args.ticketId) }
+            : {},
+        preconditionsOf: (request: Attempt["request"]): Preconditions => {
+          try {
+            const stamp = (JSON.parse(request.body) as { ticket?: { updated_stamp?: string } })
+              .ticket?.updated_stamp;
+            return stamp ? { updated_stamp: stamp } : {};
+          } catch {
+            return {};
+          }
+        },
+      }),
+      prepare: (action, bindings, operationKey, pre) =>
+        this.#prepare(action, bindings, operationKey, pre ?? {}),
       dispatch: async (request) => this.#dispatch(request),
       reconcile: async (attempt, action) => this.#reconcile(attempt, action),
     };
   }
 
-  #prepare(action: Action, bindings: ResolvedBindings, operationKey: string): PreparedRequest {
+  #prepare(
+    action: Action,
+    bindings: ResolvedBindings,
+    operationKey: string,
+    pre: Preconditions,
+  ): PreparedRequest {
     switch (action.kind) {
       case "stripe.refund.create": {
         // Fixed field order: Stripe fingerprints the raw bytes, so a reorder is a different request.
@@ -93,7 +132,7 @@ export class FakeWorld {
           ["charge", action.args.chargeId],
           ["amount", String(action.args.amount.amountMinor)],
           ["reason", action.args.reason],
-          ["metadata[rehearsal_operation]", operationKey],
+          ["metadata[rehearsal_op]", operationKey],
         ]).toString();
         return {
           method: "POST",
@@ -108,17 +147,15 @@ export class FakeWorld {
           method: "PUT",
           path: `/api/v2/tickets/${action.args.ticketId}.json`,
           encoding: "json",
-          body: JSON.stringify({ ticket: action.args.set }),
+          body: JSON.stringify({
+            ticket: pre.updated_stamp
+              ? { ...action.args.set, safe_update: true, updated_stamp: pre.updated_stamp }
+              : action.args.set,
+          }),
           headers: {},
         };
       case "zendesk.ticket.appendPrivateNote": {
-        const values: Record<string, string | number> = {};
-        for (const [name, b] of Object.entries(action.args.bindings)) {
-          const value = typeof b === "object" ? bindings.get(bindingKey(b)) : b;
-          if (value === undefined) throw new Error(`unresolved binding ${name}`);
-          values[name] = value;
-        }
-        const note = renderNote(action.args.template, values, operationKey);
+        const note = noteBodyFor(action, bindings, operationKey);
         return {
           method: "PUT",
           path: `/api/v2/tickets/${action.args.ticketId}.json`,
@@ -179,7 +216,7 @@ export class FakeWorld {
         };
       }
       charge.amount_refunded += amount;
-      const opKey = form.get("metadata[rehearsal_operation]") ?? key;
+      const opKey = form.get("metadata[rehearsal_op]") ?? key;
       const refund: FakeRefund = {
         id: `re_fake_${String(++this.#refundSeq).padStart(4, "0")}`,
         charge: charge.id,
@@ -205,8 +242,18 @@ export class FakeWorld {
     if (!ticket)
       return { kind: "rejected", status: 404, body: { error: "RecordNotFound" }, retryable: false };
     const { ticket: patch } = JSON.parse(req.body) as {
-      ticket: { priority?: string; status?: string; comment?: { body: string; public: boolean } };
+      ticket: {
+        priority?: string;
+        status?: string;
+        comment?: { body: string; public: boolean };
+        safe_update?: boolean;
+        updated_stamp?: string;
+      };
     };
+    const id = m?.[1] as string;
+    if (patch.safe_update && patch.updated_stamp !== this.#stamp(id)) {
+      return { kind: "rejected", status: 409, body: { error: "UpdateConflict" }, retryable: false };
+    }
     if (patch.comment) {
       ticket.comments.push({
         id: ++this.#commentSeq,
@@ -216,6 +263,7 @@ export class FakeWorld {
     }
     if (patch.priority !== undefined) ticket.priority = patch.priority;
     if (patch.status !== undefined) ticket.status = patch.status;
+    this.#touch(id);
     this.effects.push({ operationKey: "", path: req.path });
     return { kind: "confirmed", status: 200, body: { ticket: { ...ticket } } };
   }

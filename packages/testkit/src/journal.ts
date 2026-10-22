@@ -43,6 +43,7 @@ export class MemoryJournal implements JournalPort {
     patch: Partial<Pick<Attempt, "providerStatus" | "error" | "dispatchedAt" | "settledAt">> = {},
   ): Promise<Attempt> {
     if (!LEGAL[from].includes(to)) throw new Error(`illegal attempt transition ${from} -> ${to}`);
+    await this.beforeTransition?.(attemptId, to);
     if (this.failNextTransitionTo === to) {
       this.failNextTransitionTo = null;
       throw new Error(`crash before ${to} (injected)`);
@@ -74,6 +75,8 @@ export class MemoryJournal implements JournalPort {
   failNextTransitionTo: AttemptState | null = null;
   /** Set to make the next event of this type fail to write. */
   failNextEvent: string | null = null;
+  /** Awaited before every transition, so a test can pause a run at an exact point. */
+  beforeTransition: ((attemptId: string, to: AttemptState) => Promise<void>) | null = null;
 
   async settle(step: SettleStep): Promise<void> {
     if (this.failNextSettle) {

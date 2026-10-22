@@ -12,6 +12,7 @@ import {
   type RunState,
   type Vendor,
 } from "@rehearsal/contracts";
+import { bindingKey } from "./bindings";
 import { topoOrder, validateGraph } from "./dag";
 import { planHash as computePlanHash, fingerprint, sha256Hex } from "./hash";
 import { type BillingPolicyV1, evaluateBillingPolicy } from "./policy";
@@ -19,6 +20,7 @@ import type {
   Clock,
   DispatchResult,
   JournalPort,
+  Preconditions,
   PreparedRequest,
   ProviderPort,
   ResolvedBindings,
@@ -90,8 +92,6 @@ export interface RunOutcome {
   error: string | null;
 }
 
-export const bindingKey = (ref: Pick<ResultRef, "stepId" | "path">) => `${ref.stepId}:${ref.path}`;
-
 export function vendorOf(action: Action): Vendor {
   return action.kind.startsWith("stripe.") ? "stripe" : "zendesk";
 }
@@ -127,18 +127,31 @@ export function operationKey(orgId: string, planId: string, action: Action): str
 function resultsOf(
   action: Action,
   body: unknown,
-): { providerRef: EntityRef; results: Record<string, string | number> } {
+): {
+  providerRef: EntityRef;
+  results: Record<string, string | number>;
+  /** What the provider's response says it now holds; T4's own-write overlay reads these. */
+  observed: Record<string, unknown>;
+} {
   if (action.kind === "stripe.refund.create") {
-    const b = body as { id?: unknown; status?: unknown; amount?: unknown };
+    const b = body as { id?: unknown; status?: unknown; amount?: unknown; charge?: unknown };
     if (typeof b?.id !== "string" || typeof b.amount !== "number" || typeof b.status !== "string") {
       throw new Error("refund response is missing id, status or amount");
     }
+    const results = { "refund.id": b.id, "refund.status": b.status, "refund.amount": b.amount };
     return {
       providerRef: { vendor: "stripe", kind: "refund", id: b.id },
-      results: { "refund.id": b.id, "refund.status": b.status, "refund.amount": b.amount },
+      results,
+      observed: { ...results, charge: b.charge },
     };
   }
-  return { providerRef: targetOf(action), results: {} };
+  const ticket = (body as { ticket?: Record<string, unknown> } | null)?.ticket;
+  if (!ticket || typeof ticket !== "object") throw new Error("ticket response has no ticket");
+  return {
+    providerRef: targetOf(action),
+    results: {},
+    observed: { priority: ticket.priority, status: ticket.status, updated_at: ticket.updated_at },
+  };
 }
 
 function resultRefsOf(action: Action): ResultRef[] {
@@ -196,6 +209,15 @@ async function admit(
     (r) => !grant.roles.includes(r),
   );
   if (missing.length > 0) return { ok: false, detail: `grant lacks roles: ${missing.join(", ")}` };
+
+  for (const [vendor, ctx] of Object.entries(deps.worlds)) {
+    if (ctx && ctx.world !== manifest.target.environment) {
+      return {
+        ok: false,
+        detail: `${vendor} is configured for the ${ctx.world} world, not operational`,
+      };
+    }
+  }
 
   const graph = validateGraph(manifest.actions);
   if (graph.length > 0) return { ok: false, detail: `invalid graph: ${graph[0]?.detail}` };
@@ -309,7 +331,10 @@ async function applyLocked(
     settle(action, receiptFor(action, "held", { holdReason }));
 
   const sameRequest = (a: Attempt, req: PreparedRequest, sha: string) =>
-    a.request.method === req.method && a.request.path === req.path && a.request.bodySha256 === sha;
+    a.request.method === req.method &&
+    a.request.path === req.path &&
+    a.request.encoding === req.encoding &&
+    a.request.bodySha256 === sha;
 
   async function step(action: Action): Promise<void> {
     if (confirmedByAction.has(action.id)) {
@@ -319,9 +344,15 @@ async function applyLocked(
     }
     const key = operationKey(job.orgId, job.planId, action);
     const prior = await journal.attemptsForKey(key);
-    // A prepared attempt from another plan hash was never sent; it neither blocks nor gets reused.
-    const relevant = prior.filter((a) => a.state !== "prepared" || a.planHash === job.planHash);
-    const latest = relevant.at(-1);
+    /**
+     * Decisions follow the newest attempt that was actually sent, under any revision. Prepared rows
+     * were never sent: they matter only when nothing for this key has been sent yet, and then only
+     * this hash's own (another revision's prepared row neither blocks nor gets reused).
+     */
+    const latest = prior.filter((a) => a.state !== "prepared").at(-1);
+    const ownPrepared = latest
+      ? undefined
+      : prior.filter((a) => a.state === "prepared" && a.planHash === job.planHash).at(-1);
 
     if (
       latest &&
@@ -352,11 +383,26 @@ async function applyLocked(
     const world = deps.worlds[vendor];
     if (!provider || !world) throw new Error(`no operational provider configured for ${vendor}`);
 
-    const request: PreparedRequest = provider.prepare(action, resolved, key);
-    const bodySha256 = sha256Hex(request.body);
+    /** The request this step would send, given these preconditions. */
+    const prepareWith = (pre: Preconditions) => {
+      const req = provider.prepare(action, resolved, key, pre);
+      return { req, sha: sha256Hex(req.body) };
+    };
+    /**
+     * Same content as an earlier attempt, re-prepared with the preconditions that attempt carried.
+     * Our own writes move values like Zendesk's updated_stamp, so a fresh read can't be compared.
+     */
+    const sameContent = (a: Attempt) => {
+      try {
+        const { req, sha } = prepareWith(provider.preconditionsOf?.(a.request) ?? {});
+        return sameRequest(a, req, sha);
+      } catch {
+        return false; // Can't rebuild it from the journaled request: treat as different, so hold.
+      }
+    };
 
-    if (latest && latest.state !== "prepared") {
-      if (!sameRequest(latest, request, bodySha256)) {
+    if (latest) {
+      if (!sameContent(latest)) {
         return hold(action, {
           kind: "approval_invalid",
           detail: `operation ${key} was already attempted (${latest.state}) with different content; a new action is needed`,
@@ -372,7 +418,7 @@ async function applyLocked(
           }),
         );
       }
-      // Confirmed under an earlier revision of this plan with identical bytes: adopt its results.
+      // Confirmed under an earlier revision of this plan with the same content: adopt its results.
       const earlier = (await journal.bindings(latest.planHash)).filter(
         (b) => b.ref.stepId === latest.actionId,
       );
@@ -400,15 +446,35 @@ async function applyLocked(
       : null;
     if (guardHold) return hold(action, guardHold);
 
-    if (latest?.state === "prepared" && !sameRequest(latest, request, bodySha256)) {
-      return hold(action, {
-        kind: "approval_invalid",
-        detail: "re-prepared request differs from the journaled bytes",
-      });
+    let pre: Preconditions = {};
+    if (provider.preconditions) {
+      try {
+        pre = await provider.preconditions(action, world);
+      } catch (err) {
+        return hold(action, {
+          kind: "unsupported_protection",
+          detail: `could not read the write's precondition: ${(err as Error).message}`,
+        });
+      }
+    }
+    const { req: request, sha: bodySha256 } = prepareWith(pre);
+
+    // A never-sent prepared row of this hash: reuse its exact bytes if nothing moved. If only a
+    // precondition moved (same content, new stamp), supersede it with a fresh attempt; it was
+    // never sent, so it can't have had an effect.
+    let reuse: Attempt | null = null;
+    if (ownPrepared) {
+      if (sameRequest(ownPrepared, request, bodySha256)) reuse = ownPrepared;
+      else if (!sameContent(ownPrepared)) {
+        return hold(action, {
+          kind: "approval_invalid",
+          detail: "re-prepared request differs from the journaled bytes",
+        });
+      }
     }
 
-    const attemptId = latest?.state === "prepared" ? latest.id : deps.newId("att");
-    if (latest?.state !== "prepared") {
+    const attemptId = reuse?.id ?? deps.newId("att");
+    if (!reuse) {
       await journal.prepareAttempt({
         id: attemptId,
         actionId: action.id,
@@ -453,12 +519,12 @@ async function applyLocked(
         };
       }
       if (parsed && result.kind === "confirmed") {
-        const { providerRef, results } = parsed;
+        const { providerRef, results, observed } = parsed;
         return settle(
           action,
           receiptFor(action, "confirmed", {
             providerRef,
-            observedEffect: results,
+            observedEffect: observed,
             limitations: ["effect taken from the write response; no read-back yet"],
           }),
           {

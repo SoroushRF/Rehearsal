@@ -1,3 +1,7 @@
+import type { Action } from "@rehearsal/contracts";
+import { bindingKey } from "./bindings";
+import type { ResolvedBindings } from "./ports";
+
 /**
  * Private-note templates. Notes are rendered only from an approved template plus literals and
  * bindings to confirmed receipts, never from model text. Each note carries an operation marker so
@@ -25,4 +29,19 @@ export function renderNote(
   const render = TEMPLATES[`${template.id}@${template.version}`];
   if (!render) throw new Error(`unknown note template ${template.id}@${template.version}`);
   return `${render(values)}\n\n${operationMarker(operationKey)}`;
+}
+
+/** The exact note text for an appendPrivateNote action, with bindings from confirmed receipts. */
+export function noteBodyFor(
+  action: Extract<Action, { kind: "zendesk.ticket.appendPrivateNote" }>,
+  bindings: ResolvedBindings,
+  operationKey: string,
+): string {
+  const values: Record<string, string | number> = {};
+  for (const [name, b] of Object.entries(action.args.bindings)) {
+    const value = typeof b === "object" ? bindings.get(bindingKey(b)) : b;
+    if (value === undefined) throw new Error(`unresolved binding ${name}`);
+    values[name] = value;
+  }
+  return renderNote(action.args.template, values, operationKey);
 }
