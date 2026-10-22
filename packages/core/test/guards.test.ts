@@ -152,7 +152,7 @@ describe("compareObservation", () => {
   });
 
   it("compares against the overlay instead of the planned value", () => {
-    const overlay = { byObservation: { obs_charge_1: { amount_refunded: 4210 } } };
+    const overlay = { byEntity: { "stripe:charge:ch_1": { amount_refunded: 4210 } } };
     const ours = reread(plannedCharge, { ...chargeProjection, amount_refunded: 4210 });
     expect(compareObservation(plannedCharge, ours, overlay)).toEqual({ decision: "admit" });
     const drifted = reread(plannedCharge, { ...chargeProjection, amount_refunded: 9999 });
@@ -223,7 +223,10 @@ describe("advanceOverlay", () => {
       receipt(guardedRefund, "confirmed", { amount_refunded: 4210 }),
       observations,
     );
-    expect(confirmed.byObservation.obs_charge_1).toEqual({ amount_refunded: 4210 });
+    expect(confirmed.byEntity["stripe:charge:ch_1"]).toEqual({
+      amount_refunded: 4210,
+      refunded: true,
+    });
 
     for (const outcome of [
       "rejected",
@@ -302,6 +305,77 @@ describe("advanceOverlay", () => {
     expect(holdReason(compareObservation(plannedCharge, current, overlay))).toMatchObject({
       kind: "row_changed",
       fields: ["status"],
+    });
+  });
+
+  it("credits our write on every planned observation of the same record", () => {
+    const overlay = advanceOverlay(
+      emptyOverlay(),
+      guardedRefund,
+      receipt(guardedRefund, "confirmed"),
+      observations,
+    );
+    const otherSnapshot: Observation = { ...plannedCharge, id: "obs_charge_1_again" };
+    const current = reread(otherSnapshot, { ...chargeProjection, amount_refunded: 4210 });
+    expect(compareObservation(otherSnapshot, current, overlay)).toEqual({ decision: "admit" });
+  });
+
+  it("expects `refunded` to flip only when our refunds cover the whole charge", () => {
+    const tracked: Observation = {
+      ...plannedCharge,
+      projection: { ...chargeProjection, refunded: false },
+    };
+    const full = advanceOverlay(
+      emptyOverlay(),
+      guardedRefund,
+      receipt(guardedRefund, "confirmed"),
+      [tracked],
+    );
+    const fullyRefunded = { ...chargeProjection, amount_refunded: 4210, refunded: true };
+    expect(compareObservation(tracked, reread(tracked, fullyRefunded), full)).toEqual({
+      decision: "admit",
+    });
+
+    const smaller: Action = {
+      ...guardedRefund,
+      args: { ...refund.args, amount: { amountMinor: 1000, currency: "cad" } },
+    } as Action;
+    const partial = advanceOverlay(emptyOverlay(), smaller, receipt(smaller, "confirmed"), [
+      tracked,
+    ]);
+    const partlyRefunded = { ...chargeProjection, amount_refunded: 1000, refunded: false };
+    expect(compareObservation(tracked, reread(tracked, partlyRefunded), partial)).toEqual({
+      decision: "admit",
+    });
+  });
+
+  it("takes `updated_at` from our patch and note responses, and still holds a later edit", () => {
+    const stamped: Observation = {
+      ...plannedTicket,
+      projection: { ...ticketProjection, updated_at: "2026-10-01T12:00:00Z" },
+    };
+    const afterPatch = advanceOverlay(
+      emptyOverlay(),
+      guardedPatch,
+      receipt(guardedPatch, "confirmed", { priority: "high", updated_at: "2026-10-21T16:00:01Z" }),
+      [stamped],
+    );
+    const afterNote = advanceOverlay(
+      afterPatch,
+      guardedNote,
+      receipt(guardedNote, "confirmed", { updated_at: "2026-10-21T16:00:02Z" }),
+      [stamped],
+    );
+    const ours = { ...ticketProjection, priority: "high", updated_at: "2026-10-21T16:00:02Z" };
+    expect(compareObservation(stamped, reread(stamped, ours), afterNote)).toEqual({
+      decision: "admit",
+    });
+
+    const teammate = { ...ours, updated_at: "2026-10-21T16:00:05Z" };
+    expect(holdReason(compareObservation(stamped, reread(stamped, teammate), afterNote))).toEqual({
+      kind: "row_changed",
+      observationId: "obs_ticket_1",
+      fields: ["updated_at"],
     });
   });
 });

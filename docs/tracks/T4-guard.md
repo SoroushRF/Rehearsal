@@ -44,6 +44,21 @@
 
 _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
 
+### 2026-10-22, T4.3 part 2
+
+- **Review follow-ups from #47 are in.**
+  - The own-write overlay is keyed by record (`entityKey`), not by observation id.
+  - A full refund also expects `refunded: true`.
+  - Patch and note receipts credit the ticket's `updated_at` from the write response.
+  - The read guard re-reads each record and query once per step.
+  - The fake world's query now honours the window and the cutoff when a charge has `created`.
+- **Not changed, on purpose:**
+  - An adopted refund can't be counted twice today, because a revision keeps its parent's observations (`excludeActions`) and the executor never writes the planning world. A test pins that.
+  - Query membership has no own-write overlay. `byCustomerInWindow` can't be moved by our writes; add one before adding a predicate that can.
+- **Don't add `updated_at` to a ticket projection without revisiting `creditUpdatedAt`.** Once it's compared, crediting our response's stamp can hide a teammate's edit to a field we don't project (tags, assignee, a public reply). That happens when they write between the guard's re-read and our note (notes carry no `safe_update`), or in the same second as our write (one-second precision, capability matrix §9). Today it's a no-op: `zendeskTicketProjection` is `id`, `priority`, `status` and `requester_id`.
+- **Gotcha.** A patch adopted from an earlier revision has no `updated_at` in its receipt. Once T1's ticket projection includes `updated_at`, a later note on that ticket will hold after a re-approval. This fails closed.
+- **Still open (#27).** The Era run waits on T1.3 #4 and T3's worker wiring.
+
 ### 2026-10-21, T4.3 part 1
 
 - **The guards run inside the executor on the fake provider.** `createReadGuard` in `packages/core/src/step-guard.ts` is the executor's `StepGuard`. Before a step is sent, it re-reads that step's evidence through the operational `ProviderPort`s and calls `guardAction`. The own-write overlay is built from `confirmedReceipts`. The `phantom` bundle passes through `executeRun` (`apps/executor-worker/test/step-guard.test.ts`).

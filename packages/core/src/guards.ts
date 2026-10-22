@@ -14,13 +14,20 @@ import { canonicalize } from "./canonical";
  * A missing, partial, or mismatched re-check holds. It is never treated as "nothing changed".
  */
 
-/** Expected field values after our own confirmed writes. Anything else leaves this unchanged. */
+/**
+ * Expected field values after our own confirmed writes, per record (`entityKey`), so every planned
+ * observation of that record sees them. Anything else leaves this unchanged.
+ */
 export interface OwnWriteOverlay {
-  readonly byObservation: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
+  readonly byEntity: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
 }
 
 export function emptyOverlay(): OwnWriteOverlay {
-  return { byObservation: {} };
+  return { byEntity: {} };
+}
+
+export function entityKey(entity: Observation["entity"]): string {
+  return `${entity.vendor}:${entity.kind}:${entity.id}`;
 }
 
 export type GuardVerdict = { decision: "admit" } | { decision: "hold"; reason: HoldReason };
@@ -66,7 +73,7 @@ export function compareObservation(
     return unavailable(planned.id, "projection version differs");
   }
 
-  const overrides = overlay.byObservation[planned.id];
+  const overrides = overlay.byEntity[entityKey(planned.entity)];
   const fields: string[] = [];
   for (const field of Object.keys(planned.projection).sort()) {
     const expected =
@@ -119,12 +126,13 @@ function isMinor(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0;
 }
 
+/** Current minor-unit value of a field: our overlay first, else the planned snapshot. */
 function baselineMinor(
   overlay: OwnWriteOverlay,
   observation: Observation,
   field: string,
 ): number | undefined {
-  const overrides = overlay.byObservation[observation.id];
+  const overrides = overlay.byEntity[entityKey(observation.entity)];
   if (overrides !== undefined && Object.hasOwn(overrides, field)) {
     return isMinor(overrides[field]) ? overrides[field] : undefined;
   }
@@ -135,27 +143,34 @@ function baselineMinor(
 
 function setField(
   overlay: OwnWriteOverlay,
-  observationId: string,
+  entity: Observation["entity"],
   field: string,
   value: unknown,
 ): OwnWriteOverlay {
-  const prior = overlay.byObservation[observationId] ?? {};
-  return {
-    byObservation: {
-      ...overlay.byObservation,
-      [observationId]: { ...prior, [field]: value },
-    },
-  };
+  const key = entityKey(entity);
+  const prior = overlay.byEntity[key] ?? {};
+  return { byEntity: { ...overlay.byEntity, [key]: { ...prior, [field]: value } } };
 }
 
-function evidenceObservation(
+/** The planned snapshot of a record, preferring one the action cites as evidence. */
+function plannedSnapshot(
   observations: readonly Observation[],
   evidence: readonly string[],
-  match: (observation: Observation) => boolean,
+  entity: Observation["entity"],
 ): Observation | undefined {
-  return observations.find(
-    (observation) => evidence.includes(observation.id) && match(observation),
-  );
+  const key = entityKey(entity);
+  const ofEntity = observations.filter((o) => entityKey(o.entity) === key);
+  return ofEntity.find((o) => evidence.includes(o.id)) ?? ofEntity[0];
+}
+
+/** Zendesk moves `updated_at` on every write; take our write's value from its own response. */
+function creditUpdatedAt(
+  overlay: OwnWriteOverlay,
+  entity: Observation["entity"],
+  receipt: Receipt,
+): OwnWriteOverlay {
+  const stamp = receipt.observedEffect.updated_at;
+  return typeof stamp === "string" ? setField(overlay, entity, "updated_at", stamp) : overlay;
 }
 
 /**
@@ -172,41 +187,34 @@ export function advanceOverlay(
   if (receipt.outcome !== "confirmed" || receipt.actionId !== action.id) return overlay;
 
   if (action.kind === "stripe.refund.create") {
-    const observation = evidenceObservation(
-      observations,
-      action.evidence,
-      (item) =>
-        item.entity.vendor === "stripe" &&
-        item.entity.kind === "charge" &&
-        item.entity.id === action.args.chargeId,
-    );
+    const entity = { vendor: "stripe", kind: "charge", id: action.args.chargeId } as const;
+    const observation = plannedSnapshot(observations, action.evidence, entity);
     if (!observation) return overlay;
     const prior = baselineMinor(overlay, observation, "amount_refunded");
     if (prior === undefined) return overlay;
     const expected = prior + action.args.amount.amountMinor;
     const seen = receipt.observedEffect.amount_refunded;
     if (seen !== undefined && !same(seen, expected)) return overlay;
-    return setField(overlay, observation.id, "amount_refunded", expected);
+    const next = setField(overlay, entity, "amount_refunded", expected);
+    const amount = baselineMinor(next, observation, "amount");
+    return amount === undefined ? next : setField(next, entity, "refunded", expected >= amount);
   }
 
   if (action.kind === "zendesk.ticket.patchFields") {
-    const observation = evidenceObservation(
-      observations,
-      action.evidence,
-      (item) =>
-        item.entity.vendor === "zendesk" &&
-        item.entity.kind === "ticket" &&
-        item.entity.id === action.args.ticketId,
-    );
-    if (!observation) return overlay;
-    let next = overlay;
+    const entity = { vendor: "zendesk", kind: "ticket", id: action.args.ticketId } as const;
+    let next = creditUpdatedAt(overlay, entity, receipt);
     for (const [field, written] of Object.entries(action.args.set)) {
       if (written === undefined) continue;
       const seen = receipt.observedEffect[field];
       if (seen !== undefined && !same(seen, written)) continue;
-      next = setField(next, observation.id, field, written);
+      next = setField(next, entity, field, written);
     }
     return next;
+  }
+
+  if (action.kind === "zendesk.ticket.appendPrivateNote") {
+    const entity = { vendor: "zendesk", kind: "ticket", id: action.args.ticketId } as const;
+    return creditUpdatedAt(overlay, entity, receipt);
   }
 
   return overlay;

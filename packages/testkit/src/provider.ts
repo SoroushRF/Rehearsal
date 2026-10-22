@@ -25,6 +25,8 @@ export interface FakeCharge {
   amount_refunded: number;
   currency: string;
   status: string;
+  /** Unix seconds. Charges without it match any window (the fixture snapshots don't carry it). */
+  created?: number;
 }
 export interface FakeTicket {
   id: string;
@@ -296,8 +298,18 @@ export class FakeWorld {
     if (predicate.kind !== "stripe.charges.byCustomerInWindow") {
       throw new Error(`fake does not support ${predicate.kind}`);
     }
+    const seconds = (iso: string) => {
+      const ms = Date.parse(iso);
+      if (Number.isNaN(ms)) throw new Error(`fake query: unreadable timestamp ${iso}`);
+      return ms / 1000;
+    };
+    const inWindow = (c: FakeCharge) =>
+      c.created === undefined ||
+      (c.created >= seconds(predicate.createdGte) &&
+        c.created < seconds(predicate.createdLt) &&
+        c.created <= seconds(cutoff));
     const matches = [...this.charges.values()]
-      .filter((c) => c.customer === predicate.customerId)
+      .filter((c) => c.customer === predicate.customerId && inWindow(c))
       .sort((a, b) => a.id.localeCompare(b.id));
     const projections = Object.fromEntries(matches.map((c) => [c.id, { ...c }]));
     const matchingIds = matches.map((c) => c.id);
