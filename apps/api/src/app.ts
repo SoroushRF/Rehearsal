@@ -4,6 +4,7 @@ import fastifyStatic from "@fastify/static";
 import { CONTRACTS_VERSION, type HealthResponse } from "@rehearsal/contracts";
 import Fastify, { type FastifyReply } from "fastify";
 import { type ApplyDeps, registerApplyRoute } from "./apply";
+import { type ApprovalDeps, registerApprovalRoutes } from "./approvals";
 import { type ReviewerResolver, registerMeRoute } from "./auth";
 import { registerCancelRoute } from "./cancel";
 import { type PlanDeps, registerPlanRoutes } from "./plans";
@@ -19,6 +20,7 @@ export function buildApp(
   deps: {
     apply?: ApplyDeps;
     plans?: PlanDeps;
+    approvals?: ApprovalDeps;
     /** Clerk-backed in production; without it nobody is signed in. */
     reviewer?: ReviewerResolver;
     tenantTokens?: TenantTokenDeps;
@@ -53,6 +55,12 @@ export function buildApp(
     app.get("/api/plans", unavailable);
     app.get("/api/plans/:id", unavailable);
     app.post("/api/plans/:id/revisions", unavailable);
+  }
+  if (deps.approvals) registerApprovalRoutes(app, deps.approvals);
+  else {
+    app.get("/api/plans/:id/approvals", unavailable);
+    app.post("/api/plans/:id/approvals", unavailable);
+    app.post("/api/plans/:id/approvals/:grantId/revoke", unavailable);
   }
 
   // Only an API that holds ERA_ADMIN_TOKEN mints tenant tokens for the workers.

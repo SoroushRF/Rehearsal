@@ -7,7 +7,7 @@ import { z } from "zod";
 import type { AuthResolver } from "./apply";
 
 const { planVersions } = schema;
-type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+export type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 /** Status and body, decided inside a transaction and sent once it has committed. */
 export type Outcome = [status: number, body: unknown];
 
@@ -24,7 +24,7 @@ export interface StoredPlan {
   createdAt: string;
 }
 
-type Load =
+export type Load =
   | { kind: "found"; plan: StoredPlan; latestRevision: number }
   | { kind: "not_found" }
   | { kind: "corrupt"; detail: string };
@@ -55,7 +55,7 @@ export async function storePlan(db: Db, manifest: unknown): Promise<{ planHash: 
  * Loads one revision (the latest if none is given) and re-verifies it. A row whose manifest
  * doesn't match its own keys or hash is never served as if it were the approved content.
  */
-async function loadPlan(
+export async function loadPlan(
   db: Db | Tx,
   orgId: string,
   planId: string,
