@@ -2,9 +2,10 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import fastifyStatic from "@fastify/static";
 import { CONTRACTS_VERSION, type HealthResponse } from "@rehearsal/contracts";
-import Fastify from "fastify";
+import Fastify, { type FastifyReply } from "fastify";
 import { type ApplyDeps, registerApplyRoute } from "./apply";
 import { registerCancelRoute } from "./cancel";
+import { type PlanDeps, registerPlanRoutes } from "./plans";
 import { registerTenantTokenRoute, type TenantTokenDeps } from "./tenant-tokens";
 
 const webDist = fileURLToPath(new URL("../../web/dist/", import.meta.url));
@@ -14,7 +15,12 @@ const webDist = fileURLToPath(new URL("../../web/dist/", import.meta.url));
  * Clerk auth and the plan/approval/apply routes land here (owner: C).
  */
 export function buildApp(
-  deps: { apply?: ApplyDeps; tenantTokens?: TenantTokenDeps; webRoot?: string | null } = {},
+  deps: {
+    apply?: ApplyDeps;
+    plans?: PlanDeps;
+    tenantTokens?: TenantTokenDeps;
+    webRoot?: string | null;
+  } = {},
 ) {
   const app = Fastify({ logger: process.env.NODE_ENV !== "test" });
 
@@ -28,16 +34,21 @@ export function buildApp(
   );
 
   // Command routes need Postgres; health stays available without it (core mode with no DB).
+  // Without it they say "unavailable", not 404, so clients don't mistake an outage for a missing plan.
+  const unavailable = async (_req: unknown, reply: FastifyReply) =>
+    reply.code(503).send({ error: "database_unavailable" });
   if (deps.apply) {
     registerApplyRoute(app, deps.apply);
     registerCancelRoute(app, deps.apply);
   } else {
-    // Say "unavailable", not 404, so clients don't mistake an outage for a missing plan.
-    for (const route of ["/api/plans/:id/apply", "/api/runs/:id/cancel"]) {
-      app.post(route, async (_req, reply) =>
-        reply.code(503).send({ error: "database_unavailable" }),
-      );
-    }
+    app.post("/api/plans/:id/apply", unavailable);
+    app.post("/api/runs/:id/cancel", unavailable);
+  }
+  if (deps.plans) registerPlanRoutes(app, deps.plans);
+  else {
+    app.get("/api/plans", unavailable);
+    app.get("/api/plans/:id", unavailable);
+    app.post("/api/plans/:id/revisions", unavailable);
   }
 
   // Only an API that holds ERA_ADMIN_TOKEN mints tenant tokens for the workers.

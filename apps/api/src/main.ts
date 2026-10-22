@@ -16,7 +16,8 @@ async function applyDeps(): Promise<ApplyDeps | undefined> {
 
 const apply = await applyDeps();
 const boss: PgBoss | undefined = apply?.boss;
-const app = buildApp({ apply, tenantTokens: tenantTokenDepsFromEnv() });
+const plans = apply && { db: apply.db, auth: apply.auth };
+const app = buildApp({ apply, plans, tenantTokens: tenantTokenDepsFromEnv() });
 const port = Number(process.env.API_PORT ?? process.env.PORT ?? 3000);
 
 for (const signal of ["SIGTERM", "SIGINT"] as const) {
