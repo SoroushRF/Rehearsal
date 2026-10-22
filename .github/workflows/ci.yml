@@ -8,6 +8,22 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    # Real Postgres so the journal tests (packages/db) run in CI, not only locally.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: rehearsal
+          POSTGRES_PASSWORD: rehearsal
+          POSTGRES_DB: rehearsal
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U rehearsal"
+          --health-interval 5s
+          --health-retries 10
+    env:
+      DB_TESTS: "1"
+      DATABASE_URL: postgres://rehearsal:rehearsal@localhost:5432/rehearsal
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

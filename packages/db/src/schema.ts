@@ -1,5 +1,6 @@
 import {
   bigserial,
+  index,
   integer,
   jsonb,
   pgTable,
@@ -26,6 +27,19 @@ export const planVersions = pgTable(
   },
   (t) => [primaryKey({ columns: [t.orgId, t.planId, t.revision] }), uniqueIndex().on(t.planHash)],
 );
+
+/** One row per apply request. `state` is the only mutable column and follows `RunState`. */
+export const runs = pgTable("runs", {
+  id: text("id").primaryKey(),
+  orgId: text("org_id").notNull(),
+  planId: text("plan_id").notNull(),
+  revision: integer("revision").notNull(),
+  planHash: text("plan_hash").notNull(),
+  approvalId: text("approval_id").notNull(),
+  state: text("state").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 export const approvalGrants = pgTable("approval_grants", {
   id: text("id").primaryKey(),
@@ -58,7 +72,10 @@ export const stepAttempts = pgTable(
     dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
     settledAt: timestamp("settled_at", { withTimezone: true }),
   },
-  (t) => [uniqueIndex().on(t.operationKey, t.attemptNo)],
+  (t) => [
+    uniqueIndex().on(t.operationKey, t.attemptNo),
+    index().on(t.orgId, t.planHash, t.actionId),
+  ],
 );
 
 export const stepReceipts = pgTable("step_receipts", {
@@ -79,7 +96,7 @@ export const objectBindings = pgTable(
     path: text("path").notNull(),
     value: jsonb("value").notNull(),
   },
-  (t) => [primaryKey({ columns: [t.planHash, t.stepId, t.path] })],
+  (t) => [primaryKey({ columns: [t.orgId, t.planHash, t.stepId, t.path] })],
 );
 
 export const runEvents = pgTable("run_events", {

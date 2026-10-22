@@ -47,3 +47,5 @@ _(add dated entries)_
 ## Handoff log
 
 _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
+
+- **2026-10-21, Artin (T3.1 part 1).** Branch `t3/T3.1-journal`: `runs` table, first Drizzle migration, `PgJournal` (org-scoped, compare-and-set transitions, legal-transition table, write-once bindings), 9 tests passing on real Postgres 17. CI now starts a Postgres service and sets `DB_TESTS=1`. **Next:** T3.1 part 2, pg-boss setup and `POST /api/plans/:id/apply` (touches T2's `apps/api`, keep it minimal). **Gotchas:** `unknown_outcome` can only move to `reconciled`; run the DB tests locally with `docker compose -f infra/compose.yaml up -d postgres` then `DB_TESTS=1 pnpm --filter @rehearsal/db test`.
