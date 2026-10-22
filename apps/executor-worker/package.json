@@ -6,9 +6,15 @@
   "scripts": {
     "dev": "tsx watch --env-file-if-exists=../../.env src/main.ts",
     "start": "tsx src/main.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
-    "@rehearsal/providers": "workspace:*"
+    "@rehearsal/providers": "workspace:*",
+    "@rehearsal/contracts": "workspace:*",
+    "@rehearsal/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@rehearsal/testkit": "workspace:*"
   }
 }
