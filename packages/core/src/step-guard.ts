@@ -7,8 +7,15 @@ import type {
   Receipt,
   Vendor,
 } from "@rehearsal/contracts";
+import { canonicalize } from "./canonical";
 import type { StepGuard } from "./executor";
-import { advanceOverlay, emptyOverlay, guardAction, type OwnWriteOverlay } from "./guards";
+import {
+  advanceOverlay,
+  emptyOverlay,
+  entityKey,
+  guardAction,
+  type OwnWriteOverlay,
+} from "./guards";
 import type { Clock, ProviderPort, WorldContext } from "./ports";
 
 export interface ReadGuardDeps {
@@ -46,7 +53,8 @@ export function overlayFromReceipts(
   receipts: readonly Receipt[],
 ): OwnWriteOverlay {
   let overlay = emptyOverlay();
-  for (const receipt of receipts) {
+  const ordered = [...receipts].sort((a, b) => a.recordedAt.localeCompare(b.recordedAt));
+  for (const receipt of ordered) {
     const action = manifest.actions.find((a) => a.id === receipt.actionId);
     if (action) overlay = advanceOverlay(overlay, action, receipt, manifest.observations);
   }
@@ -59,10 +67,13 @@ export function overlayFromReceipts(
  */
 export function createReadGuard(deps: ReadGuardDeps): StepGuard {
   return async (action: Action, { manifest, confirmedReceipts }) => {
+    // One re-read per record and per query, even when several planned observations cite it.
     const currentObservations: Observation[] = [];
+    const readEntities = new Set<string>();
     for (const id of action.evidence) {
       const planned = manifest.observations.find((o) => o.id === id);
-      if (!planned) continue;
+      if (!planned || readEntities.has(entityKey(planned.entity))) continue;
+      readEntities.add(entityKey(planned.entity));
       const read = await reread(deps, planned.entity.vendor, id, (provider, world) =>
         provider.observe(planned.entity, world),
       );
@@ -71,9 +82,12 @@ export function createReadGuard(deps: ReadGuardDeps): StepGuard {
     }
 
     const currentQueries: QueryObservation[] = [];
+    const readQueries = new Set<string>();
     for (const id of action.queryEvidence) {
       const planned = manifest.queryObservations.find((q) => q.id === id);
-      if (!planned) continue;
+      const queryKey = planned && canonicalize({ vendor: planned.vendor, p: planned.predicate });
+      if (!planned || !queryKey || readQueries.has(queryKey)) continue;
+      readQueries.add(queryKey);
       const cutoff = deps.clock.now().toISOString();
       const read = await reread(deps, planned.vendor, id, (provider, world) =>
         provider.query(planned.predicate, cutoff, world),
