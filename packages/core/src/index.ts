@@ -5,4 +5,5 @@ export * from "./guards";
 export * from "./hash";
 export * from "./policy";
 export * from "./ports";
+export * from "./step-guard";
 export * from "./templates";
