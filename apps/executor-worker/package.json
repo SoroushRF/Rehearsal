@@ -10,6 +10,8 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@rehearsal/contracts": "workspace:*",
+    "@rehearsal/core": "workspace:*",
     "@rehearsal/providers": "workspace:*"
   },
   "devDependencies": {

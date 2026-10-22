@@ -69,6 +69,12 @@ importers:
 
   apps/executor-worker:
     dependencies:
+      '@rehearsal/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@rehearsal/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@rehearsal/providers':
         specifier: workspace:*
         version: link:../../packages/providers
