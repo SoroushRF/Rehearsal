@@ -30,7 +30,7 @@
 |---|---|---|---|---|---|
 | T1.1 | Era day-one gate: writable worlds, refund idempotency, guarded Zendesk update, private note, tenant reset | M1 | Conformance tests pass with `ERA_CONFORMANCE=1`; capability matrix written | #2 | — |
 | T1.2 | Seed the incident: 5–10 overcharged customers, plus benign controls, injected identically into both worlds; `pnpm demo:reset` | M1 | Reset → identical worlds every time; fixtures copied from real GET responses | #3 | T1.1, T1.9 |
-| T1.3 | Read adapters: get charge, get ticket, and the two query predicates, with full pagination and `complete` set honestly | M1 | Unit tests against recorded responses, plus one live test | #4 | T1.1 |
+| T1.3 | Read adapters: get charge, get ticket, and the two query predicates, with full pagination and `complete` set honestly | M1 | Unit tests against recorded responses, plus one live test. **In review:** `stripeReader`/`zendeskReader` in `packages/providers/src/read.ts` | #4 | T1.1 |
 | T1.4 | Typed planning tools that record evidence and add dependency edges themselves (the model can't define its own evidence) | M2 | A tool call produces observations and actions matching contracts v1 | #5 | T1.3 |
 | T1.5 | Bounded Claude tool loop: pinned model, versioned prompt, step limit, no shell, browser or raw HTTP; planner worker consumes `plan` jobs | M2 | Real plan for the seeded cohort is stored and viewable in T2's UI | #6 | T1.2, T1.4, T1.9, T2.9 |
 | T1.6 | ~20 benign and trap tasks, plus baselines (no review; per-call approval counts) for the scorecard | M3–M4 | `pnpm eval:scorecard` prints the comparison table | #7 | T1.5, T4.2 |
@@ -45,6 +45,13 @@
 ## Handoff log
 
 _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
+
+- **2026-10-22 (Claude session for the T1 owner):** T1.3 read adapters are in review on `t1/T1.3-read-adapters`.
+  - Projections: `stripe.charge.v1` is id, customer, amount, amount_refunded, currency and status. `zendesk.ticket.v1` is id, priority, status and requester_id; IDs are strings and comments are excluded (capability matrix #8).
+  - The Stripe query sends the window to the server and also filters on the client. Zendesk uses `/users/{id}/tickets/requested.json`, follows `next_page` only on the world's own origin, and checks `count`.
+  - `complete` is false on any failed page, stuck cursor, foreign next link, count mismatch or page cap (50).
+  - `cutoff` is recorded, not used as a filter: the predicate's window bounds membership, so a phantom injected later with an in-window `created` is still found.
+  - Recorded responses are in `packages/providers/test/recorded/`. The live test is `evals/providers/test/read-adapters.test.ts`.
 
 - **2026-10-21 (Claude session for the T1 owner):** T1.9 is implemented on branch `t1/T1.9-tenant-tokens`, and the PR closes #39. It needs a reviewer from another track because it touches credentials.
   - Workers get worlds from `workerWorlds("planner" | "executor")` in `@rehearsal/providers`. T1.5 and T3.3 should take worlds from there, never from `resolveWorld`.
