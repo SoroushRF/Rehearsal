@@ -24,7 +24,8 @@
     "demo:fault": "tsx --env-file-if-exists=.env scripts/inject/fault.ts",
     "infra:up:full": "docker compose -f infra/compose.yaml --profile full up -d",
     "infra:down": "docker compose -f infra/compose.yaml down",
-    "smoke:era": "tsx --env-file-if-exists=.env scripts/smoke/era-meta.ts"
+    "smoke:era": "tsx --env-file-if-exists=.env scripts/smoke/era-meta.ts",
+    "blockers": "node scripts/blockers/generate.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",

@@ -1,0 +1,60 @@
+name: blocker-board
+
+# Rebuilds BLOCKERS.md on the unprotected `status` branch. main needs a PR and green CI, which the
+# Actions bot can't satisfy, so the generated board lives on its own branch.
+on:
+  issues:
+    types: [opened, closed, reopened, edited, deleted, milestoned]
+  pull_request:
+    types: [opened, closed, reopened, edited, ready_for_review, converted_to_draft]
+  push:
+    branches: [main]
+    paths: [docs/tracks/**, AGENTS.md, scripts/blockers/**, .github/workflows/blockers.yml]
+  create:
+  delete:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: read
+  pull-requests: read
+
+concurrency:
+  group: blocker-board
+  cancel-in-progress: false
+
+jobs:
+  board:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - name: Generate board
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/blockers/generate.ts --out "$RUNNER_TEMP/BLOCKERS.md"
+      - name: Publish to status branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin status >/dev/null; then
+            git checkout -B status origin/status
+          else
+            git checkout --orphan status
+            git rm -rfq .
+          fi
+          cp "$RUNNER_TEMP/BLOCKERS.md" BLOCKERS.md
+          git add BLOCKERS.md
+          if git diff --cached --quiet; then
+            echo "Board unchanged."
+          else
+            git commit -qm "Update blocker board"
+            git push origin status
+          fi
