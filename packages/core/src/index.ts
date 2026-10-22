@@ -1,6 +1,7 @@
 export * from "./bindings";
 export * from "./canonical";
 export * from "./dag";
+export * from "./effects";
 export * from "./executor";
 export * from "./guards";
 export * from "./hash";

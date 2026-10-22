@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import type { Action } from "@rehearsal/contracts";
+import { type Action, Attempt } from "@rehearsal/contracts";
 import { happyPathBundle } from "@rehearsal/testkit";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { classifyResponse, stripeWriter, type WriteTarget, zendeskWriter } from "../src";
@@ -77,6 +77,84 @@ describe("classifyResponse", () => {
   it("treats 429 as retryable and reads Retry-After seconds", () => {
     expect(classifyResponse(429, {}, "2")).toMatchObject({ retryable: true, retryAfterMs: 2000 });
     expect(classifyResponse(409, {}, null)).toMatchObject({ retryable: false });
+  });
+});
+
+describe("refund reconciliation correlation", () => {
+  it.each([{ status: "failed" }, { amount: 1 }, { charge: "ch_other" }, { currency: "usd" }])(
+    "does not confirm a matching marker with contradictory fields: %j",
+    async (change) => {
+      const writer = stripeWriter(target);
+      const request = writer.prepare(refund, new Map(), "op_read");
+      const attempt = Attempt.parse({
+        id: "att",
+        actionId: refund.id,
+        planHash: "a".repeat(64),
+        operationKey: "op_read",
+        attemptNo: 1,
+        state: "unknown_outcome",
+        request: { ...request, bodySha256: "b".repeat(64) },
+        providerStatus: null,
+        error: null,
+        preparedAt: "2026-10-22T00:00:00Z",
+        dispatchedAt: "2026-10-22T00:00:00Z",
+        settledAt: null,
+      });
+      reply.body = JSON.stringify({
+        data: [
+          {
+            id: "re_read",
+            status: "succeeded",
+            amount: 4210,
+            charge: "ch_fixture_001",
+            currency: "cad",
+            metadata: { rehearsal_op: "op_read" },
+            ...change,
+          },
+        ],
+        has_more: false,
+      });
+      expect(await writer.reconcile(attempt, refund, CTX)).toMatchObject({ kind: "indeterminate" });
+    },
+  );
+
+  it("correlates a changed revision's read to the original dispatched bytes", async () => {
+    const writer = stripeWriter(target);
+    const request = writer.prepare(refund, new Map(), "op_old");
+    const attempt = Attempt.parse({
+      id: "att",
+      actionId: refund.id,
+      planHash: "a".repeat(64),
+      operationKey: "op_old",
+      attemptNo: 1,
+      state: "unknown_outcome",
+      request: { ...request, bodySha256: "b".repeat(64) },
+      providerStatus: null,
+      error: null,
+      preparedAt: "2026-10-22T00:00:00Z",
+      dispatchedAt: "2026-10-22T00:00:00Z",
+      settledAt: null,
+    });
+    reply.body = JSON.stringify({
+      data: [
+        {
+          id: "re_old",
+          status: "succeeded",
+          amount: 4210,
+          charge: "ch_fixture_001",
+          currency: "cad",
+          metadata: { rehearsal_op: "op_old" },
+        },
+      ],
+      has_more: false,
+    });
+    const revised = structuredClone(refund);
+    if (revised.kind !== "stripe.refund.create") throw new Error("not a refund");
+    revised.args.amount.amountMinor = 1;
+    expect(await writer.reconcile(attempt, revised, CTX)).toMatchObject({
+      kind: "applied",
+      effect: { "refund.amount": 4210 },
+    });
   });
 });
 

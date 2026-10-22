@@ -40,6 +40,7 @@ export interface FakeRefund {
   id: string;
   charge: string;
   amount: number;
+  currency: string;
   status: "succeeded";
   operationKey: string;
 }
@@ -232,6 +233,7 @@ export class FakeWorld {
         id: `re_fake_${String(++this.#refundSeq).padStart(4, "0")}`,
         charge: charge.id,
         amount,
+        currency: charge.currency,
         status: "succeeded",
         operationKey: opKey,
       };
@@ -242,6 +244,7 @@ export class FakeWorld {
         object: "refund",
         charge: charge.id,
         amount,
+        currency: charge.currency,
         status: refund.status,
       };
       this.#idempotency.set(key, { bodySha, response });
@@ -340,6 +343,8 @@ export class FakeWorld {
               "refund.id": refund.id,
               "refund.status": refund.status,
               "refund.amount": refund.amount,
+              charge: refund.charge,
+              currency: refund.currency,
             },
           }
         : { kind: "not_applied" };

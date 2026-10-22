@@ -12,9 +12,12 @@ import {
   type ResultRef,
   type RunState,
   type Vendor,
+  ZendeskPriority,
+  ZendeskStatus,
 } from "@rehearsal/contracts";
 import { bindingKey } from "./bindings";
 import { topoOrder, validateGraph } from "./dag";
+import { refundEffectMatches } from "./effects";
 import { planHash as computePlanHash, fingerprint, sha256Hex } from "./hash";
 import { type BillingPolicyV1, evaluateBillingPolicy } from "./policy";
 import type {
@@ -159,19 +162,39 @@ function resultsOf(
   observed: Record<string, unknown>;
 } {
   if (action.kind === "stripe.refund.create") {
-    const b = body as { id?: unknown; status?: unknown; amount?: unknown; charge?: unknown };
+    const b = body as {
+      id?: unknown;
+      status?: unknown;
+      amount?: unknown;
+      charge?: unknown;
+      currency?: unknown;
+    };
     if (typeof b?.id !== "string" || typeof b.amount !== "number" || typeof b.status !== "string") {
       throw new Error("refund response is missing id, status or amount");
     }
     const results = { "refund.id": b.id, "refund.status": b.status, "refund.amount": b.amount };
+    const observed = { ...results, charge: b.charge, currency: b.currency };
+    if (!refundEffectMatches(action, observed))
+      throw new Error("refund does not match the approved successful effect");
     return {
       providerRef: { vendor: "stripe", kind: "refund", id: b.id },
       results,
-      observed: { ...results, charge: b.charge },
+      observed,
     };
   }
   const ticket = (body as { ticket?: Record<string, unknown> } | null)?.ticket;
   if (!ticket || typeof ticket !== "object") throw new Error("ticket response has no ticket");
+  if (
+    String(ticket.id) !== action.args.ticketId ||
+    !ZendeskPriority.nullable().safeParse(ticket.priority).success ||
+    !ZendeskStatus.safeParse(ticket.status).success ||
+    (action.kind === "zendesk.ticket.patchFields" &&
+      Object.entries(action.args.set).some(
+        ([field, value]) => value !== undefined && ticket[field] !== value,
+      ))
+  ) {
+    throw new Error("ticket response does not match the approved write");
+  }
   return {
     providerRef: targetOf(action),
     results: {},
@@ -396,6 +419,17 @@ async function applyLocked(
     let result: ReconcileResult;
     try {
       result = await provider.reconcile(newest, action, world);
+      if (
+        sameAsNewest &&
+        action.kind === "stripe.refund.create" &&
+        result.kind === "applied" &&
+        !refundEffectMatches(action, result.effect)
+      ) {
+        result = {
+          kind: "indeterminate",
+          detail: "refund read does not match the approved successful effect",
+        };
+      }
     } catch (err) {
       result = {
         kind: "indeterminate",
@@ -555,7 +589,10 @@ async function applyLocked(
       } catch (err) {
         back = { kind: "indeterminate", detail: (err as Error).message };
       }
-      if (back.kind !== "applied") {
+      if (
+        back.kind !== "applied" ||
+        (action.kind === "stripe.refund.create" && !refundEffectMatches(action, back.effect))
+      ) {
         return hold(action, { kind: "unresolved_outcome", attemptId: latest.id });
       }
       return settle(
