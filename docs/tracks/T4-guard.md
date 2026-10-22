@@ -38,8 +38,14 @@
 
 ## Decisions
 
-_(add dated entries)_
+- **2026-10-21.** A missing, incomplete, or mismatched re-check holds the step as `evidence_unavailable`. It is never treated as proof that the approved rows and query membership are unchanged.
 
 ## Handoff log
 
 _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
+
+### 2026-10-21
+
+- **T4.1 is done on fixtures.** `guardAction`, `compareObservation`, `diffQueryMembership`, and `advanceOverlay` are in `packages/core/src/guards.ts`. Tests cover the phantom bundle, a missing or incomplete re-check, and an own write that must not false-hold the note after it.
+- **Next.** T4.2 injection scripts against the local Era worlds. Wiring the guards into admission (T4.3) waits on the executor loop (#19).
+- **Gotcha.** The ML notes assume an RTX 4070 with 8 GB. The current machine has an RTX 5080 with 16 GB and a CUDA 13.3 driver, so pick training wheels to match it.
