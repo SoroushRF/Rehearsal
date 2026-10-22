@@ -1,22 +1,29 @@
 import type { PlanManifest } from "@rehearsal/contracts";
 import { useCallback, useState } from "react";
 import { formatMoney, roleLabel, shortHash, sumMoney } from "../format";
-import { groupByCase, requiredRoles } from "../plan";
+import { droppedBy, groupByCase, requiredRoles } from "../plan";
 import { ActionRow } from "./ActionRow";
 import { Badge } from "./Badge";
 import { EvidenceDrawer } from "./EvidenceDrawer";
 
-/** The whole job on one page: every effect, grouped by customer, with the hash being approved. */
+/**
+ * The whole job on one page: every effect, grouped by customer, with the hash being approved.
+ * With `review`, the reviewer can uncheck actions; dependents drop with them in the preview.
+ */
 export function PlanReview({
   manifest,
   planHash,
   evidence,
+  review,
 }: {
   manifest: PlanManifest;
   planHash: string;
-  evidence: "fixture" | "era_integration";
+  /** A bundle's evidence label; null for a stored plan, which shows who planned it instead. */
+  evidence: "fixture" | "era_integration" | null;
+  review?: { unchecked: ReadonlySet<string>; onToggle: (actionId: string) => void };
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const dropped = review ? droppedBy(manifest.actions, review.unchecked) : new Set<string>();
   const close = useCallback(() => setSelectedId(null), []);
   const cases = groupByCase(manifest);
   const refunds = sumMoney(cases.flatMap((c) => c.refunds));
@@ -38,8 +45,13 @@ export function PlanReview({
             <Badge tone="warn" hint="Not yet run against real Era images">
               Fixture
             </Badge>
-          ) : (
+          ) : evidence === "era_integration" ? (
             <Badge tone="good">Ran on Era</Badge>
+          ) : (
+            <Badge tone="neutral" hint="Planner model and prompt version">
+              planned by {manifest.versions.planner.model} ·{" "}
+              {manifest.versions.planner.promptVersion}
+            </Badge>
           )}
         </div>
         <p className="mt-2 text-sm text-slate-600">
@@ -88,6 +100,13 @@ export function PlanReview({
                 action={a}
                 selected={a.id === selectedId}
                 onShowEvidence={() => setSelectedId(a.id === selectedId ? null : a.id)}
+                {...(review && {
+                  include: {
+                    unchecked: review.unchecked.has(a.id),
+                    droppedWithDependency: dropped.has(a.id) && !review.unchecked.has(a.id),
+                    onToggle: () => review.onToggle(a.id),
+                  },
+                })}
               />
             ))}
           </ul>

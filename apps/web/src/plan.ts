@@ -38,10 +38,15 @@ function customerOf(manifest: PlanManifest, actions: readonly Action[]): string 
       return q.predicate.customerId;
     }
   }
+  // A charge names its customer; a ticket carries the Stripe customer ID as `external_id` (the
+  // fixtures put it in `requester_id`). This keeps the name when a case's refund is excluded.
   const obsIds = new Set(actions.flatMap((a) => a.evidence));
   for (const o of manifest.observations) {
-    const customer = o.projection.customer;
-    if (obsIds.has(o.id) && typeof customer === "string") return customer;
+    if (!obsIds.has(o.id)) continue;
+    const { customer, external_id, requester_id } = o.projection;
+    for (const id of [customer, external_id, requester_id]) {
+      if (typeof id === "string" && id.startsWith("cus_")) return id;
+    }
   }
   return null;
 }
@@ -68,6 +73,25 @@ export function evidenceFor(manifest: PlanManifest, action: Action): ActionEvide
     queries: pick(action.queryEvidence, queries),
     missing,
   };
+}
+
+/**
+ * The unchecked actions plus everything that depends on them, for previewing an exclusion before
+ * it is sent. Mirrors `dependentsClosure` in `@rehearsal/core`; the server's revision is what counts.
+ */
+export function droppedBy(actions: readonly Action[], unchecked: Iterable<string>): Set<string> {
+  const dropped = new Set(unchecked);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const a of actions) {
+      if (!dropped.has(a.id) && a.dependsOn.some((d) => dropped.has(d))) {
+        dropped.add(a.id);
+        grew = true;
+      }
+    }
+  }
+  return dropped;
 }
 
 /** Which roles have to sign this plan, strongest first. */

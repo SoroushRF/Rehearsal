@@ -1,22 +1,17 @@
+import { useAuth } from "@clerk/react";
 import { HealthResponse } from "@rehearsal/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { AccountBar } from "./auth";
+import { AccountBar, clerkKey, useApiFetch } from "./auth";
+import { LivePlans } from "./components/LivePlans";
 import { PlanReview } from "./components/PlanReview";
 import { type FixtureBundle, fixtureBundles } from "./fixtures";
 
-/** Review UI (T2). Renders the shared fixture plans until real plans come from the API (T2.2). */
+/**
+ * Review UI (T2). A signed-in reviewer with an organization reviews that org's stored plans
+ * through the API; everyone else sees the shared fixture bundles, read-only.
+ */
 export function App({ bundles = fixtureBundles }: { bundles?: FixtureBundle[] }) {
-  const [bundleId, setBundleId] = useState(() => initialBundle(bundles));
-  const current = bundles.find((b) => b.bundle.id === bundleId) ?? bundles[0];
-
-  const choose = (id: string) => {
-    setBundleId(id);
-    const url = new URL(window.location.href);
-    url.searchParams.set("bundle", id);
-    window.history.replaceState(null, "", url);
-  };
-
   return (
     <main className="mx-auto max-w-4xl p-6 font-sans text-slate-900">
       <header className="flex flex-wrap items-start justify-between gap-4">
@@ -29,6 +24,41 @@ export function App({ bundles = fixtureBundles }: { bundles?: FixtureBundle[] })
         <AccountBar />
       </header>
 
+      {clerkKey ? <SignedInOrFixtures bundles={bundles} /> : <FixturePlans bundles={bundles} />}
+
+      <ApiStatus />
+    </main>
+  );
+}
+
+function SignedInOrFixtures({ bundles }: { bundles: FixtureBundle[] }) {
+  const { isSignedIn, orgId } = useAuth();
+  const apiFetch = useApiFetch();
+  if (isSignedIn && orgId) return <LivePlans apiFetch={apiFetch} />;
+  return (
+    <>
+      <p className="mt-6 text-sm text-slate-600">
+        Sign in and choose an organization to review live plans. Until then, these are the shared
+        fixtures.
+      </p>
+      <FixturePlans bundles={bundles} />
+    </>
+  );
+}
+
+function FixturePlans({ bundles }: { bundles: FixtureBundle[] }) {
+  const [bundleId, setBundleId] = useState(() => initialBundle(bundles));
+  const current = bundles.find((b) => b.bundle.id === bundleId) ?? bundles[0];
+
+  const choose = (id: string) => {
+    setBundleId(id);
+    const url = new URL(window.location.href);
+    url.searchParams.set("bundle", id);
+    window.history.replaceState(null, "", url);
+  };
+
+  return (
+    <>
       <nav aria-label="Fixture plans" className="mt-6 flex flex-wrap gap-2">
         {bundles.map(({ bundle }) => (
           <button
@@ -56,9 +86,7 @@ export function App({ bundles = fixtureBundles }: { bundles?: FixtureBundle[] })
       ) : (
         <p className="mt-6 text-slate-600">No plans to review.</p>
       )}
-
-      <ApiStatus />
-    </main>
+    </>
   );
 }
 

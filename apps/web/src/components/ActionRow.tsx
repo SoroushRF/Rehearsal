@@ -22,27 +22,51 @@ const marker: Record<Action["kind"], string> = {
   "zendesk.ticket.appendPrivateNote": "+",
 };
 
+/** Present only when the reviewer can uncheck actions (a live plan, not a fixture). */
+export interface IncludeControl {
+  /** The reviewer unchecked this action. */
+  unchecked: boolean;
+  /** Dropped because something it depends on was unchecked. */
+  droppedWithDependency: boolean;
+  onToggle: () => void;
+}
+
 export function ActionRow({
   action,
   selected,
   onShowEvidence,
+  include,
 }: {
   action: Action;
   selected: boolean;
   onShowEvidence: () => void;
+  include?: IncludeControl;
 }) {
   const comp = compensationLabel[action.compensation];
   const prot = protectionLabel[action.protection];
+  const dropped = include && (include.unchecked || include.droppedWithDependency);
   return (
     <li
       data-testid="action-row"
       data-action-id={action.id}
-      className={`flex gap-3 px-4 py-3 ${selected ? "bg-sky-50" : ""}`}
+      data-dropped={dropped ? "true" : undefined}
+      className={`flex gap-3 px-4 py-3 ${selected ? "bg-sky-50" : ""} ${dropped ? "opacity-50" : ""}`}
     >
+      {include ? (
+        <input
+          type="checkbox"
+          aria-label={`Include ${action.id}`}
+          checked={!dropped}
+          // A dependent can't be re-included on its own; re-check what it depends on instead.
+          disabled={include.droppedWithDependency && !include.unchecked}
+          onChange={include.onToggle}
+          className="mt-1 h-4 w-4 shrink-0"
+        />
+      ) : null}
       <span aria-hidden className="w-4 shrink-0 pt-0.5 font-mono text-slate-400">
         {marker[action.kind]}
       </span>
-      <div className="min-w-0 flex-1">
+      <div className={`min-w-0 flex-1 ${dropped ? "line-through decoration-slate-400" : ""}`}>
         <p className="font-medium text-slate-900">
           <Summary action={action} />
         </p>
