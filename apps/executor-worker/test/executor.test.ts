@@ -958,6 +958,53 @@ describe("reconcile through reads (T3.5)", () => {
     expect(s.world.refunds.filter((r) => r.charge === "ch_fixture_001")).toHaveLength(1);
   });
 
+  it("a revision that changed an in-flight refund's amount is held, not handed the old refund", async () => {
+    const s = setup(happyPathBundle());
+    s.deps.retry = { maxAttempts: 1 };
+    s.world.fault("/v1/refunds", { kind: "drop_response_after_commit" });
+    await s.run(); // rev1's 4210 refund lands, response lost
+    const rev2 = await addRevision(s, (m) => {
+      const refund = m.actions.find((a) => a.id === "refund_001");
+      if (refund?.kind === "stripe.refund.create") refund.args.amount.amountMinor = 4000;
+    }).run();
+    const receipt = rev2.receipts.find((r) => r.actionId === "refund_001");
+    expect(receipt?.outcome).toBe("held");
+    expect(receipt?.holdReason).toMatchObject({ kind: "approval_invalid" });
+    expect(
+      receipt?.holdReason && "detail" in receipt.holdReason && receipt.holdReason.detail,
+    ).toMatch(/applied with different content/);
+    expect(outcomes(rev2.receipts)).toMatchObject({ note_001: "skipped_dependency" });
+    expect(
+      s.world.refunds.filter((r) => r.charge === "ch_fixture_001").map((r) => r.amount),
+    ).toEqual([4210]);
+    expect(await states(s, "refund_001")).toEqual([["reconciled", null]]);
+  });
+
+  it("a revision that changed an in-flight note's text is held, and nothing is appended", async () => {
+    const s = setup(happyPathBundle());
+    dropZendesk(s, '"comment"'); // rev1's note lands, response lost
+    await s.run();
+    const rev2 = await addRevision(s, (m) => {
+      const note = m.actions.find((a) => a.id === "note_001");
+      if (note?.kind === "zendesk.ticket.appendPrivateNote") note.args.bindings.amountMinor = 4000;
+    }).run();
+    expect(outcomes(rev2.receipts)).toMatchObject({ note_001: "held" });
+    expect(s.world.tickets.get("5531")?.comments).toHaveLength(1);
+  });
+
+  it("an identical revision over an in-flight refund confirms it by reading", async () => {
+    const s = setup(happyPathBundle());
+    s.deps.retry = { maxAttempts: 1 };
+    s.world.fault("/v1/refunds", { kind: "drop_response_after_commit" });
+    await s.run();
+    const rev2 = await addRevision(s).run();
+    expect(outcomes(rev2.receipts)).toMatchObject({
+      refund_001: "confirmed",
+      note_001: "confirmed",
+    });
+    expect(s.world.refunds.filter((r) => r.charge === "ch_fixture_001")).toHaveLength(1);
+  });
+
   it("writes an in-run replay's reconciled marks in the same atomic settle", async () => {
     const s = setup(happyPathBundle());
     s.world.fault("/v1/refunds", { kind: "server_error" });

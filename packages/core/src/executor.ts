@@ -390,6 +390,7 @@ async function applyLocked(
     inFlight: Attempt[],
     provider: ProviderPort,
     world: WorldContext,
+    sameAsNewest: boolean,
   ): Promise<"settled" | "resend"> {
     const newest = inFlight.at(-1) as Attempt;
     let result: ReconcileResult;
@@ -421,6 +422,27 @@ async function applyLocked(
           ]
         : [];
 
+    const reconciled = (): SettleTransition[] =>
+      inFlight.flatMap((a) => [
+        ...toUnknown(a),
+        { attemptId: a.id, from: "unknown_outcome", to: "reconciled", patch: { settledAt: at() } },
+      ]);
+
+    if (result.kind === "applied" && !sameAsNewest) {
+      // The effect happened, but for different content than this revision approved.
+      await settle(
+        action,
+        receiptFor(action, "held", {
+          holdReason: {
+            kind: "approval_invalid",
+            detail: `operation ${key} was applied with different content (attempt ${newest.id}); a new action is needed`,
+          },
+          observedEffect: result.effect,
+        }),
+        { transitions: reconciled() },
+      );
+      return "settled";
+    }
     if (result.kind === "applied") {
       const results = bindable(result.effect);
       await settle(
@@ -432,18 +454,7 @@ async function applyLocked(
             `outcome of attempt ${newest.id} (key ${key}) found by reading the provider; not re-sent`,
           ],
         }),
-        {
-          transitions: inFlight.flatMap((a) => [
-            ...toUnknown(a),
-            {
-              attemptId: a.id,
-              from: "unknown_outcome",
-              to: "reconciled",
-              patch: { settledAt: at() },
-            },
-          ]),
-          results,
-        },
+        { transitions: reconciled(), results },
       );
       return "settled";
     }
@@ -479,39 +490,8 @@ async function applyLocked(
     const world = deps.worlds[vendor];
     if (!provider || !world) throw new Error(`no operational provider configured for ${vendor}`);
 
-    let prior = await journal.attemptsForKey(key);
-    const inFlight = prior.filter((a) => a.state === "dispatched" || a.state === "unknown_outcome");
-    if (inFlight.length > 0) {
-      // An earlier send's outcome is unknown (a lost response, a crash after dispatch). Ask the
-      // provider through authoritative reads; never re-send on a guess.
-      const resolved = await reconcileInFlight(action, key, inFlight, provider, world);
-      if (resolved === "settled") return;
-      prior = await journal.attemptsForKey(key); // read showed no effect: the step may be sent
-    }
-    /**
-     * Decisions follow the newest attempt that was actually sent, under any revision. Prepared rows
-     * were never sent: they matter only when nothing for this key has been sent yet, and then only
-     * this hash's own (another revision's prepared row neither blocks nor gets reused).
-     */
-    const latest = prior.filter((a) => a.state !== "prepared").at(-1);
-    const ownPrepared = latest
-      ? undefined
-      : prior.filter((a) => a.state === "prepared" && a.planHash === job.planHash).at(-1);
-
-    if (
-      latest &&
-      (latest.state === "confirmed" || latest.state === "reconciled") &&
-      latest.planHash === job.planHash
-    ) {
-      // Applied by an earlier run of this plan hash; settle() wrote its receipt and bindings.
-      settled.set(action.id, "confirmed");
-      return;
-    }
     const refs = resultRefsOf(action);
     const unresolved = refs.find((r) => !bindings.has(bindingKey(r)));
-    if (unresolved) {
-      return hold(action, { kind: "predecessor_not_confirmed", stepId: unresolved.stepId });
-    }
     const resolved: ResolvedBindings = new Map(
       refs.map((r) => [bindingKey(r), bindings.get(bindingKey(r)) as string | number]),
     );
@@ -534,6 +514,40 @@ async function applyLocked(
       }
     };
 
+    let prior = await journal.attemptsForKey(key);
+    const inFlight = prior.filter((a) => a.state === "dispatched" || a.state === "unknown_outcome");
+    if (inFlight.length > 0) {
+      // An earlier send's outcome is unknown (a lost response, a crash after dispatch). Ask the
+      // provider through authoritative reads; never re-send on a guess.
+      // An effect found under different content (a revision changed the amount or text) is
+      // recorded but never confirmed as this revision's.
+      const sameAsNewest = sameContent(inFlight.at(-1) as Attempt);
+      const outcome = await reconcileInFlight(action, key, inFlight, provider, world, sameAsNewest);
+      if (outcome === "settled") return;
+      prior = await journal.attemptsForKey(key); // read showed no effect: the step may be sent
+    }
+    /**
+     * Decisions follow the newest attempt that was actually sent, under any revision. Prepared rows
+     * were never sent: they matter only when nothing for this key has been sent yet, and then only
+     * this hash's own (another revision's prepared row neither blocks nor gets reused).
+     */
+    const latest = prior.filter((a) => a.state !== "prepared").at(-1);
+    const ownPrepared = latest
+      ? undefined
+      : prior.filter((a) => a.state === "prepared" && a.planHash === job.planHash).at(-1);
+
+    if (
+      latest &&
+      (latest.state === "confirmed" || latest.state === "reconciled") &&
+      latest.planHash === job.planHash
+    ) {
+      // Applied by an earlier run of this plan hash; settle() wrote its receipt and bindings.
+      settled.set(action.id, "confirmed");
+      return;
+    }
+    if (unresolved) {
+      return hold(action, { kind: "predecessor_not_confirmed", stepId: unresolved.stepId });
+    }
     if (latest) {
       if (!sameContent(latest)) {
         return hold(action, {

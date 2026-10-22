@@ -24,7 +24,6 @@ import {
   getJson,
   getTicket,
   resetScratchTenants,
-  SEED,
   scratchWorld,
   uniqueTenant,
 } from "../src/harness";

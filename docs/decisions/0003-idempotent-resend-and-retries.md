@@ -37,3 +37,6 @@ AGENTS.md says an unknown outcome "is reconciled through reads, never blindly re
   - **Zendesk notes:** matched by their operation marker, across every page of comments.
   - **Zendesk patches:** applied if the ticket holds our values. Not applied only if its `updated_at` still equals the stamp we sent. Anything else is indeterminate and held, because we can't tell whose write won.
 - **Atomicity:** the in-run replay's `reconciled` marks are now written in the same atomic settle as the confirmed receipt.
+- **Content first:** operation keys don't include content, so a found effect confirms the step only if the in-flight attempt's content matches this revision's. If a revision changed the amount or text, the effect is recorded (`reconciled`) and the step is held `approval_invalid`. It is never handed the old refund.
+- **Known limit (patches):** at 1-second precision, our patch could land in the same second as the stamp we read, and a teammate could then overwrite the field in that same second. Reconcile would see "not ours, stamp unchanged" and call it not applied, so after the window the patch would be re-sent over the teammate's value. That needs three writes in one second. It is the same documented guard limit (capability matrix d″).
+- **Clock:** the window compares the executor's clock with `dispatchedAt`. The worker must use wall time.
