@@ -16,7 +16,7 @@ AGENTS.md says an unknown outcome "is reconciled through reads, never blindly re
    - When the replay confirms, the earlier unknown attempts are marked `reconciled`.
    - Zendesk notes are appends and are never re-sent this way. Zendesk patches aren't either: a guarded patch that already landed would answer 409 and be misread as rejected.
    - Everything else waits for T3.5 (reconcile through reads).
-4. The guards run once per step, before the first send, not before each retry.
+4. Guards run before the first send and again after backoff before a fresh send following a definite refusal. An unresolved earlier send is resolved only by identical provider-idempotent replay; its own possible effect must not be mistaken for external drift.
 
 5. If any send of a step had an unknown outcome and none confirmed, the step is `unknown_outcome`, even when a later re-send was refused (a 429, say). Money may have moved, so it is never reported as `rejected`.
 
@@ -30,13 +30,13 @@ AGENTS.md says an unknown outcome "is reconciled through reads, never blindly re
 
 - **What the states mean:**
   - `reconciled` means a read **found** the effect. The executor treats it like `confirmed`.
-  - `rejected` with no `providerStatus` means a read showed the send **never happened**. The step may then be sent again.
-- **When "not applied" is trusted:** a request can still land after a read that missed it. "Not applied" is trusted only once the unknown send is older than `ExecutorDeps.reconcileAfterMs`, which defaults to 60 s. A more recent send is held.
+  - `rejected` with no `providerStatus` means a read found no visible effect. Only an identical provider-idempotent replay is allowed; it does not prove the original request terminated.
+- **Negative reads (corrected by review item 4):** a request can still land after a read that missed it. Age alone is never proof that it terminated. After `reconcileAfterMs` (default 60 s), only identical content with explicit provider idempotency support may be replayed. Unknown Zendesk notes and patches remain held until a positive read resolves them, regardless of age. Legacy negative-read rejection rows do not authorize non-idempotent re-sends.
 - **How each write is reconciled:**
   - **Stripe refunds:** matched by `metadata.rehearsal_op`, paging through all of the charge's refunds.
   - **Zendesk notes:** matched by their operation marker, across every page of comments.
   - **Zendesk patches:** applied if the ticket holds our values. Not applied only if its `updated_at` still equals the stamp we sent. Anything else is indeterminate and held, because we can't tell whose write won.
 - **Atomicity:** the in-run replay's `reconciled` marks are now written in the same atomic settle as the confirmed receipt.
 - **Content first:** operation keys don't include content, so a found effect confirms the step only if the in-flight attempt's content matches this revision's. If a revision changed the amount or text, the effect is recorded (`reconciled`) and the step is held `approval_invalid`. It is never handed the old refund.
-- **Known limit (patches):** at 1-second precision, our patch could land in the same second as the stamp we read, and a teammate could then overwrite the field in that same second. Reconcile would see "not ours, stamp unchanged" and call it not applied, so after the window the patch would be re-sent over the teammate's value. That needs three writes in one second. It is the same documented guard limit (capability matrix d″).
+- **Known limit (patches):** at 1-second precision, a negative read cannot establish whose write won. Recovery now holds instead of re-sending. The native stamp's documented same-second limitation still applies to an initial guarded write.
 - **Clock:** the window compares the executor's clock with `dispatchedAt`. The worker must use wall time.

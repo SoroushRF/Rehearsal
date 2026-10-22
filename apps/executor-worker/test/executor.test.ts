@@ -99,6 +99,54 @@ const refundsFor = (world: FakeWorld, manifest: PlanManifest) =>
   );
 
 describe("happy-path bundle on the fake provider", () => {
+  it("preserves a confirmed refund but stops fresh writes when approval is revoked mid-run", async () => {
+    const s = setup(happyPathBundle());
+    const dispatch = s.deps.providers.stripe.dispatch;
+    s.deps.providers.stripe.dispatch = async (req, ctx) => {
+      const result = await dispatch(req, ctx);
+      const grant = s.store.grants.get(APPROVAL);
+      if (!grant) throw new Error("missing grant");
+      s.store.grants.set(APPROVAL, { ...grant, revokedAt: "2026-10-21T12:00:00Z" });
+      return result;
+    };
+    const out = await s.run();
+    expect(out.receipts.find((r) => r.actionId === "refund_001")?.outcome).toBe("confirmed");
+    expect(out.receipts.find((r) => r.actionId === "patch_001")).toMatchObject({
+      outcome: "held",
+      holdReason: { kind: "approval_invalid" },
+    });
+    expect(s.world.effects).toHaveLength(1);
+    expect(out.state).toBe("partial");
+  });
+
+  it("holds a fresh retry if the grant expires during backoff", async () => {
+    const s = setup(happyPathBundle());
+    s.world.fault("/v1/refunds", { kind: "reject", status: 429, retryable: true });
+    s.deps.sleep = async () => {
+      if (s.deps.clock instanceof FakeClock) s.deps.clock.advance(7_200_000);
+    };
+    const out = await s.run();
+    expect(out.receipts.find((r) => r.actionId === "refund_001")).toMatchObject({
+      outcome: "held",
+      holdReason: { kind: "approval_invalid" },
+    });
+    expect(s.world.effects).toHaveLength(0);
+    expect(await s.journal.attemptsFor(s.hash, "refund_001")).toHaveLength(1);
+  });
+
+  it("does not replay an unknown send after its approval is revoked", async () => {
+    const s = setup(happyPathBundle());
+    s.world.fault("/v1/refunds", { kind: "drop_response_after_commit" });
+    s.deps.sleep = async () => {
+      const grant = s.store.grants.get(APPROVAL);
+      if (grant) grant.revokedAt = "2026-10-21T12:00:00Z";
+    };
+    const out = await s.run();
+    expect(out.receipts.find((r) => r.actionId === "refund_001")?.outcome).toBe("unknown_outcome");
+    expect(await s.journal.attemptsFor(s.hash, "refund_001")).toHaveLength(1);
+    expect(s.world.effects).toHaveLength(1);
+  });
+
   it.each([{ id: "other" }, { priority: "urgent" }, { status: "invalid" }])(
     "keeps a contradictory ticket patch response unknown: %j",
     async (change) => {
@@ -967,14 +1015,50 @@ describe("reconcile through reads (T3.5)", () => {
     expect(s.world.tickets.get("5531")?.comments).toHaveLength(1);
   });
 
-  it("re-sends a note that never landed, once, after the window", async () => {
+  it("keeps a missing non-idempotent note held even after the window", async () => {
     const s = setup(happyPathBundle());
     dropZendesk(s, '"comment"', false);
     await s.run();
     advance(s, 61_000);
     const second = await s.run();
-    expect(outcomes(second.receipts)).toMatchObject({ note_001: "confirmed" });
+    expect(outcomes(second.receipts)).toMatchObject({ note_001: "held" });
+    expect(s.world.tickets.get("5531")?.comments).toHaveLength(0);
+  });
+
+  it("does not duplicate a delayed original note after a negative reconcile read", async () => {
+    const s = setup(happyPathBundle());
+    const dispatch = s.deps.providers.zendesk.dispatch;
+    const pending: Array<() => Promise<unknown>> = [];
+    s.deps.providers.zendesk.dispatch = async (req, ctx) => {
+      if (
+        pending.length === 0 &&
+        req.path.includes("5531") &&
+        JSON.parse(req.body).ticket.comment
+      ) {
+        pending.push(() => dispatch(req, ctx));
+        return { kind: "unknown", error: "original request still pending" };
+      }
+      return dispatch(req, ctx);
+    };
+    await s.run();
+    advance(s, 61_000);
+    expect(outcomes((await s.run()).receipts)).toMatchObject({ note_001: "held" });
+    expect(s.world.tickets.get("5531")?.comments).toHaveLength(0);
+    await pending[0]?.();
+    expect(outcomes((await s.run()).receipts)).toMatchObject({ note_001: "confirmed" });
     expect(s.world.tickets.get("5531")?.comments).toHaveLength(1);
+  });
+
+  it("holds legacy negative-read rejection rows for non-idempotent notes", async () => {
+    const s = setup(happyPathBundle());
+    dropZendesk(s, '"comment"', false);
+    await s.run();
+    const [attempt] = await s.journal.attemptsFor(s.hash, "note_001");
+    if (!attempt) throw new Error("no note attempt");
+    await s.journal.transition(attempt.id, "unknown_outcome", "rejected", { providerStatus: null });
+    advance(s, 61_000);
+    expect(outcomes((await s.run()).receipts)).toMatchObject({ note_001: "held" });
+    expect(s.world.tickets.get("5531")?.comments).toHaveLength(0);
   });
 
   it("reconciles a lost patch by its fields", async () => {
