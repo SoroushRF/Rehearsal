@@ -18,7 +18,10 @@ AGENTS.md says an unknown outcome "is reconciled through reads, never blindly re
    - Everything else waits for T3.5 (reconcile through reads).
 4. The guards run once per step, before the first send, not before each retry.
 
+5. If any send of a step had an unknown outcome and none confirmed, the step is `unknown_outcome`, even when a later re-send was refused (a 429, say). Money may have moved, so it is never reported as `rejected`.
+
 ## Consequences
 
 - A lost refund response is usually resolved within the run. The `unknown-outcome` bundle still needs T3.5 for the crash-and-restart case.
+- Real Stripe also caches a request's 500 under its key and replays it. On real Stripe, then, the re-send resolves lost responses and transport errors, not genuine 500s. Era's injected faults fire before the handler and are not cached.
 - The replay depends on the provider keeping the key. Real Stripe keeps keys for a limited time, and an Era tenant reset clears the cache, so never reset a world that is applying.

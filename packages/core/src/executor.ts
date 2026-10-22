@@ -587,7 +587,8 @@ async function applyLocked(
         if (result.retryable && canRetry && delay <= policy.maxDelayMs) {
           // A retryable refusal (429) had no effect: send the same bytes again after the delay.
           await journal.transition(current, "dispatched", "rejected", rejectedPatch);
-          inFlightAttempt = null;
+          // An earlier unknown send may still have applied; the run isn't settled until it is.
+          inFlightAttempt = unknownSends[0] ?? null;
           await journal
             .appendEvent(job.runId, "step.retry", {
               actionId: action.id,
@@ -600,16 +601,40 @@ async function applyLocked(
           attemptId = undefined;
           continue;
         }
+        if (unknownSends.length > 0) {
+          // This send was refused, but an earlier one of the same bytes has an unknown outcome:
+          // money may have moved, so the step is unknown, never "rejected".
+          return settle(
+            action,
+            receiptFor(action, "unknown_outcome", {
+              holdReason: { kind: "unresolved_outcome", attemptId: unknownSends[0] as string },
+              limitations: [
+                ...retried(n),
+                `last send refused with ${result.status}; an earlier send's outcome is unknown`,
+              ],
+            }),
+            {
+              transition: {
+                attemptId: current,
+                from: "dispatched",
+                to: "rejected",
+                patch: rejectedPatch,
+              },
+            },
+          );
+        }
+        const why = !result.retryable
+          ? []
+          : !canRetry
+            ? ["retry budget exhausted; a later run may send it again"]
+            : [
+                `Retry-After of ${delay} ms exceeds the ${policy.maxDelayMs} ms cap; a later run may send it again`,
+              ];
         return settle(
           action,
           receiptFor(action, "rejected", {
             observedEffect: { status: result.status },
-            limitations: [
-              ...retried(n),
-              ...(result.retryable
-                ? ["retry budget exhausted; a later run may send it again"]
-                : []),
-            ],
+            limitations: [...retried(n), ...why],
           }),
           {
             transition: {
@@ -642,7 +667,7 @@ async function applyLocked(
       return settle(
         action,
         receiptFor(action, "unknown_outcome", {
-          holdReason: { kind: "unresolved_outcome", attemptId: current },
+          holdReason: { kind: "unresolved_outcome", attemptId: unknownSends[0] ?? current },
           limitations: retried(n),
         }),
         {

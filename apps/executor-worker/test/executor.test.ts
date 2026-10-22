@@ -751,6 +751,44 @@ describe("retries (T3.4)", () => {
     expect(s.world.tickets.get("5531")?.comments.at(-1)?.body).toContain(refund?.id);
   });
 
+  it.each([
+    ["429s until the budget runs out", { kind: "reject", status: 429, retryable: true }],
+    ["a 403", { kind: "reject", status: 403, retryable: false }],
+  ] as const)(
+    "a lost refund response followed by %s is unknown_outcome, never rejected",
+    async (_label, refusal) => {
+      const s = setup(happyPathBundle());
+      s.world.fault("/v1/refunds", { kind: "drop_response_after_commit" });
+      for (let i = 0; i < 3; i++) s.world.fault("/v1/refunds", refusal);
+      const result = await s.run();
+      const receipt = result.receipts.find((r) => r.actionId === "refund_001");
+      expect(receipt?.outcome).toBe("unknown_outcome");
+      const [first] = await s.journal.attemptsFor(s.hash, "refund_001");
+      expect(receipt?.holdReason).toEqual({ kind: "unresolved_outcome", attemptId: first?.id });
+      expect(s.world.refunds.filter((r) => r.charge === "ch_fixture_001")).toHaveLength(1);
+      expect(outcomes(result.receipts)).toMatchObject({ note_001: "skipped_dependency" });
+
+      // A later run holds it too: never re-sent past an unknown outcome.
+      const again = await s.run();
+      expect(outcomes(again.receipts)).toMatchObject({ refund_001: "held" });
+      expect(s.world.refunds.filter((r) => r.charge === "ch_fixture_001")).toHaveLength(1);
+    },
+  );
+
+  it("says when Retry-After, not the budget, stopped the retries", async () => {
+    const s = setup(happyPathBundle());
+    s.world.fault("/v1/refunds", {
+      kind: "reject",
+      status: 429,
+      retryable: true,
+      retryAfterMs: 60_000,
+    });
+    const result = await s.run();
+    expect(result.receipts.find((r) => r.actionId === "refund_001")?.limitations.join(" ")).toMatch(
+      /exceeds the 10000 ms cap/,
+    );
+  });
+
   it("never re-sends a note after an unknown outcome (appends aren't idempotent)", async () => {
     const s = setup(happyPathBundle());
     const zendesk = s.deps.providers.zendesk;
