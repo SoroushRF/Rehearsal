@@ -1,0 +1,131 @@
+{
+  "incident": "INC-BILL-0927",
+  "summary": "A billing retry bug charged some customers twice for their September invoice.",
+  "window": {
+    "createdGte": "2026-09-01T00:00:00.000Z",
+    "createdLt": "2026-10-01T00:00:00.000Z"
+  },
+  "cases": [
+    {
+      "key": "c01",
+      "kind": "duplicate",
+      "customerId": "cus_fuWRQh4Ob4dwEN8e",
+      "name": "Dignara Brands",
+      "email": "bbradbury@dignara.com",
+      "requesterId": 2000020,
+      "amountMinor": 4210,
+      "currency": "cad",
+      "chargedAt": "2026-09-02T09:00:00.000Z"
+    },
+    {
+      "key": "c02",
+      "kind": "duplicate",
+      "customerId": "cus_3jip3yJZrai4IZWl",
+      "name": "Ivycrest",
+      "email": "zainal@ivycrest.com",
+      "requesterId": 2000021,
+      "amountMinor": 12500,
+      "currency": "cad",
+      "chargedAt": "2026-09-03T09:00:00.000Z"
+    },
+    {
+      "key": "c03",
+      "kind": "duplicate",
+      "customerId": "cus_dg63haxJDICBSRLu",
+      "name": "Fidelis Credit Union",
+      "email": "jay@fcu.com",
+      "requesterId": 2000022,
+      "amountMinor": 2999,
+      "currency": "cad",
+      "chargedAt": "2026-09-05T09:00:00.000Z"
+    },
+    {
+      "key": "c04",
+      "kind": "duplicate",
+      "customerId": "cus_aG8yCbh82Trjac09",
+      "name": "Oswin Digital",
+      "email": "heidi_snowmoor@oswindigital.com",
+      "requesterId": 2000023,
+      "amountMinor": 8750,
+      "currency": "cad",
+      "chargedAt": "2026-09-08T09:00:00.000Z"
+    },
+    {
+      "key": "c05",
+      "kind": "duplicate",
+      "customerId": "cus_9h17XXb2CKSAE6lI",
+      "name": "Eclat Logistics",
+      "email": "michael_armitford@eclatlogistics.com",
+      "requesterId": 2000024,
+      "amountMinor": 15000,
+      "currency": "cad",
+      "chargedAt": "2026-09-11T09:00:00.000Z"
+    },
+    {
+      "key": "c06",
+      "kind": "duplicate",
+      "customerId": "cus_i9Va3YPaahJVAKlU",
+      "name": "Solentra",
+      "email": "isaac@solentra.io",
+      "requesterId": 2000025,
+      "amountMinor": 4999,
+      "currency": "cad",
+      "chargedAt": "2026-09-15T09:00:00.000Z"
+    },
+    {
+      "key": "c07",
+      "kind": "duplicate",
+      "customerId": "cus_daHOXjLnRBEZ75bt",
+      "name": "Civaro",
+      "email": "timothy.sandmoor@civaro.com",
+      "requesterId": 2000026,
+      "amountMinor": 6420,
+      "currency": "cad",
+      "chargedAt": "2026-09-19T09:00:00.000Z"
+    },
+    {
+      "key": "c08",
+      "kind": "duplicate",
+      "customerId": "cus_RMvYIuFPo8YxvnGF",
+      "name": "Pansy Care",
+      "email": "abainham@pansy-care.com",
+      "requesterId": 2000027,
+      "amountMinor": 9999,
+      "currency": "cad",
+      "chargedAt": "2026-09-24T09:00:00.000Z"
+    },
+    {
+      "key": "k01",
+      "kind": "control_distinct",
+      "customerId": "cus_qrl4a0OHogicuwAE",
+      "name": "Fenton Payments",
+      "email": "kaique@fenton.co",
+      "requesterId": 2000028,
+      "amountMinor": 5400,
+      "currency": "cad",
+      "chargedAt": "2026-09-09T09:00:00.000Z"
+    },
+    {
+      "key": "k02",
+      "kind": "control_other_currency",
+      "customerId": "cus_y6k0PolBw0Bb1zOC",
+      "name": "Maplewood Fabrication",
+      "email": "champak.shercombe@maplewood-fabrication.com",
+      "requesterId": 2000029,
+      "amountMinor": 7300,
+      "currency": "usd",
+      "chargedAt": "2026-09-12T09:00:00.000Z"
+    },
+    {
+      "key": "k03",
+      "kind": "control_outside_window",
+      "customerId": "cus_l1PCjcBvgLh47Ogr",
+      "name": "Malachite Fabrication",
+      "email": "manuel_otto@malachite.com",
+      "requesterId": 2000030,
+      "amountMinor": 3800,
+      "currency": "cad",
+      "chargedAt": "2026-08-27T09:00:00.000Z"
+    }
+  ]
+}

@@ -29,7 +29,7 @@
 | ID | Task | Milestone | Done when | Issue | Blocked by |
 |---|---|---|---|---|---|
 | T1.1 | Era day-one gate: writable worlds, refund idempotency, guarded Zendesk update, private note, tenant reset | M1 | Conformance tests pass with `ERA_CONFORMANCE=1`; capability matrix written | #2 | — |
-| T1.2 | Seed the incident: 5–10 overcharged customers, plus benign controls, injected identically into both worlds; `pnpm demo:reset` | M1 | Reset → identical worlds every time; fixtures copied from real GET responses | #3 | T1.1, T1.9 |
+| T1.2 | Seed the incident: 5–10 overcharged customers, plus benign controls, injected identically into both worlds; `pnpm demo:reset` | M1 | Reset → identical worlds every time; fixtures copied from real GET responses. **In review:** branch `t1/T1.2-seed-incident` | #3 | T1.1, T1.9 |
 | T1.3 | Read adapters: get charge, get ticket, and the two query predicates, with full pagination and `complete` set honestly | M1 | Unit tests against recorded responses, plus one live test | #4 | T1.1 |
 | T1.4 | Typed planning tools that record evidence and add dependency edges themselves (the model can't define its own evidence) | M2 | A tool call produces observations and actions matching contracts v1 | #5 | T1.3 |
 | T1.5 | Bounded Claude tool loop: pinned model, versioned prompt, step limit, no shell, browser or raw HTTP; planner worker consumes `plan` jobs | M2 | Real plan for the seeded cohort is stored and viewable in T2's UI | #6 | T1.2, T1.4, T1.9, T2.9 |
@@ -45,6 +45,13 @@
 ## Handoff log
 
 _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
+
+- **2026-10-22 (Claude session for the T1 owner):** T1.2 is in review on `t1/T1.2-seed-incident`.
+  - The cohort is in `scenarios/billing/incident.v1.json`: 8 duplicates and 3 controls. `incidentRecords()` in testkit builds the inject records from the verbatim GET templates.
+  - `pnpm demo:reset` resets, seeds all four worlds and compares planning against operational.
+  - IDs: charges are `ch_INC0927<key>{a,b}`, and for a duplicate, `b` is the one to refund. Tickets are `9100001`–`9100011`, each with `external_id` set to the Stripe customer ID. Requesters are seeded end users `2000020`–`2000030`. Zendesk user IDs aren't contiguous (2000011 doesn't exist), so check before changing them.
+  - Charges are CAD, which settles capability-matrix surprise 12 for the cohort.
+  - Not done: T4's `scripts/inject/session.ts` `SEED` still points at the image-seed customer. The phantom and conflict scripts could switch to a cohort case.
 
 - **2026-10-21 (Claude session for the T1 owner):** T1.9 is implemented on branch `t1/T1.9-tenant-tokens`, and the PR closes #39. It needs a reviewer from another track because it touches credentials.
   - Workers get worlds from `workerWorlds("planner" | "executor")` in `@rehearsal/providers`. T1.5 and T3.3 should take worlds from there, never from `resolveWorld`.
