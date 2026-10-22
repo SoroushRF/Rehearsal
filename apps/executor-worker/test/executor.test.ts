@@ -52,6 +52,7 @@ function setup(bundle: ReplayBundle, grantOver: Partial<ApprovalGrant> = {}) {
   const world = worldFromManifest(manifest.observations);
   const journal = new MemoryJournal();
   let n = 0;
+  const sleeps: number[] = [];
   const deps: ExecutorDeps & { providers: Record<"stripe" | "zendesk", ProviderPort> } = {
     store,
     journal,
@@ -63,6 +64,10 @@ function setup(bundle: ReplayBundle, grantOver: Partial<ApprovalGrant> = {}) {
     } as const,
     policies: [POLICY],
     newId: (prefix: string) => `${prefix}_${++n}`,
+    // Retries sleep instantly in tests; the delays they asked for are recorded.
+    sleep: async (ms: number) => {
+      sleeps.push(ms);
+    },
   };
   const job = {
     orgId: manifest.orgId,
@@ -71,7 +76,17 @@ function setup(bundle: ReplayBundle, grantOver: Partial<ApprovalGrant> = {}) {
     revision: 1,
     planHash: hash,
   };
-  return { manifest, hash, store, world, journal, deps, job, run: () => executeRun(job, deps) };
+  return {
+    manifest,
+    hash,
+    store,
+    world,
+    journal,
+    deps,
+    job,
+    sleeps,
+    run: () => executeRun(job, deps),
+  };
 }
 
 const outcomes = (receipts: { actionId: string; outcome: string }[]) =>
@@ -214,6 +229,7 @@ describe("partial outcomes are honest", () => {
 
   it("a lost response becomes unknown_outcome and is never blindly re-sent", async () => {
     const s = setup(happyPathBundle());
+    s.deps.retry = { maxAttempts: 1 }; // no in-run re-send: the restart path
     s.world.fault("/v1/refunds", { kind: "drop_response_after_commit" });
     const first = await s.run();
     expect(outcomes(first.receipts)).toMatchObject({
@@ -300,6 +316,7 @@ describe("failures inside the executor", () => {
 
   it("an unreadable confirmed response is recorded as unknown_outcome", async () => {
     const s = setup(happyPathBundle());
+    s.deps.retry = { maxAttempts: 1 }; // without the idempotent replay that would resolve it
     const stripe = s.deps.providers.stripe;
     let first = true;
     s.deps.providers.stripe = {
@@ -607,6 +624,190 @@ describe("guarded patches whose stamp moves (T3.3 review)", () => {
     const result = await s.run();
     expect(result.refusal).toMatch(/planning world/);
     expect(s.world.effects).toEqual([]);
+  });
+});
+
+describe("retries (T3.4)", () => {
+  it("an unreadable confirmed refund response is resolved by the idempotent replay", async () => {
+    const s = setup(happyPathBundle());
+    const stripe = s.deps.providers.stripe;
+    let first = true;
+    s.deps.providers.stripe = {
+      ...stripe,
+      dispatch: async (req, ctx) => {
+        const res = await stripe.dispatch(req, ctx);
+        if (!first) return res;
+        first = false;
+        return { kind: "confirmed", status: 200, body: { unexpected: true } };
+      },
+    };
+    const result = await s.run();
+    expect(outcomes(result.receipts)).toMatchObject({
+      refund_001: "confirmed",
+      note_001: "confirmed",
+    });
+    expect(s.world.refunds.filter((r) => r.charge === "ch_fixture_001")).toHaveLength(1);
+  });
+
+  const refundAttempts = async (s: ReturnType<typeof setup>) =>
+    (await s.journal.attemptsFor(s.hash, "refund_001")).map((a) => [a.state, a.attemptNo]);
+  const refundsOn = (s: ReturnType<typeof setup>, charge: string) =>
+    s.world.refunds.filter((r) => r.charge === charge).length;
+
+  it("retries a 429 after its Retry-After with identical bytes, and applies once", async () => {
+    const s = setup(happyPathBundle());
+    s.world.fault("/v1/refunds", {
+      kind: "reject",
+      status: 429,
+      retryable: true,
+      retryAfterMs: 1500,
+    });
+    const result = await s.run();
+    expect(result.state).toBe("completed");
+    expect(s.sleeps).toEqual([1500]);
+    expect(await refundAttempts(s)).toEqual([
+      ["rejected", 1],
+      ["confirmed", 2],
+    ]);
+    const [a, b] = await s.journal.attemptsFor(s.hash, "refund_001");
+    expect(b?.request).toEqual(a?.request);
+    expect(refundsOn(s, "ch_fixture_001")).toBe(1);
+    expect(result.receipts.find((r) => r.actionId === "refund_001")?.limitations).toContain(
+      "sent 2 times with identical bytes",
+    );
+    expect(s.journal.events.filter((e) => e.type === "step.retry")).toHaveLength(1);
+  });
+
+  it("backs off exponentially without Retry-After, then gives up within the budget", async () => {
+    const s = setup(happyPathBundle());
+    s.deps.retry = { maxAttempts: 3, baseDelayMs: 100 };
+    for (let i = 0; i < 3; i++)
+      s.world.fault("/v1/refunds", { kind: "reject", status: 429, retryable: true });
+    const first = await s.run();
+    expect(s.sleeps).toEqual([100, 200]);
+    const receipt = first.receipts.find((r) => r.actionId === "refund_001");
+    expect(receipt?.outcome).toBe("rejected");
+    expect(receipt?.limitations.join(" ")).toMatch(/retry budget exhausted/);
+    expect(outcomes(first.receipts)).toMatchObject({ note_001: "skipped_dependency" });
+
+    // A 429 had no effect, so a later run may send it again; this time it lands.
+    const second = await s.run();
+    expect(outcomes(second.receipts)).toMatchObject({
+      refund_001: "confirmed",
+      note_001: "confirmed",
+    });
+    expect(refundsOn(s, "ch_fixture_001")).toBe(1);
+  });
+
+  it("doesn't sleep through a Retry-After longer than the cap", async () => {
+    const s = setup(happyPathBundle());
+    s.world.fault("/v1/refunds", {
+      kind: "reject",
+      status: 429,
+      retryable: true,
+      retryAfterMs: 60_000,
+    });
+    const result = await s.run();
+    expect(s.sleeps).toEqual([]);
+    expect(outcomes(result.receipts)).toMatchObject({ refund_001: "rejected" });
+  });
+
+  it("never retries a validation or permission refusal", async () => {
+    const s = setup(happyPathBundle());
+    s.world.fault("/v1/refunds", { kind: "reject", status: 400, retryable: false });
+    const result = await s.run();
+    expect(s.sleeps).toEqual([]);
+    expect(await refundAttempts(s)).toEqual([["rejected", 1]]);
+    expect(outcomes(result.receipts)).toMatchObject({ refund_001: "rejected" });
+  });
+
+  it("re-sends a refund after a 5xx (idempotent key), applying it once", async () => {
+    const s = setup(happyPathBundle());
+    s.world.fault("/v1/refunds", { kind: "server_error" });
+    const result = await s.run();
+    expect(outcomes(result.receipts)).toMatchObject({
+      refund_001: "confirmed",
+      note_001: "confirmed",
+    });
+    expect(await refundAttempts(s)).toEqual([
+      ["reconciled", 1],
+      ["confirmed", 2],
+    ]);
+    expect(refundsOn(s, "ch_fixture_001")).toBe(1);
+  });
+
+  it("a lost refund response is resolved by the idempotent replay: one refund, nothing held", async () => {
+    const s = setup(happyPathBundle());
+    s.world.fault("/v1/refunds", { kind: "drop_response_after_commit" });
+    const result = await s.run();
+    expect(result.state).toBe("completed");
+    expect(await refundAttempts(s)).toEqual([
+      ["reconciled", 1],
+      ["confirmed", 2],
+    ]);
+    expect(refundsOn(s, "ch_fixture_001")).toBe(1);
+    // The note names the refund the replay returned, which is the one the lost response created.
+    const refund = s.world.refunds.find((r) => r.charge === "ch_fixture_001");
+    expect(s.world.tickets.get("5531")?.comments.at(-1)?.body).toContain(refund?.id);
+  });
+
+  it.each([
+    ["429s until the budget runs out", { kind: "reject", status: 429, retryable: true }],
+    ["a 403", { kind: "reject", status: 403, retryable: false }],
+  ] as const)(
+    "a lost refund response followed by %s is unknown_outcome, never rejected",
+    async (_label, refusal) => {
+      const s = setup(happyPathBundle());
+      s.world.fault("/v1/refunds", { kind: "drop_response_after_commit" });
+      for (let i = 0; i < 3; i++) s.world.fault("/v1/refunds", refusal);
+      const result = await s.run();
+      const receipt = result.receipts.find((r) => r.actionId === "refund_001");
+      expect(receipt?.outcome).toBe("unknown_outcome");
+      const [first] = await s.journal.attemptsFor(s.hash, "refund_001");
+      expect(receipt?.holdReason).toEqual({ kind: "unresolved_outcome", attemptId: first?.id });
+      expect(s.world.refunds.filter((r) => r.charge === "ch_fixture_001")).toHaveLength(1);
+      expect(outcomes(result.receipts)).toMatchObject({ note_001: "skipped_dependency" });
+
+      // A later run holds it too: never re-sent past an unknown outcome.
+      const again = await s.run();
+      expect(outcomes(again.receipts)).toMatchObject({ refund_001: "held" });
+      expect(s.world.refunds.filter((r) => r.charge === "ch_fixture_001")).toHaveLength(1);
+    },
+  );
+
+  it("says when Retry-After, not the budget, stopped the retries", async () => {
+    const s = setup(happyPathBundle());
+    s.world.fault("/v1/refunds", {
+      kind: "reject",
+      status: 429,
+      retryable: true,
+      retryAfterMs: 60_000,
+    });
+    const result = await s.run();
+    expect(result.receipts.find((r) => r.actionId === "refund_001")?.limitations.join(" ")).toMatch(
+      /exceeds the 10000 ms cap/,
+    );
+  });
+
+  it("never re-sends a note after an unknown outcome (appends aren't idempotent)", async () => {
+    const s = setup(happyPathBundle());
+    const zendesk = s.deps.providers.zendesk;
+    let dropped = false;
+    s.deps.providers.zendesk = {
+      ...zendesk,
+      dispatch: async (req, ctx) => {
+        const res = await zendesk.dispatch(req, ctx);
+        if (!dropped && req.body.includes('"comment"')) {
+          dropped = true;
+          return { kind: "unknown", error: "response lost (injected)" };
+        }
+        return res;
+      },
+    };
+    const result = await s.run();
+    expect(outcomes(result.receipts)).toMatchObject({ note_001: "unknown_outcome" });
+    expect(s.sleeps).toEqual([]);
+    expect(s.world.tickets.get("5531")?.comments).toHaveLength(1);
   });
 });
 

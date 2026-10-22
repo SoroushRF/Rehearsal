@@ -1,0 +1,177 @@
+{
+  "tickets": [
+    {
+      "id": 4000000,
+      "url": "https://northwind.zendesk.com/api/v2/tickets/4000000.json",
+      "external_id": "ticket-449",
+      "subject": "Retention policy losing filters since 11:40 on our regulated tenant",
+      "raw_subject": "Retention policy losing filters since 11:40 on our regulated tenant",
+      "description": "Since our auditors asked us to rotate keys, the retention policy loses the filter selection on pagination. It reproduces on our regulated tenant for the field sales team. Request id req_8873492f99 is one example. This is blocking the regulator's submission deadline.",
+      "status": "open",
+      "priority": "low",
+      "type": "question",
+      "recipient": null,
+      "requester_id": 2000051,
+      "submitter_id": 2000051,
+      "assignee_id": 1000003,
+      "organization_id": 3000008,
+      "group_id": 5000003,
+      "collaborator_ids": [],
+      "follower_ids": [],
+      "email_cc_ids": [],
+      "tags": ["question", "low", "account_wrenglen_publishing", "smb", "media"],
+      "has_incidents": false,
+      "created_at": "2024-10-02T11:22:42Z",
+      "updated_at": "2024-10-02T15:37:17Z",
+      "via": {
+        "channel": "chat",
+        "source": {
+          "from": {},
+          "to": {},
+          "rel": null
+        }
+      },
+      "custom_fields": [
+        {
+          "id": 7990001,
+          "value": "data_export"
+        },
+        {
+          "id": 7990002,
+          "value": null
+        },
+        {
+          "id": 7990003,
+          "value": false
+        },
+        {
+          "id": 7990004,
+          "value": null
+        }
+      ],
+      "fields": [
+        {
+          "id": 7990001,
+          "value": "data_export"
+        },
+        {
+          "id": 7990002,
+          "value": null
+        },
+        {
+          "id": 7990003,
+          "value": false
+        },
+        {
+          "id": 7990004,
+          "value": null
+        }
+      ],
+      "custom_status_id": 7300002,
+      "due_at": null,
+      "problem_id": null,
+      "satisfaction_rating": null,
+      "sharing_agreement_ids": [],
+      "followup_ids": [],
+      "from_messaging_channel": false,
+      "allow_channelback": false,
+      "allow_attachments": true,
+      "is_public": true,
+      "brand_id": 7000001,
+      "ticket_form_id": 7100001,
+      "generated_timestamp": 1727883437,
+      "forum_topic_id": null
+    },
+    {
+      "id": 4000119,
+      "url": "https://northwind.zendesk.com/api/v2/tickets/4000119.json",
+      "external_id": "ticket-437",
+      "subject": "SSO login - returning stale data (req_4fc01c75fd)",
+      "raw_subject": "SSO login - returning stale data (req_4fc01c75fd)",
+      "description": "We are evaluating SSO login for the board reporting pack and hit a blocker: it shows stale data until a hard refresh. Tried on production with the same result (ref req_4fc01c75fd). What is the expected behaviour here?",
+      "status": "solved",
+      "priority": "normal",
+      "type": "question",
+      "recipient": "support@northwind.zendesk.com",
+      "requester_id": 2000051,
+      "submitter_id": 2000051,
+      "assignee_id": 1000003,
+      "organization_id": 3000008,
+      "group_id": 5000003,
+      "collaborator_ids": [2000052],
+      "follower_ids": [],
+      "email_cc_ids": [2000052],
+      "tags": ["question", "normal", "account_wrenglen_publishing", "smb", "media"],
+      "has_incidents": false,
+      "created_at": "2025-05-03T11:28:12Z",
+      "updated_at": "2025-05-06T11:54:59Z",
+      "via": {
+        "channel": "email",
+        "source": {
+          "from": {
+            "address": "melissa_coldbourne@wrenglen-publishing.com",
+            "name": "Melissa Coldbourne"
+          },
+          "to": {
+            "address": "support@northwind.zendesk.com",
+            "name": "Support"
+          },
+          "rel": null
+        }
+      },
+      "custom_fields": [
+        {
+          "id": 7990001,
+          "value": "sign_in"
+        },
+        {
+          "id": 7990002,
+          "value": null
+        },
+        {
+          "id": 7990003,
+          "value": false
+        },
+        {
+          "id": 7990004,
+          "value": null
+        }
+      ],
+      "fields": [
+        {
+          "id": 7990001,
+          "value": "sign_in"
+        },
+        {
+          "id": 7990002,
+          "value": null
+        },
+        {
+          "id": 7990003,
+          "value": false
+        },
+        {
+          "id": 7990004,
+          "value": null
+        }
+      ],
+      "custom_status_id": 7300005,
+      "due_at": null,
+      "problem_id": null,
+      "satisfaction_rating": null,
+      "sharing_agreement_ids": [],
+      "followup_ids": [],
+      "from_messaging_channel": false,
+      "allow_channelback": false,
+      "allow_attachments": true,
+      "is_public": true,
+      "brand_id": 7000001,
+      "ticket_form_id": 7100001,
+      "generated_timestamp": 1746532499,
+      "forum_topic_id": null
+    }
+  ],
+  "next_page": "http://127.0.0.1:8111/api/v2/users/2000051/tickets/requested.json?per_page=2&page=2",
+  "previous_page": null,
+  "count": 6
+}

@@ -1,0 +1,177 @@
+{
+  "tickets": [
+    {
+      "id": 4000242,
+      "url": "https://northwind.zendesk.com/api/v2/tickets/4000242.json",
+      "external_id": "ticket-451",
+      "subject": "Slack notification failing after retry since 10:15 on our second workspace",
+      "raw_subject": "Slack notification failing after retry since 10:15 on our second workspace",
+      "description": "Since this morning, the Slack notification fails on the retry after the first attempt went through. It reproduces on our second workspace for our warehouse scanners. Request id req_725d276b6c is one example. This is blocking customer onboarding.",
+      "status": "solved",
+      "priority": "normal",
+      "type": "question",
+      "recipient": null,
+      "requester_id": 2000051,
+      "submitter_id": 2000051,
+      "assignee_id": 1000003,
+      "organization_id": 3000008,
+      "group_id": 5000003,
+      "collaborator_ids": [],
+      "follower_ids": [],
+      "email_cc_ids": [],
+      "tags": ["question", "normal", "account_wrenglen_publishing", "smb", "media"],
+      "has_incidents": false,
+      "created_at": "2025-11-04T11:45:40Z",
+      "updated_at": "2025-11-11T08:32:37Z",
+      "via": {
+        "channel": "api",
+        "source": {
+          "from": {},
+          "to": {},
+          "rel": null
+        }
+      },
+      "custom_fields": [
+        {
+          "id": 7990001,
+          "value": "mobile_app"
+        },
+        {
+          "id": 7990002,
+          "value": null
+        },
+        {
+          "id": 7990003,
+          "value": false
+        },
+        {
+          "id": 7990004,
+          "value": null
+        }
+      ],
+      "fields": [
+        {
+          "id": 7990001,
+          "value": "mobile_app"
+        },
+        {
+          "id": 7990002,
+          "value": null
+        },
+        {
+          "id": 7990003,
+          "value": false
+        },
+        {
+          "id": 7990004,
+          "value": null
+        }
+      ],
+      "custom_status_id": 7300005,
+      "due_at": null,
+      "problem_id": null,
+      "satisfaction_rating": null,
+      "sharing_agreement_ids": [],
+      "followup_ids": [],
+      "from_messaging_channel": false,
+      "allow_channelback": false,
+      "allow_attachments": true,
+      "is_public": true,
+      "brand_id": 7000001,
+      "ticket_form_id": 7100001,
+      "generated_timestamp": 1762849957,
+      "forum_topic_id": null
+    },
+    {
+      "id": 4000325,
+      "url": "https://northwind.zendesk.com/api/v2/tickets/4000325.json",
+      "external_id": "ticket-452",
+      "subject": "/v1/web-app/accounts returning 504 for our warehouse scanners - data residency setting unusable",
+      "raw_subject": "/v1/web-app/accounts returning 504 for our warehouse scanners - data residency setting unusable",
+      "description": "Raising on behalf of our warehouse scanners: the data residency setting fails on the retry after the first attempt went through on our pre-production mirror. First occurrence around 02:50, repeating roughly hourly. This is the second thing we have had to work around before the migration off our legacy system.",
+      "status": "solved",
+      "priority": "normal",
+      "type": "question",
+      "recipient": "support@northwind.zendesk.com",
+      "requester_id": 2000051,
+      "submitter_id": 2000051,
+      "assignee_id": 1000003,
+      "organization_id": 3000008,
+      "group_id": 5000003,
+      "collaborator_ids": [],
+      "follower_ids": [],
+      "email_cc_ids": [],
+      "tags": ["question", "normal", "account_wrenglen_publishing", "smb", "media"],
+      "has_incidents": false,
+      "created_at": "2026-02-26T07:48:03Z",
+      "updated_at": "2026-03-09T12:29:48Z",
+      "via": {
+        "channel": "email",
+        "source": {
+          "from": {
+            "address": "melissa_coldbourne@wrenglen-publishing.com",
+            "name": "Melissa Coldbourne"
+          },
+          "to": {
+            "address": "support@northwind.zendesk.com",
+            "name": "Support"
+          },
+          "rel": null
+        }
+      },
+      "custom_fields": [
+        {
+          "id": 7990001,
+          "value": "mobile_app"
+        },
+        {
+          "id": 7990002,
+          "value": null
+        },
+        {
+          "id": 7990003,
+          "value": false
+        },
+        {
+          "id": 7990004,
+          "value": null
+        }
+      ],
+      "fields": [
+        {
+          "id": 7990001,
+          "value": "mobile_app"
+        },
+        {
+          "id": 7990002,
+          "value": null
+        },
+        {
+          "id": 7990003,
+          "value": false
+        },
+        {
+          "id": 7990004,
+          "value": null
+        }
+      ],
+      "custom_status_id": 7300005,
+      "due_at": null,
+      "problem_id": null,
+      "satisfaction_rating": null,
+      "sharing_agreement_ids": [],
+      "followup_ids": [],
+      "from_messaging_channel": false,
+      "allow_channelback": false,
+      "allow_attachments": true,
+      "is_public": true,
+      "brand_id": 7000001,
+      "ticket_form_id": 7100001,
+      "generated_timestamp": 1773059388,
+      "forum_topic_id": null
+    }
+  ],
+  "next_page": null,
+  "previous_page": "http://127.0.0.1:8111/api/v2/users/2000051/tickets/requested.json?per_page=2&page=2",
+  "count": 6
+}

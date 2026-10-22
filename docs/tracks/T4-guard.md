@@ -30,7 +30,7 @@
 |---|---|---|---|---|---|
 | T4.1 | Pure guards: observation projection compare, query-membership diff (added/removed, empty results count), own-write overlay advanced only by confirmed receipts | M1 | Unit tests on fixture observations | #25 | — |
 | T4.2 | Injection scripts: phantom charge, teammate field edit, Era faults, reset. Exposed as `pnpm demo:phantom` / `demo:conflict` / `demo:reset`. | M2 | Scripts run against local worlds | #26 | — |
-| T4.3 | Wire guards into T3's admission; hold reasons in receipts; dependents skipped | M2–M3 | `phantom` bundle passes on Era | #27 | T4.1, T4.2, T3.2, T1.3 |
+| T4.3 | Wire guards into T3's admission; hold reasons in receipts; dependents skipped | M2–M3 | `phantom` bundle passes on Era | #27 | T4.1, T4.2, T3.2, T1.3, T3.3, T1.9 |
 | T4.4 | Conditional compensation on owned fields: re-read, revert only if our value is still there, otherwise record a conflict | M3 | `teammate-conflict` bundle passes on Era | #28 | T4.3, T3.3 |
 | T4.5 | ML smoke test: Qwen3.5-0.8B LoRA on 32 cases, weights change, save and reload, peak memory measured (Python 3.12, CUDA 12.7-compatible wheels) | M1 | Smoke log + adapter hash in `ml/manifests/` | #29 | — |
 | T4.6 | ML pilot: labels from replay bundles plus perturbations; base vs. tuned vs. rules vs. Claude zero-shot; go/no-go | M2–M3 | Report in `evals/impact/`; decision recorded | #30 | T4.5 |
@@ -43,6 +43,13 @@
 ## Handoff log
 
 _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
+
+### 2026-10-21, T4.3 part 1
+
+- **The guards run inside the executor on the fake provider.** `createReadGuard` in `packages/core/src/step-guard.ts` is the executor's `StepGuard`. Before a step is sent, it re-reads that step's evidence through the operational `ProviderPort`s and calls `guardAction`. The own-write overlay is built from `confirmedReceipts`. The `phantom` bundle passes through `executeRun` (`apps/executor-worker/test/step-guard.test.ts`).
+- **Still open (#27).** The task is done when `phantom` passes on Era, which needs T1.3's read adapters, T3.3's write adapters, and T1.9's tenant tokens. Those were added to **Blocked by**.
+- **Next.** When T3 wires the executor worker to consume `apply` jobs, pass `guard: createReadGuard({ providers, worlds, clock })` with the same operational providers and worlds as the executor. Then run the phantom scenario on Era with `pnpm demo:phantom`.
+- **Gotcha.** A ticket step holds on any change to a planned ticket field, including a note whose own write doesn't touch that field. That is deliberate (a hold, never a false admit). Relax it only with a decision.
 
 ### 2026-10-21, T4.2
 
