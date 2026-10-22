@@ -8,7 +8,8 @@ import { objectBindings, runEvents, stepAttempts, stepReceipts } from "./schema"
 const LEGAL: Record<AttemptState, readonly AttemptState[]> = {
   prepared: ["dispatched"],
   dispatched: ["confirmed", "rejected", "unknown_outcome"],
-  unknown_outcome: ["reconciled"],
+  // reconciled: a read found the effect. rejected: a read showed it never happened.
+  unknown_outcome: ["reconciled", "rejected"],
   confirmed: [],
   rejected: [],
   reconciled: [],
@@ -137,8 +138,10 @@ export class PgJournal implements JournalPort {
     await this.db.transaction(async (tx) => {
       // A transaction exposes the same query API; reuse this journal's methods inside it.
       const inTx = new PgJournal(tx as unknown as Db, this.orgId);
-      if (step.transition) {
-        const t = step.transition;
+      for (const t of [
+        ...(step.transitions ?? []),
+        ...(step.transition ? [step.transition] : []),
+      ]) {
         await inTx.transition(t.attemptId, t.from, t.to, t.patch);
       }
       for (const binding of step.bindings) await inTx.bind(binding);

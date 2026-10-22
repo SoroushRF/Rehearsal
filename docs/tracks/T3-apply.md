@@ -48,6 +48,18 @@ _(add dated entries)_
 
 _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
 
+- **2026-10-22, Artin (T3.5).** Branch `t3/T3.5-reconcile`. A step with a `dispatched` or `unknown_outcome` attempt now calls `provider.reconcile` and no longer just holds:
+  - **Applied:** confirmed, with the read's results as bindings. The attempts move to `reconciled` in one atomic settle.
+  - **Not applied, and older than `reconcileAfterMs` (60 s):** the attempts become `rejected` with no status, then the step is sent fresh.
+  - **Otherwise:** held.
+  - **Reads:** `stripeWriter` and `zendeskWriter` implement `reconcile` with real reads, as does FakeWorld.
+  - **Atomic replay:** `SettleStep.transitions` makes the in-run replay's reconciled marks atomic.
+  - **Tests:** the `unknown-outcome` bundle passes with a restart. The live Era test (`reconcile.test.ts`) loses every write's response across three restarts, and each write is applied once.
+  - **Next:** worker wiring (pg-boss consumer, Postgres `ApplyStore` with `lockPlan`, `createReadGuard`), then T3.6.
+  - **Gotchas:**
+    - If another revision's run reconciled this hash's attempt, a re-run of this hash reads the effect back to record its own receipt and bindings. It never re-sends.
+    - The reconcile window uses the executor's clock against `dispatchedAt`.
+
 - **2026-10-22, Artin (T3.4).** Branch `t3/T3.4-retries`. The executor retries within a run following [decision 0003](../decisions/0003-idempotent-resend-and-retries.md):
   - **429:** bounded backoff that honors Retry-After, re-sending identical bytes as a new attempt row each time. A later run may send it again.
   - **Unknown outcomes** (5xx, timeout, lost response): re-sent only when `ProviderPort.idempotentResend` says so, which today means Stripe refunds only. The replay marks earlier unknown attempts `reconciled`.

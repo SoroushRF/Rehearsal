@@ -11,6 +11,7 @@ import {
   type DispatchResult,
   fingerprint,
   noteBodyFor,
+  operationMarker,
   type Preconditions,
   type PreparedRequest,
   type ProviderPort,
@@ -329,20 +330,46 @@ export class FakeWorld {
   }
 
   #reconcile(attempt: Attempt, action: Action): ReconcileResult {
-    if (action.kind !== "stripe.refund.create")
-      return { kind: "indeterminate", detail: "fake reconciles refunds only" };
-    const refund = this.refunds.find((r) => r.operationKey === attempt.operationKey);
-    return refund
-      ? {
-          kind: "applied",
-          providerRef: { vendor: "stripe", kind: "refund", id: refund.id },
-          effect: {
-            "refund.id": refund.id,
-            "refund.status": refund.status,
-            "refund.amount": refund.amount,
-          },
-        }
-      : { kind: "not_applied" };
+    if (action.kind === "stripe.refund.create") {
+      const refund = this.refunds.find((r) => r.operationKey === attempt.operationKey);
+      return refund
+        ? {
+            kind: "applied",
+            providerRef: { vendor: "stripe", kind: "refund", id: refund.id },
+            effect: {
+              "refund.id": refund.id,
+              "refund.status": refund.status,
+              "refund.amount": refund.amount,
+            },
+          }
+        : { kind: "not_applied" };
+    }
+    const ticket = this.tickets.get(action.args.ticketId);
+    if (!ticket) return { kind: "indeterminate", detail: `no ticket ${action.args.ticketId}` };
+    const ref = { vendor: "zendesk", kind: "ticket", id: action.args.ticketId } as const;
+    if (action.kind === "zendesk.ticket.appendPrivateNote") {
+      const marker = operationMarker(attempt.operationKey);
+      return ticket.comments.some((c) => c.body.includes(marker))
+        ? { kind: "applied", providerRef: ref, effect: {} }
+        : { kind: "not_applied" };
+    }
+    // Patch: our values present → applied; untouched since our read (same stamp) → not applied;
+    // anything else (someone else wrote it) can't be told apart → indeterminate.
+    const sent = (JSON.parse(attempt.request.body) as { ticket: Record<string, unknown> }).ticket;
+    const ours = Object.entries(action.args.set).every(
+      ([field, value]) => ticket[field as "priority" | "status"] === value,
+    );
+    if (ours)
+      return {
+        kind: "applied",
+        providerRef: ref,
+        effect: { priority: ticket.priority, status: ticket.status },
+      };
+    if (sent.updated_stamp === this.#stamp(action.args.ticketId)) return { kind: "not_applied" };
+    return {
+      kind: "indeterminate",
+      detail: "ticket changed since our read, and not to our values",
+    };
   }
 }
 

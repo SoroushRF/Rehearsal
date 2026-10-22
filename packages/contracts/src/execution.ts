@@ -15,7 +15,10 @@ export const RunState = z.enum([
 ]);
 export type RunState = z.infer<typeof RunState>;
 
-/** prepared → dispatched → confirmed | rejected | unknown_outcome (→ reconciled). */
+/**
+ * prepared → dispatched → confirmed | rejected | unknown_outcome.
+ * unknown_outcome → reconciled (a read found the effect) | rejected (a read showed it never happened).
+ */
 export const AttemptState = z.enum([
   "prepared",
   "dispatched",

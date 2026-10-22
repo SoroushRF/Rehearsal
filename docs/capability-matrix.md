@@ -41,6 +41,7 @@ Every world runs with `SIMCORE_SEED=42`, `SIMCORE_TODAY=2026-10-01`, `SIMCORE_ST
 | f′ | `/_admin/tenants/A/reset` drops A's writes, leaves B alone, and A's token stays valid | **PASS** | `tenancy.test.ts` |
 | 3 | Fixture templates match live GETs; a charge and a ticket derived from them inject and read back | **PASS** | `fixtures.test.ts`, `scenarios/billing/fixtures/` |
 | T3.3 | The executor applies refund → guarded patch → private note to an operational world through the Era write adapters, one confirmed receipt per step; the note carries the operational refund ID | **PASS** (2026-10-22, macOS arm64, Docker 29.9.1; the whole suite passes there too) | `write-adapters.test.ts` |
+| T3.5 | Lost responses after Era applied each write, across executor restarts: the refund is found by `metadata.rehearsal_op`, the patch by its fields, the note by its operation marker; one effect each | **PASS** (2026-10-22, macOS arm64) | `reconcile.test.ts` |
 
 Not covered by this gate: Era fault injection (`/_admin/faults`), Slack, pagination-boundary phantoms, and executor gates 5–7 (journal, crash recovery, ID remapping).
 
