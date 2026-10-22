@@ -45,6 +45,10 @@ export type DispatchResult =
   /** Transport failed after the request may have reached the provider. Never blindly retry. */
   | { kind: "unknown"; error: string };
 
+/**
+ * What an authoritative read says about an attempt whose outcome is unknown.
+ * `applied.effect` uses the same keys a confirmed response would (e.g. `refund.id`).
+ */
 export type ReconcileResult =
   | { kind: "applied"; providerRef: EntityRef; effect: Record<string, unknown> }
   | { kind: "not_applied" }
@@ -88,13 +92,17 @@ export interface ProviderPort {
   reconcile(attempt: Attempt, action: Action, ctx: WorldContext): Promise<ReconcileResult>;
 }
 
+export interface SettleTransition {
+  attemptId: string;
+  from: AttemptState;
+  to: AttemptState;
+  patch?: Partial<Pick<Attempt, "providerStatus" | "error" | "dispatchedAt" | "settledAt">>;
+}
+
 export interface SettleStep {
-  transition?: {
-    attemptId: string;
-    from: AttemptState;
-    to: AttemptState;
-    patch?: Partial<Pick<Attempt, "providerStatus" | "error" | "dispatchedAt" | "settledAt">>;
-  };
+  /** Applied in order, before `transition` (e.g. earlier unknown attempts → reconciled). */
+  transitions?: SettleTransition[];
+  transition?: SettleTransition;
   bindings: ObjectBinding[];
   receipt: Receipt;
 }

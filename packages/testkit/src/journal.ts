@@ -12,7 +12,7 @@ import type { ApplyStore, JournalPort, SettleStep, StoredRun } from "@rehearsal/
 const LEGAL: Record<AttemptState, readonly AttemptState[]> = {
   prepared: ["dispatched"],
   dispatched: ["confirmed", "rejected", "unknown_outcome"],
-  unknown_outcome: ["reconciled"],
+  unknown_outcome: ["reconciled", "rejected"],
   confirmed: [],
   rejected: [],
   reconciled: [],
@@ -84,20 +84,23 @@ export class MemoryJournal implements JournalPort {
       throw new Error("journal unavailable (injected)");
     }
     // Validate everything first so the write is all-or-nothing, like the Postgres transaction.
-    const t = step.transition;
-    if (t) {
+    const all = [...(step.transitions ?? []), ...(step.transition ? [step.transition] : [])];
+    const states = new Map<string, AttemptState | undefined>();
+    for (const t of all) {
       if (!LEGAL[t.from].includes(t.to))
         throw new Error(`illegal attempt transition ${t.from} -> ${t.to}`);
-      if (this.attempts.get(t.attemptId)?.state !== t.from) {
-        throw new Error(`attempt ${t.attemptId} is not in state ${t.from}`);
-      }
+      const now = states.has(t.attemptId)
+        ? states.get(t.attemptId)
+        : this.attempts.get(t.attemptId)?.state;
+      if (now !== t.from) throw new Error(`attempt ${t.attemptId} is not in state ${t.from}`);
+      states.set(t.attemptId, t.to);
     }
     for (const b of step.bindings) {
       const existing = this.#bindings.get(`${b.planHash}:${b.ref.stepId}:${b.ref.path}`);
       if (existing && existing.value !== b.value)
         throw new Error("binding already holds a different value");
     }
-    if (t) await this.transition(t.attemptId, t.from, t.to, t.patch);
+    for (const t of all) await this.transition(t.attemptId, t.from, t.to, t.patch);
     for (const b of step.bindings) await this.bind(b);
     await this.recordReceipt(step.receipt);
   }

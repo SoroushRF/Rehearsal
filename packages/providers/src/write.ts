@@ -2,6 +2,7 @@ import type { Action, Attempt, World } from "@rehearsal/contracts";
 import {
   type DispatchResult,
   noteBodyFor,
+  operationMarker,
   type Preconditions,
   type PreparedRequest,
   type ProviderPort,
@@ -106,10 +107,23 @@ async function send(target: WriteTarget, req: PreparedRequest): Promise<Dispatch
   return classifyResponse(res.status, body, res.headers.get("retry-after"));
 }
 
-const notYet = async (): Promise<ReconcileResult> => ({
-  kind: "indeterminate",
-  detail: "reconciliation through reads lands in T3.5",
-});
+/** GET through the bound tenant with the vendor auth; throws on a non-2xx (reconcile → indeterminate). */
+async function readJson<T>(target: WriteTarget, path: string): Promise<T> {
+  const res = await eraFetch(target.config, path, {
+    headers: { authorization: target.authorization },
+    signal: AbortSignal.timeout(target.timeoutMs ?? 10_000),
+  });
+  if (!res.ok) throw new Error(`GET ${path} → ${res.status}`);
+  return (await res.json()) as T;
+}
+
+/** Zendesk next_page is an absolute URL on the serving world's origin; keep only path + query. */
+function pathOf(url: string): string {
+  const u = new URL(url);
+  return `${u.pathname}${u.search}`;
+}
+
+const MAX_PAGES = 50;
 
 /**
  * Stripe refunds. Form-encoded in a fixed field order (the simulator fingerprints path + raw body
@@ -146,7 +160,41 @@ export function stripeWriter(target: WriteTarget): ProviderWriter {
       }
       return result;
     },
-    reconcile: (_a: Attempt, _action: Action, _ctx: WorldContext) => notYet(),
+    /** Find the refund by the operation key stored in its metadata, among all refunds of the charge. */
+    async reconcile(attempt: Attempt, action: Action, ctx: WorldContext): Promise<ReconcileResult> {
+      assertTarget(target, ctx);
+      if (action.kind !== "stripe.refund.create") throw new Error(`stripe can't ${action.kind}`);
+      let path = `/v1/refunds?charge=${encodeURIComponent(action.args.chargeId)}&limit=100`;
+      for (let page = 0; page < MAX_PAGES; page++) {
+        const list = await readJson<{
+          data: Array<{
+            id: string;
+            status: string;
+            amount: number;
+            charge: string;
+            metadata?: Record<string, string>;
+          }>;
+          has_more: boolean;
+        }>(target, path);
+        const refund = list.data.find((r) => r.metadata?.rehearsal_op === attempt.operationKey);
+        if (refund) {
+          return {
+            kind: "applied",
+            providerRef: { vendor: "stripe", kind: "refund", id: refund.id },
+            effect: {
+              "refund.id": refund.id,
+              "refund.status": refund.status,
+              "refund.amount": refund.amount,
+              charge: refund.charge,
+            },
+          };
+        }
+        const last = list.data.at(-1);
+        if (!list.has_more || !last) return { kind: "not_applied" };
+        path = `/v1/refunds?charge=${encodeURIComponent(action.args.chargeId)}&limit=100&starting_after=${encodeURIComponent(last.id)}`;
+      }
+      return { kind: "indeterminate", detail: `more than ${MAX_PAGES} pages of refunds` };
+    },
   };
 }
 
@@ -225,7 +273,52 @@ export function zendeskWriter(target: WriteTarget): ProviderWriter {
       assertTarget(target, ctx);
       return send(target, req);
     },
-    reconcile: (_a: Attempt, _action: Action, _ctx: WorldContext) => notYet(),
+    async reconcile(attempt: Attempt, action: Action, ctx: WorldContext): Promise<ReconcileResult> {
+      assertTarget(target, ctx);
+      if (action.kind === "stripe.refund.create") throw new Error(`zendesk can't ${action.kind}`);
+      const ref = { vendor: "zendesk", kind: "ticket", id: action.args.ticketId } as const;
+      if (action.kind === "zendesk.ticket.appendPrivateNote") {
+        // The note carries its operation marker; look for it across every page of comments.
+        const marker = operationMarker(attempt.operationKey);
+        let path = `/api/v2/tickets/${encodeURIComponent(action.args.ticketId)}/comments.json`;
+        for (let page = 0; page < MAX_PAGES; page++) {
+          const body = await readJson<{
+            comments: Array<{ body: string }>;
+            next_page: string | null;
+          }>(target, path);
+          if (body.comments.some((c) => c.body.includes(marker))) {
+            return { kind: "applied", providerRef: ref, effect: {} };
+          }
+          if (!body.next_page) return { kind: "not_applied" };
+          path = pathOf(body.next_page);
+        }
+        return { kind: "indeterminate", detail: `more than ${MAX_PAGES} pages of comments` };
+      }
+      if (action.kind === "zendesk.ticket.patchFields") {
+        const { ticket } = await readJson<{ ticket: Record<string, unknown> }>(
+          target,
+          ticketPath(action.args.ticketId),
+        );
+        const observed = {
+          priority: ticket.priority,
+          status: ticket.status,
+          updated_at: ticket.updated_at,
+        };
+        const ours = Object.entries(action.args.set).every(
+          ([field, value]) => value === undefined || ticket[field] === value,
+        );
+        if (ours) return { kind: "applied", providerRef: ref, effect: observed };
+        // Untouched since the read our guarded write was based on: it never landed.
+        if (stampIn(attempt.request.body).updated_stamp === ticket.updated_at)
+          return { kind: "not_applied" };
+        return {
+          kind: "indeterminate",
+          detail:
+            "ticket changed since our read and doesn't hold our values; can't tell whose write won",
+        };
+      }
+      return { kind: "indeterminate", detail: "unsupported zendesk action" };
+    },
   };
 }
 
