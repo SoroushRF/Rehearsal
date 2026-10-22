@@ -6,7 +6,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 
 ## Top blockers
 
-13 of 32 tasks done. These open tasks hold up the most other work:
+14 of 33 tasks done. These open tasks hold up the most other work:
 
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
@@ -48,6 +48,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T2.7** Two-minute video script, recording, Devpost page [#16](https://github.com/SoroushRF/Rehearsal/issues/16) | 🟥 blocked | T2.6 (T2, ready) |  |
 | **T2.8** Thin Expo approver app on the same API _(stretch)_ [#17](https://github.com/SoroushRF/Rehearsal/issues/17) | 🟥 blocked | T2.4 (T2, blocked) |  |
 | **T2.9** Decide currency: align policy.v1.json with the Era seed (USD vs CAD) [#40](https://github.com/SoroushRF/Rehearsal/issues/40) | 🟨 ready | — | T1.5 (T1) |
+| **T2.10** Keep command and internal routes outside SPA fallback [#59](https://github.com/SoroushRF/Rehearsal/issues/59) | ✅ done |  |  |
 
 ## T3 Apply
 
@@ -106,6 +107,7 @@ flowchart LR
     T2_6["T2.6 Run timeline, receipts and held-step views "]:::ready
     T2_7["T2.7 Two-minute video script, recording, Devpost"]:::blocked
     T2_9["T2.9 Decide currency: align policy.v1.json with "]:::ready
+    T2_10["T2.10 Keep command and internal routes outside S"]:::done
   end
   subgraph T3[T3 Apply]
     T3_1["T3.1 Drizzle migrations, Postgres journal, pg-bo"]:::done
