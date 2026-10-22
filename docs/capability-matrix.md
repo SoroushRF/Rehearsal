@@ -40,6 +40,7 @@ Every world runs with `SIMCORE_SEED=42`, `SIMCORE_TODAY=2026-10-01`, `SIMCORE_ST
 | f | Tenant isolation: A's refund and ticket edit are invisible in B | **PASS with signed tenant tokens**; **FAIL with plaintext `X-Sim-Tenant`** (surprise 1) | `tenancy.test.ts` |
 | f′ | `/_admin/tenants/A/reset` drops A's writes, leaves B alone, and A's token stays valid | **PASS** | `tenancy.test.ts` |
 | 3 | Fixture templates match live GETs; a charge and a ticket derived from them inject and read back | **PASS** | `fixtures.test.ts`, `scenarios/billing/fixtures/` |
+| T3.3 | The executor applies refund → guarded patch → private note to an operational world through the Era write adapters, one confirmed receipt per step; the note carries the operational refund ID | **PASS** (2026-10-22, macOS arm64, Docker 29.9.1; the whole suite passes there too) | `write-adapters.test.ts` |
 
 Not covered by this gate: Era fault injection (`/_admin/faults`), Slack, pagination-boundary phantoms, and executor gates 5–7 (journal, crash recovery, ID remapping).
 

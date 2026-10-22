@@ -1,3 +1,4 @@
+export * from "./bindings";
 export * from "./canonical";
 export * from "./dag";
 export * from "./executor";

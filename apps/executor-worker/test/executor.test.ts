@@ -446,23 +446,167 @@ describe("third-round review fixes", () => {
     ]);
   });
 
-  it("two revisions of one plan never apply at the same time", async () => {
+  /**
+   * The interleaving the lock exists for: revision 1 has journaled its note attempt but not yet
+   * marked it dispatched; revision 2 (identical) ignores that never-sent row and would send its
+   * own. The note has no idempotency, so without the lock it is appended twice.
+   */
+  async function raceTwoRevisions(store: { lockPlan: ExecutorDeps["store"]["lockPlan"] } | null) {
     const s = setup(happyPathBundle());
+    if (store) s.store.lockPlan = store.lockPlan;
     const rev2 = addRevision(s);
-    const [a, b] = await Promise.all([s.run(), rev2.run()]);
-    const deferred = [a, b].filter((r) => r.refusal === "another run of this plan is applying");
-    expect(deferred).toHaveLength(1);
-    expect(deferred[0]?.state).toBe("held");
-    expect(s.world.refunds).toHaveLength(2);
-    expect(s.world.tickets.get("5531")?.comments).toHaveLength(1);
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    let paused: () => void = () => {};
+    const reached = new Promise<void>((r) => {
+      paused = r;
+    });
+    let held = false;
+    s.journal.beforeTransition = async (attemptId, to) => {
+      const attempt = s.journal.attempts.get(attemptId);
+      if (!held && to === "dispatched" && attempt?.actionId === "note_001") {
+        held = true;
+        paused();
+        await gate;
+      }
+    };
+    const first = s.run();
+    await reached;
+    const second = await rev2.run();
+    release();
+    await first;
+    return { s, second };
+  }
+
+  it("without the plan lock, the race appends the note twice (what the lock prevents)", async () => {
+    const noLock = { lockPlan: async () => async () => {} };
+    const { s } = await raceTwoRevisions(noLock);
+    expect(s.world.tickets.get("5531")?.comments).toHaveLength(2);
   });
 
-  it("releases the plan lock even when the run stops on an error", async () => {
+  it("with the plan lock, the second revision is deferred and the note is appended once", async () => {
+    const { s, second } = await raceTwoRevisions(null);
+    expect(second).toMatchObject({
+      state: "held",
+      refusal: "another run of this plan is applying",
+    });
+    expect(s.world.tickets.get("5531")?.comments).toHaveLength(1);
+    expect(s.world.refunds).toHaveLength(2);
+  });
+
+  it("releases the plan lock even when the run throws", async () => {
     const s = setup(happyPathBundle());
-    s.journal.failNextSettle = true;
-    await s.run();
+    s.journal.failNextEvent = "run.admitted";
+    await expect(s.run()).rejects.toThrow(/event write failed/);
     const again = await s.run();
-    expect(again.refusal).toBeNull();
+    expect(again).toMatchObject({ state: "completed", refusal: null });
+  });
+});
+
+describe("guarded patches whose stamp moves (T3.3 review)", () => {
+  it("an identical revision adopts the patch even though our own writes moved the stamp", async () => {
+    const s = setup(happyPathBundle());
+    await s.run();
+    const rev2 = await addRevision(s).run();
+    expect(rev2.state).toBe("completed");
+    const patch = rev2.receipts.find((r) => r.actionId === "patch_001");
+    expect(patch?.limitations.join(" ")).toMatch(/not re-sent/);
+  });
+
+  it("a never-sent patch attempt is superseded when the stamp moved, then applied once", async () => {
+    const s = setup(happyPathBundle());
+    let crashed = false;
+    s.journal.beforeTransition = async (attemptId, to) => {
+      if (
+        !crashed &&
+        to === "dispatched" &&
+        s.journal.attempts.get(attemptId)?.actionId === "patch_001"
+      ) {
+        crashed = true;
+        throw new Error("crash before dispatched (injected)");
+      }
+    };
+    const first = await s.run();
+    expect(first.error).toMatch(/crash before dispatched/);
+    s.world.teammateEdit("5531", "status", "pending"); // moves the stamp; nothing of ours was sent
+
+    const second = await s.run();
+    expect(outcomes(second.receipts)).toMatchObject({ patch_001: "confirmed" });
+    const attempts = await s.journal.attemptsFor(s.hash, "patch_001");
+    expect(attempts.map((a) => [a.state, a.attemptNo])).toEqual([
+      ["prepared", 1],
+      ["confirmed", 2],
+    ]);
+    expect(s.world.tickets.get("5531")?.priority).toBe("high");
+  });
+
+  it("a 409 conflict is rejected, and a re-run reports it rejected without re-sending", async () => {
+    const s = setup(happyPathBundle());
+    s.journal.beforeTransition = async (attemptId, to) => {
+      if (to === "dispatched" && s.journal.attempts.get(attemptId)?.actionId === "patch_001") {
+        s.journal.beforeTransition = null;
+        s.world.teammateEdit("5531", "priority", "urgent"); // lands between our read and our write
+      }
+    };
+    const first = await s.run();
+    expect(outcomes(first.receipts)).toMatchObject({ patch_001: "rejected" });
+    expect(s.world.tickets.get("5531")?.priority).toBe("urgent");
+
+    const effects = s.world.effects.length;
+    const second = await s.run();
+    expect(outcomes(second.receipts)).toMatchObject({ patch_001: "rejected" });
+    expect(second.receipts.find((r) => r.actionId === "patch_001")?.limitations.join(" ")).toMatch(
+      /not re-sent/,
+    );
+    expect(s.world.effects.length).toBe(effects);
+  });
+
+  it.each(["patch_001", "note_001"])(
+    "%s: a revision whose prepared row trails another revision's confirmed send adopts it, never re-sends",
+    async (stepId) => {
+      const s = setup(happyPathBundle());
+      const rev2 = addRevision(s);
+      const crashOnceBeforeDispatch = () => {
+        let done = false;
+        s.journal.beforeTransition = async (attemptId, to) => {
+          if (
+            !done &&
+            to === "dispatched" &&
+            s.journal.attempts.get(attemptId)?.actionId === stepId
+          ) {
+            done = true;
+            throw new Error("crash before dispatched (injected)");
+          }
+        };
+      };
+      crashOnceBeforeDispatch();
+      await s.run(); // rev1 leaves a prepared row
+      crashOnceBeforeDispatch();
+      await rev2.run(); // rev2 leaves its own prepared row, after rev1's
+      s.journal.beforeTransition = null;
+      expect((await s.run()).state).toBe("completed"); // rev1 sends its row
+
+      const ticketWrites = () => s.world.effects.filter((e) => e.path.includes("5531")).length;
+      const comments = () => s.world.tickets.get("5531")?.comments.length;
+      const [writes, notes] = [ticketWrites(), comments()];
+      const result = await rev2.run();
+      expect(result.state).toBe("completed");
+      expect(result.receipts.find((r) => r.actionId === stepId)?.limitations.join(" ")).toMatch(
+        /not re-sent/,
+      );
+      expect(ticketWrites()).toBe(writes);
+      expect(comments()).toBe(notes);
+    },
+  );
+
+  it("refuses to apply when a vendor is configured for the planning world", async () => {
+    const s = setup(happyPathBundle());
+    s.deps.worlds = { ...s.deps.worlds, zendesk: { world: "planning", tenant: "test" } };
+    const result = await s.run();
+    expect(result.refusal).toMatch(/planning world/);
+    expect(s.world.effects).toEqual([]);
   });
 });
 
