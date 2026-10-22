@@ -21,8 +21,12 @@ export type ApplyResult =
   | { kind: "hash_mismatch"; detail: string }
   | { kind: "approval_invalid"; detail: string };
 
-/** A request for a hash with one of these runs returns that run instead of starting another. */
-const REUSABLE_STATES = ["approved", "applying", "completed"];
+/**
+ * A request for a hash with one of these runs returns that run instead of starting another.
+ * `cancelled` is here so a stale click can't silently undo a human stop; restarting needs a new
+ * revision and approval.
+ */
+const REUSABLE_STATES = ["approved", "applying", "completed", "cancelled"];
 
 /**
  * Turns an apply request into a run plus an `apply` job, or refuses. It only checks what can be

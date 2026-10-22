@@ -30,15 +30,15 @@ These must pass on Era, not just on fixtures:
 
 ## Tasks
 
-| ID | Task | Milestone | Done when | Issue |
-|---|---|---|---|---|
-| T3.1 | Drizzle migrations; Postgres `JournalPort` with compare-and-set attempt transitions; pg-boss setup; `POST /api/plans/:id/apply` enqueues a job | M1 | Journal tests against a real Postgres | #18 |
-| T3.2 | Executor loop on a FakeProvider: admission (stored manifest + hash + grant), topological order per case, prepare → journal → dispatch → confirm → receipt, result bindings | M1 | `happy-path` bundle passes on the fake provider | #19 |
-| T3.3 | Write adapters: Stripe refund (form-encoded, exact stored bytes, idempotency key = operation key), Zendesk patch (`safe_update` + `updated_stamp`), private note (`public:false`, operation marker) | M2 | Real Era refund, patch and note, each with a receipt | #20 |
-| T3.4 | Retries: bounded backoff, Retry-After on 429 and transient errors; validation and permission errors are rejected, not retried | M2 | Era fault injection → retried, one effect | #21 |
-| T3.5 | Unknown outcome: a test transport that forwards then drops the response, crash and restart, reconcile through reads | M3 | `unknown-outcome` bundle passes on Era | #22 |
-| T3.6 | ID divergence test, partial-completion run state, cancellation before the next admitted action | M3 | Tests green; UI shows partial honestly | #23 |
-| T3.7 | Bounded concurrency across independent cases. Only after everything above is green. | M4 | Optional | #24 |
+| ID | Task | Milestone | Done when | Issue | Blocked by |
+|---|---|---|---|---|---|
+| T3.1 | Drizzle migrations; Postgres `JournalPort` with compare-and-set attempt transitions; pg-boss setup; `POST /api/plans/:id/apply` enqueues a job | M1 | Journal tests against a real Postgres | #18 | — |
+| T3.2 | Executor loop on a FakeProvider: admission (stored manifest + hash + grant), topological order per case, prepare → journal → dispatch → confirm → receipt, result bindings | M1 | `happy-path` bundle passes on the fake provider | #19 | T3.1 |
+| T3.3 | Write adapters: Stripe refund (form-encoded, exact stored bytes, idempotency key = operation key), Zendesk patch (`safe_update` + `updated_stamp`), private note (`public:false`, operation marker) | M2 | Real Era refund, patch and note, each with a receipt | #20 | T3.2, T1.9 |
+| T3.4 | Retries: bounded backoff, Retry-After on 429 and transient errors; validation and permission errors are rejected, not retried | M2 | Era fault injection → retried, one effect | #21 | T3.3 |
+| T3.5 | Unknown outcome: a test transport that forwards then drops the response, crash and restart, reconcile through reads | M3 | `unknown-outcome` bundle passes on Era | #22 | T3.4 |
+| T3.6 | ID divergence test, partial-completion run state, cancellation before the next admitted action | M3 | Tests green; UI shows partial honestly | #23 | T3.3 |
+| T3.7 | Bounded concurrency across independent cases. Only after everything above is green. | M4 | Optional | #24 | T3.5, T3.6 |
 
 ## Decisions
 

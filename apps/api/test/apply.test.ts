@@ -192,6 +192,17 @@ describe.skipIf(!process.env.DB_TESTS)("POST /api/plans/:id/apply (real Postgres
     expect(await jobsFor(hash)).toHaveLength(2);
   });
 
+  it("returns a cancelled run instead of restarting it", async () => {
+    const { orgId, planId, hash } = await seed();
+    const first = (
+      await apply({ orgId, userId: "u" }, planId, { revision: 1, planHash: hash })
+    ).json();
+    await db.update(schema.runs).set({ state: "cancelled" }).where(eq(schema.runs.id, first.runId));
+    const again = await apply({ orgId, userId: "u" }, planId, { revision: 1, planHash: hash });
+    expect(again.json()).toEqual({ runId: first.runId, state: "cancelled", existing: true });
+    expect(await jobsFor(hash)).toHaveLength(1);
+  });
+
   it("returns a completed run instead of starting another", async () => {
     const { orgId, planId, hash } = await seed();
     const first = (
