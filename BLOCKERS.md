@@ -6,16 +6,13 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 
 ## Top blockers
 
-17 of 35 tasks done. These open tasks hold up the most other work:
+23 of 35 tasks done. These open tasks hold up the most other work:
 
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
-| **T2.9** Decide currency: align policy.v1.json with the Era seed (USD vs CAD) [#40](https://github.com/SoroushRF/Rehearsal/issues/40) | @parsaabbasian | 🟨 ready | 5 |
-| **T1.5** Bounded Claude tool loop and planner-worker plan jobs [#6](https://github.com/SoroushRF/Rehearsal/issues/6) | @SoroushRF | 🟥 blocked | 4 |
-| **T2.2** API: store plans, get plan, create revisions with expected-hash check [#11](https://github.com/SoroushRF/Rehearsal/issues/11) | @parsaabbasian | 🟨 ready | 3 |
-| **T2.3** Clerk sign-in, support_lead / finance_lead roles, and server-side checks [#12](https://github.com/SoroushRF/Rehearsal/issues/12) | @parsaabbasian | 🟨 ready | 2 |
+| **T1.5** Bounded Claude tool loop and planner-worker plan jobs [#6](https://github.com/SoroushRF/Rehearsal/issues/6) | @SoroushRF | 🟨 ready | 4 |
 | **T4.5** ML smoke test: Qwen3.5-0.8B LoRA on 32 cases [#29](https://github.com/SoroushRF/Rehearsal/issues/29) | @skhdemo | 🟨 ready | 2 |
-| **T2.4** Approvals endpoint: hash-bound grant and refusal test matrix [#13](https://github.com/SoroushRF/Rehearsal/issues/13) | @parsaabbasian | 🟥 blocked | 1 |
+| **T4.6** ML pilot and go/no-go [#30](https://github.com/SoroushRF/Rehearsal/issues/30) | @skhdemo | 🟥 blocked | 1 |
 
 ## T1 Rehearse
 
@@ -27,10 +24,10 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T1.2** Seed the incident cohort into both worlds, plus demo:reset [#3](https://github.com/SoroushRF/Rehearsal/issues/3) | ✅ done |  | T1.5 |
 | **T1.3** Read adapters: charges, tickets and query predicates [#4](https://github.com/SoroushRF/Rehearsal/issues/4) | ✅ done |  | T1.4, T4.3 (T4) |
 | **T1.4** Typed planning tools that record evidence and dependency edges [#5](https://github.com/SoroushRF/Rehearsal/issues/5) | ✅ done |  | T1.5 |
-| **T1.5** Bounded Claude tool loop and planner-worker plan jobs [#6](https://github.com/SoroushRF/Rehearsal/issues/6) | 🟥 blocked | T2.9 (T2, ready) | T1.6, T1.7, T1.8, T2.5 (T2) |
-| **T1.6** ~20 benign and trap tasks plus baselines for the scorecard [#7](https://github.com/SoroushRF/Rehearsal/issues/7) | 🟥 blocked | T1.5 (T1, blocked) |  |
-| **T1.7** Slack summary step (slack.message.postSummary) _(stretch)_ [#8](https://github.com/SoroushRF/Rehearsal/issues/8) | 🟥 blocked | T1.5 (T1, blocked) |  |
-| **T1.8** SurrealDB precedents (explicit promotion, recall with trace) _(stretch)_ [#9](https://github.com/SoroushRF/Rehearsal/issues/9) | 🟥 blocked | T1.5 (T1, blocked) |  |
+| **T1.5** Bounded Claude tool loop and planner-worker plan jobs [#6](https://github.com/SoroushRF/Rehearsal/issues/6) | 🟨 ready | — | T1.6, T1.7, T1.8, T2.5 (T2) |
+| **T1.6** ~20 benign and trap tasks plus baselines for the scorecard [#7](https://github.com/SoroushRF/Rehearsal/issues/7) | 🟥 blocked | T1.5 (T1, ready) |  |
+| **T1.7** Slack summary step (slack.message.postSummary) _(stretch)_ [#8](https://github.com/SoroushRF/Rehearsal/issues/8) | 🟥 blocked | T1.5 (T1, ready) |  |
+| **T1.8** SurrealDB precedents (explicit promotion, recall with trace) _(stretch)_ [#9](https://github.com/SoroushRF/Rehearsal/issues/9) | 🟥 blocked | T1.5 (T1, ready) |  |
 | **T1.9** Signed Era tenant tokens in both workers [#39](https://github.com/SoroushRF/Rehearsal/issues/39) | ✅ done |  | T1.2, T1.5, T3.3 (T3), T4.3 (T4) |
 | **T1.10** Bind duplicate refunds to invoice identity and retain a paid anchor [#61](https://github.com/SoroushRF/Rehearsal/issues/61) | ✅ done |  |  |
 | **T1.11** Verify customer ownership before proposing ticket changes [#63](https://github.com/SoroushRF/Rehearsal/issues/63) | ✅ done |  |  |
@@ -42,15 +39,15 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 
 | Task | Status | Blocked by | Blocks |
 |---|---|---|---|
-| **T2.1** Plan diff view from fixture bundles [#10](https://github.com/SoroushRF/Rehearsal/issues/10) | 🟨 ready | — |  |
-| **T2.2** API: store plans, get plan, create revisions with expected-hash check [#11](https://github.com/SoroushRF/Rehearsal/issues/11) | 🟨 ready | — | T2.4, T2.5 |
-| **T2.3** Clerk sign-in, support_lead / finance_lead roles, and server-side checks [#12](https://github.com/SoroushRF/Rehearsal/issues/12) | 🟨 ready | — | T2.4 |
-| **T2.4** Approvals endpoint: hash-bound grant and refusal test matrix [#13](https://github.com/SoroushRF/Rehearsal/issues/13) | 🟥 blocked | T2.2 (T2, ready)<br>T2.3 (T2, ready) | T2.8 |
-| **T2.5** Deploy thin slice and prove cloud workers reach the simulators [#14](https://github.com/SoroushRF/Rehearsal/issues/14) | 🟥 blocked | T2.2 (T2, ready)<br>T1.5 (T1, blocked) |  |
-| **T2.6** Run timeline, receipts and held-step views (polling GET /api/runs/:id/events) [#15](https://github.com/SoroushRF/Rehearsal/issues/15) | 🟨 ready | — | T2.7 |
-| **T2.7** Two-minute video script, recording, Devpost page [#16](https://github.com/SoroushRF/Rehearsal/issues/16) | 🟥 blocked | T2.6 (T2, ready) |  |
-| **T2.8** Thin Expo approver app on the same API _(stretch)_ [#17](https://github.com/SoroushRF/Rehearsal/issues/17) | 🟥 blocked | T2.4 (T2, blocked) |  |
-| **T2.9** Decide currency: align policy.v1.json with the Era seed (USD vs CAD) [#40](https://github.com/SoroushRF/Rehearsal/issues/40) | 🟨 ready | — | T1.5 (T1) |
+| **T2.1** Plan diff view from fixture bundles [#10](https://github.com/SoroushRF/Rehearsal/issues/10) | ✅ done |  |  |
+| **T2.2** API: store plans, get plan, create revisions with expected-hash check [#11](https://github.com/SoroushRF/Rehearsal/issues/11) | ✅ done |  | T2.4, T2.5 |
+| **T2.3** Clerk sign-in, support_lead / finance_lead roles, and server-side checks [#12](https://github.com/SoroushRF/Rehearsal/issues/12) | ✅ done |  | T2.4 |
+| **T2.4** Approvals endpoint: hash-bound grant and refusal test matrix [#13](https://github.com/SoroushRF/Rehearsal/issues/13) | ✅ done |  | T2.8 |
+| **T2.5** Deploy thin slice and prove cloud workers reach the simulators [#14](https://github.com/SoroushRF/Rehearsal/issues/14) | 🟥 blocked | T1.5 (T1, ready) |  |
+| **T2.6** Run timeline, receipts and held-step views (polling GET /api/runs/:id/events) [#15](https://github.com/SoroushRF/Rehearsal/issues/15) | ✅ done |  | T2.7 |
+| **T2.7** Two-minute video script, recording, Devpost page [#16](https://github.com/SoroushRF/Rehearsal/issues/16) | 🟨 ready | — |  |
+| **T2.8** Thin Expo approver app on the same API _(stretch)_ [#17](https://github.com/SoroushRF/Rehearsal/issues/17) | 🟨 ready | — |  |
+| **T2.9** Decide currency: align policy.v1.json with the Era seed (USD vs CAD) [#40](https://github.com/SoroushRF/Rehearsal/issues/40) | ✅ done |  | T1.5 (T1) |
 
 ## T3 Apply
 
@@ -96,7 +93,7 @@ flowchart LR
     T1_2["T1.2 Seed the incident cohort into both worlds, "]:::done
     T1_3["T1.3 Read adapters: charges, tickets and query p"]:::done
     T1_4["T1.4 Typed planning tools that record evidence a"]:::done
-    T1_5["T1.5 Bounded Claude tool loop and planner-worker"]:::blocked
+    T1_5["T1.5 Bounded Claude tool loop and planner-worker"]:::ready
     T1_6["T1.6 ~20 benign and trap tasks plus baselines fo"]:::blocked
     T1_9["T1.9 Signed Era tenant tokens in both workers"]:::done
     T1_10["T1.10 Bind duplicate refunds to invoice identity"]:::done
@@ -104,14 +101,14 @@ flowchart LR
     T1_12["T1.12 Preserve the evidence snapshot used to con"]:::done
   end
   subgraph T2[T2 Review & Approve]
-    T2_1["T2.1 Plan diff view from fixture bundles"]:::ready
-    T2_2["T2.2 API: store plans, get plan, create revision"]:::ready
-    T2_3["T2.3 Clerk sign-in, support_lead / finance_lead "]:::ready
-    T2_4["T2.4 Approvals endpoint: hash-bound grant and re"]:::blocked
+    T2_1["T2.1 Plan diff view from fixture bundles"]:::done
+    T2_2["T2.2 API: store plans, get plan, create revision"]:::done
+    T2_3["T2.3 Clerk sign-in, support_lead / finance_lead "]:::done
+    T2_4["T2.4 Approvals endpoint: hash-bound grant and re"]:::done
     T2_5["T2.5 Deploy thin slice and prove cloud workers r"]:::blocked
-    T2_6["T2.6 Run timeline, receipts and held-step views "]:::ready
-    T2_7["T2.7 Two-minute video script, recording, Devpost"]:::blocked
-    T2_9["T2.9 Decide currency: align policy.v1.json with "]:::ready
+    T2_6["T2.6 Run timeline, receipts and held-step views "]:::done
+    T2_7["T2.7 Two-minute video script, recording, Devpost"]:::ready
+    T2_9["T2.9 Decide currency: align policy.v1.json with "]:::done
   end
   subgraph T3[T3 Apply]
     T3_1["T3.1 Drizzle migrations, Postgres journal, pg-bo"]:::done
