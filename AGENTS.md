@@ -79,10 +79,10 @@ Work is split into **feature tracks**, not frontend/backend. Each track owns one
 
 | Track | Current owner | Since |
 |---|---|---|
-| T1 Rehearse | _TBD_ | |
+| T1 Rehearse | @SoroushRF | 2026-10-20 |
 | T2 Review & Approve | _TBD_ | |
-| T3 Apply | _TBD_ | |
-| T4 Guard | _TBD_ | |
+| T3 Apply | @ArtinMe | 2026-10-21 |
+| T4 Guard | @skhdemo | 2026-10-21 |
 | Integrator of the day | _rotates daily_ | |
 
 **ML runs on the GPU machine** (RTX 4070, 8 GB). Whoever has that machine runs training, whatever their track.
