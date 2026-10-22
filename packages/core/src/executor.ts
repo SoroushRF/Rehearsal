@@ -12,6 +12,7 @@ import {
   type RunState,
   type Vendor,
 } from "@rehearsal/contracts";
+import { bindingKey } from "./bindings";
 import { topoOrder, validateGraph } from "./dag";
 import { planHash as computePlanHash, fingerprint, sha256Hex } from "./hash";
 import { type BillingPolicyV1, evaluateBillingPolicy } from "./policy";
@@ -19,6 +20,7 @@ import type {
   Clock,
   DispatchResult,
   JournalPort,
+  Preconditions,
   PreparedRequest,
   ProviderPort,
   ResolvedBindings,
@@ -90,8 +92,6 @@ export interface RunOutcome {
   error: string | null;
 }
 
-export const bindingKey = (ref: Pick<ResultRef, "stepId" | "path">) => `${ref.stepId}:${ref.path}`;
-
 export function vendorOf(action: Action): Vendor {
   return action.kind.startsWith("stripe.") ? "stripe" : "zendesk";
 }
@@ -127,18 +127,31 @@ export function operationKey(orgId: string, planId: string, action: Action): str
 function resultsOf(
   action: Action,
   body: unknown,
-): { providerRef: EntityRef; results: Record<string, string | number> } {
+): {
+  providerRef: EntityRef;
+  results: Record<string, string | number>;
+  /** What the provider's response says it now holds; T4's own-write overlay reads these. */
+  observed: Record<string, unknown>;
+} {
   if (action.kind === "stripe.refund.create") {
-    const b = body as { id?: unknown; status?: unknown; amount?: unknown };
+    const b = body as { id?: unknown; status?: unknown; amount?: unknown; charge?: unknown };
     if (typeof b?.id !== "string" || typeof b.amount !== "number" || typeof b.status !== "string") {
       throw new Error("refund response is missing id, status or amount");
     }
+    const results = { "refund.id": b.id, "refund.status": b.status, "refund.amount": b.amount };
     return {
       providerRef: { vendor: "stripe", kind: "refund", id: b.id },
-      results: { "refund.id": b.id, "refund.status": b.status, "refund.amount": b.amount },
+      results,
+      observed: { ...results, charge: b.charge },
     };
   }
-  return { providerRef: targetOf(action), results: {} };
+  const ticket = (body as { ticket?: Record<string, unknown> } | null)?.ticket;
+  if (!ticket || typeof ticket !== "object") throw new Error("ticket response has no ticket");
+  return {
+    providerRef: targetOf(action),
+    results: {},
+    observed: { priority: ticket.priority, status: ticket.status, updated_at: ticket.updated_at },
+  };
 }
 
 function resultRefsOf(action: Action): ResultRef[] {
@@ -352,7 +365,18 @@ async function applyLocked(
     const world = deps.worlds[vendor];
     if (!provider || !world) throw new Error(`no operational provider configured for ${vendor}`);
 
-    const request: PreparedRequest = provider.prepare(action, resolved, key);
+    let pre: Preconditions = {};
+    if (provider.preconditions) {
+      try {
+        pre = await provider.preconditions(action, world);
+      } catch (err) {
+        return hold(action, {
+          kind: "unsupported_protection",
+          detail: `could not read the write's precondition: ${(err as Error).message}`,
+        });
+      }
+    }
+    const request: PreparedRequest = provider.prepare(action, resolved, key, pre);
     const bodySha256 = sha256Hex(request.body);
 
     if (latest && latest.state !== "prepared") {
@@ -453,12 +477,12 @@ async function applyLocked(
         };
       }
       if (parsed && result.kind === "confirmed") {
-        const { providerRef, results } = parsed;
+        const { providerRef, results, observed } = parsed;
         return settle(
           action,
           receiptFor(action, "confirmed", {
             providerRef,
-            observedEffect: results,
+            observedEffect: observed,
             limitations: ["effect taken from the write response; no read-back yet"],
           }),
           {

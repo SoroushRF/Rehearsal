@@ -8,14 +8,13 @@ import type {
   Vendor,
 } from "@rehearsal/contracts";
 import {
-  bindingKey,
   type DispatchResult,
   fingerprint,
+  noteBodyFor,
   type PreparedRequest,
   type ProviderPort,
   type ReconcileResult,
   type ResolvedBindings,
-  renderNote,
 } from "@rehearsal/core";
 
 export interface FakeCharge {
@@ -93,7 +92,7 @@ export class FakeWorld {
           ["charge", action.args.chargeId],
           ["amount", String(action.args.amount.amountMinor)],
           ["reason", action.args.reason],
-          ["metadata[rehearsal_operation]", operationKey],
+          ["metadata[rehearsal_op]", operationKey],
         ]).toString();
         return {
           method: "POST",
@@ -112,13 +111,7 @@ export class FakeWorld {
           headers: {},
         };
       case "zendesk.ticket.appendPrivateNote": {
-        const values: Record<string, string | number> = {};
-        for (const [name, b] of Object.entries(action.args.bindings)) {
-          const value = typeof b === "object" ? bindings.get(bindingKey(b)) : b;
-          if (value === undefined) throw new Error(`unresolved binding ${name}`);
-          values[name] = value;
-        }
-        const note = renderNote(action.args.template, values, operationKey);
+        const note = noteBodyFor(action, bindings, operationKey);
         return {
           method: "PUT",
           path: `/api/v2/tickets/${action.args.ticketId}.json`,
@@ -179,7 +172,7 @@ export class FakeWorld {
         };
       }
       charge.amount_refunded += amount;
-      const opKey = form.get("metadata[rehearsal_operation]") ?? key;
+      const opKey = form.get("metadata[rehearsal_op]") ?? key;
       const refund: FakeRefund = {
         id: `re_fake_${String(++this.#refundSeq).padStart(4, "0")}`,
         charge: charge.id,

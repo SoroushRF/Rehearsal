@@ -53,12 +53,26 @@ export type ReconcileResult =
 /** Resolved values for an action's ResultRefs, from confirmed predecessor receipts. */
 export type ResolvedBindings = ReadonlyMap<string, string | number>;
 
+/**
+ * Values read immediately before preparing a write, e.g. Zendesk's `updated_stamp` for a guarded
+ * update. They become part of the request bytes, so they are journaled with it.
+ */
+export type Preconditions = Readonly<Record<string, string>>;
+
 export interface ProviderPort {
   readonly vendor: Vendor;
   observe(entity: EntityRef, ctx: WorldContext): Promise<Observation>;
   /** Must enumerate every page; set `complete: false` if it could not. */
   query(predicate: QueryPredicate, cutoff: string, ctx: WorldContext): Promise<QueryObservation>;
-  prepare(action: Action, bindings: ResolvedBindings, operationKey: string): PreparedRequest;
+  /** Optional read the write depends on. Throwing holds the step; nothing is sent. */
+  preconditions?(action: Action, ctx: WorldContext): Promise<Preconditions>;
+  /** Pure: the same inputs always produce the same bytes. */
+  prepare(
+    action: Action,
+    bindings: ResolvedBindings,
+    operationKey: string,
+    preconditions?: Preconditions,
+  ): PreparedRequest;
   dispatch(request: PreparedRequest, ctx: WorldContext): Promise<DispatchResult>;
   /** Resolve an unknown outcome through authoritative reads, never by re-sending. */
   reconcile(attempt: Attempt, action: Action, ctx: WorldContext): Promise<ReconcileResult>;
