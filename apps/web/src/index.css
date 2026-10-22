@@ -1,1 +1,11 @@
 @import "tailwindcss";
+
+/* The review UI is light-only for now; say so, so a dark browser doesn't paint text on black. */
+:root {
+  color-scheme: light;
+}
+
+body {
+  background-color: var(--color-slate-50);
+  color: var(--color-slate-900);
+}
