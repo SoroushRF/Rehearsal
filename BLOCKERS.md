@@ -11,15 +11,15 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
 | **T2.9** Decide currency: align policy.v1.json with the Era seed (USD vs CAD) [#40](https://github.com/SoroushRF/Rehearsal/issues/40) | _TBD_ | 🟨 ready | 5 |
-| **T1.5** Bounded Claude tool loop and planner-worker plan jobs [#6](https://github.com/SoroushRF/Rehearsal/issues/6) | _TBD_ | 🟥 blocked | 4 |
+| **T1.5** Bounded Claude tool loop and planner-worker plan jobs [#6](https://github.com/SoroushRF/Rehearsal/issues/6) | @SoroushRF | 🟥 blocked | 4 |
 | **T2.2** API: store plans, get plan, create revisions with expected-hash check [#11](https://github.com/SoroushRF/Rehearsal/issues/11) | _TBD_ | 🟨 ready | 3 |
 | **T2.3** Clerk sign-in, support_lead / finance_lead roles, and server-side checks [#12](https://github.com/SoroushRF/Rehearsal/issues/12) | _TBD_ | 🟨 ready | 2 |
-| **T4.5** ML smoke test: Qwen3.5-0.8B LoRA on 32 cases [#29](https://github.com/SoroushRF/Rehearsal/issues/29) | _TBD_ | 🟨 ready | 2 |
+| **T4.5** ML smoke test: Qwen3.5-0.8B LoRA on 32 cases [#29](https://github.com/SoroushRF/Rehearsal/issues/29) | @skhdemo | 🟨 ready | 2 |
 | **T2.4** Approvals endpoint: hash-bound grant and refusal test matrix [#13](https://github.com/SoroushRF/Rehearsal/issues/13) | _TBD_ | 🟥 blocked | 1 |
 
 ## T1 Rehearse
 
-**Owner:** _TBD_
+**Owner:** @SoroushRF
 
 | Task | Status | Blocked by | Blocks |
 |---|---|---|---|
@@ -51,7 +51,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 
 ## T3 Apply
 
-**Owner:** _TBD_
+**Owner:** @ArtinMe
 
 | Task | Status | Blocked by | Blocks |
 |---|---|---|---|
@@ -65,7 +65,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 
 ## T4 Guard
 
-**Owner:** _TBD_
+**Owner:** @skhdemo
 
 | Task | Status | Blocked by | Blocks |
 |---|---|---|---|
