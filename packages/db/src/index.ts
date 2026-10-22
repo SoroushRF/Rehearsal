@@ -4,6 +4,7 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 import * as schema from "./schema";
 
 export * from "./apply";
+export * from "./apply-store";
 export * from "./journal";
 export * from "./queue";
 export { schema };

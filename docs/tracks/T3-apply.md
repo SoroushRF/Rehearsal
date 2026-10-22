@@ -48,6 +48,23 @@ _(add dated entries)_
 
 _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
 
+- **2026-10-22, Artin (worker wiring).** Branch `t3/worker-wiring`. The executor worker now consumes `apply` jobs:
+  - **`handleApplyJob`** (`apps/executor-worker/src/worker.ts`):
+    - Re-validates the payload.
+    - Sets the run to `applying`.
+    - Runs `executeRun` with a `PgJournal`, a `PgApplyStore`, the real T1.3 readers with the T3 writers, `createReadGuard`, and **wall-clock time**.
+    - Writes the outcome to `runs.state`. On a lock miss (`PLAN_LOCKED`) it puts the run back to `approved` and throws `RetryLater`, so pg-boss retries.
+  - **`PgApplyStore`** (`packages/db/src/apply-store.ts`):
+    - Org-scoped loads of runs, plans and grants.
+    - **`lockPlan`** is a session advisory lock on `hashtextextended('rehearsal:apply:org:plan')`, held on its own pooled connection for the whole run. If the worker dies, Postgres drops it.
+  - **The `apply` queue** retries generously (50 retries with backoff, capped at 300 s; a job expires after 30 min). That's safe because runs resume from the journal.
+  - **Run state is compare-and-set.** The worker first checks the job against the stored run, then claims the run only from `approved` or `applying`. A stale or duplicate job is skipped, so it can't revive a finished or cancelled run. On the last retry, a run that still couldn't finish is marked `failed`, so a new apply can resume it. A malformed payload is skipped, not retried. A lock miss leaves the run `applying`, because the holder may be an overlapping delivery of the same job. The delivery that ran writes its outcome from `applying` or `failed`, so its real result wins over a last-try `failed`. The job's own stored `retryLimit` is used.
+  - **`pnpm smoke:apply`** runs end to end with real processes: start the API (the minter) and the worker with the same `ERA_TENANT` and `DATABASE_URL`, then run the script.
+  - **Gotchas:**
+    - If only the lock's connection drops mid-run, the lock is gone while the run continues. It's logged; a second worker could start another revision of the plan in that window.
+    - The shared test database collects unconsumed `apply` jobs from the API tests. Point the worker at a fresh database for smoke runs.
+    - The API and the workers need the T1.9 secrets in `.env`.
+
 - **2026-10-22, Artin (T3.5).** Branch `t3/T3.5-reconcile`. A step with a `dispatched` or `unknown_outcome` attempt now calls `provider.reconcile` and no longer just holds:
   - **Applied:** confirmed, with the read's results as bindings. The attempts move to `reconciled` in one atomic settle.
   - **Not applied, and older than `reconcileAfterMs` (60 s):** the attempts become `rejected` with no status, then the step is sent fresh.
