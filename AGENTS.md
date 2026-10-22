@@ -85,7 +85,7 @@ Work is split into **feature tracks**, not frontend/backend. Each track owns one
 | T4 Guard | @skhdemo | 2026-10-21 |
 | Integrator of the day | _rotates daily_ | |
 
-**ML runs on the GPU machine** (RTX 4070, 8 GB). Whoever has that machine runs training, whatever their track.
+**ML runs on the GPU machine** (RTX 5080, 16 GB). Whoever has that machine runs training, whatever their track.
 
 ### Switching tracks
 
