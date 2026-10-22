@@ -48,6 +48,14 @@ _(add dated entries)_
 
 _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
 
+- **2026-10-22, Artin (T3.4).** Branch `t3/T3.4-retries`. The executor retries within a run following [decision 0003](../decisions/0003-idempotent-resend-and-retries.md):
+  - **429:** bounded backoff that honors Retry-After, re-sending identical bytes as a new attempt row each time. A later run may send it again.
+  - **Unknown outcomes** (5xx, timeout, lost response): re-sent only when `ProviderPort.idempotentResend` says so, which today means Stripe refunds only. The replay marks earlier unknown attempts `reconciled`.
+  - **Other 4xx:** never retried.
+  - **Settings:** `ExecutorDeps.retry` and `ExecutorDeps.sleep` are injectable.
+  - **Live tests** (`evals/providers/test/retries.test.ts`): Era `fail_next` 429 → retried after the real Retry-After → one refund. Era `error_rate` 500 → re-sent under the same key → one refund.
+  - **Next:** T3.5, reconcile through reads for the restart case and for Zendesk.
+
 - **2026-10-22, Artin (T3.3).** Branch `t3/T3.3-write-adapters`. `packages/providers/src/write.ts` adds `stripeWriter` and `zendeskWriter`, which are the write half of `ProviderPort`. `withWriter(read, write)` joins them with T1's read half, and `writeOnly` refuses reads until T1.3 lands.
   - **Stripe refund:** form-encoded in a fixed order, with idempotency key = operation key, which is also stored as `metadata[rehearsal_op]`.
   - **Zendesk patch:** `safe_update` plus an `updated_stamp` read just before. The stamp comes from the new optional `ProviderPort.preconditions` and is journaled inside the request bytes; a failed read holds the step.

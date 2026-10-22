@@ -82,7 +82,22 @@ export interface ExecutorDeps {
   policies: readonly BillingPolicyV1[];
   newId: (prefix: string) => string;
   guard?: StepGuard;
+  /** Bounded in-run retries; see DEFAULT_RETRY. */
+  retry?: Partial<RetryPolicy>;
+  /** Injectable for tests; defaults to a real timer. */
+  sleep?: (ms: number) => Promise<void>;
 }
+
+export interface RetryPolicy {
+  /** Total sends of one step in one run, including the first. */
+  maxAttempts: number;
+  /** Backoff without Retry-After: base, 2×base, 4×base… capped at maxDelayMs. */
+  baseDelayMs: number;
+  /** A Retry-After longer than this ends the run's retries for that step (no long sleeps). */
+  maxDelayMs: number;
+}
+
+export const DEFAULT_RETRY: RetryPolicy = { maxAttempts: 4, baseDelayMs: 250, maxDelayMs: 10_000 };
 
 export interface RunOutcome {
   state: RunState;
@@ -408,8 +423,8 @@ async function applyLocked(
           detail: `operation ${key} was already attempted (${latest.state}) with different content; a new action is needed`,
         });
       }
-      if (latest.state === "rejected") {
-        // Never auto-resend a rejected request outside the bounded retry policy (T3.4).
+      if (latest.state === "rejected" && latest.providerStatus !== 429) {
+        // A definite refusal (validation, permission, conflict) is never re-sent by a later run.
         return settle(
           action,
           receiptFor(action, "rejected", {
@@ -418,6 +433,8 @@ async function applyLocked(
           }),
         );
       }
+    }
+    if (latest && latest.state !== "rejected") {
       // Confirmed under an earlier revision of this plan with the same content: adopt its results.
       const earlier = (await journal.bindings(latest.planHash)).filter(
         (b) => b.ref.stepId === latest.actionId,
@@ -473,105 +490,171 @@ async function applyLocked(
       }
     }
 
-    const attemptId = reuse?.id ?? deps.newId("att");
-    if (!reuse) {
-      await journal.prepareAttempt({
-        id: attemptId,
-        actionId: action.id,
-        planHash: job.planHash,
-        operationKey: key,
-        attemptNo: (prior.at(-1)?.attemptNo ?? 0) + 1,
-        state: "prepared",
-        request: {
-          method: request.method,
-          path: request.path,
-          encoding: request.encoding,
-          body: request.body,
-          bodySha256,
-        },
-        providerStatus: null,
-        error: null,
-        preparedAt: at(),
-        dispatchedAt: null,
-        settledAt: null,
-      });
-    }
-    // Marked dispatched BEFORE the network call: a crash after this point is an unknown outcome.
-    await journal.transition(attemptId, "prepared", "dispatched", { dispatchedAt: at() });
-    inFlightAttempt = attemptId;
+    const policy = { ...DEFAULT_RETRY, ...deps.retry };
+    const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+    const backoff = (n: number) => Math.min(policy.maxDelayMs, policy.baseDelayMs * 2 ** (n - 1));
+    let attemptNo = prior.at(-1)?.attemptNo ?? 0;
+    let attemptId: string | undefined = reuse?.id;
+    /** Attempts in this loop left unknown before an idempotent re-send; reconciled by its replay. */
+    const unknownSends: string[] = [];
+    const retried = (n: number) => (n > 1 ? [`sent ${n} times with identical bytes`] : []);
 
-    let result: DispatchResult;
-    try {
-      result = await provider.dispatch(request, world);
-    } catch (err) {
-      result = { kind: "unknown", error: (err as Error).message };
-    }
-
-    if (result.kind === "confirmed") {
-      let parsed: ReturnType<typeof resultsOf> | null = null;
-      try {
-        parsed = resultsOf(action, result.body);
-      } catch (err) {
-        // The provider says it worked but we can't read what it did: treat it as unknown.
-        result = {
-          kind: "unknown",
-          error: `unreadable confirmed response: ${(err as Error).message}`,
-        };
+    for (let n = 1; ; n++) {
+      if (!attemptId) {
+        attemptId = deps.newId("att");
+        attemptNo += 1;
+        await journal.prepareAttempt({
+          id: attemptId,
+          actionId: action.id,
+          planHash: job.planHash,
+          operationKey: key,
+          attemptNo,
+          state: "prepared",
+          request: {
+            method: request.method,
+            path: request.path,
+            encoding: request.encoding,
+            body: request.body,
+            bodySha256,
+          },
+          providerStatus: null,
+          error: null,
+          preparedAt: at(),
+          dispatchedAt: null,
+          settledAt: null,
+        });
       }
-      if (parsed && result.kind === "confirmed") {
-        const { providerRef, results, observed } = parsed;
+      const current: string = attemptId;
+      // Marked dispatched BEFORE the network call: a crash after this point is an unknown outcome.
+      await journal.transition(current, "prepared", "dispatched", { dispatchedAt: at() });
+      inFlightAttempt = current;
+
+      let result: DispatchResult;
+      try {
+        result = await provider.dispatch(request, world);
+      } catch (err) {
+        result = { kind: "unknown", error: (err as Error).message };
+      }
+
+      if (result.kind === "confirmed") {
+        let parsed: ReturnType<typeof resultsOf> | null = null;
+        try {
+          parsed = resultsOf(action, result.body);
+        } catch (err) {
+          // The provider says it worked but we can't read what it did: treat it as unknown.
+          result = {
+            kind: "unknown",
+            error: `unreadable confirmed response: ${(err as Error).message}`,
+          };
+        }
+        if (parsed && result.kind === "confirmed") {
+          // The replay answered for the earlier unknown sends of the same bytes and key.
+          for (const id of unknownSends) {
+            await journal.transition(id, "unknown_outcome", "reconciled", { settledAt: at() });
+          }
+          const { providerRef, results, observed } = parsed;
+          return settle(
+            action,
+            receiptFor(action, "confirmed", {
+              providerRef,
+              observedEffect: observed,
+              limitations: [
+                "effect taken from the write response; no read-back yet",
+                ...retried(n),
+              ],
+            }),
+            {
+              transition: {
+                attemptId: current,
+                from: "dispatched",
+                to: "confirmed",
+                patch: { providerStatus: result.status, settledAt: at() },
+              },
+              results,
+            },
+          );
+        }
+      }
+
+      const canRetry = n < policy.maxAttempts;
+      if (result.kind === "rejected") {
+        const rejectedPatch = {
+          providerStatus: result.status,
+          error: JSON.stringify(result.body).slice(0, 500),
+          settledAt: at(),
+        };
+        const delay = result.retryAfterMs ?? backoff(n);
+        if (result.retryable && canRetry && delay <= policy.maxDelayMs) {
+          // A retryable refusal (429) had no effect: send the same bytes again after the delay.
+          await journal.transition(current, "dispatched", "rejected", rejectedPatch);
+          inFlightAttempt = null;
+          await journal
+            .appendEvent(job.runId, "step.retry", {
+              actionId: action.id,
+              attemptId: current,
+              status: result.status,
+              delayMs: delay,
+            })
+            .catch(() => {});
+          await sleep(delay);
+          attemptId = undefined;
+          continue;
+        }
         return settle(
           action,
-          receiptFor(action, "confirmed", {
-            providerRef,
-            observedEffect: observed,
-            limitations: ["effect taken from the write response; no read-back yet"],
+          receiptFor(action, "rejected", {
+            observedEffect: { status: result.status },
+            limitations: [
+              ...retried(n),
+              ...(result.retryable
+                ? ["retry budget exhausted; a later run may send it again"]
+                : []),
+            ],
           }),
           {
             transition: {
-              attemptId,
+              attemptId: current,
               from: "dispatched",
-              to: "confirmed",
-              patch: { providerStatus: result.status, settledAt: at() },
+              to: "rejected",
+              patch: rejectedPatch,
             },
-            results,
           },
         );
       }
-    }
-    if (result.kind === "rejected") {
-      // TODO(T3.4): bounded retries with the identical request when `retryable`.
+
+      const unknownError = result.kind === "unknown" ? result.error : null;
+      if (canRetry && provider.idempotentResend?.(action)) {
+        // The provider dedupes identical bytes under this key, so a re-send can't apply it twice:
+        // it either applies once or replays the original response.
+        await journal.transition(current, "dispatched", "unknown_outcome", { error: unknownError });
+        unknownSends.push(current);
+        await journal
+          .appendEvent(job.runId, "step.retry", {
+            actionId: action.id,
+            attemptId: current,
+            unknown: unknownError,
+          })
+          .catch(() => {});
+        await sleep(backoff(n));
+        attemptId = undefined;
+        continue;
+      }
       return settle(
         action,
-        receiptFor(action, "rejected", { observedEffect: { status: result.status } }),
+        receiptFor(action, "unknown_outcome", {
+          holdReason: { kind: "unresolved_outcome", attemptId: current },
+          limitations: retried(n),
+        }),
         {
           transition: {
-            attemptId,
+            attemptId: current,
             from: "dispatched",
-            to: "rejected",
-            patch: {
-              providerStatus: result.status,
-              error: JSON.stringify(result.body).slice(0, 500),
-              settledAt: at(),
-            },
+            to: "unknown_outcome",
+            patch: { error: unknownError },
           },
         },
       );
     }
-    return settle(
-      action,
-      receiptFor(action, "unknown_outcome", {
-        holdReason: { kind: "unresolved_outcome", attemptId },
-      }),
-      {
-        transition: {
-          attemptId,
-          from: "dispatched",
-          to: "unknown_outcome",
-          patch: { error: result.kind === "unknown" ? result.error : null },
-        },
-      },
-    );
   }
 
   let error: string | null = null;

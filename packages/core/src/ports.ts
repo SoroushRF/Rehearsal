@@ -79,6 +79,11 @@ export interface ProviderPort {
     preconditions?: Preconditions,
   ): PreparedRequest;
   dispatch(request: PreparedRequest, ctx: WorldContext): Promise<DispatchResult>;
+  /**
+   * True when re-sending the identical bytes after an unknown outcome can't apply the effect twice,
+   * because the provider dedupes them (e.g. a Stripe idempotency key). Never true for appends.
+   */
+  idempotentResend?(action: Action): boolean;
   /** Resolve an unknown outcome through authoritative reads, never by re-sending. */
   reconcile(attempt: Attempt, action: Action, ctx: WorldContext): Promise<ReconcileResult>;
 }

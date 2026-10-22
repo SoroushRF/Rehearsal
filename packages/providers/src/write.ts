@@ -15,7 +15,13 @@ import type { WorldConfig } from "./worlds";
 /** The write half of a ProviderPort. T1 owns the read half (observe, query). */
 export type ProviderWriter = Pick<
   ProviderPort,
-  "vendor" | "preconditions" | "preconditionsOf" | "prepare" | "dispatch" | "reconcile"
+  | "vendor"
+  | "preconditions"
+  | "preconditionsOf"
+  | "idempotentResend"
+  | "prepare"
+  | "dispatch"
+  | "reconcile"
 >;
 
 /** One operational (or planning) world a writer is bound to. Chosen by the server, never a URL from a plan. */
@@ -113,6 +119,8 @@ const notYet = async (): Promise<ReconcileResult> => ({
 export function stripeWriter(target: WriteTarget): ProviderWriter {
   return {
     vendor: "stripe",
+    // Same key + same bytes either creates the refund once or replays the original response.
+    idempotentResend: (action: Action) => action.kind === "stripe.refund.create",
     prepare(action: Action, _bindings: ResolvedBindings, operationKey: string): PreparedRequest {
       if (action.kind !== "stripe.refund.create") throw new Error(`stripe can't ${action.kind}`);
       const body = new URLSearchParams([
