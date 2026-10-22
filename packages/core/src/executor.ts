@@ -90,8 +90,8 @@ export interface ExecutorDeps {
   /** Injectable for tests; defaults to a real timer. */
   sleep?: (ms: number) => Promise<void>;
   /**
-   * A reconcile read's "not applied" is trusted (and the step re-sent) only once the unknown send
-   * is at least this old. Default 60 s.
+   * Minimum age before a negative read permits an identical idempotency-protected replay.
+   * Non-idempotent unknown writes remain held regardless of age. Default 60 s.
    */
   reconcileAfterMs?: number;
 }
@@ -460,15 +460,21 @@ async function applyLocked(
     }
 
     // A request can still land after a read that missed it (a slow server, a dying process's
-    // socket). Trust "not applied" only once the newest send is older than the reconcile window.
+    // socket). Age alone never makes an append safe: a negative read permits only an
+    // identical replay protected by the provider's idempotency guarantee.
     const sentAt = Date.parse(newest.dispatchedAt ?? newest.preparedAt);
     const oldEnough = clock.now().getTime() - sentAt >= (deps.reconcileAfterMs ?? 60_000);
-    if (result.kind === "not_applied" && oldEnough) {
+    if (
+      result.kind === "not_applied" &&
+      oldEnough &&
+      sameAsNewest &&
+      provider.idempotentResend?.(action)
+    ) {
       for (const a of inFlight) {
         for (const t of toUnknown(a)) await journal.transition(t.attemptId, t.from, t.to, t.patch);
         await journal.transition(a.id, "unknown_outcome", "rejected", {
           providerStatus: null,
-          error: "reconciled: a read showed it was not applied",
+          error: "no effect visible; identical idempotent replay permitted",
           settledAt: at(),
         });
       }
@@ -580,7 +586,16 @@ async function applyLocked(
           detail: `operation ${key} was already attempted (${latest.state}) with different content; a new action is needed`,
         });
       }
-      // A 429, or a read that showed the send never happened (no status), had no effect.
+      // A 429 had no effect. A negative read (no status) permits only idempotent replay.
+      if (
+        latest.state === "rejected" &&
+        latest.providerStatus === null &&
+        !provider.idempotentResend?.(action)
+      ) {
+        // Older executors treated a negative read as terminal proof. Do not reuse that
+        // inference to re-send a possibly still-pending append or field write.
+        return hold(action, { kind: "unresolved_outcome", attemptId: latest.id });
+      }
       const noEffect = latest.providerStatus === 429 || latest.providerStatus === null;
       if (latest.state === "rejected" && !noEffect) {
         // A definite refusal (validation, permission, conflict) is never re-sent by a later run.
