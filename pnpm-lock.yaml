@@ -138,6 +138,9 @@ importers:
       '@rehearsal/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@rehearsal/planner':
+        specifier: workspace:*
+        version: link:../../packages/planner
       '@rehearsal/providers':
         specifier: workspace:*
         version: link:../../packages/providers
@@ -187,12 +190,22 @@ importers:
 
   packages/planner:
     dependencies:
+      '@rehearsal/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@rehearsal/core':
         specifier: workspace:*
         version: link:../core
       '@rehearsal/testkit':
         specifier: workspace:*
         version: link:../testkit
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
+    devDependencies:
+      '@rehearsal/providers':
+        specifier: workspace:*
+        version: link:../providers
 
   packages/providers:
     dependencies:

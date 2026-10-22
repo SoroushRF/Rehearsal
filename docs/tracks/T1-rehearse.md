@@ -31,7 +31,7 @@
 | T1.1 | Era day-one gate: writable worlds, refund idempotency, guarded Zendesk update, private note, tenant reset | M1 | Conformance tests pass with `ERA_CONFORMANCE=1`; capability matrix written | #2 | — |
 | T1.2 | Seed the incident: 5–10 overcharged customers, plus benign controls, injected identically into both worlds; `pnpm demo:reset` | M1 | Reset → identical worlds every time; fixtures copied from real GET responses. **Done:** #52 | #3 | T1.1, T1.9 |
 | T1.3 | Read adapters: get charge, get ticket, and the two query predicates, with full pagination and `complete` set honestly | M1 | Unit tests against recorded responses, plus one live test. **Done:** #49 (`stripeReader`/`zendeskReader` in `packages/providers/src/read.ts`) | #4 | T1.1 |
-| T1.4 | Typed planning tools that record evidence and add dependency edges themselves (the model can't define its own evidence) | M2 | A tool call produces observations and actions matching contracts v1 | #5 | T1.3 |
+| T1.4 | Typed planning tools that record evidence and add dependency edges themselves (the model can't define its own evidence) | M2 | A tool call produces observations and actions matching contracts v1. **Done:** `PlanningSession` in `packages/planner/src/tools.ts` | #5 | T1.3 |
 | T1.5 | Bounded Claude tool loop: pinned model, versioned prompt, step limit, no shell, browser or raw HTTP; planner worker consumes `plan` jobs | M2 | Real plan for the seeded cohort is stored and viewable in T2's UI | #6 | T1.2, T1.4, T1.9, T2.9 |
 | T1.6 | ~20 benign and trap tasks, plus baselines (no review; per-call approval counts) for the scorecard | M3–M4 | `pnpm eval:scorecard` prints the comparison table | #7 | T1.5, T4.2 |
 | T1.7 | _Stretch:_ Slack summary step (`slack.message.postSummary`) | after M3 | Behind the trim decision | #8 | T1.5 |
@@ -45,6 +45,14 @@
 ## Handoff log
 
 _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
+
+- **2026-10-22 (Claude session for the T1 owner):** T1.4 planning tools (`t1/T1.4-planning-tools`).
+  - `PlanningSession` takes the two planning-world readers, the policy and the incident window. `call(name, input)` validates strict Zod input and returns `{ok, result | error}` for the tool loop to feed back. `planningToolDefinitions()` is the Anthropic `tools` array; `TOOL_SCHEMA_HASH` goes into the manifest.
+  - Tools: `get_charge`, `list_customer_charges` (the window is the incident's, not the model's), `get_ticket`, `list_requester_tickets`, `propose_duplicate_refund`, `propose_ticket_priority`, `propose_refund_note`.
+  - The propose tools re-read what they depend on and set evidence, query evidence, role (finance at ≥ 10000 minor), compensation, protection, obligation (one per duplicate pair) and the note's `dependsOn` + `ResultRef`. The model supplies IDs and a rationale only.
+  - They refuse the three controls (distinct amounts, USD, outside the window), a second remedy for the same pair, and ticket steps for a customer with no refund.
+  - `session.manifest(meta)` builds revision 1. Live check: `evals/providers/test/planning-tools.test.ts` plans all 8 duplicates and passes `validateGraph` and `evaluateBillingPolicy`.
+  - Next (T1.5): the loop maps Claude `tool_use` blocks onto `session.call` and stores `session.manifest`. Readers come from `workerWorlds("planner")`.
 
 - **2026-10-22 (Claude session for the T1 owner):** T1.2 merged (#52).
   - The cohort is in `scenarios/billing/incident.v1.json`: 8 duplicates and 3 controls. `incidentRecords()` in testkit builds the inject records from the verbatim GET templates.

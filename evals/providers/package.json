@@ -8,8 +8,9 @@
   },
   "dependencies": {
     "@rehearsal/contracts": "workspace:*",
-    "@rehearsal/providers": "workspace:*",
     "@rehearsal/core": "workspace:*",
+    "@rehearsal/planner": "workspace:*",
+    "@rehearsal/providers": "workspace:*",
     "@rehearsal/testkit": "workspace:*"
   }
 }
