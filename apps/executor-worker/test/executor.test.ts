@@ -959,14 +959,50 @@ describe("reconcile through reads (T3.5)", () => {
     expect(s.world.tickets.get("5531")?.comments).toHaveLength(1);
   });
 
-  it("re-sends a note that never landed, once, after the window", async () => {
+  it("keeps a missing non-idempotent note held even after the window", async () => {
     const s = setup(happyPathBundle());
     dropZendesk(s, '"comment"', false);
     await s.run();
     advance(s, 61_000);
     const second = await s.run();
-    expect(outcomes(second.receipts)).toMatchObject({ note_001: "confirmed" });
+    expect(outcomes(second.receipts)).toMatchObject({ note_001: "held" });
+    expect(s.world.tickets.get("5531")?.comments).toHaveLength(0);
+  });
+
+  it("does not duplicate a delayed original note after a negative reconcile read", async () => {
+    const s = setup(happyPathBundle());
+    const dispatch = s.deps.providers.zendesk.dispatch;
+    const pending: Array<() => Promise<unknown>> = [];
+    s.deps.providers.zendesk.dispatch = async (req, ctx) => {
+      if (
+        pending.length === 0 &&
+        req.path.includes("5531") &&
+        JSON.parse(req.body).ticket.comment
+      ) {
+        pending.push(() => dispatch(req, ctx));
+        return { kind: "unknown", error: "original request still pending" };
+      }
+      return dispatch(req, ctx);
+    };
+    await s.run();
+    advance(s, 61_000);
+    expect(outcomes((await s.run()).receipts)).toMatchObject({ note_001: "held" });
+    expect(s.world.tickets.get("5531")?.comments).toHaveLength(0);
+    await pending[0]?.();
+    expect(outcomes((await s.run()).receipts)).toMatchObject({ note_001: "confirmed" });
     expect(s.world.tickets.get("5531")?.comments).toHaveLength(1);
+  });
+
+  it("holds legacy negative-read rejection rows for non-idempotent notes", async () => {
+    const s = setup(happyPathBundle());
+    dropZendesk(s, '"comment"', false);
+    await s.run();
+    const [attempt] = await s.journal.attemptsFor(s.hash, "note_001");
+    if (!attempt) throw new Error("no note attempt");
+    await s.journal.transition(attempt.id, "unknown_outcome", "rejected", { providerStatus: null });
+    advance(s, 61_000);
+    expect(outcomes((await s.run()).receipts)).toMatchObject({ note_001: "held" });
+    expect(s.world.tickets.get("5531")?.comments).toHaveLength(0);
   });
 
   it("reconciles a lost patch by its fields", async () => {

@@ -1,5 +1,11 @@
 import { PlanManifest, type QueryPredicate } from "@rehearsal/contracts";
-import { evaluateBillingPolicy, fingerprint, planHash, validateGraph } from "@rehearsal/core";
+import {
+  evaluateBillingPolicy,
+  fingerprint,
+  guardAction,
+  planHash,
+  validateGraph,
+} from "@rehearsal/core";
 import {
   STRIPE_CHARGE_PROJECTION,
   stripeChargeProjection,
@@ -127,6 +133,82 @@ async function ok(session: PlanningSession, name: string, input: unknown) {
 }
 
 describe("planning tools", () => {
+  it("keeps a refund bound to its original unrefunded evidence after a later read", async () => {
+    const { session, charges } = world();
+    const c = caseOf("c01");
+    await ok(session, "propose_duplicate_refund", {
+      chargeId: c.chargeIds[1],
+      duplicateOfChargeId: c.chargeIds[0],
+      rationale: "x",
+    });
+    const action = session.actions[0];
+    if (!action) throw new Error("no action");
+    (charges.get(c.chargeIds[0]) as Record<string, unknown>).amount_refunded = c.amountMinor;
+    await ok(session, "get_charge", { chargeId: c.chargeIds[0] });
+    const manifest = session.manifest(META);
+    expect(
+      manifest.observations.find((o) => o.id === action.evidence[1])?.projection.amount_refunded,
+    ).toBe(0);
+    const latest = [...new Map(manifest.observations.map((o) => [o.entity.id, o])).values()];
+    expect(
+      guardAction({
+        action,
+        plannedObservations: manifest.observations,
+        currentObservations: latest,
+        plannedQueries: manifest.queryObservations,
+        currentQueries: manifest.queryObservations,
+      }),
+    ).toMatchObject({ decision: "hold", reason: { kind: "row_changed" } });
+  });
+
+  it("keeps query evidence pinned when a later read discovers a phantom", async () => {
+    const { session, charges } = world();
+    const c = caseOf("c01");
+    await ok(session, "propose_duplicate_refund", {
+      chargeId: c.chargeIds[1],
+      duplicateOfChargeId: c.chargeIds[0],
+      rationale: "x",
+    });
+    const copy = charges.get(c.chargeIds[1]);
+    charges.set("ch_review_phantom", { ...copy, id: "ch_review_phantom" });
+    await ok(session, "list_customer_charges", { customerId: c.customerId });
+    const manifest = session.manifest(META),
+      action = manifest.actions[0];
+    if (!action) throw new Error("no action");
+    expect(manifest.queryObservations).toHaveLength(2);
+    expect(manifest.queryObservations[0]?.id).toBe(action.queryEvidence[0]);
+    expect(
+      guardAction({
+        action,
+        plannedObservations: manifest.observations,
+        currentObservations: manifest.observations,
+        plannedQueries: manifest.queryObservations,
+        currentQueries: manifest.queryObservations.slice(-1),
+      }),
+    ).toMatchObject({
+      decision: "hold",
+      reason: { kind: "query_membership_changed", added: ["ch_review_phantom"] },
+    });
+  });
+
+  it("does not expose mutable session state through evidence or action getters", async () => {
+    const { session } = world();
+    const c = caseOf("c01");
+    await ok(session, "propose_duplicate_refund", {
+      chargeId: c.chargeIds[1],
+      duplicateOfChargeId: c.chargeIds[0],
+      rationale: "x",
+    });
+    const before = planHash(session.manifest(META));
+    const obs = session.observations[0],
+      action = session.actions[0],
+      query = session.queryObservations[0];
+    if (!obs || action?.kind !== "stripe.refund.create" || !query) throw new Error("missing state");
+    obs.projection.amount_refunded = 100;
+    action.args.amount.amountMinor = 1;
+    query.matchingIds.length = 0;
+    expect(planHash(session.manifest(META))).toBe(before);
+  });
   it("refuses another customer's ticket and an unknown link for both ticket tools", async () => {
     const { session, tickets } = world();
     const a = caseOf("c01");

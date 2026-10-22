@@ -90,8 +90,8 @@ export interface ExecutorDeps {
   /** Injectable for tests; defaults to a real timer. */
   sleep?: (ms: number) => Promise<void>;
   /**
-   * A reconcile read's "not applied" is trusted (and the step re-sent) only once the unknown send
-   * is at least this old. Default 60 s.
+   * Minimum age before a negative read permits an identical idempotency-protected replay.
+   * Non-idempotent unknown writes remain held regardless of age. Default 60 s.
    */
   reconcileAfterMs?: number;
 }
@@ -461,15 +461,21 @@ async function applyLocked(
     }
 
     // A request can still land after a read that missed it (a slow server, a dying process's
-    // socket). Trust "not applied" only once the newest send is older than the reconcile window.
+    // socket). Age alone never makes an append safe: a negative read permits only an
+    // identical replay protected by the provider's idempotency guarantee.
     const sentAt = Date.parse(newest.dispatchedAt ?? newest.preparedAt);
     const oldEnough = clock.now().getTime() - sentAt >= (deps.reconcileAfterMs ?? 60_000);
-    if (result.kind === "not_applied" && oldEnough) {
+    if (
+      result.kind === "not_applied" &&
+      oldEnough &&
+      sameAsNewest &&
+      provider.idempotentResend?.(action)
+    ) {
       for (const a of inFlight) {
         for (const t of toUnknown(a)) await journal.transition(t.attemptId, t.from, t.to, t.patch);
         await journal.transition(a.id, "unknown_outcome", "rejected", {
           providerStatus: null,
-          error: "reconciled: a read showed it was not applied",
+          error: "no effect visible; identical idempotent replay permitted",
           settledAt: at(),
         });
       }
@@ -581,7 +587,16 @@ async function applyLocked(
           detail: `operation ${key} was already attempted (${latest.state}) with different content; a new action is needed`,
         });
       }
-      // A 429, or a read that showed the send never happened (no status), had no effect.
+      // A 429 had no effect. A negative read (no status) permits only idempotent replay.
+      if (
+        latest.state === "rejected" &&
+        latest.providerStatus === null &&
+        !provider.idempotentResend?.(action)
+      ) {
+        // Older executors treated a negative read as terminal proof. Do not reuse that
+        // inference to re-send a possibly still-pending append or field write.
+        return hold(action, { kind: "unresolved_outcome", attemptId: latest.id });
+      }
       const noEffect = latest.providerStatus === 429 || latest.providerStatus === null;
       if (latest.state === "rejected" && !noEffect) {
         // A definite refusal (validation, permission, conflict) is never re-sent by a later run.
@@ -617,12 +632,6 @@ async function applyLocked(
       );
     }
 
-    // Only now would a request actually be sent, so only now do the guards run.
-    const guardHold = deps.guard
-      ? await deps.guard(action, { manifest, confirmedReceipts: [...confirmedByAction.values()] })
-      : null;
-    if (guardHold) return hold(action, guardHold);
-
     let pre: Preconditions = {};
     if (provider.preconditions) {
       try {
@@ -634,6 +643,12 @@ async function applyLocked(
         });
       }
     }
+    // Capture the native stamp before semantic validation. A later read must never forgive
+    // a teammate's intervening edit by replacing the stamp after the guard has passed.
+    const guardHold = deps.guard
+      ? await deps.guard(action, { manifest, confirmedReceipts: [...confirmedByAction.values()] })
+      : null;
+    if (guardHold) return hold(action, guardHold);
     const { req: request, sha: bodySha256 } = prepareWith(pre);
 
     // A never-sent prepared row of this hash: reuse its exact bytes if nothing moved. If only a
@@ -660,6 +675,16 @@ async function applyLocked(
     const retried = (n: number) => (n > 1 ? [`sent ${n} times with identical bytes`] : []);
 
     for (let n = 1; ; n++) {
+      // A definite refusal did nothing. Revalidate before another fresh send after backoff.
+      // Unknown sends use only an identical provider-idempotent replay: our earlier effect
+      // may already be visible and must be resolved rather than mistaken for external drift.
+      if (n > 1 && unknownSends.length === 0 && deps.guard) {
+        const reason = await deps.guard(action, {
+          manifest,
+          confirmedReceipts: [...confirmedByAction.values()],
+        });
+        if (reason) return hold(action, reason);
+      }
       // Admission is not a lease to keep spending after revocation or expiry. Re-read the
       // same immutable grant before every send, including a retry after backoff.
       const currentGrant = await deps.store.loadGrant(job.orgId, grant.id);
