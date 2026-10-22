@@ -27,6 +27,8 @@ Trimming removes features, never correctness checks. These must stay:
 
 ## How the tracks depend on each other
 
+The task-level graph, with live status and current blockers, is in [blockers.md](blockers.md).
+
 ```text
 contracts v1 (frozen M1) ──► everyone
 

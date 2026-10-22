@@ -6,7 +6,7 @@ Shared instructions for every person and every coding agent (Claude Code, Codex,
 1. `AGENTS.local.md` at the repo root, if it exists. It says who you're working for. It's personal and gitignored.
 2. This file.
 3. That person's track file in `docs/tracks/` (see [Roster](#roster)).
-4. [`docs/plan.md`](docs/plan.md) for milestones and today's target.
+4. [`docs/plan.md`](docs/plan.md) for milestones and today's target, and [`docs/blockers.md`](docs/blockers.md) for what blocks what.
 
 If the local file and the roster disagree about someone's track, **the roster wins**.
 
@@ -97,7 +97,7 @@ Never keep task state only in `AGENTS.local.md` or in your head. If it isn't in 
 
 ## Workflow
 
-**Tasks.** Each task has an ID in its track file (`T3.2`) and a GitHub Issue labelled `track:Tn` (plus `stretch` where it applies) with milestone `Mn`; the track file links it in the Issue column. New tasks get a row in the track file and an issue. Put `Closes #N` in the PR.
+**Tasks.** Each task has an ID in its track file (`T3.2`) and a GitHub Issue labelled `track:Tn` (plus `stretch` where it applies) with milestone `Mn`; the track file links it in the Issue column. New tasks get a row in the track file and an issue. Put `Closes #N` in the PR. When a task closes or a new blocker appears, update [`docs/blockers.md`](docs/blockers.md) in the same PR.
 
 **Branches.** Trunk-based with short-lived branches off `main`:
 
