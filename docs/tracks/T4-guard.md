@@ -44,6 +44,15 @@
 
 _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
 
+### 2026-10-22, T4.2 follow-up
+
+- **The demo scripts act on the T1.2 cohort.** `DEMO` in `scripts/inject/session.ts` replaces `SEED`:
+  - `demo:phantom` injects `ch_INC0927c01phantom` for c01 (a copy of its CAD duplicate, created 2026-09-25), plus an October control that must stay outside the window.
+  - `demo:conflict` edits c02's ticket (`9100002`), the case the `teammate-conflict` bundle uses.
+  - `demo:fault` reads c01's first charge.
+- **Run `pnpm demo:reset` first.** It seeds the cohort the scripts expect. All four scripts pass on local Era.
+- **Next.** T4.4.
+
 ### 2026-10-22, T4.3 done on Era
 
 - **`phantom` passes on Era** (`evals/providers/test/phantom.test.ts`, `ERA_CONFORMANCE=1`). Evidence: `era_integration`.
@@ -79,7 +88,7 @@ _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
 ### 2026-10-21, T4.2
 
 - **T4.2 runs on local Era.** `pnpm demo:reset`, `demo:phantom`, `demo:conflict` (with an optional `--priority=`), and `demo:fault` are in `scripts/inject/`. Each prints one line per check and exits non-zero on a failure.
-- **Gotcha.** They target the image's seeded customer `cus_necGym2uIJ94j40b` and ticket `4000001`, because T1.2's incident cohort is not seeded yet (#3). Point `SEED` in `scripts/inject/session.ts` at that cohort once it lands. T1.2 also owns reseeding the cohort after `demo:reset`.
+- **Gotcha (superseded 2026-10-22, see above).** They targeted the image's seeded customer `cus_necGym2uIJ94j40b` and ticket `4000001` until the T1.2 cohort landed.
 - **Gotcha.** Faults are container-wide. `demo:fault` clears them before exiting. Never run `demo:reset` while an executor is applying: reset forgets Stripe idempotency keys.
 
 ### 2026-10-21, T4.1

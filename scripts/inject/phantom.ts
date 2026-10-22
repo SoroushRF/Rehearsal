@@ -1,24 +1,27 @@
-import { adminOrThrow, bind, fixture, getJson, report, SEED, WINDOW } from "./session";
+import { incidentRecords } from "@rehearsal/testkit";
+import { adminOrThrow, bind, DEMO, getJson, report, WINDOW } from "./session";
 
 /**
- * The phantom trap: after approval, a duplicate charge appears for the customer inside the
- * incident window, in the operational world only. A charge for another customer is the
- * control and must not enter this customer's query.
+ * The phantom trap: after approval, another in-window duplicate charge appears for a cohort
+ * customer, in the operational world only. A charge for the same customer outside the window is
+ * the control and must not enter the incident query. Run `pnpm demo:reset` first.
  */
 
-const PHANTOM = "ch_rehearsalPhantom01";
-const CONTROL = "ch_rehearsalControl01";
-const CONTROL_CUSTOMER = "cus_rehearsalControl01";
-const CREATED = Date.parse("2026-09-25T00:00:00.000Z") / 1000;
+const target = DEMO.phantom;
+const PHANTOM = `ch_INC0927${target.key}phantom`;
+const CONTROL = `ch_INC0927${target.key}october`;
 
-function duplicate(id: string, customer: string): Record<string, unknown> {
+function copyOfDuplicate(id: string, createdIso: string): Record<string, unknown> {
+  const template = incidentRecords().stripe.charges.find((c) => c.id === target.chargeIds[1]);
+  if (!template) throw new Error(`cohort has no charge ${target.chargeIds[1]}`);
   return {
-    ...fixture("stripe.charge.json"),
+    ...template,
     id,
-    customer,
-    created: CREATED,
+    created: Date.parse(createdIso) / 1000,
     payment_intent: `pi_${id.slice(3)}`,
     balance_transaction: `txn_${id.slice(3)}`,
+    receipt_url: `https://pay.stripe.com/receipts/sim/${id}`,
+    refunds: { object: "list", data: [], has_more: false, url: `/v1/charges/${id}/refunds` },
   };
 }
 
@@ -38,28 +41,35 @@ const operational = await bind("stripe", "operational");
 const planning = await bind("stripe", "planning");
 
 await adminOrThrow(operational, "/inject", {
-  charges: [duplicate(PHANTOM, SEED.customerId), duplicate(CONTROL, CONTROL_CUSTOMER)],
+  charges: [
+    copyOfDuplicate(PHANTOM, "2026-09-25T09:00:00.000Z"),
+    copyOfDuplicate(CONTROL, "2026-10-10T09:00:00.000Z"),
+  ],
 });
 
-const now = await getJson<ChargeList>("stripe", operational, windowQuery(SEED.customerId));
-const planned = await getJson<ChargeList>("stripe", planning, windowQuery(SEED.customerId));
-const original = await getJson<{ id: string; amount_refunded: number }>(
+const now = await getJson<ChargeList>("stripe", operational, windowQuery(target.customerId));
+const planned = await getJson<ChargeList>("stripe", planning, windowQuery(target.customerId));
+const duplicate = await getJson<{ id: string; amount_refunded: number }>(
   "stripe",
   operational,
-  `/v1/charges/${SEED.chargeId}`,
+  `/v1/charges/${target.chargeIds[1]}`,
 );
 const ids = now.data.map((charge) => charge.id);
 
 report([
   [!now.has_more, "operational window query fetched every page"],
-  [ids.includes(PHANTOM), `${PHANTOM} now matches ${SEED.customerId} in the window`],
-  [!ids.includes(CONTROL), `${CONTROL} (another customer) does not match`],
+  [ids.includes(PHANTOM), `${PHANTOM} now matches ${target.customerId} (${target.name})`],
+  [!ids.includes(CONTROL), `${CONTROL} (October, outside the window) does not match`],
+  [
+    target.chargeIds.every((id) => ids.includes(id)),
+    `the seeded charges ${target.chargeIds.join(", ")} still match`,
+  ],
   [
     !planned.data.some((charge) => charge.id === PHANTOM),
     "planning world is unchanged: the agent never saw the phantom",
   ],
   [
-    original.amount_refunded === 0,
-    `${SEED.chargeId} itself is unchanged, so only re-running the query catches this`,
+    duplicate.amount_refunded === 0,
+    `${target.chargeIds[1]} itself is unchanged, so only re-running the query catches this`,
   ],
 ]);

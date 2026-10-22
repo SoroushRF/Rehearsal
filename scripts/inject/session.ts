@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import {
   eraAdmin,
   eraFetch,
@@ -6,6 +5,7 @@ import {
   resolveWorld,
   type WorldConfig,
 } from "@rehearsal/providers";
+import { INCIDENT, incidentRecords, type SeededCase } from "@rehearsal/testkit";
 
 type World = Parameters<typeof resolveWorld>[1];
 
@@ -16,18 +16,25 @@ type World = Parameters<typeof resolveWorld>[1];
 
 export type EraVendor = "stripe" | "zendesk";
 
-/** Image seed (42, day1, 2026-10-01). Replace with T1's incident cohort once it is seeded. */
-export const SEED = {
-  customerId: "cus_necGym2uIJ94j40b",
-  chargeId: "ch_7wD2ja8lIorW65Uh",
-  /** Not the captured ticket template, so a teammate edit does not touch the fixture record. */
-  ticketId: 4000001,
+function cohortCase(key: string): SeededCase {
+  const found = incidentRecords().cases.find((c) => c.key === key);
+  if (!found) throw new Error(`incident cohort has no case ${key}`);
+  return found;
+}
+
+/**
+ * The T1.2 cohort cases the traps act on (seeded by `pnpm demo:reset`). They match the fixture
+ * plan's cases: the phantom lands on c01 (case_001), the teammate edits c02's ticket (case_002).
+ */
+export const DEMO = {
+  phantom: cohortCase("c01"),
+  conflict: cohortCase("c02"),
 } as const;
 
-/** The incident window from the fixture plan: September 2026, UTC. */
+/** The incident window (INC-BILL-0927), in Unix seconds. */
 export const WINDOW = {
-  createdGte: Date.parse("2026-09-01T00:00:00.000Z") / 1000,
-  createdLt: Date.parse("2026-10-01T00:00:00.000Z") / 1000,
+  createdGte: Date.parse(INCIDENT.window.createdGte) / 1000,
+  createdLt: Date.parse(INCIDENT.window.createdLt) / 1000,
 } as const;
 
 const VENDOR_AUTH: Record<EraVendor, string> = {
@@ -90,11 +97,6 @@ export async function getJson<T>(vendor: EraVendor, world: WorldConfig, path: st
   const res = await vendorFetch(vendor, world, path);
   if (!res.ok) throw new Error(`GET ${path} → ${res.status} ${await res.text()}`);
   return (await res.json()) as T;
-}
-
-export function fixture(name: string): Record<string, unknown> {
-  const file = new URL(`../../scenarios/billing/fixtures/${name}`, import.meta.url);
-  return JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
 }
 
 /** Print one line per check and set the exit code. */
