@@ -8,6 +8,8 @@ import type { AuthResolver } from "./apply";
 
 const { planVersions } = schema;
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+/** Status and body, decided inside a transaction and sent once it has committed. */
+export type Outcome = [status: number, body: unknown];
 
 export interface PlanDeps {
   db: Db;
@@ -151,29 +153,25 @@ export function registerPlanRoutes(app: FastifyInstance, deps: PlanDeps) {
     if (!body.success) return reply.code(400).send({ error: "invalid_request" });
     const { baseRevision, basePlanHash, excludeActionIds } = body.data;
 
-    return deps.db.transaction(async (tx) => {
+    // Reply only after the transaction commits, so a client that reads right after a 201 sees
+    // the new revision.
+    const out = await deps.db.transaction(async (tx): Promise<Outcome> => {
       const loaded = await loadPlan(tx, auth.orgId, req.params.id, baseRevision);
-      if (loaded.kind === "not_found") return reply.code(404).send({ error: "plan_not_found" });
+      if (loaded.kind === "not_found") return [404, { error: "plan_not_found" }];
       if (loaded.kind === "corrupt") {
         req.log.error({ planId: req.params.id }, loaded.detail);
-        return reply.code(500).send({ error: "stored_plan_invalid" });
+        return [500, { error: "stored_plan_invalid" }];
       }
       const base = loaded.plan;
-      if (base.planHash !== basePlanHash) {
-        return reply.code(409).send({ error: "hash_mismatch" });
-      }
+      if (base.planHash !== basePlanHash) return [409, { error: "hash_mismatch" }];
       // Revisions form a line, not a tree: editing an older revision would silently fork it.
       if (loaded.latestRevision !== base.revision) {
-        return reply
-          .code(409)
-          .send({ error: "stale_revision", latestRevision: loaded.latestRevision });
+        return [409, { error: "stale_revision", latestRevision: loaded.latestRevision }];
       }
 
       const known = new Set(base.manifest.actions.map((a) => a.id));
       const unknown = [...new Set(excludeActionIds)].filter((id) => !known.has(id));
-      if (unknown.length > 0) {
-        return reply.code(400).send({ error: "unknown_actions", actionIds: unknown });
-      }
+      if (unknown.length > 0) return [400, { error: "unknown_actions", actionIds: unknown }];
 
       const next = excludeActions(base.manifest, excludeActionIds);
       const hash = planHash(next);
@@ -190,19 +188,23 @@ export function registerPlanRoutes(app: FastifyInstance, deps: PlanDeps) {
         .returning({ createdAt: planVersions.createdAt });
       if (!inserted) {
         // A concurrent request created this revision first.
-        return reply.code(409).send({ error: "stale_revision", latestRevision: next.revision });
+        return [409, { error: "stale_revision", latestRevision: next.revision }];
       }
 
       const before = new Set(base.manifest.excluded.map((e) => e.actionId));
-      return reply.code(201).send({
-        planId: base.planId,
-        revision: next.revision,
-        parentRevision: base.revision,
-        planHash: hash,
-        manifest: next,
-        createdAt: inserted.createdAt.toISOString(),
-        dropped: next.excluded.filter((e) => !before.has(e.actionId)),
-      });
+      return [
+        201,
+        {
+          planId: base.planId,
+          revision: next.revision,
+          parentRevision: base.revision,
+          planHash: hash,
+          manifest: next,
+          createdAt: inserted.createdAt.toISOString(),
+          dropped: next.excluded.filter((e) => !before.has(e.actionId)),
+        },
+      ];
     });
+    return reply.code(out[0]).send(out[1]);
   });
 }

@@ -16,6 +16,7 @@
     "@rehearsal/db": "workspace:*"
   },
   "devDependencies": {
-    "@rehearsal/testkit": "workspace:*"
+    "@rehearsal/testkit": "workspace:*",
+    "drizzle-orm": "^0.45.4"
   }
 }

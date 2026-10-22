@@ -179,6 +179,38 @@ describe.skipIf(!process.env.DB_TESTS)("plan routes (real Postgres)", () => {
     expect(rows).toHaveLength(1);
   });
 
+  it("replies only after the new revision has committed", async () => {
+    const { planId, hash, user } = await seed();
+    // Records whether the transaction had committed by the time the response went out.
+    let committed = false;
+    const watched = new Proxy(db, {
+      get: (target, prop) =>
+        prop === "transaction"
+          ? async (fn: Parameters<Db["transaction"]>[0]) => {
+              const out = await target.transaction(fn);
+              committed = true;
+              return out;
+            }
+          : Reflect.get(target, prop),
+    });
+    const app = buildApp({ webRoot: null, plans: { db: watched, auth: () => user } });
+    let committedAtSend: boolean | null = null;
+    app.addHook("onSend", async () => {
+      committedAtSend = committed;
+    });
+    try {
+      const res = await app.inject({
+        method: "POST",
+        url: `/api/plans/${planId}/revisions`,
+        payload: { baseRevision: 1, basePlanHash: hash, excludeActionIds: ["patch_001"] },
+      });
+      expect(res.statusCode).toBe(201);
+      expect(committedAtSend).toBe(true);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("creates exactly one revision under concurrent requests", async () => {
     const { planId, hash, user } = await seed();
     const results = await Promise.all(
