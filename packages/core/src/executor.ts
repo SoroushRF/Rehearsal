@@ -64,6 +64,11 @@ export interface ApplyStore {
    * another run of this plan holds it. Two revisions applying at once could both send one key.
    */
   lockPlan(orgId: string, planId: string): Promise<(() => Promise<void>) | null>;
+  /**
+   * True once someone cancelled this run. Checked before admission, before every step and before
+   * every send: a cancel stops the next admitted action; what already happened keeps its receipt.
+   */
+  runCancelled?(orgId: string, runId: string): Promise<boolean>;
 }
 
 export interface StepGuardContext {
@@ -101,6 +106,9 @@ export interface ExecutorDeps {
 
 /** RunOutcome.refusal when another run of the same plan holds the apply lock: retry later. */
 export const PLAN_LOCKED = "another run of this plan is applying";
+
+/** RunOutcome.refusal when the run was cancelled before it was admitted. */
+export const RUN_CANCELLED = "run was cancelled";
 
 export interface RetryPolicy {
   /** Total sends of one step in one run, including the first. */
@@ -216,6 +224,8 @@ function resultRefsOf(action: Action): ResultRef[] {
 async function admit(
   job: ApplyJobInput,
   deps: ExecutorDeps,
+  /** Read-only reconcile of a cancelled run: the plan must be trusted, the grant need not be live. */
+  readOnly = false,
 ): Promise<
   { ok: true; manifest: PlanManifest; grant: ApprovalGrant } | { ok: false; detail: string }
 > {
@@ -248,6 +258,7 @@ async function admit(
   ) {
     return { ok: false, detail: "grant is for a different plan, revision or hash" };
   }
+  if (readOnly) return { ok: true, manifest, grant };
   if (grant.revokedAt !== null) return { ok: false, detail: "grant was revoked" };
   const grantedAt = Date.parse(grant.grantedAt);
   const expiresAt = Date.parse(grant.expiresAt);
@@ -289,13 +300,8 @@ async function admit(
  */
 export async function executeRun(job: ApplyJobInput, deps: ExecutorDeps): Promise<RunOutcome> {
   const { journal } = deps;
-  const admission = await admit(job, deps);
-
-  if (!admission.ok) {
-    await journal.appendEvent(job.runId, "run.refused", { detail: admission.detail });
-    return { state: "failed", receipts: [], refusal: admission.detail, error: null };
-  }
-  const { manifest, grant } = admission;
+  // Lock first: a stale or overlapping delivery must defer to the run in progress, not reach a
+  // refusal (say, a grant that expired meanwhile) and report a definite "failed" while it sends.
   const release = await deps.store.lockPlan(job.orgId, job.planId);
   if (!release) {
     const detail = PLAN_LOCKED;
@@ -303,7 +309,23 @@ export async function executeRun(job: ApplyJobInput, deps: ExecutorDeps): Promis
     return { state: "held", receipts: [], refusal: detail, error: null };
   }
   try {
-    return await applyLocked(job, deps, manifest, grant);
+    if (await deps.store.runCancelled?.(job.orgId, job.runId)) {
+      // Cancelled: nothing more is sent, but an earlier send whose outcome is unknown (say the
+      // worker died after dispatch) is still resolved by reading, so no effect hides unrecorded.
+      await journal.appendEvent(job.runId, "run.cancelled", { before: "admission" });
+      const readable = await admit(job, deps, true);
+      if (!readable.ok) {
+        return { state: "cancelled", receipts: [], refusal: RUN_CANCELLED, error: null };
+      }
+      const outcome = await applyLocked(job, deps, readable.manifest, readable.grant, true);
+      return { ...outcome, state: "cancelled", refusal: RUN_CANCELLED };
+    }
+    const admission = await admit(job, deps);
+    if (!admission.ok) {
+      await journal.appendEvent(job.runId, "run.refused", { detail: admission.detail });
+      return { state: "failed", receipts: [], refusal: admission.detail, error: null };
+    }
+    return await applyLocked(job, deps, admission.manifest, admission.grant);
   } finally {
     await release();
   }
@@ -314,6 +336,8 @@ async function applyLocked(
   deps: ExecutorDeps,
   manifest: PlanManifest,
   grant: ApprovalGrant,
+  /** Only resolve in-flight attempts through reads; never send, adopt, guard or hold new work. */
+  reconcileOnly = false,
 ): Promise<RunOutcome> {
   const { journal, clock } = deps;
   const at = () => clock.now().toISOString();
@@ -325,10 +349,25 @@ async function applyLocked(
 
   const receipts: Receipt[] = [];
   const settled = new Map<string, ReceiptOutcome>();
+  /** Set once a cancel is seen; no further action is admitted or sent. */
+  let cancelled = false;
+  const checkCancelled = async (where: string) => {
+    if (cancelled) return true;
+    if (await deps.store.runCancelled?.(job.orgId, job.runId)) {
+      cancelled = true;
+      await journal.appendEvent(job.runId, "run.cancelled", { before: where }).catch(() => {});
+    }
+    return cancelled;
+  };
   /** Latest confirmed receipt per action for this hash (earlier runs included), never duplicated. */
   const confirmedByAction = new Map<string, Receipt>();
+  /** Attempts this hash already holds as unresolved; a reconcile-only pass doesn't re-hold them. */
+  const heldUnresolved = new Set<string>();
   for (const r of await journal.receiptsFor(job.planHash)) {
     if (r.outcome === "confirmed") confirmedByAction.set(r.actionId, r);
+    if (r.outcome === "held" && r.holdReason?.kind === "unresolved_outcome") {
+      heldUnresolved.add(r.holdReason.attemptId);
+    }
   }
   /** An attempt marked dispatched whose outcome isn't settled yet (for honest error labelling). */
   let inFlightAttempt: string | null = null;
@@ -502,7 +541,10 @@ async function applyLocked(
     // identical replay protected by the provider's idempotency guarantee.
     const sentAt = Date.parse(newest.dispatchedAt ?? newest.preparedAt);
     const oldEnough = clock.now().getTime() - sentAt >= (deps.reconcileAfterMs ?? 60_000);
+    // A cancelled run never replays, so the replay that makes "not applied" safe to act on never
+    // comes: keep the attempts in flight (a late landing is still found later) and hold.
     if (
+      !reconcileOnly &&
       result.kind === "not_applied" &&
       oldEnough &&
       sameAsNewest &&
@@ -518,7 +560,13 @@ async function applyLocked(
       }
       return "resend";
     }
-    await hold(action, { kind: "unresolved_outcome", attemptId: inFlight[0]?.id ?? newest.id });
+    const heldAttempt = inFlight[0]?.id ?? newest.id;
+    if (reconcileOnly && heldUnresolved.has(heldAttempt)) {
+      // Already held for this exact attempt: a repeated read-only pass adds no duplicate receipt.
+      settled.set(action.id, "held");
+      return "settled";
+    }
+    await hold(action, { kind: "unresolved_outcome", attemptId: heldAttempt });
     return "settled";
   }
 
@@ -568,8 +616,10 @@ async function applyLocked(
       const sameAsNewest = sameContent(inFlight.at(-1) as Attempt);
       const outcome = await reconcileInFlight(action, key, inFlight, provider, world, sameAsNewest);
       if (outcome === "settled") return;
+      if (reconcileOnly) return; // no effect was found; a cancelled run sends nothing new
       prior = await journal.attemptsForKey(key); // read showed no effect: the step may be sent
     }
+    if (reconcileOnly) return;
     /**
      * Decisions follow the newest attempt that was actually sent, under any revision. Prepared rows
      * were never sent: they matter only when nothing for this key has been sent yet, and then only
@@ -724,6 +774,20 @@ async function applyLocked(
           confirmedReceipts: [...confirmedByAction.values()],
         });
         if (reason) return hold(action, reason);
+      }
+      // A cancel stops the next send, including a retry. An earlier send of this step whose
+      // outcome is unknown stays unknown (it is reconciled by a later run, never re-sent here).
+      if (await checkCancelled(`send ${action.id}`)) {
+        if (unknownSends.length > 0) {
+          return settle(
+            action,
+            receiptFor(action, "unknown_outcome", {
+              holdReason: { kind: "unresolved_outcome", attemptId: unknownSends[0] as string },
+              limitations: ["run cancelled; earlier send outcome remains unknown"],
+            }),
+          );
+        }
+        return;
       }
       // Admission is not a lease to keep spending after revocation or expiry. Re-read the
       // same immutable grant before every send, including a retry after backoff.
@@ -938,6 +1002,12 @@ async function applyLocked(
   for (const action of topoOrder(manifest.actions)) {
     const blocked = action.dependsOn.find((d) => settled.get(d) !== "confirmed");
     try {
+      if (reconcileOnly) {
+        // Only steps with an earlier send in flight have anything to resolve.
+        await step(action);
+        continue;
+      }
+      if (await checkCancelled(`step ${action.id}`)) break;
       if (blocked) {
         await settle(
           action,
@@ -948,6 +1018,7 @@ async function applyLocked(
         continue;
       }
       await step(action);
+      if (cancelled) break;
     } catch (err) {
       // Unexpected failure (journal down, adapter bug). Stop: the remaining steps are not attempted,
       // and anything already dispatched stays in the journal as dispatched, so it is never re-sent.
@@ -961,8 +1032,10 @@ async function applyLocked(
 
   const outcomes = manifest.actions.map((a) => settled.get(a.id));
   const confirmed = outcomes.filter((o) => o === "confirmed").length;
-  const state: RunState =
-    confirmed === outcomes.length
+  // A cancelled run reads "cancelled"; its receipts still show every effect that did happen.
+  const state: RunState = cancelled
+    ? "cancelled"
+    : confirmed === outcomes.length
       ? "completed"
       : confirmed > 0
         ? "partial"

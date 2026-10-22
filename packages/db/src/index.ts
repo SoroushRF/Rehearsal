@@ -7,6 +7,7 @@ export * from "./apply";
 export * from "./apply-store";
 export * from "./journal";
 export * from "./queue";
+export * from "./runs";
 export { schema };
 
 export function createDb(url = process.env.DATABASE_URL) {

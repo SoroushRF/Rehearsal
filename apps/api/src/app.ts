@@ -6,6 +6,7 @@ import Fastify, { type FastifyReply } from "fastify";
 import { type ApplyDeps, registerApplyRoute } from "./apply";
 import { type ApprovalDeps, registerApprovalRoutes } from "./approvals";
 import { type ReviewerResolver, registerMeRoute } from "./auth";
+import { registerCancelRoute } from "./cancel";
 import { type PlanDeps, registerPlanRoutes } from "./plans";
 import { registerTenantTokenRoute, type TenantTokenDeps } from "./tenant-tokens";
 
@@ -42,8 +43,13 @@ export function buildApp(
   // Without it they say "unavailable", not 404, so clients don't mistake an outage for a missing plan.
   const unavailable = async (_req: unknown, reply: FastifyReply) =>
     reply.code(503).send({ error: "database_unavailable" });
-  if (deps.apply) registerApplyRoute(app, deps.apply);
-  else app.post("/api/plans/:id/apply", unavailable);
+  if (deps.apply) {
+    registerApplyRoute(app, deps.apply);
+    registerCancelRoute(app, deps.apply);
+  } else {
+    app.post("/api/plans/:id/apply", unavailable);
+    app.post("/api/runs/:id/cancel", unavailable);
+  }
   if (deps.plans) registerPlanRoutes(app, deps.plans);
   else {
     app.get("/api/plans", unavailable);

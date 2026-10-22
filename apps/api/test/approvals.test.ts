@@ -138,6 +138,45 @@ describe.skipIf(!process.env.DB_TESTS)("approval routes (real Postgres)", () => 
     expect(await grantsFor(planId)).toHaveLength(1);
   });
 
+  it("replies only after the grant has committed", async () => {
+    const { orgId, planId, hash } = await seed();
+    let committed = false;
+    const watched = new Proxy(db, {
+      get: (target, prop) =>
+        prop === "transaction"
+          ? async (fn: Parameters<Db["transaction"]>[0]) => {
+              const out = await target.transaction(fn);
+              committed = true;
+              return out;
+            }
+          : Reflect.get(target, prop),
+    });
+    const app = buildApp({
+      webRoot: null,
+      approvals: {
+        db: watched,
+        reviewer: () => finance(orgId),
+        policies: [POLICY],
+        now: () => NOW,
+      },
+    });
+    let committedAtSend: boolean | null = null;
+    app.addHook("onSend", async () => {
+      committedAtSend = committed;
+    });
+    try {
+      const res = await app.inject({
+        method: "POST",
+        url: `/api/plans/${planId}/approvals`,
+        payload: { revision: 1, planHash: hash },
+      });
+      expect(res.statusCode).toBe(201);
+      expect(committedAtSend).toBe(true);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("the grant is what apply needs (visible to T3)", async () => {
     const { orgId, planId, hash } = await seed();
     await approve(finance(orgId), planId, { revision: 1, planHash: hash });
