@@ -1,0 +1,191 @@
+{
+  "tickets": [
+    {
+      "id": 4000211,
+      "url": "https://northwind.zendesk.com/api/v2/tickets/4000211.json",
+      "external_id": "ticket-441",
+      "subject": "Scheduled exports mangling accented names in us-east-1 since the weekend",
+      "raw_subject": "Scheduled exports mangling accented names in us-east-1 since the weekend",
+      "description": "Scheduled exports drops accented characters from every name on the shared demo workspace since the weekend. Our gateway logs show:\n  GET /v1/billing/invoices -> 429 FatalProcessOutOfMemory after 3s (x-request-id: req_8fd44d0cbc)\nEvery failing call is against /v1/billing/documents out of us-east-1. Blocking the executive business review.",
+      "status": "closed",
+      "priority": "normal",
+      "type": "question",
+      "recipient": null,
+      "requester_id": 2000051,
+      "submitter_id": 2000051,
+      "assignee_id": 1000003,
+      "organization_id": 3000008,
+      "group_id": 5000003,
+      "collaborator_ids": [],
+      "follower_ids": [],
+      "email_cc_ids": [],
+      "tags": ["question", "normal", "account_wrenglen_publishing", "smb", "media"],
+      "has_incidents": false,
+      "created_at": "2025-09-03T09:34:54Z",
+      "updated_at": "2025-09-25T14:47:36Z",
+      "via": {
+        "channel": "web",
+        "source": {
+          "from": {},
+          "to": {},
+          "rel": null
+        }
+      },
+      "custom_fields": [
+        {
+          "id": 7990001,
+          "value": "billing"
+        },
+        {
+          "id": 7990002,
+          "value": null
+        },
+        {
+          "id": 7990003,
+          "value": false
+        },
+        {
+          "id": 7990004,
+          "value": null
+        }
+      ],
+      "fields": [
+        {
+          "id": 7990001,
+          "value": "billing"
+        },
+        {
+          "id": 7990002,
+          "value": null
+        },
+        {
+          "id": 7990003,
+          "value": false
+        },
+        {
+          "id": 7990004,
+          "value": null
+        }
+      ],
+      "custom_status_id": 7300005,
+      "due_at": null,
+      "problem_id": null,
+      "satisfaction_rating": null,
+      "sharing_agreement_ids": [],
+      "followup_ids": [],
+      "from_messaging_channel": false,
+      "allow_channelback": false,
+      "allow_attachments": true,
+      "is_public": true,
+      "brand_id": 7000001,
+      "ticket_form_id": 7995002,
+      "generated_timestamp": 1758811656,
+      "forum_topic_id": null
+    },
+    {
+      "id": 4000231,
+      "url": "https://northwind.zendesk.com/api/v2/tickets/4000231.json",
+      "external_id": "ticket-445",
+      "subject": "Retention policy failing for our warehouse scanners since 07:28",
+      "raw_subject": "Retention policy failing for our warehouse scanners since 07:28",
+      "description": "our warehouse scanners report that the retention policy returns records belonging to a different workspace. Started two days ago; no config changes on our side. Error code 422, request id req_a368c325fb.",
+      "status": "solved",
+      "priority": "normal",
+      "type": "question",
+      "recipient": "support@northwind.zendesk.com",
+      "requester_id": 2000051,
+      "submitter_id": 2000051,
+      "assignee_id": 1000003,
+      "organization_id": 3000008,
+      "group_id": 5000003,
+      "collaborator_ids": [],
+      "follower_ids": [],
+      "email_cc_ids": [],
+      "tags": ["question", "normal", "account_wrenglen_publishing", "smb", "media"],
+      "has_incidents": false,
+      "created_at": "2025-10-16T14:39:54Z",
+      "updated_at": "2025-10-21T15:11:26Z",
+      "via": {
+        "channel": "email",
+        "source": {
+          "from": {
+            "address": "melissa_coldbourne@wrenglen-publishing.com",
+            "name": "Melissa Coldbourne"
+          },
+          "to": {
+            "address": "support@northwind.zendesk.com",
+            "name": "Support"
+          },
+          "rel": null
+        }
+      },
+      "custom_fields": [
+        {
+          "id": 7990001,
+          "value": "billing"
+        },
+        {
+          "id": 7990002,
+          "value": null
+        },
+        {
+          "id": 7990003,
+          "value": false
+        },
+        {
+          "id": 7990004,
+          "value": null
+        }
+      ],
+      "fields": [
+        {
+          "id": 7990001,
+          "value": "billing"
+        },
+        {
+          "id": 7990002,
+          "value": null
+        },
+        {
+          "id": 7990003,
+          "value": false
+        },
+        {
+          "id": 7990004,
+          "value": null
+        }
+      ],
+      "custom_status_id": 7300005,
+      "due_at": null,
+      "problem_id": null,
+      "satisfaction_rating": {
+        "id": 11400231,
+        "url": "https://northwind.zendesk.com/api/v2/satisfaction_ratings/11400231.json",
+        "assignee_id": 1000003,
+        "group_id": 5000003,
+        "requester_id": 2000051,
+        "ticket_id": 4000231,
+        "score": "good",
+        "comment": null,
+        "reason": "No reason provided",
+        "reason_id": 7450000,
+        "reason_code": 0,
+        "created_at": "2025-10-21T15:11:26Z",
+        "updated_at": "2025-10-21T15:11:26Z"
+      },
+      "sharing_agreement_ids": [],
+      "followup_ids": [],
+      "from_messaging_channel": false,
+      "allow_channelback": false,
+      "allow_attachments": true,
+      "is_public": true,
+      "brand_id": 7000001,
+      "ticket_form_id": 7995002,
+      "generated_timestamp": 1761059486,
+      "forum_topic_id": null
+    }
+  ],
+  "next_page": "http://127.0.0.1:8111/api/v2/users/2000051/tickets/requested.json?per_page=2&page=3",
+  "previous_page": "http://127.0.0.1:8111/api/v2/users/2000051/tickets/requested.json?per_page=2&page=1",
+  "count": 6
+}

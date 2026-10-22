@@ -1,0 +1,100 @@
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "ch_7wD2ja8lIorW65Uh",
+      "object": "charge",
+      "amount": 42083,
+      "amount_captured": 42083,
+      "amount_refunded": 0,
+      "application": null,
+      "application_fee": null,
+      "application_fee_amount": null,
+      "balance_transaction": "txn_QGsM0TXVayc1cYi6",
+      "billing_details": {
+        "address": {
+          "city": "Berlin",
+          "country": "DE",
+          "line1": "930 Rosenthaler Straße",
+          "line2": null,
+          "postal_code": "105971",
+          "state": null
+        },
+        "email": "mareen_schmitt@honorisfabrication.de",
+        "name": "Mareen Schmitt",
+        "phone": "+4930901820703"
+      },
+      "calculated_statement_descriptor": "NORTHWIND ROBOTICS",
+      "captured": true,
+      "created": 1788174497,
+      "currency": "usd",
+      "customer": "cus_necGym2uIJ94j40b",
+      "description": "Invoice in_y0wmq0vu8DzyFECU",
+      "disputed": false,
+      "failure_balance_transaction": null,
+      "failure_code": null,
+      "failure_message": null,
+      "fraud_details": {},
+      "invoice": "in_y0wmq0vu8DzyFECU",
+      "livemode": false,
+      "metadata": {
+        "deal_id": "deal-28",
+        "account_id": "acct-11"
+      },
+      "on_behalf_of": null,
+      "outcome": {
+        "network_status": "approved_by_network",
+        "reason": null,
+        "risk_level": "normal",
+        "risk_score": 36,
+        "seller_message": "Payment complete.",
+        "type": "authorized"
+      },
+      "paid": true,
+      "payment_intent": "pi_LdCwDADUXMzNHiph",
+      "payment_method": "pm_KMsv0jhu8GomgroR",
+      "payment_method_details": {
+        "card": {
+          "brand": "amex",
+          "checks": {
+            "address_line1_check": "pass",
+            "address_postal_code_check": "fail",
+            "cvc_check": "pass"
+          },
+          "country": "DE",
+          "exp_month": 7,
+          "exp_year": 2027,
+          "fingerprint": "Ai2YHfLPvsBKips5",
+          "funding": "debit",
+          "installments": null,
+          "last4": "9830",
+          "mandate": null,
+          "network": "amex",
+          "three_d_secure": null,
+          "wallet": null
+        },
+        "type": "card"
+      },
+      "receipt_email": "mareen_schmitt@honorisfabrication.de",
+      "receipt_number": null,
+      "receipt_url": "https://pay.stripe.com/receipts/sim/ch_7wD2ja8lIorW65Uh",
+      "refunded": false,
+      "review": null,
+      "shipping": null,
+      "source_transfer": null,
+      "statement_descriptor": null,
+      "statement_descriptor_suffix": null,
+      "status": "succeeded",
+      "transfer_data": null,
+      "transfer_group": null,
+      "refunds": {
+        "object": "list",
+        "data": [],
+        "has_more": false,
+        "url": "/v1/charges/ch_7wD2ja8lIorW65Uh/refunds"
+      }
+    }
+  ],
+  "has_more": false,
+  "url": "/v1/charges"
+}
