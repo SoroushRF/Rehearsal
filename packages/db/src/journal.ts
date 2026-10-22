@@ -162,7 +162,7 @@ export class PgJournal implements JournalPort {
       .select({ receipt: stepReceipts.receipt })
       .from(stepReceipts)
       .where(and(eq(stepReceipts.orgId, this.orgId), eq(stepReceipts.planHash, planHash)))
-      .orderBy(asc(stepReceipts.recordedAt));
+      .orderBy(asc(stepReceipts.recordedAt), asc(stepReceipts.id));
     return rows.map((r) => r.receipt as Receipt);
   }
 

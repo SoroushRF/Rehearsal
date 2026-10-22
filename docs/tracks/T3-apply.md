@@ -63,6 +63,7 @@ _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
     - Guards (`StepGuard`) run only right before a request would be sent, and get `confirmedReceipts` for this hash (earlier runs included) so T4 can build the own-write overlay with `advanceOverlay`.
     - A prepared-but-never-sent attempt from another revision is ignored: it neither blocks nor gets reused.
     - Admission doesn't refuse an *older* revision once a newer one is approved. That belongs to the approval lifecycle (T2).
+    - `ApplyStore.lockPlan` serializes all revisions of one plan; a run that can't get the lock returns `held` with a refusal and should be retried. The Postgres store (with worker wiring) must implement it with a session advisory lock on (org, plan).
     - Rejected-but-retryable steps aren't retried yet (T3.4).
     - Confirmed receipts carry a limitation saying the effect came from the write response, not a read-back.
     - Admission is a cross-track-review path.

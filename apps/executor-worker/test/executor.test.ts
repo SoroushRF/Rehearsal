@@ -390,7 +390,13 @@ describe("second-round review fixes", () => {
     };
     const second = await s.run();
     expect(outcomes(second.receipts)).toMatchObject({ note_002: "confirmed" });
-    expect(seen).toEqual(expect.arrayContaining(["refund_001", "patch_002", "refund_002"]));
+    expect([...seen].sort()).toEqual([
+      "note_001",
+      "patch_001",
+      "patch_002",
+      "refund_001",
+      "refund_002",
+    ]);
   });
 
   it("guards don't run for effects adopted from an earlier revision", async () => {
@@ -406,6 +412,57 @@ describe("second-round review fixes", () => {
     const result = await s.run();
     expect(result.refusal).toMatch(/unreadable/);
     expect(s.world.effects).toEqual([]);
+  });
+});
+
+describe("third-round review fixes", () => {
+  it("re-running an adopted revision writes no duplicate receipts and guards see each action once", async () => {
+    const s = setup(happyPathBundle());
+    s.deps.guard = async (action) =>
+      action.id === "note_002" ? { kind: "row_changed", observationId: "x", fields: ["y"] } : null;
+    await s.run();
+
+    const rev2 = addRevision(s);
+    let seen: string[] = [];
+    s.deps.guard = async (action, ctx) => {
+      if (action.id === "note_002") seen = ctx.confirmedReceipts.map((r) => r.actionId);
+      return null;
+    };
+    await rev2.run();
+    await rev2.run();
+    expect(new Set(seen).size).toBe(seen.length);
+
+    const rev2Hash = planHash(rev2.manifest);
+    const confirmed = s.journal.receipts.filter(
+      (r) => r.planHash === rev2Hash && r.outcome === "confirmed",
+    );
+    expect(confirmed.map((r) => r.actionId).sort()).toEqual([
+      "note_001",
+      "note_002",
+      "patch_001",
+      "patch_002",
+      "refund_001",
+      "refund_002",
+    ]);
+  });
+
+  it("two revisions of one plan never apply at the same time", async () => {
+    const s = setup(happyPathBundle());
+    const rev2 = addRevision(s);
+    const [a, b] = await Promise.all([s.run(), rev2.run()]);
+    const deferred = [a, b].filter((r) => r.refusal === "another run of this plan is applying");
+    expect(deferred).toHaveLength(1);
+    expect(deferred[0]?.state).toBe("held");
+    expect(s.world.refunds).toHaveLength(2);
+    expect(s.world.tickets.get("5531")?.comments).toHaveLength(1);
+  });
+
+  it("releases the plan lock even when the run stops on an error", async () => {
+    const s = setup(happyPathBundle());
+    s.journal.failNextSettle = true;
+    await s.run();
+    const again = await s.run();
+    expect(again.refusal).toBeNull();
   });
 });
 

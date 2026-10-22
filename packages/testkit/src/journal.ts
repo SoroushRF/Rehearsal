@@ -152,4 +152,13 @@ export class MemoryApplyStore implements ApplyStore {
   async loadGrant(_orgId: string, approvalId: string) {
     return this.grants.get(approvalId) ?? null;
   }
+  readonly #locks = new Set<string>();
+  async lockPlan(orgId: string, planId: string) {
+    const key = `${orgId}:${planId}`;
+    if (this.#locks.has(key)) return null;
+    this.#locks.add(key);
+    return async () => {
+      this.#locks.delete(key);
+    };
+  }
 }

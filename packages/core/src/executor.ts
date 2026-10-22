@@ -51,6 +51,11 @@ export interface ApplyStore {
     revision: number,
   ): Promise<{ planHash: string; manifest: unknown } | null>;
   loadGrant(orgId: string, approvalId: string): Promise<ApprovalGrant | null>;
+  /**
+   * Exclusive apply lock for one plan (all its revisions). Returns a release function, or null if
+   * another run of this plan holds it. Two revisions applying at once could both send one key.
+   */
+  lockPlan(orgId: string, planId: string): Promise<(() => Promise<void>) | null>;
 }
 
 export interface StepGuardContext {
@@ -210,8 +215,7 @@ async function admit(
  * exact bytes before it is sent; a failed, held or unknown step skips everything that depends on it.
  */
 export async function executeRun(job: ApplyJobInput, deps: ExecutorDeps): Promise<RunOutcome> {
-  const { journal, clock } = deps;
-  const at = () => clock.now().toISOString();
+  const { journal } = deps;
   const admission = await admit(job, deps);
 
   if (!admission.ok) {
@@ -219,6 +223,27 @@ export async function executeRun(job: ApplyJobInput, deps: ExecutorDeps): Promis
     return { state: "failed", receipts: [], refusal: admission.detail, error: null };
   }
   const { manifest, grant } = admission;
+  const release = await deps.store.lockPlan(job.orgId, job.planId);
+  if (!release) {
+    const detail = "another run of this plan is applying";
+    await journal.appendEvent(job.runId, "run.deferred", { detail });
+    return { state: "held", receipts: [], refusal: detail, error: null };
+  }
+  try {
+    return await applyLocked(job, deps, manifest, grant);
+  } finally {
+    await release();
+  }
+}
+
+async function applyLocked(
+  job: ApplyJobInput,
+  deps: ExecutorDeps,
+  manifest: PlanManifest,
+  grant: ApprovalGrant,
+): Promise<RunOutcome> {
+  const { journal, clock } = deps;
+  const at = () => clock.now().toISOString();
   await journal.appendEvent(job.runId, "run.admitted", {
     planHash: job.planHash,
     approvalId: grant.id,
@@ -226,9 +251,11 @@ export async function executeRun(job: ApplyJobInput, deps: ExecutorDeps): Promis
 
   const receipts: Receipt[] = [];
   const settled = new Map<string, ReceiptOutcome>();
-  const confirmedReceipts: Receipt[] = (await journal.receiptsFor(job.planHash)).filter(
-    (r) => r.outcome === "confirmed",
-  );
+  /** Latest confirmed receipt per action for this hash (earlier runs included), never duplicated. */
+  const confirmedByAction = new Map<string, Receipt>();
+  for (const r of await journal.receiptsFor(job.planHash)) {
+    if (r.outcome === "confirmed") confirmedByAction.set(r.actionId, r);
+  }
   /** An attempt marked dispatched whose outcome isn't settled yet (for honest error labelling). */
   let inFlightAttempt: string | null = null;
   const bindings = new Map<string, string | number>(
@@ -272,7 +299,7 @@ export async function executeRun(job: ApplyJobInput, deps: ExecutorDeps): Promis
     // The journal is the record: reflect it in memory before anything else can fail.
     for (const b of newBindings) bindings.set(bindingKey(b.ref), b.value);
     receipts.push(receipt);
-    if (receipt.outcome === "confirmed") confirmedReceipts.push(receipt);
+    if (receipt.outcome === "confirmed") confirmedByAction.set(receipt.actionId, receipt);
     settled.set(action.id, receipt.outcome);
     if (opts.transition?.attemptId === inFlightAttempt) inFlightAttempt = null;
     // Events are a feed for the UI, not the record; losing one must not change the outcome.
@@ -285,6 +312,11 @@ export async function executeRun(job: ApplyJobInput, deps: ExecutorDeps): Promis
     a.request.method === req.method && a.request.path === req.path && a.request.bodySha256 === sha;
 
   async function step(action: Action): Promise<void> {
+    if (confirmedByAction.has(action.id)) {
+      // Already confirmed (or adopted) for this hash in an earlier run; never settle it twice.
+      settled.set(action.id, "confirmed");
+      return;
+    }
     const key = operationKey(job.orgId, job.planId, action);
     const prior = await journal.attemptsForKey(key);
     // A prepared attempt from another plan hash was never sent; it neither blocks nor gets reused.
@@ -363,7 +395,9 @@ export async function executeRun(job: ApplyJobInput, deps: ExecutorDeps): Promis
     }
 
     // Only now would a request actually be sent, so only now do the guards run.
-    const guardHold = deps.guard ? await deps.guard(action, { manifest, confirmedReceipts }) : null;
+    const guardHold = deps.guard
+      ? await deps.guard(action, { manifest, confirmedReceipts: [...confirmedByAction.values()] })
+      : null;
     if (guardHold) return hold(action, guardHold);
 
     if (latest?.state === "prepared" && !sameRequest(latest, request, bodySha256)) {
