@@ -10,6 +10,55 @@ const file = JSON.parse(
 );
 const V1 = { manifest: file.bundle.manifest, planHash: file.planHash as string };
 const V2_HASH = "b".repeat(64);
+const AT = "2026-10-22T12:00:00.000Z";
+
+/** Revision 2 applied; a new duplicate charge for cus_fixture_002 appeared after approval. */
+const RUN = {
+  id: "run_1",
+  planId: "plan_happy",
+  revision: 2,
+  planHash: V2_HASH,
+  approvalId: "grant_1",
+  requestedBy: "user_finance",
+  state: "held",
+  createdAt: AT,
+  updatedAt: AT,
+};
+const receipt = (actionId: string, outcome: string, holdReason: object | null = null) => ({
+  id: `rcpt_${actionId}`,
+  actionId,
+  planHash: V2_HASH,
+  approvalId: "grant_1",
+  outcome,
+  providerRef: null,
+  observedEffect: {},
+  protection: "native_guard_with_documented_limits",
+  holdReason,
+  limitations: [],
+  recordedAt: AT,
+});
+const PHANTOM_EVENTS = [
+  ["run.admitted", { planHash: V2_HASH, approvalId: "grant_1" }],
+  ["step.receipt", receipt("patch_001", "confirmed")],
+  [
+    "step.receipt",
+    receipt("refund_002", "held", {
+      kind: "query_membership_changed",
+      queryObservationId: "q_charges_002",
+      added: ["ch_new_dup"],
+      removed: [],
+    }),
+  ],
+  ["step.receipt", receipt("patch_002", "confirmed")],
+  [
+    "step.receipt",
+    receipt("note_002", "skipped_dependency", {
+      kind: "predecessor_not_confirmed",
+      stepId: "refund_002",
+    }),
+  ],
+  ["run.finished", { state: "held", error: null }],
+].map(([type, payload], i) => ({ seq: i + 1, runId: "run_1", type, at: AT, payload }));
 const json = (route: Route, status: number, body: unknown) =>
   route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 
@@ -18,6 +67,7 @@ function fakeApi() {
   let current = { revision: 1, ...V1 };
   const grants: object[] = [];
   let approvals = 0;
+  let applied = false;
   const requests: { method: string; path: string; body: unknown }[] = [];
 
   async function handle(route: Route) {
@@ -92,8 +142,21 @@ function fakeApi() {
       grants.push({ ...grant, live: true });
       return json(route, 201, { grant, existing: false });
     }
-    if (path === "/api/plans/plan_happy/apply")
+    if (path === "/api/plans/plan_happy/apply") {
+      applied = true;
       return json(route, 202, { runId: "run_1", state: "approved", existing: false });
+    }
+    if (path === "/api/plans/plan_happy/runs")
+      return json(route, 200, { runs: applied ? [RUN] : [] });
+    if (path === "/api/runs/run_1/events") {
+      // The phantom: a new duplicate charge appeared for cus_fixture_002 after approval.
+      const after = Number(new URL(req.url()).searchParams.get("after") ?? 0);
+      return json(route, 200, {
+        run: RUN,
+        events: PHANTOM_EVENTS.filter((e) => e.seq > after),
+        more: false,
+      });
+    }
     return json(route, 404, { error: "not_found" });
   }
   return { handle, requests };
@@ -125,6 +188,20 @@ test("uncheck → revision → refused → approved → apply, all through the A
   await expect(page.getByTestId("live-grant")).toContainText("user_finance");
   await page.getByRole("button", { name: "Apply to production" }).click();
   await expect(page.getByTestId("run-started")).toContainText("run_1");
+
+  // The run report says, step by step, what happened and why.
+  const report = page.getByTestId("run-report");
+  await expect(report).toContainText("held");
+  await expect(report.locator('[data-action-id="patch_001"]')).toHaveAttribute(
+    "data-outcome",
+    "confirmed",
+  );
+  await expect(report.locator('[data-action-id="refund_002"]')).toContainText(
+    "New matching record appeared after approval (ch_new_dup)",
+  );
+  await expect(report.locator('[data-action-id="note_002"]')).toContainText(
+    "Waits for refund_002, which didn't complete.",
+  );
 
   // The browser only ever sent IDs, revisions and hashes, never action bodies.
   const posts = api.requests.filter((r) => r.method === "POST").map((r) => [r.path, r.body]);

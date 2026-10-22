@@ -15,11 +15,14 @@ import {
 } from "../api";
 import { roleLabel, shortHash } from "../format";
 import { droppedBy, requiredRoles } from "../plan";
+import { RunView } from "../runs";
 import { PlanReview } from "./PlanReview";
+import { RunTimeline } from "./RunTimeline";
 
 const PlanList = z.object({ plans: z.array(PlanSummary) });
 const GrantList = z.object({ grants: z.array(Grant) });
 const Approved = z.object({ grant: ApprovalGrant, existing: z.boolean() });
+const RunList = z.object({ runs: z.array(RunView) });
 const planPath = (planId: string) => `/api/plans/${encodeURIComponent(planId)}`;
 
 /** Plans stored for the reviewer's organization, reviewed and approved through the API. */
@@ -183,10 +186,20 @@ function ApprovalPanel({
         onStale();
     },
   });
+  const runs = useQuery({
+    queryKey: ["runs", plan.planId],
+    queryFn: () => call(apiFetch, RunList, `${planPath(plan.planId)}/runs`),
+  });
+  const [shownRun, setShownRun] = useState<string | null>(null);
   const apply = useMutation({
     mutationFn: () => call(apiFetch, ApplyAccepted, `${planPath(plan.planId)}/apply`, body),
+    onSuccess: (accepted) => {
+      setShownRun(accepted.runId);
+      queryClient.invalidateQueries({ queryKey: ["runs", plan.planId] });
+    },
   });
   const live = grants.data?.grants.find((g) => g.live && g.planHash === plan.planHash);
+  const runId = shownRun ?? runs.data?.runs[0]?.id ?? null;
 
   return (
     <section aria-label="Approval" className="mt-4 rounded-lg border border-slate-200 bg-white p-4">
@@ -235,6 +248,23 @@ function ApprovalPanel({
           {apply.data.existing ? "already exists" : "started"} ({apply.data.state}).
         </p>
       )}
+
+      {(runs.data?.runs.length ?? 0) > 1 && (
+        <nav aria-label="Runs" className="mt-4 flex flex-wrap gap-2 text-xs">
+          {runs.data?.runs.map((r) => (
+            <button
+              key={r.id}
+              type="button"
+              aria-current={r.id === runId ? "true" : undefined}
+              onClick={() => setShownRun(r.id)}
+              className="rounded border border-slate-300 px-2 py-1 aria-[current=true]:border-slate-900"
+            >
+              r{r.revision} · {r.state} · {new Date(r.createdAt).toLocaleTimeString()}
+            </button>
+          ))}
+        </nav>
+      )}
+      {runId && <RunTimeline key={runId} apiFetch={apiFetch} runId={runId} />}
     </section>
   );
 }
