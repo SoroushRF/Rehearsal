@@ -1,6 +1,7 @@
 import { HealthResponse } from "@rehearsal/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { AccountBar } from "./auth";
 import { PlanReview } from "./components/PlanReview";
 import { type FixtureBundle, fixtureBundles } from "./fixtures";
 
@@ -18,10 +19,15 @@ export function App({ bundles = fixtureBundles }: { bundles?: FixtureBundle[] })
 
   return (
     <main className="mx-auto max-w-4xl p-6 font-sans text-slate-900">
-      <h1 className="text-2xl font-semibold">Rehearsal</h1>
-      <p className="mt-1 text-slate-600">
-        Rehearse the plan. Approve its effects. Apply with evidence.
-      </p>
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold">Rehearsal</h1>
+          <p className="mt-1 text-slate-600">
+            Rehearse the plan. Approve its effects. Apply with evidence.
+          </p>
+        </div>
+        <AccountBar />
+      </header>
 
       <nav aria-label="Fixture plans" className="mt-6 flex flex-wrap gap-2">
         {bundles.map(({ bundle }) => (

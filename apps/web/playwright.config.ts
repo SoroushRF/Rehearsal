@@ -10,6 +10,8 @@ const PORT = 5199;
  */
 export default defineConfig({
   testDir: "e2e",
+  // Biome checks every file outside node_modules, so keep run output out of the source tree.
+  outputDir: "node_modules/.cache/playwright",
   reporter: "list",
   use: {
     baseURL: `http://localhost:${PORT}`,
