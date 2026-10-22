@@ -25,16 +25,17 @@
 
 ## Tasks
 
-| ID | Task | Milestone | Done when | Issue |
-|---|---|---|---|---|
-| T2.1 | Plan diff view from fixture bundles: per-customer groups, money formatting, labels, evidence drawer, plan hash | M1 | All four bundles render; Playwright smoke test | #10 |
-| T2.2 | API: store plans; `GET /api/plans/:id`; `POST /api/plans/:id/revisions` (uses `excludeActions`) with expected-hash check | M1–M2 | Excluding `refund_001` returns revision 2 without `note_001` | #11 |
-| T2.3 | Clerk sign-in, `support_lead` / `finance_lead` roles, and server-side checks | M2 | Two demo users; role shown in the UI | #12 |
-| T2.4 | `POST /api/plans/:id/approvals`: grant bound to org, revision, hash, actor and expiry; full refusal test matrix | M2 | Refusal tests green; grant visible to T3 | #13 |
-| T2.5 | Deploy thin slice: API + web, workers, Postgres, private simulators. Prove the cloud workers can reach the simulators. | M2 | Public URL plus a smoke script; the fallback is decided if this fails | #14 |
-| T2.6 | Run timeline, receipts and held-step views (polling `GET /api/runs/:id/events`) | M3 | Phantom and conflict runs read clearly to a stranger | #15 |
-| T2.7 | Two-minute video script, recording, Devpost page | M4–M5 | Submitted | #16 |
-| T2.8 | _Stretch:_ thin Expo approver app on the same API | after M4 | Only if everything else is frozen | #17 |
+| ID | Task | Milestone | Done when | Issue | Blocked by |
+|---|---|---|---|---|---|
+| T2.1 | Plan diff view from fixture bundles: per-customer groups, money formatting, labels, evidence drawer, plan hash | M1 | All four bundles render; Playwright smoke test | #10 | — |
+| T2.2 | API: store plans; `GET /api/plans/:id`; `POST /api/plans/:id/revisions` (uses `excludeActions`) with expected-hash check | M1–M2 | Excluding `refund_001` returns revision 2 without `note_001` | #11 | T3.1 |
+| T2.3 | Clerk sign-in, `support_lead` / `finance_lead` roles, and server-side checks | M2 | Two demo users; role shown in the UI | #12 | — |
+| T2.4 | `POST /api/plans/:id/approvals`: grant bound to org, revision, hash, actor and expiry; full refusal test matrix | M2 | Refusal tests green; grant visible to T3 | #13 | T2.2, T2.3 |
+| T2.5 | Deploy thin slice: API + web, workers, Postgres, private simulators. Prove the cloud workers can reach the simulators. | M2 | Public URL plus a smoke script; the fallback is decided if this fails | #14 | T2.2, T1.5, T3.2 |
+| T2.6 | Run timeline, receipts and held-step views (polling `GET /api/runs/:id/events`) | M3 | Phantom and conflict runs read clearly to a stranger | #15 | T3.2 |
+| T2.7 | Two-minute video script, recording, Devpost page | M4–M5 | Submitted | #16 | T2.6 |
+| T2.8 | _Stretch:_ thin Expo approver app on the same API | after M4 | Only if everything else is frozen | #17 | T2.4 |
+| T2.9 | Decide currency: align `policy.v1.json` with the Era seed (USD vs CAD) and record it in `docs/decisions/` | M2 | Decision merged; policy and seed agree | #40 | — |
 
 ## Decisions
 
