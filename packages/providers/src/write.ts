@@ -11,6 +11,7 @@ import {
   refundEffectMatches,
   type WorldContext,
 } from "@rehearsal/core";
+import { z } from "zod";
 import { eraFetch } from "./era";
 import type { WorldConfig } from "./worlds";
 
@@ -118,13 +119,24 @@ async function readJson<T>(target: WriteTarget, path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-/** Zendesk next_page is an absolute URL on the serving world's origin; keep only path + query. */
-function pathOf(url: string): string {
-  const u = new URL(url);
-  return `${u.pathname}${u.search}`;
-}
-
 const MAX_PAGES = 50;
+const RefundPage = z.object({
+  data: z.array(
+    z.object({
+      id: z.string().min(1),
+      status: z.string().min(1),
+      amount: z.int().nonnegative(),
+      currency: z.string().regex(/^[a-z]{3}$/),
+      charge: z.string().min(1),
+      metadata: z.record(z.string(), z.string()).optional(),
+    }),
+  ),
+  has_more: z.boolean(),
+});
+const CommentPage = z.object({
+  comments: z.array(z.object({ body: z.string(), public: z.boolean() })),
+  next_page: z.string().min(1).nullable(),
+});
 
 /**
  * Stripe refunds. Form-encoded in a fixed field order (the simulator fingerprints path + raw body
@@ -166,18 +178,17 @@ export function stripeWriter(target: WriteTarget): ProviderWriter {
       assertTarget(target, ctx);
       if (action.kind !== "stripe.refund.create") throw new Error(`stripe can't ${action.kind}`);
       let path = `/v1/refunds?charge=${encodeURIComponent(action.args.chargeId)}&limit=100`;
+      const seen = new Set<string>();
       for (let page = 0; page < MAX_PAGES; page++) {
-        const list = await readJson<{
-          data: Array<{
-            id: string;
-            status: string;
-            amount: number;
-            charge: string;
-            currency: string;
-            metadata?: Record<string, string>;
-          }>;
-          has_more: boolean;
-        }>(target, path);
+        const parsed = RefundPage.safeParse(await readJson<unknown>(target, path));
+        if (!parsed.success) return { kind: "indeterminate", detail: "invalid refund page" };
+        const list = parsed.data;
+        if (
+          list.data.some((r) => seen.has(r.id)) ||
+          new Set(list.data.map((r) => r.id)).size !== list.data.length
+        )
+          return { kind: "indeterminate", detail: "repeated refund cursor" };
+        for (const refund of list.data) seen.add(refund.id);
         const refund = list.data.find((r) => r.metadata?.rehearsal_op === attempt.operationKey);
         if (refund) {
           const effect = {
@@ -211,7 +222,8 @@ export function stripeWriter(target: WriteTarget): ProviderWriter {
           };
         }
         const last = list.data.at(-1);
-        if (!list.has_more || !last) return { kind: "not_applied" };
+        if (!list.has_more) return { kind: "not_applied" };
+        if (!last) return { kind: "indeterminate", detail: "empty refund page with has_more" };
         path = `/v1/refunds?charge=${encodeURIComponent(action.args.chargeId)}&limit=100&starting_after=${encodeURIComponent(last.id)}`;
       }
       return { kind: "indeterminate", detail: `more than ${MAX_PAGES} pages of refunds` };
@@ -302,16 +314,27 @@ export function zendeskWriter(target: WriteTarget): ProviderWriter {
         // The note carries its operation marker; look for it across every page of comments.
         const marker = operationMarker(attempt.operationKey);
         let path = `/api/v2/tickets/${encodeURIComponent(action.args.ticketId)}/comments.json`;
+        const seen = new Set<string>();
         for (let page = 0; page < MAX_PAGES; page++) {
-          const body = await readJson<{
-            comments: Array<{ body: string }>;
-            next_page: string | null;
-          }>(target, path);
+          if (seen.has(path)) return { kind: "indeterminate", detail: "repeated comment cursor" };
+          seen.add(path);
+          const parsed = CommentPage.safeParse(await readJson<unknown>(target, path));
+          if (!parsed.success) return { kind: "indeterminate", detail: "invalid comment page" };
+          const body = parsed.data;
           if (body.comments.some((c) => c.body.includes(marker))) {
             return { kind: "applied", providerRef: ref, effect: {} };
           }
-          if (!body.next_page) return { kind: "not_applied" };
-          path = pathOf(body.next_page);
+          if (body.next_page === null) return { kind: "not_applied" };
+          let next: URL;
+          try {
+            next = new URL(body.next_page, target.config.baseUrl);
+          } catch {
+            return { kind: "indeterminate", detail: "invalid comment cursor" };
+          }
+          if (next.origin !== new URL(target.config.baseUrl).origin || body.comments.length === 0) {
+            return { kind: "indeterminate", detail: "untrusted or empty comment page" };
+          }
+          path = `${next.pathname}${next.search}`;
         }
         return { kind: "indeterminate", detail: `more than ${MAX_PAGES} pages of comments` };
       }
