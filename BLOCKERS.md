@@ -1,6 +1,6 @@
 # Blocker board
 
-**Generated automatically. Don't edit this file.** It rebuilds when issues, PRs or branches change, and every 30 minutes. Dependencies come from the **Blocked by** column in [`docs/tracks/`](https://github.com/SoroushRF/Rehearsal/tree/main/docs/tracks); change them there through a PR.
+**Generated automatically. Don't edit this file.** It rebuilds when issues change or anything merges to main, and every 10 minutes. Dependencies come from the **Blocked by** column in [`docs/tracks/`](https://github.com/SoroushRF/Rehearsal/tree/main/docs/tracks); change them there through a PR.
 
 Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blocked
 
