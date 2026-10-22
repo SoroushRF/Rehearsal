@@ -94,6 +94,34 @@ describe.skipIf(!process.env.DB_TESTS)("run commands: cancel and reaper (real Po
     expect(await jobsFor(stuck.id)).toBe(1);
   });
 
+  it("re-enqueues a stale cancelled run only while it has a send in flight", async () => {
+    const old = new Date(Date.now() - 3_600_000);
+    const withSend = await run("cancelled", old);
+    const [row] = await db.select().from(schema.runs).where(eq(schema.runs.id, withSend.id));
+    await db.insert(schema.stepAttempts).values({
+      id: `att_${randomUUID()}`,
+      orgId: withSend.orgId,
+      planHash: row?.planHash ?? "",
+      actionId: "refund_001",
+      operationKey: `op_${randomUUID()}`,
+      attemptNo: 1,
+      state: "dispatched",
+      request: {
+        method: "POST",
+        path: "/v1/refunds",
+        encoding: "form",
+        body: "",
+        bodySha256: "0".repeat(64),
+      },
+      preparedAt: old,
+      dispatchedAt: old,
+    });
+    const quiet = await run("cancelled", old);
+    const reaped = await reapStuckRuns(db, boss, { now: new Date(), staleAfterMs: 60_000 });
+    expect(reaped).toContain(withSend.id);
+    expect(reaped).not.toContain(quiet.id);
+  });
+
   it("concurrent reapers enqueue a stuck run once", async () => {
     const stuck = await run("approved", new Date(Date.now() - 3_600_000));
     const now = new Date();

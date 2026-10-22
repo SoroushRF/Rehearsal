@@ -76,7 +76,11 @@ await boss.work(APPLY_QUEUE, { batchSize: 1, includeMetadata: true }, async ([jo
 // expired) are re-enqueued; they resume from the journal. One reaper acts at a time.
 const REAP_EVERY_MS = 60_000;
 const STALE_AFTER_MS = 10 * 60_000;
-const reaper = setInterval(async () => {
+let sweeping: Promise<void> = Promise.resolve();
+const reaper = setInterval(() => {
+  sweeping = sweep();
+}, REAP_EVERY_MS);
+async function sweep() {
   try {
     const reaped = await reapStuckRuns(ctx.db, boss, {
       now: new Date(),
@@ -86,11 +90,12 @@ const reaper = setInterval(async () => {
   } catch (err) {
     console.error("reaper failed", err);
   }
-}, REAP_EVERY_MS);
+}
 
 for (const signal of ["SIGTERM", "SIGINT"] as const) {
   process.once(signal, async () => {
     clearInterval(reaper);
+    await sweeping; // a sweep in progress finishes before pg-boss stops
     // Let the active run finish (it is bounded by retries and timeouts); if it can't, the journal
     // keeps it safe and the job is retried.
     try {

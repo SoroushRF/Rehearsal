@@ -1258,6 +1258,41 @@ describe("cancellation and lock order (T3.6)", () => {
     expect(s.world.refunds).toHaveLength(1); // the lost send did land; it was not sent again
   });
 
+  it("cancelling a run whose refund was sent but never settled still records the refund", async () => {
+    const s = setup(happyPathBundle());
+    s.journal.failNextSettle = true; // the refund lands, then the worker dies before settling
+    await s.run();
+    expect((await s.journal.attemptsFor(s.hash, "refund_001")).map((a) => a.state)).toEqual([
+      "dispatched",
+    ]);
+    s.store.cancelled.add(RUN); // the user sees a stuck run and cancels it
+    const result = await s.run();
+    expect(result.state).toBe("cancelled");
+    expect(outcomes(result.receipts)).toEqual({ refund_001: "confirmed" });
+    expect(result.receipts[0]?.limitations.join(" ")).toMatch(/found by reading/);
+    expect(s.world.refunds).toHaveLength(1);
+    expect(s.world.tickets.get("5531")?.comments).toHaveLength(0); // nothing new was sent
+  });
+
+  it("a cancelled run never re-sends an in-flight note it can't find", async () => {
+    const s = setup(happyPathBundle());
+    const zendesk = s.deps.providers.zendesk;
+    s.deps.providers.zendesk = {
+      ...zendesk,
+      dispatch: async (req, ctx) =>
+        req.body.includes('"comment"')
+          ? { kind: "unknown", error: "lost before it landed (injected)" }
+          : zendesk.dispatch(req, ctx),
+    };
+    await s.run();
+    s.store.cancelled.add(RUN);
+    (s.deps.clock as FakeClock).advance(3_600_000);
+    const result = await s.run();
+    expect(result.state).toBe("cancelled");
+    expect(outcomes(result.receipts)).toEqual({ note_001: "held", note_002: "held" });
+    expect(s.world.tickets.get("5531")?.comments).toHaveLength(0);
+  });
+
   it("a delivery whose grant has since expired defers to a running delivery instead of failing", async () => {
     const s = setup(happyPathBundle(), { expiresAt: "2026-10-21T11:59:00.000Z" });
     const release = await s.store.lockPlan(s.manifest.orgId, s.manifest.planId);

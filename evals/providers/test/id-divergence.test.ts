@@ -69,10 +69,10 @@ describe.skipIf(!ENABLED)("plan-time and applied IDs diverge", () => {
     );
     const planningRefund = ((await rehearsed.json()) as { id: string }).id;
 
-    // Production has moved on: an unrelated refund advances its ID counter.
-    expect(
-      (await stripePost(operational, "/v1/refunds", `charge=${OTHER_CHARGE}&amount=100`)).ok,
-    ).toBe(true);
+    // Production has moved on: an unrelated refund advances its ID counter. It takes exactly the
+    // ID the rehearsal minted, which proves the twin worlds would otherwise collide.
+    const push = await stripePost(operational, "/v1/refunds", `charge=${OTHER_CHARGE}&amount=100`);
+    expect(((await push.json()) as { id: string }).id).toBe(planningRefund);
 
     const base = billingManifest(`plan_t36_${tenant}`);
     const manifest: PlanManifest = {

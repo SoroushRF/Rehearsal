@@ -1,8 +1,8 @@
-import { and, eq, inArray, lt, sql } from "drizzle-orm";
+import { and, eq, inArray, lt, or, sql } from "drizzle-orm";
 import type { PgBoss } from "pg-boss";
 import type { Db } from "./index";
 import { APPLY_QUEUE, enqueueApply } from "./queue";
-import { runs } from "./schema";
+import { runs, stepAttempts } from "./schema";
 
 export type CancelResult =
   | { kind: "cancelled"; runId: string }
@@ -41,7 +41,8 @@ const LIVE_JOB_STATES = ["created", "retry", "active"];
 
 /**
  * Re-enqueue runs left `approved` or `applying` with no live job (a worker died on the job's last
- * attempt, or the job expired). Re-running is safe: the executor resumes from the journal and
+ * attempt, or the job expired), and cancelled runs that still have a send in flight (they get a
+ * read-only reconcile). Re-running is safe: the executor resumes from the journal and
  * never re-sends past an unknown outcome. One reaper acts at a time (transaction advisory lock).
  */
 export async function reapStuckRuns(
@@ -60,7 +61,18 @@ export async function reapStuckRuns(
       .from(runs)
       .where(
         and(
-          inArray(runs.state, ["approved", "applying"]),
+          or(
+            inArray(runs.state, ["approved", "applying"]),
+            // A cancelled run still owes a read-only reconcile of any send left in flight.
+            and(
+              eq(runs.state, "cancelled"),
+              sql`exists (
+                select 1 from ${stepAttempts} a
+                where a.org_id = ${runs.orgId} and a.plan_hash = ${runs.planHash}
+                  and a.state in ('dispatched', 'unknown_outcome')
+              )`,
+            ),
+          ),
           lt(runs.updatedAt, cutoff),
           sql`not exists (
             select 1 from pgboss.job j

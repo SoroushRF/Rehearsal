@@ -224,6 +224,8 @@ function resultRefsOf(action: Action): ResultRef[] {
 async function admit(
   job: ApplyJobInput,
   deps: ExecutorDeps,
+  /** Read-only reconcile of a cancelled run: the plan must be trusted, the grant need not be live. */
+  readOnly = false,
 ): Promise<
   { ok: true; manifest: PlanManifest; grant: ApprovalGrant } | { ok: false; detail: string }
 > {
@@ -256,6 +258,7 @@ async function admit(
   ) {
     return { ok: false, detail: "grant is for a different plan, revision or hash" };
   }
+  if (readOnly) return { ok: true, manifest, grant };
   if (grant.revokedAt !== null) return { ok: false, detail: "grant was revoked" };
   const grantedAt = Date.parse(grant.grantedAt);
   const expiresAt = Date.parse(grant.expiresAt);
@@ -307,8 +310,15 @@ export async function executeRun(job: ApplyJobInput, deps: ExecutorDeps): Promis
   }
   try {
     if (await deps.store.runCancelled?.(job.orgId, job.runId)) {
+      // Cancelled: nothing more is sent, but an earlier send whose outcome is unknown (say the
+      // worker died after dispatch) is still resolved by reading, so no effect hides unrecorded.
       await journal.appendEvent(job.runId, "run.cancelled", { before: "admission" });
-      return { state: "cancelled", receipts: [], refusal: RUN_CANCELLED, error: null };
+      const readable = await admit(job, deps, true);
+      if (!readable.ok) {
+        return { state: "cancelled", receipts: [], refusal: RUN_CANCELLED, error: null };
+      }
+      const outcome = await applyLocked(job, deps, readable.manifest, readable.grant, true);
+      return { ...outcome, state: "cancelled", refusal: RUN_CANCELLED };
     }
     const admission = await admit(job, deps);
     if (!admission.ok) {
@@ -326,6 +336,8 @@ async function applyLocked(
   deps: ExecutorDeps,
   manifest: PlanManifest,
   grant: ApprovalGrant,
+  /** Only resolve in-flight attempts through reads; never send, adopt, guard or hold new work. */
+  reconcileOnly = false,
 ): Promise<RunOutcome> {
   const { journal, clock } = deps;
   const at = () => clock.now().toISOString();
@@ -590,8 +602,10 @@ async function applyLocked(
       const sameAsNewest = sameContent(inFlight.at(-1) as Attempt);
       const outcome = await reconcileInFlight(action, key, inFlight, provider, world, sameAsNewest);
       if (outcome === "settled") return;
+      if (reconcileOnly) return; // no effect was found; a cancelled run sends nothing new
       prior = await journal.attemptsForKey(key); // read showed no effect: the step may be sent
     }
+    if (reconcileOnly) return;
     /**
      * Decisions follow the newest attempt that was actually sent, under any revision. Prepared rows
      * were never sent: they matter only when nothing for this key has been sent yet, and then only
@@ -974,6 +988,11 @@ async function applyLocked(
   for (const action of topoOrder(manifest.actions)) {
     const blocked = action.dependsOn.find((d) => settled.get(d) !== "confirmed");
     try {
+      if (reconcileOnly) {
+        // Only steps with an earlier send in flight have anything to resolve.
+        await step(action);
+        continue;
+      }
       if (await checkCancelled(`step ${action.id}`)) break;
       if (blocked) {
         await settle(
