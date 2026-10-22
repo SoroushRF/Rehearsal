@@ -67,6 +67,15 @@ export const HoldReason = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("policy_violation"), rule: z.string(), detail: z.string() }),
   z.object({ kind: z.literal("unsupported_protection"), detail: z.string() }),
   z.object({ kind: z.literal("unresolved_outcome"), attemptId: z.string() }),
+  /**
+   * A re-read or re-query never established the approved evidence. Incomplete pagination,
+   * a missing read, or a different predicate is not proof that nothing changed.
+   */
+  z.object({
+    kind: z.literal("evidence_unavailable"),
+    evidenceId: z.string().min(1),
+    detail: z.string().min(1),
+  }),
 ]);
 export type HoldReason = z.infer<typeof HoldReason>;
 
