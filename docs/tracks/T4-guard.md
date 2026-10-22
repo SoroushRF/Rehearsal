@@ -44,7 +44,13 @@
 
 _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
 
-### 2026-10-21
+### 2026-10-21, T4.2
+
+- **T4.2 runs on local Era.** `pnpm demo:reset`, `demo:phantom`, `demo:conflict` (with an optional `--priority=`), and `demo:fault` are in `scripts/inject/`. Each prints one line per check and exits non-zero on a failure.
+- **Gotcha.** They target the image's seeded customer `cus_necGym2uIJ94j40b` and ticket `4000001`, because T1.2's incident cohort is not seeded yet (#3). Point `SEED` in `scripts/inject/session.ts` at that cohort once it lands. T1.2 also owns reseeding the cohort after `demo:reset`.
+- **Gotcha.** Faults are container-wide. `demo:fault` clears them before exiting. Never run `demo:reset` while an executor is applying: reset forgets Stripe idempotency keys.
+
+### 2026-10-21, T4.1
 
 - **T4.1 is done on fixtures.** `guardAction`, `compareObservation`, `diffQueryMembership`, and `advanceOverlay` are in `packages/core/src/guards.ts`. Tests cover the phantom bundle, a missing or incomplete re-check, and an own write that must not false-hold the note after it.
 - **Next.** T4.2 injection scripts against the local Era worlds. Wiring the guards into admission (T4.3) waits on the executor loop (#19).

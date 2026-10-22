@@ -18,6 +18,10 @@
     "fixtures:write": "tsx scripts/seed/write-bundles.ts",
     "fixtures:capture": "tsx --env-file-if-exists=.env scripts/seed/capture-era-fixtures.ts",
     "infra:up": "docker compose -f infra/compose.yaml up -d",
+    "demo:reset": "tsx --env-file-if-exists=.env scripts/inject/reset.ts",
+    "demo:phantom": "tsx --env-file-if-exists=.env scripts/inject/phantom.ts",
+    "demo:conflict": "tsx --env-file-if-exists=.env scripts/inject/conflict.ts",
+    "demo:fault": "tsx --env-file-if-exists=.env scripts/inject/fault.ts",
     "infra:up:full": "docker compose -f infra/compose.yaml --profile full up -d",
     "infra:down": "docker compose -f infra/compose.yaml down",
     "smoke:era": "tsx --env-file-if-exists=.env scripts/smoke/era-meta.ts"
