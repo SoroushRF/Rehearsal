@@ -992,6 +992,30 @@ describe("reconcile through reads (T3.5)", () => {
     expect(s.world.tickets.get("5531")?.comments).toHaveLength(1);
   });
 
+  it("the original revision still finishes after another revision's run reconciled its refund", async () => {
+    const s = setup(happyPathBundle());
+    s.deps.retry = { maxAttempts: 1 };
+    s.world.fault("/v1/refunds", { kind: "drop_response_after_commit" });
+    await s.run(); // rev1: refund lands, response lost
+    await addRevision(s, (m) => {
+      const refund = m.actions.find((a) => a.id === "refund_001");
+      if (refund?.kind === "stripe.refund.create") refund.args.amount.amountMinor = 4000;
+    }).run(); // rev2 (changed) reconciles rev1's attempt and holds
+
+    const again = await s.run(); // rev1 again: its refund is read back, its note goes out
+    expect(outcomes(again.receipts)).toMatchObject({
+      refund_001: "confirmed",
+      note_001: "confirmed",
+    });
+    expect(again.receipts.find((r) => r.actionId === "refund_001")?.limitations.join(" ")).toMatch(
+      /read back, not re-sent/,
+    );
+    const refunds = s.world.refunds.filter((r) => r.charge === "ch_fixture_001");
+    expect(refunds.map((r) => r.amount)).toEqual([4210]);
+    expect(s.world.tickets.get("5531")?.comments.at(-1)?.body).toContain(refunds[0]?.id);
+    expect(s.world.tickets.get("5531")?.comments).toHaveLength(1);
+  });
+
   it("an identical revision over an in-flight refund confirms it by reading", async () => {
     const s = setup(happyPathBundle());
     s.deps.retry = { maxAttempts: 1 };

@@ -541,9 +541,34 @@ async function applyLocked(
       (latest.state === "confirmed" || latest.state === "reconciled") &&
       latest.planHash === job.planHash
     ) {
-      // Applied by an earlier run of this plan hash; settle() wrote its receipt and bindings.
-      settled.set(action.id, "confirmed");
-      return;
+      // This hash's own attempt was applied, yet this hash has no receipt for it (the
+      // confirmedByAction check above would have returned): another revision's run reconciled it.
+      // Read it back so this hash records its own receipt and bindings; never re-send.
+      if (unresolved) {
+        return hold(action, { kind: "predecessor_not_confirmed", stepId: unresolved.stepId });
+      }
+      let back: ReconcileResult;
+      try {
+        back = sameContent(latest)
+          ? await provider.reconcile(latest, action, world)
+          : { kind: "indeterminate", detail: "can't rebuild the journaled request" };
+      } catch (err) {
+        back = { kind: "indeterminate", detail: (err as Error).message };
+      }
+      if (back.kind !== "applied") {
+        return hold(action, { kind: "unresolved_outcome", attemptId: latest.id });
+      }
+      return settle(
+        action,
+        receiptFor(action, "confirmed", {
+          providerRef: back.providerRef,
+          observedEffect: back.effect,
+          limitations: [
+            `applied by attempt ${latest.id}, resolved by another revision's run; read back, not re-sent`,
+          ],
+        }),
+        { results: bindable(back.effect) },
+      );
     }
     if (unresolved) {
       return hold(action, { kind: "predecessor_not_confirmed", stepId: unresolved.stepId });

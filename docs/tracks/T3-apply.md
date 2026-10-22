@@ -57,7 +57,7 @@ _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
   - **Tests:** the `unknown-outcome` bundle passes with a restart. The live Era test (`reconcile.test.ts`) loses every write's response across three restarts, and each write is applied once.
   - **Next:** worker wiring (pg-boss consumer, Postgres `ApplyStore` with `lockPlan`, `createReadGuard`), then T3.6.
   - **Gotchas:**
-    - A reconcile done by a *different* revision's run writes bindings under that run's hash. If the original hash runs again, its dependents hold rather than adopt (safe).
+    - If another revision's run reconciled this hash's attempt, a re-run of this hash reads the effect back to record its own receipt and bindings. It never re-sends.
     - The reconcile window uses the executor's clock against `dispatchedAt`.
 
 - **2026-10-22, Artin (T3.4).** Branch `t3/T3.4-retries`. The executor retries within a run following [decision 0003](../decisions/0003-idempotent-resend-and-retries.md):
