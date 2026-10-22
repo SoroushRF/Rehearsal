@@ -1,6 +1,7 @@
 import { createDb, type PgBoss, startQueue } from "@rehearsal/db";
 import { buildApp } from "./app";
 import { type ApplyDeps, noAuth } from "./apply";
+import { tenantTokenDepsFromEnv } from "./tenant-tokens";
 
 /** Command routes need Postgres. Without it the API still starts in core mode and serves health. */
 async function applyDeps(): Promise<ApplyDeps | undefined> {
@@ -15,7 +16,7 @@ async function applyDeps(): Promise<ApplyDeps | undefined> {
 
 const apply = await applyDeps();
 const boss: PgBoss | undefined = apply?.boss;
-const app = buildApp({ apply });
+const app = buildApp({ apply, tenantTokens: tenantTokenDepsFromEnv() });
 const port = Number(process.env.API_PORT ?? process.env.PORT ?? 3000);
 
 for (const signal of ["SIGTERM", "SIGINT"] as const) {

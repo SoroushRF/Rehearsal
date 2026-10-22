@@ -47,9 +47,15 @@ importers:
       '@rehearsal/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@rehearsal/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
       fastify:
         specifier: ^5.12.7
         version: 5.12.7
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
     devDependencies:
       '@rehearsal/core':
         specifier: workspace:*
@@ -66,12 +72,23 @@ importers:
       '@rehearsal/providers':
         specifier: workspace:*
         version: link:../../packages/providers
+    devDependencies:
+      '@rehearsal/testkit':
+        specifier: workspace:*
+        version: link:../../packages/testkit
 
   apps/planner-worker:
     dependencies:
       '@rehearsal/planner':
         specifier: workspace:*
         version: link:../../packages/planner
+      '@rehearsal/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
+    devDependencies:
+      '@rehearsal/testkit':
+        specifier: workspace:*
+        version: link:../../packages/testkit
 
   apps/web:
     dependencies:
@@ -170,6 +187,13 @@ importers:
       '@rehearsal/contracts':
         specifier: workspace:*
         version: link:../contracts
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
+    devDependencies:
+      '@rehearsal/testkit':
+        specifier: workspace:*
+        version: link:../testkit
 
   packages/testkit:
     dependencies:

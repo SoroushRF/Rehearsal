@@ -14,8 +14,10 @@ export async function eraFetch(
 ): Promise<Response> {
   const headers = new Headers(init.headers);
   // A plaintext tenant name only selects a tenant on an unsecured simulator; the signed token
-  // selects it everywhere.
-  headers.set("X-Sim-Tenant", world.tenantToken ?? world.tenant);
+  // selects it everywhere. A token source that cannot produce a token throws before any request.
+  const token =
+    typeof world.tenantToken === "object" ? await world.tenantToken.get() : world.tenantToken;
+  headers.set("X-Sim-Tenant", token ?? world.tenant);
   return fetch(`${world.baseUrl}${path}`, { ...init, headers });
 }
 

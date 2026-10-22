@@ -57,7 +57,7 @@ Three things do select a tenant:
 
 Minting without the operator credential returns `403 access_denied`. `/_admin` without it returns `401 admin_unauthorized`.
 
-**Changed here:** `WorldConfig.tenantToken` and `mintTenantToken()` in `packages/providers`. The workers still need to mint at startup and refresh before the hour runs out. That wiring isn't done.
+**Changed here:** `WorldConfig.tenantToken` and `mintTenantToken()` in `packages/providers`. The workers get theirs from the API's operator route and refresh before the hour runs out ([decision 0002](decisions/0002-era-tenant-token-minting.md), T1.9).
 
 ### 2. Auth header shapes
 

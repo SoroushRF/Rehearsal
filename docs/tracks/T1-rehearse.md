@@ -36,12 +36,18 @@
 | T1.6 | ~20 benign and trap tasks, plus baselines (no review; per-call approval counts) for the scorecard | M3–M4 | `pnpm eval:scorecard` prints the comparison table | #7 | T1.5, T4.2 |
 | T1.7 | _Stretch:_ Slack summary step (`slack.message.postSummary`) | after M3 | Behind the trim decision | #8 | T1.5 |
 | T1.8 | _Stretch:_ SurrealDB precedents (explicit promotion, recall with trace) | after M3 | Behind the trim decision | #9 | T1.5 |
-| T1.9 | Signed Era tenant tokens in both workers: mint where the operator holds the admin token, pass to planner and executor workers, refresh before the 1-hour expiry | M2 | Tenant isolation and reset tests pass through the workers' config | #39 | T1.1 |
+| T1.9 | Signed Era tenant tokens in both workers: mint where the operator holds the admin token, pass to planner and executor workers, refresh before the 1-hour expiry | M2 | Tenant isolation and reset tests pass through the workers' config. **In review:** branch `t1/T1.9-tenant-tokens`; design in [decision 0002](../decisions/0002-era-tenant-token-minting.md) | #39 | T1.1 |
 
 ## Decisions
 
-_(add dated entries)_
+- **2026-10-21:** Era tenant tokens are minted by the API (the operator, sole holder of `ERA_ADMIN_TOKEN`). Each worker fetches its own world's token with its own secret and refreshes it 5 min before expiry. Requests fail closed when no valid token is available. See [0002](../decisions/0002-era-tenant-token-minting.md).
 
 ## Handoff log
 
 _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
+
+- **2026-10-21 (Claude session for the T1 owner):** T1.9 is implemented on branch `t1/T1.9-tenant-tokens`, and the PR closes #39. It needs a reviewer from another track because it touches credentials.
+  - Workers get worlds from `workerWorlds("planner" | "executor")` in `@rehearsal/providers`. T1.5 and T3.3 should take worlds from there, never from `resolveWorld`.
+  - To run a worker you now need the API up, with `ERA_ADMIN_TOKEN` and both worker secrets set. The worker itself gets only `REHEARSAL_API_URL` and its own secret.
+  - Gotcha: `pnpm dev`/`.env` loads every variable into the API. Never start a worker with the full `.env`: its startup check refuses the other worker's secret and the admin token.
+  - Live check: `evals/providers/test/worker-tenancy.test.ts` (`ERA_CONFORMANCE=1`).
