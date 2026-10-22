@@ -25,7 +25,7 @@ export interface ReadTarget {
   maxPages?: number;
 }
 
-export const STRIPE_CHARGE_PROJECTION = "stripe.charge.v1";
+export const STRIPE_CHARGE_PROJECTION = "stripe.charge.v2";
 export const ZENDESK_TICKET_PROJECTION = "zendesk.ticket.v1";
 
 /** The fields a plan depends on. Everything else (billing details, comment timestamps) is noise. */
@@ -37,6 +37,8 @@ export function stripeChargeProjection(c: Record<string, unknown>): Record<strin
     amount_refunded: c.amount_refunded,
     currency: c.currency,
     status: c.status,
+    invoice: c.invoice ?? null,
+    created: c.created,
   };
 }
 

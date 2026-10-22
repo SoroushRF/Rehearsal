@@ -28,7 +28,7 @@ const META = {
   planId: "plan_tools",
   model: "test",
   promptVersion: "test",
-  adapters: { stripe: "stripe.charge.v1", zendesk: "zendesk.ticket.v1" },
+  adapters: { stripe: STRIPE_CHARGE_PROJECTION, zendesk: ZENDESK_TICKET_PROJECTION },
 };
 
 /** In-memory planning world over the seeded cohort, with the real read projections. */
@@ -127,6 +127,43 @@ async function ok(session: PlanningSession, name: string, input: unknown) {
 }
 
 describe("planning tools", () => {
+  it("refuses equal legitimate payments for different invoices or unknown invoices", async () => {
+    const { session, charges } = world();
+    const c = caseOf("k01");
+    const first = charges.get(c.chargeIds[0]) as Record<string, unknown>;
+    const second = charges.get(c.chargeIds[1]) as Record<string, unknown>;
+    second.amount = first.amount;
+    const input = { chargeId: c.chargeIds[1], duplicateOfChargeId: c.chargeIds[0], rationale: "x" };
+    expect(await session.call("propose_duplicate_refund", input)).toMatchObject({
+      ok: false,
+      error: /same invoice/,
+    });
+    first.invoice = null;
+    second.invoice = null;
+    expect(await session.call("propose_duplicate_refund", input)).toMatchObject({
+      ok: false,
+      error: /same invoice/,
+    });
+  });
+
+  it("refunds only the two excess charges in a triple, rejecting reverse and cyclic pairs", async () => {
+    const { session, charges } = world();
+    const c = caseOf("c01");
+    const second = charges.get(c.chargeIds[1]) as Record<string, unknown>;
+    const thirdId = "ch_review_third";
+    charges.set(thirdId, { ...second, id: thirdId, created: Number(second.created) + 90 });
+    const propose = (chargeId: string, duplicateOfChargeId: string) =>
+      session.call("propose_duplicate_refund", { chargeId, duplicateOfChargeId, rationale: "x" });
+    expect((await propose(c.chargeIds[1], c.chargeIds[0])).ok).toBe(true);
+    expect((await propose(c.chargeIds[0], thirdId)).ok).toBe(false);
+    expect((await propose(thirdId, c.chargeIds[1])).ok).toBe(false);
+    expect((await propose(thirdId, c.chargeIds[0])).ok).toBe(true);
+    expect((await propose(c.chargeIds[0], c.chargeIds[1])).ok).toBe(false);
+    expect(
+      session.actions.map((a) => a.kind === "stripe.refund.create" && a.args.chargeId),
+    ).toEqual([c.chargeIds[1], thirdId]);
+    expect(evaluateBillingPolicy(session.manifest(META), POLICY).violations).toEqual([]);
+  });
   it("exposes only typed inputs: no URL, tenant, method or free-form body", () => {
     const defs = planningToolDefinitions();
     expect(defs.map((d) => d.name).sort()).toEqual([

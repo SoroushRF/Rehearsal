@@ -56,7 +56,7 @@ describe("stripeReader", () => {
     expect(obs).toMatchObject({
       id: `obs_charge_${CHARGE}`,
       world: "planning",
-      projectionVersion: "stripe.charge.v1",
+      projectionVersion: "stripe.charge.v2",
       projection: {
         id: CHARGE,
         customer: CUSTOMER,

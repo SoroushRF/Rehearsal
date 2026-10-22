@@ -90,7 +90,7 @@ describe.skipIf(!ENABLED)("planning tools on the seeded cohort", () => {
       planId: "plan_tools_live",
       model: "none",
       promptVersion: "none",
-      adapters: { stripe: "stripe.charge.v1", zendesk: "zendesk.ticket.v1" },
+      adapters: { stripe: "stripe.charge.v2", zendesk: "zendesk.ticket.v1" },
     });
     expect(PlanManifest.parse(manifest)).toEqual(manifest);
     const duplicates = records.cases.filter((c) => c.kind === "duplicate");
