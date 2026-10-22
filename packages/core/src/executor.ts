@@ -291,6 +291,7 @@ async function applyLocked(
 ): Promise<RunOutcome> {
   const { journal, clock } = deps;
   const at = () => clock.now().toISOString();
+  const admittedGrantFingerprint = fingerprint(grant);
   await journal.appendEvent(job.runId, "run.admitted", {
     planHash: job.planHash,
     approvalId: grant.id,
@@ -659,6 +660,30 @@ async function applyLocked(
     const retried = (n: number) => (n > 1 ? [`sent ${n} times with identical bytes`] : []);
 
     for (let n = 1; ; n++) {
+      // Admission is not a lease to keep spending after revocation or expiry. Re-read the
+      // same immutable grant before every send, including a retry after backoff.
+      const currentGrant = await deps.store.loadGrant(job.orgId, grant.id);
+      if (
+        !currentGrant ||
+        fingerprint(currentGrant) !== admittedGrantFingerprint ||
+        currentGrant.revokedAt !== null ||
+        Date.parse(currentGrant.expiresAt) <= clock.now().getTime()
+      ) {
+        const reason: HoldReason = {
+          kind: "approval_invalid",
+          detail: "approval changed, was revoked, or expired before dispatch",
+        };
+        if (unknownSends.length > 0) {
+          return settle(
+            action,
+            receiptFor(action, "unknown_outcome", {
+              holdReason: reason,
+              limitations: ["earlier send outcome remains unknown; no further request was sent"],
+            }),
+          );
+        }
+        return hold(action, reason);
+      }
       if (!attemptId) {
         attemptId = deps.newId("att");
         attemptNo += 1;

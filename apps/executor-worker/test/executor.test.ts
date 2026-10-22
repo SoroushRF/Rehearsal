@@ -99,6 +99,53 @@ const refundsFor = (world: FakeWorld, manifest: PlanManifest) =>
   );
 
 describe("happy-path bundle on the fake provider", () => {
+  it("preserves a confirmed refund but stops fresh writes when approval is revoked mid-run", async () => {
+    const s = setup(happyPathBundle());
+    const dispatch = s.deps.providers.stripe.dispatch;
+    s.deps.providers.stripe.dispatch = async (req, ctx) => {
+      const result = await dispatch(req, ctx);
+      const grant = s.store.grants.get(APPROVAL);
+      if (!grant) throw new Error("missing grant");
+      s.store.grants.set(APPROVAL, { ...grant, revokedAt: "2026-10-21T12:00:00Z" });
+      return result;
+    };
+    const out = await s.run();
+    expect(out.receipts.find((r) => r.actionId === "refund_001")?.outcome).toBe("confirmed");
+    expect(out.receipts.find((r) => r.actionId === "patch_001")).toMatchObject({
+      outcome: "held",
+      holdReason: { kind: "approval_invalid" },
+    });
+    expect(s.world.effects).toHaveLength(1);
+    expect(out.state).toBe("partial");
+  });
+
+  it("holds a fresh retry if the grant expires during backoff", async () => {
+    const s = setup(happyPathBundle());
+    s.world.fault("/v1/refunds", { kind: "reject", status: 429, retryable: true });
+    s.deps.sleep = async () => {
+      if (s.deps.clock instanceof FakeClock) s.deps.clock.advance(7_200_000);
+    };
+    const out = await s.run();
+    expect(out.receipts.find((r) => r.actionId === "refund_001")).toMatchObject({
+      outcome: "held",
+      holdReason: { kind: "approval_invalid" },
+    });
+    expect(s.world.effects).toHaveLength(0);
+    expect(await s.journal.attemptsFor(s.hash, "refund_001")).toHaveLength(1);
+  });
+
+  it("does not replay an unknown send after its approval is revoked", async () => {
+    const s = setup(happyPathBundle());
+    s.world.fault("/v1/refunds", { kind: "drop_response_after_commit" });
+    s.deps.sleep = async () => {
+      const grant = s.store.grants.get(APPROVAL);
+      if (grant) grant.revokedAt = "2026-10-21T12:00:00Z";
+    };
+    const out = await s.run();
+    expect(out.receipts.find((r) => r.actionId === "refund_001")?.outcome).toBe("unknown_outcome");
+    expect(await s.journal.attemptsFor(s.hash, "refund_001")).toHaveLength(1);
+    expect(s.world.effects).toHaveLength(1);
+  });
   it("applies every action and matches the expected outcomes", async () => {
     const bundle = happyPathBundle();
     const { run, world, manifest } = setup(bundle);
