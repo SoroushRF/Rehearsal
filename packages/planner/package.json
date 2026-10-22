@@ -7,10 +7,16 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
+    "@rehearsal/contracts": "workspace:*",
     "@rehearsal/core": "workspace:*",
-    "@rehearsal/testkit": "workspace:*"
+    "@rehearsal/testkit": "workspace:*",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@rehearsal/providers": "workspace:*"
   }
 }
