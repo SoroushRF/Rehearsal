@@ -66,6 +66,11 @@ export interface ProviderPort {
   query(predicate: QueryPredicate, cutoff: string, ctx: WorldContext): Promise<QueryObservation>;
   /** Optional read the write depends on. Throwing holds the step; nothing is sent. */
   preconditions?(action: Action, ctx: WorldContext): Promise<Preconditions>;
+  /**
+   * Recover the preconditions a journaled request was prepared with (e.g. the stamp inside a
+   * Zendesk body), so the executor can compare content without a fresh read.
+   */
+  preconditionsOf?(request: Attempt["request"]): Preconditions;
   /** Pure: the same inputs always produce the same bytes. */
   prepare(
     action: Action,

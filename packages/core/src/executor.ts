@@ -210,6 +210,15 @@ async function admit(
   );
   if (missing.length > 0) return { ok: false, detail: `grant lacks roles: ${missing.join(", ")}` };
 
+  for (const [vendor, ctx] of Object.entries(deps.worlds)) {
+    if (ctx && ctx.world !== manifest.target.environment) {
+      return {
+        ok: false,
+        detail: `${vendor} is configured for the ${ctx.world} world, not operational`,
+      };
+    }
+  }
+
   const graph = validateGraph(manifest.actions);
   if (graph.length > 0) return { ok: false, detail: `invalid graph: ${graph[0]?.detail}` };
   for (const ref of manifest.policies) {
@@ -322,7 +331,10 @@ async function applyLocked(
     settle(action, receiptFor(action, "held", { holdReason }));
 
   const sameRequest = (a: Attempt, req: PreparedRequest, sha: string) =>
-    a.request.method === req.method && a.request.path === req.path && a.request.bodySha256 === sha;
+    a.request.method === req.method &&
+    a.request.path === req.path &&
+    a.request.encoding === req.encoding &&
+    a.request.bodySha256 === sha;
 
   async function step(action: Action): Promise<void> {
     if (confirmedByAction.has(action.id)) {
@@ -365,22 +377,22 @@ async function applyLocked(
     const world = deps.worlds[vendor];
     if (!provider || !world) throw new Error(`no operational provider configured for ${vendor}`);
 
-    let pre: Preconditions = {};
-    if (provider.preconditions) {
-      try {
-        pre = await provider.preconditions(action, world);
-      } catch (err) {
-        return hold(action, {
-          kind: "unsupported_protection",
-          detail: `could not read the write's precondition: ${(err as Error).message}`,
-        });
-      }
-    }
-    const request: PreparedRequest = provider.prepare(action, resolved, key, pre);
-    const bodySha256 = sha256Hex(request.body);
+    /** The request this step would send, given these preconditions. */
+    const prepareWith = (pre: Preconditions) => {
+      const req = provider.prepare(action, resolved, key, pre);
+      return { req, sha: sha256Hex(req.body) };
+    };
+    /**
+     * Same content as an earlier attempt, re-prepared with the preconditions that attempt carried.
+     * Our own writes move values like Zendesk's updated_stamp, so a fresh read can't be compared.
+     */
+    const sameContent = (a: Attempt) => {
+      const { req, sha } = prepareWith(provider.preconditionsOf?.(a.request) ?? {});
+      return sameRequest(a, req, sha);
+    };
 
     if (latest && latest.state !== "prepared") {
-      if (!sameRequest(latest, request, bodySha256)) {
+      if (!sameContent(latest)) {
         return hold(action, {
           kind: "approval_invalid",
           detail: `operation ${key} was already attempted (${latest.state}) with different content; a new action is needed`,
@@ -396,7 +408,7 @@ async function applyLocked(
           }),
         );
       }
-      // Confirmed under an earlier revision of this plan with identical bytes: adopt its results.
+      // Confirmed under an earlier revision of this plan with the same content: adopt its results.
       const earlier = (await journal.bindings(latest.planHash)).filter(
         (b) => b.ref.stepId === latest.actionId,
       );
@@ -424,15 +436,35 @@ async function applyLocked(
       : null;
     if (guardHold) return hold(action, guardHold);
 
-    if (latest?.state === "prepared" && !sameRequest(latest, request, bodySha256)) {
-      return hold(action, {
-        kind: "approval_invalid",
-        detail: "re-prepared request differs from the journaled bytes",
-      });
+    let pre: Preconditions = {};
+    if (provider.preconditions) {
+      try {
+        pre = await provider.preconditions(action, world);
+      } catch (err) {
+        return hold(action, {
+          kind: "unsupported_protection",
+          detail: `could not read the write's precondition: ${(err as Error).message}`,
+        });
+      }
+    }
+    const { req: request, sha: bodySha256 } = prepareWith(pre);
+
+    // A never-sent prepared row of this hash: reuse its exact bytes if nothing moved. If only a
+    // precondition moved (same content, new stamp), supersede it with a fresh attempt; it was
+    // never sent, so it can't have had an effect.
+    let reuse: Attempt | null = null;
+    if (latest?.state === "prepared") {
+      if (sameRequest(latest, request, bodySha256)) reuse = latest;
+      else if (!sameContent(latest)) {
+        return hold(action, {
+          kind: "approval_invalid",
+          detail: "re-prepared request differs from the journaled bytes",
+        });
+      }
     }
 
-    const attemptId = latest?.state === "prepared" ? latest.id : deps.newId("att");
-    if (latest?.state !== "prepared") {
+    const attemptId = reuse?.id ?? deps.newId("att");
+    if (!reuse) {
       await journal.prepareAttempt({
         id: attemptId,
         actionId: action.id,

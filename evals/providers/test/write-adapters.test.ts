@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import type { PlanManifest } from "@rehearsal/contracts";
-import { type BillingPolicyV1, executeRun, planHash } from "@rehearsal/core";
+import { type BillingPolicyV1, type ExecutorDeps, executeRun, planHash } from "@rehearsal/core";
 import {
   eraAdmin,
   stripeWriter,
@@ -104,6 +104,29 @@ describe.skipIf(!ENABLED)("Era write adapters through the executor", () => {
     });
     const journal = new MemoryJournal();
     let n = 0;
+    const deps: ExecutorDeps = {
+      store,
+      journal,
+      clock: new FakeClock("2026-10-21T12:00:00.000Z"),
+      providers: {
+        stripe: writeOnly(
+          stripeWriter({
+            world: "operational",
+            config: stripe,
+            authorization: "Bearer sk_test_t33",
+          }),
+        ),
+        zendesk: writeOnly(
+          zendeskWriter({ world: "operational", config: zendesk, authorization: "Bearer t33" }),
+        ),
+      },
+      worlds: {
+        stripe: { world: "operational", tenant: stripe.tenant },
+        zendesk: { world: "operational", tenant: zendesk.tenant },
+      },
+      policies: [policy as BillingPolicyV1],
+      newId: (p) => `${p}_${++n}`,
+    };
     const result = await executeRun(
       {
         orgId: manifest.orgId,
@@ -112,29 +135,7 @@ describe.skipIf(!ENABLED)("Era write adapters through the executor", () => {
         revision: 1,
         planHash: hash,
       },
-      {
-        store,
-        journal,
-        clock: new FakeClock("2026-10-21T12:00:00.000Z"),
-        providers: {
-          stripe: writeOnly(
-            stripeWriter({
-              world: "operational",
-              config: stripe,
-              authorization: "Bearer sk_test_t33",
-            }),
-          ),
-          zendesk: writeOnly(
-            zendeskWriter({ world: "operational", config: zendesk, authorization: "Bearer t33" }),
-          ),
-        },
-        worlds: {
-          stripe: { world: "operational", tenant: stripe.tenant },
-          zendesk: { world: "operational", tenant: zendesk.tenant },
-        },
-        policies: [policy as BillingPolicyV1],
-        newId: (p) => `${p}_${++n}`,
-      },
+      deps,
     );
 
     expect(result.error).toBeNull();
@@ -170,8 +171,39 @@ describe.skipIf(!ENABLED)("Era write adapters through the executor", () => {
     expect(JSON.parse(patchAttempt?.request.body ?? "{}").ticket.safe_update).toBe(true);
 
     // ...and the private note names the refund ID the operational world returned.
-    const last = (await getComments(zendesk, SEED.ticketId)).at(-1);
+    const comments = await getComments(zendesk, SEED.ticketId);
+    const last = comments.at(-1);
     expect(last?.public).toBe(false);
     expect(last?.body).toContain(refund?.id);
+
+    // An identical re-approved revision adopts all three effects, though our own note moved the
+    // ticket's updated_stamp after the patch. Nothing new reaches the world.
+    const rev2 = { ...manifest, revision: 2, parentRevision: 1 };
+    const hash2 = planHash(rev2);
+    store.runs.set("run_t33_2", {
+      planId: rev2.planId,
+      revision: 2,
+      planHash: hash2,
+      approvalId: "g2",
+    });
+    store.plans.set(`${rev2.planId}@2`, { planHash: hash2, manifest: rev2 });
+    const grant = store.grants.get("g");
+    if (!grant) throw new Error("no grant");
+    store.grants.set("g2", { ...grant, id: "g2", revision: 2, planHash: hash2 });
+    const again = await executeRun(
+      { orgId: rev2.orgId, runId: "run_t33_2", planId: rev2.planId, revision: 2, planHash: hash2 },
+      deps,
+    );
+    expect(again.state).toBe("completed");
+    expect(again.receipts.every((r) => r.limitations.some((l) => l.includes("not re-sent")))).toBe(
+      true,
+    );
+    const refundsAfter = await getJson<{ data: Refund[] }>(
+      "stripe",
+      stripe,
+      `/v1/refunds?charge=${CHARGE_ID}&limit=100`,
+    );
+    expect(refundsAfter.data).toHaveLength(1);
+    expect(await getComments(zendesk, SEED.ticketId)).toHaveLength(comments.length);
   });
 });

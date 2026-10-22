@@ -51,6 +51,8 @@ _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
 - **2026-10-22, Artin (T3.3).** Branch `t3/T3.3-write-adapters`. `packages/providers/src/write.ts` adds `stripeWriter` and `zendeskWriter`, which are the write half of `ProviderPort`. `withWriter(read, write)` joins them with T1's read half, and `writeOnly` refuses reads until T1.3 lands.
   - **Stripe refund:** form-encoded in a fixed order, with idempotency key = operation key, which is also stored as `metadata[rehearsal_op]`.
   - **Zendesk patch:** `safe_update` plus an `updated_stamp` read just before. The stamp comes from the new optional `ProviderPort.preconditions` and is journaled inside the request bytes; a failed read holds the step.
+    - Our own writes move the stamp, so content is compared using the stamp the journaled attempt carried, recovered with `ProviderPort.preconditionsOf`, never a fresh read. That way an identical revision adopts the patch and a 409 re-run reports `rejected`.
+    - A never-sent prepared attempt whose only difference is a moved stamp is superseded by a new attempt.
   - **Zendesk note:** always sent with explicit `public:false` and the operation marker.
   - **Response classification:** 2xx is confirmed. 429 is a retryable rejection (with Retry-After). Other 4xx are non-retryable rejections. 5xx, timeouts and transport errors are `unknown`, never rejected.
   - **Receipts:** `observedEffect` now carries what the provider says it holds (ticket priority and status, refund fields) for T4's overlay.

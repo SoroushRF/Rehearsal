@@ -15,7 +15,7 @@ import type { WorldConfig } from "./worlds";
 /** The write half of a ProviderPort. T1 owns the read half (observe, query). */
 export type ProviderWriter = Pick<
   ProviderPort,
-  "vendor" | "preconditions" | "prepare" | "dispatch" | "reconcile"
+  "vendor" | "preconditions" | "preconditionsOf" | "prepare" | "dispatch" | "reconcile"
 >;
 
 /** One operational (or planning) world a writer is bound to. Chosen by the server, never a URL from a plan. */
@@ -131,13 +131,29 @@ export function stripeWriter(target: WriteTarget): ProviderWriter {
     },
     async dispatch(req: PreparedRequest, ctx: WorldContext) {
       assertTarget(target, ctx);
-      return send(target, req);
+      const result = await send(target, req);
+      // 409 here means the key is in use by a concurrent request that may still apply.
+      if (result.kind === "rejected" && result.status === 409) {
+        return { kind: "unknown", error: "idempotency key in use by a concurrent request" };
+      }
+      return result;
     },
     reconcile: (_a: Attempt, _action: Action, _ctx: WorldContext) => notYet(),
   };
 }
 
 const ticketPath = (id: string) => `/api/v2/tickets/${encodeURIComponent(id)}.json`;
+
+/** The `updated_stamp` a journaled Zendesk body was prepared with, if any. */
+function stampIn(body: string): Preconditions {
+  try {
+    const stamp = (JSON.parse(body) as { ticket?: { updated_stamp?: unknown } }).ticket
+      ?.updated_stamp;
+    return typeof stamp === "string" ? { updated_stamp: stamp } : {};
+  } catch {
+    return {};
+  }
+}
 
 /**
  * Zendesk ticket writes over REST. A field patch is guarded with `safe_update` + the
@@ -158,6 +174,9 @@ export function zendeskWriter(target: WriteTarget): ProviderWriter {
       const { ticket } = (await res.json()) as { ticket?: { updated_at?: unknown } };
       if (typeof ticket?.updated_at !== "string") throw new Error("ticket has no updated_at");
       return { updated_stamp: ticket.updated_at };
+    },
+    preconditionsOf(request: Attempt["request"]): Preconditions {
+      return stampIn(request.body);
     },
     prepare(
       action: Action,

@@ -97,6 +97,12 @@ describe("stripeWriter", () => {
     expect(() => w().prepare(patch, new Map(), "op_1")).toThrow(/stripe can't/);
   });
 
+  it("treats a 409 (key in use by a concurrent request) as unknown, not rejected", async () => {
+    reply = { status: 409, body: JSON.stringify({ error: { type: "idempotency_error" } }) };
+    const result = await w().dispatch(w().prepare(refund, new Map(), "op_1"), CTX);
+    expect(result.kind).toBe("unknown");
+  });
+
   it("sends the exact bytes with tenant, auth and idempotency headers", async () => {
     reply = {
       status: 200,
@@ -171,6 +177,14 @@ describe("zendeskWriter", () => {
     expect(parsed.ticket.comment.body).toContain("re_real");
     expect(parsed.ticket.comment.body).toContain("[rehearsal-op:op_n]");
     expect(() => w().prepare(note, new Map(), "op_n")).toThrow(/unresolved binding/);
+  });
+
+  it("recovers the stamp a journaled patch was prepared with", () => {
+    const req = w().prepare(patch, new Map(), "op_p", { updated_stamp: "S1" });
+    const attempt = { ...req, bodySha256: "0".repeat(64) };
+    expect(w().preconditionsOf?.(attempt)).toEqual({ updated_stamp: "S1" });
+    const noteReq = w().prepare(note, new Map([["refund_001:refund.id", "re"]]), "op_n");
+    expect(w().preconditionsOf?.({ ...noteReq, bodySha256: "0".repeat(64) })).toEqual({});
   });
 
   it("maps a 409 UpdateConflict to a non-retryable rejection", async () => {

@@ -505,6 +505,73 @@ describe("third-round review fixes", () => {
   });
 });
 
+describe("guarded patches whose stamp moves (T3.3 review)", () => {
+  it("an identical revision adopts the patch even though our own writes moved the stamp", async () => {
+    const s = setup(happyPathBundle());
+    await s.run();
+    const rev2 = await addRevision(s).run();
+    expect(rev2.state).toBe("completed");
+    const patch = rev2.receipts.find((r) => r.actionId === "patch_001");
+    expect(patch?.limitations.join(" ")).toMatch(/not re-sent/);
+  });
+
+  it("a never-sent patch attempt is superseded when the stamp moved, then applied once", async () => {
+    const s = setup(happyPathBundle());
+    let crashed = false;
+    s.journal.beforeTransition = async (attemptId, to) => {
+      if (
+        !crashed &&
+        to === "dispatched" &&
+        s.journal.attempts.get(attemptId)?.actionId === "patch_001"
+      ) {
+        crashed = true;
+        throw new Error("crash before dispatched (injected)");
+      }
+    };
+    const first = await s.run();
+    expect(first.error).toMatch(/crash before dispatched/);
+    s.world.teammateEdit("5531", "status", "pending"); // moves the stamp; nothing of ours was sent
+
+    const second = await s.run();
+    expect(outcomes(second.receipts)).toMatchObject({ patch_001: "confirmed" });
+    const attempts = await s.journal.attemptsFor(s.hash, "patch_001");
+    expect(attempts.map((a) => [a.state, a.attemptNo])).toEqual([
+      ["prepared", 1],
+      ["confirmed", 2],
+    ]);
+    expect(s.world.tickets.get("5531")?.priority).toBe("high");
+  });
+
+  it("a 409 conflict is rejected, and a re-run reports it rejected without re-sending", async () => {
+    const s = setup(happyPathBundle());
+    s.journal.beforeTransition = async (attemptId, to) => {
+      if (to === "dispatched" && s.journal.attempts.get(attemptId)?.actionId === "patch_001") {
+        s.journal.beforeTransition = null;
+        s.world.teammateEdit("5531", "priority", "urgent"); // lands between our read and our write
+      }
+    };
+    const first = await s.run();
+    expect(outcomes(first.receipts)).toMatchObject({ patch_001: "rejected" });
+    expect(s.world.tickets.get("5531")?.priority).toBe("urgent");
+
+    const effects = s.world.effects.length;
+    const second = await s.run();
+    expect(outcomes(second.receipts)).toMatchObject({ patch_001: "rejected" });
+    expect(second.receipts.find((r) => r.actionId === "patch_001")?.limitations.join(" ")).toMatch(
+      /not re-sent/,
+    );
+    expect(s.world.effects.length).toBe(effects);
+  });
+
+  it("refuses to apply when a vendor is configured for the planning world", async () => {
+    const s = setup(happyPathBundle());
+    s.deps.worlds = { ...s.deps.worlds, zendesk: { world: "planning", tenant: "test" } };
+    const result = await s.run();
+    expect(result.refusal).toMatch(/planning world/);
+    expect(s.world.effects).toEqual([]);
+  });
+});
+
 describe("operation keys", () => {
   it("are stable across revisions, unique per action, and org-scoped", () => {
     const { manifest } = setup(happyPathBundle());
