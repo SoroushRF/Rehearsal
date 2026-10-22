@@ -140,6 +140,31 @@ describe("read guard in the executor", () => {
     });
     expect(s.world.tickets.get("5531")?.priority).toBe("urgent");
   });
+
+  it("holds a phantom introduced during a definite 429 backoff", async () => {
+    const s = setup(happyPathBundle());
+    s.world.fault("/v1/refunds", { kind: "reject", status: 429, retryable: true, retryAfterMs: 1 });
+    s.deps.sleep = async () => {
+      const charge = s.world.charges.get("ch_fixture_001");
+      if (!charge) throw new Error("missing charge");
+      s.world.charges.set("ch_retry_phantom", { ...charge, id: "ch_retry_phantom" });
+    };
+    const out = await s.run();
+    expect(out.receipts.find((r) => r.actionId === "refund_001")).toMatchObject({
+      outcome: "held",
+      holdReason: { kind: "query_membership_changed", added: ["ch_retry_phantom"] },
+    });
+    expect(out.receipts.find((r) => r.actionId === "note_001")?.outcome).toBe("skipped_dependency");
+    expect(s.world.refunds.filter((r) => r.charge === "ch_fixture_001")).toHaveLength(0);
+  });
+
+  it("still resolves an unknown refund through identical idempotent replay", async () => {
+    const s = setup(happyPathBundle());
+    s.world.fault("/v1/refunds", { kind: "drop_response_after_commit" });
+    s.deps.sleep = async () => {};
+    expect((await s.run()).state).toBe("completed");
+    expect(s.world.refunds.filter((r) => r.charge === "ch_fixture_001")).toHaveLength(1);
+  });
   it("admits the happy path, including the note after the case's own priority patch", async () => {
     const bundle = happyPathBundle();
     const s = setup(bundle);
