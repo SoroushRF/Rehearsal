@@ -294,6 +294,9 @@ export class PlanningSession {
     if (t.amount_refunded !== 0 || o.amount_refunded !== 0) {
       throw new Refusal("one of these charges is already (partly) refunded");
     }
+    if (typeof t.invoice !== "string" || !t.invoice || t.invoice !== o.invoice) {
+      throw new Refusal("not a duplicate: both charges must identify the same invoice");
+    }
     const amountMinor = Number(t.amount);
     // One obligation per duplicate pair, whichever charge of it gets refunded.
     const obligationId = `obl_duplicate_${[chargeId, duplicateOf].sort().join("_")}`;
@@ -303,6 +306,32 @@ export class PlanningSession {
         (a.obligationId === obligationId || a.args.chargeId === chargeId),
     );
     if (prior) throw new Refusal(`already remedied by ${prior.id}`);
+    // Every excess charge of an invoice must point to the same paid original. Pair cycles
+    // must never turn three payments into three refunds.
+    const group = population.matchingIds
+      .map((id) => population.projections[id])
+      .filter((p) => p?.invoice === t.invoice);
+    if (
+      group.some(
+        (p) =>
+          !p ||
+          p.customer !== customer ||
+          p.currency !== t.currency ||
+          p.amount !== t.amount ||
+          p.status !== "succeeded" ||
+          !Number.isSafeInteger(p.created) ||
+          p.amount_refunded !== 0,
+      )
+    ) {
+      throw new Refusal("invoice group is ambiguous or already refunded; leave it for a human");
+    }
+    const anchor = [...group].sort(
+      (a, b) =>
+        Number(a?.created) - Number(b?.created) || String(a?.id).localeCompare(String(b?.id)),
+    )[0];
+    if (anchor?.id !== duplicateOf || anchor.id === chargeId) {
+      throw new Refusal("keep the invoice's earliest paid charge as the original");
+    }
     const requiredRole: Role =
       amountMinor >= policy.financeThresholdMinor ? "finance_lead" : "support_lead";
     const action = this.#add({
