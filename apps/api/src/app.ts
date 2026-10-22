@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import fastifyStatic from "@fastify/static";
 import { CONTRACTS_VERSION, type HealthResponse } from "@rehearsal/contracts";
 import Fastify from "fastify";
+import { type ApplyDeps, registerApplyRoute } from "./apply";
 
 const webDist = fileURLToPath(new URL("../../web/dist/", import.meta.url));
 
@@ -10,7 +11,7 @@ const webDist = fileURLToPath(new URL("../../web/dist/", import.meta.url));
  * HTTP commands store intent and return IDs; long-running work happens in the workers.
  * Clerk auth and the plan/approval/apply routes land here (owner: C).
  */
-export function buildApp() {
+export function buildApp(deps: { apply?: ApplyDeps } = {}) {
   const app = Fastify({ logger: process.env.NODE_ENV !== "test" });
 
   app.get(
@@ -21,6 +22,9 @@ export function buildApp() {
       contractsVersion: CONTRACTS_VERSION,
     }),
   );
+
+  // Command routes need Postgres; health stays available without it (core mode with no DB).
+  if (deps.apply) registerApplyRoute(app, deps.apply);
 
   // Serve the built web app from the same origin in production.
   if (existsSync(webDist)) {

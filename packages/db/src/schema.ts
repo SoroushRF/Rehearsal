@@ -28,18 +28,25 @@ export const planVersions = pgTable(
   (t) => [primaryKey({ columns: [t.orgId, t.planId, t.revision] }), uniqueIndex().on(t.planHash)],
 );
 
-/** One row per apply request. `state` is the only mutable column and follows `RunState`. */
-export const runs = pgTable("runs", {
-  id: text("id").primaryKey(),
-  orgId: text("org_id").notNull(),
-  planId: text("plan_id").notNull(),
-  revision: integer("revision").notNull(),
-  planHash: text("plan_hash").notNull(),
-  approvalId: text("approval_id").notNull(),
-  state: text("state").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+/**
+ * One run per approved plan hash. `state` is the only mutable column and follows `RunState`.
+ * The unique index makes a repeated apply request return the existing run instead of a second one.
+ */
+export const runs = pgTable(
+  "runs",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id").notNull(),
+    planId: text("plan_id").notNull(),
+    revision: integer("revision").notNull(),
+    planHash: text("plan_hash").notNull(),
+    approvalId: text("approval_id").notNull(),
+    state: text("state").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex().on(t.orgId, t.planHash)],
+);
 
 export const approvalGrants = pgTable("approval_grants", {
   id: text("id").primaryKey(),

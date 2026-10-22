@@ -6,11 +6,17 @@
   "scripts": {
     "dev": "tsx watch --env-file-if-exists=../../.env src/main.ts",
     "start": "tsx src/main.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@fastify/static": "^10.1.6",
     "@rehearsal/contracts": "workspace:*",
+    "@rehearsal/db": "workspace:*",
     "fastify": "^5.12.7"
+  },
+  "devDependencies": {
+    "@rehearsal/core": "workspace:*",
+    "@rehearsal/testkit": "workspace:*"
   }
 }
