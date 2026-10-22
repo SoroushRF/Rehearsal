@@ -9,6 +9,7 @@ import {
   startQueue,
 } from "@rehearsal/db";
 import { billingManifest } from "@rehearsal/testkit";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app";
 import { type AuthContext, noAuth } from "../src/apply";
@@ -84,13 +85,41 @@ describe.skipIf(!process.env.DB_TESTS)("POST /api/plans/:id/apply (real Postgres
     expect(res.statusCode).toBe(401);
   });
 
-  it("refuses a malformed body, including action bodies from the browser", async () => {
+  /** Jobs in pg-boss's own table for one plan hash (queried directly, not via a shared fetch). */
+  async function jobsFor(hash: string) {
+    const res = await db.execute(
+      sql`select data from pgboss.job where name = ${APPLY_QUEUE} and data->>'planHash' = ${hash}`,
+    );
+    return res.rows.map((r) => ApplyJob.parse((r as { data: unknown }).data));
+  }
+
+  it("refuses a malformed body", async () => {
     const { orgId, planId } = await seed();
-    const res = await apply({ orgId, userId: "u" }, planId, { actions: [] });
+    const res = await apply({ orgId, userId: "u" }, planId, { revision: "one" });
     expect(res.statusCode).toBe(400);
   });
 
-  it("returns 404 for an unknown plan and for another org's plan", async () => {
+  it("refuses action bodies from the browser even alongside a valid revision and hash", async () => {
+    const { orgId, planId, hash } = await seed();
+    const res = await apply({ orgId, userId: "u" }, planId, {
+      revision: 1,
+      planHash: hash,
+      actions: [],
+    });
+    expect(res.statusCode).toBe(400);
+    expect(await jobsFor(hash)).toEqual([]);
+  });
+
+  it("returns 404 for an unknown plan", async () => {
+    const { orgId } = await seed();
+    const res = await apply({ orgId, userId: "u" }, "plan_missing", {
+      revision: 1,
+      planHash: "a".repeat(64),
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it("returns 404 for another org's plan", async () => {
     const { planId, hash } = await seed();
     const res = await apply({ orgId: "org_other", userId: "u" }, planId, {
       revision: 1,
@@ -112,33 +141,75 @@ describe.skipIf(!process.env.DB_TESTS)("POST /api/plans/:id/apply (real Postgres
     ["no grant", null],
     ["an expired grant", { expiresAt: new Date(NOW.getTime() - 1) }],
     ["a revoked grant", { revokedAt: new Date(NOW.getTime() - 1) }],
+    ["a grant dated in the future", { grantedAt: new Date(NOW.getTime() + 1) }],
   ])("refuses %s and enqueues nothing", async (_label, grant) => {
     const { orgId, planId, hash } = await seed(grant);
     const res = await apply({ orgId, userId: "u" }, planId, { revision: 1, planHash: hash });
     expect(res.statusCode).toBe(403);
-    const rows = await db.select().from(schema.runs);
-    expect(rows.some((r) => r.planId === planId)).toBe(false);
+    const rows = await db.select().from(schema.runs).where(eq(schema.runs.planId, planId));
+    expect(rows).toEqual([]);
+    expect(await jobsFor(hash)).toEqual([]);
   });
 
   it("accepts a live grant, creates one run and enqueues one valid job", async () => {
     const { orgId, planId, hash } = await seed();
     const first = await apply({ orgId, userId: "u" }, planId, { revision: 1, planHash: hash });
     expect(first.statusCode).toBe(202);
-    const { runId, existing } = first.json();
-    expect(existing).toBe(false);
+    const { runId, existing, state } = first.json();
+    expect({ existing, state }).toEqual({ existing: false, state: "approved" });
 
     const again = await apply({ orgId, userId: "u" }, planId, { revision: 1, planHash: hash });
-    expect(again.json()).toEqual({ runId, existing: true });
+    expect(again.json()).toEqual({ runId, state: "approved", existing: true });
 
-    const jobs = await boss.fetch(APPLY_QUEUE, { batchSize: 100 });
-    const ours = jobs.filter((j) => ApplyJob.parse(j.data).runId === runId);
-    expect(ours).toHaveLength(1);
-    expect(ApplyJob.parse(ours[0]?.data)).toEqual({
-      orgId,
-      runId,
-      planId,
-      revision: 1,
-      planHash: hash,
-    });
+    expect(await jobsFor(hash)).toEqual([{ orgId, runId, planId, revision: 1, planHash: hash }]);
+    const [run] = await db.select().from(schema.runs).where(eq(schema.runs.id, runId));
+    expect(run?.requestedBy).toBe("u");
+  });
+
+  it("creates exactly one run under concurrent requests", async () => {
+    const { orgId, planId, hash } = await seed();
+    const results = await Promise.all(
+      Array.from({ length: 10 }, () =>
+        apply({ orgId, userId: "u" }, planId, { revision: 1, planHash: hash }),
+      ),
+    );
+    const runIds = new Set(results.map((r) => r.json().runId));
+    expect(runIds.size).toBe(1);
+    expect(results.filter((r) => r.json().existing === false)).toHaveLength(1);
+    expect(await jobsFor(hash)).toHaveLength(1);
+  });
+
+  it("starts a new run after a held run, so the plan can be resumed", async () => {
+    const { orgId, planId, hash } = await seed();
+    const first = (
+      await apply({ orgId, userId: "u" }, planId, { revision: 1, planHash: hash })
+    ).json();
+    await db.update(schema.runs).set({ state: "held" }).where(eq(schema.runs.id, first.runId));
+
+    const second = await apply({ orgId, userId: "u" }, planId, { revision: 1, planHash: hash });
+    expect(second.statusCode).toBe(202);
+    expect(second.json().runId).not.toBe(first.runId);
+    expect(await jobsFor(hash)).toHaveLength(2);
+  });
+
+  it("returns a cancelled run instead of restarting it", async () => {
+    const { orgId, planId, hash } = await seed();
+    const first = (
+      await apply({ orgId, userId: "u" }, planId, { revision: 1, planHash: hash })
+    ).json();
+    await db.update(schema.runs).set({ state: "cancelled" }).where(eq(schema.runs.id, first.runId));
+    const again = await apply({ orgId, userId: "u" }, planId, { revision: 1, planHash: hash });
+    expect(again.json()).toEqual({ runId: first.runId, state: "cancelled", existing: true });
+    expect(await jobsFor(hash)).toHaveLength(1);
+  });
+
+  it("returns a completed run instead of starting another", async () => {
+    const { orgId, planId, hash } = await seed();
+    const first = (
+      await apply({ orgId, userId: "u" }, planId, { revision: 1, planHash: hash })
+    ).json();
+    await db.update(schema.runs).set({ state: "completed" }).where(eq(schema.runs.id, first.runId));
+    const again = await apply({ orgId, userId: "u" }, planId, { revision: 1, planHash: hash });
+    expect(again.json()).toEqual({ runId: first.runId, state: "completed", existing: true });
   });
 });

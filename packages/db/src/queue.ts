@@ -33,8 +33,7 @@ type DrizzleTx = Parameters<typeof fromDrizzle>[0];
  * together. A crash can never leave a run with no job, or a job with no run.
  */
 export async function enqueueApply(boss: PgBoss, tx: DrizzleTx, job: ApplyJob): Promise<void> {
-  await boss.send(APPLY_QUEUE, ApplyJob.parse(job), {
-    db: fromDrizzle(tx, sql),
-    singletonKey: job.runId,
-  });
+  const id = await boss.send(APPLY_QUEUE, ApplyJob.parse(job), { db: fromDrizzle(tx, sql) });
+  // A suppressed send would leave a run with no job; fail the transaction instead.
+  if (!id) throw new Error(`apply job for ${job.runId} was not enqueued`);
 }

@@ -30,11 +30,13 @@ export function registerApplyRoute(app: FastifyInstance, deps: ApplyDeps) {
     const auth = await deps.auth(req);
     if (!auth) return reply.code(401).send({ error: "unauthenticated" });
 
-    const body = ApplyRequest.safeParse(req.body);
+    // Strict: a body carrying anything besides the revision and hash (e.g. actions) is refused.
+    const body = ApplyRequest.strict().safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: "invalid_request" });
 
     const result = await requestApply(deps.db, deps.boss, {
       orgId: auth.orgId,
+      userId: auth.userId,
       planId: req.params.id,
       revision: body.data.revision,
       planHash: body.data.planHash,
@@ -43,7 +45,9 @@ export function registerApplyRoute(app: FastifyInstance, deps: ApplyDeps) {
 
     switch (result.kind) {
       case "accepted":
-        return reply.code(202).send({ runId: result.runId, existing: result.existing });
+        return reply
+          .code(202)
+          .send({ runId: result.runId, state: result.state, existing: result.existing });
       case "not_found":
         return reply.code(404).send({ error: "plan_not_found" });
       case "hash_mismatch":
