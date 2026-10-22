@@ -44,3 +44,5 @@ _(add dated entries)_
 ## Handoff log
 
 _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
+
+- **2026-10-22, Parsa (T2.1).** Branch `t2/T2.1-plan-diff-view`. The review page renders every bundle in `scenarios/billing/cases/` (picked with `?bundle=`): plan hash, per-customer groups, exact money from minor units, role / reversibility / protection badges, and an evidence drawer listing each cited record and query. Vitest renders all four bundles in CI; the Playwright smoke test (`pnpm --filter @rehearsal/web e2e`) runs locally only. **Next:** T2.2 swaps fixtures for `GET /api/plans/:id`. **Gotchas:** the browser never computes the hash (`@rehearsal/core` needs `node:crypto`); it shows the one the server or fixture file gives it. Playwright uses port 5199; set `PW_CHANNEL=chrome` to skip downloading its Chromium.
