@@ -4,6 +4,7 @@ import fastifyStatic from "@fastify/static";
 import { CONTRACTS_VERSION, type HealthResponse } from "@rehearsal/contracts";
 import Fastify from "fastify";
 import { type ApplyDeps, registerApplyRoute } from "./apply";
+import { registerTenantTokenRoute, type TenantTokenDeps } from "./tenant-tokens";
 
 const webDist = fileURLToPath(new URL("../../web/dist/", import.meta.url));
 
@@ -11,7 +12,7 @@ const webDist = fileURLToPath(new URL("../../web/dist/", import.meta.url));
  * HTTP commands store intent and return IDs; long-running work happens in the workers.
  * Clerk auth and the plan/approval/apply routes land here (owner: C).
  */
-export function buildApp(deps: { apply?: ApplyDeps } = {}) {
+export function buildApp(deps: { apply?: ApplyDeps; tenantTokens?: TenantTokenDeps } = {}) {
   const app = Fastify({ logger: process.env.NODE_ENV !== "test" });
 
   app.get(
@@ -31,6 +32,9 @@ export function buildApp(deps: { apply?: ApplyDeps } = {}) {
       reply.code(503).send({ error: "database_unavailable" }),
     );
   }
+
+  // Only an API that holds ERA_ADMIN_TOKEN mints tenant tokens for the workers.
+  if (deps.tenantTokens) registerTenantTokenRoute(app, deps.tenantTokens);
 
   // Serve the built web app from the same origin in production.
   if (existsSync(webDist)) {

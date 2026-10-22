@@ -1,4 +1,5 @@
 import type { Vendor, World } from "@rehearsal/contracts";
+import type { TokenSource } from "./tenant-tokens";
 
 /**
  * World URLs are chosen by the server from its own environment — never by the planner or browser.
@@ -11,8 +12,9 @@ export interface WorldConfig {
    * Signed tenant credential from {@link mintTenantToken}. A simulator with SIMCORE_ADMIN_TOKEN
    * set ignores a plaintext X-Sim-Tenant from clients and serves the "default" tenant, so without
    * this every client request in a world shares one tenant. See docs/capability-matrix.md.
+   * Workers get a refreshing {@link TokenSource}; a source that throws stops the request.
    */
-  tenantToken?: string;
+  tenantToken?: string | TokenSource;
 }
 
 const ENV_KEYS: Record<Exclude<Vendor, "slack">, Record<World, string>> = {
