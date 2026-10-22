@@ -140,6 +140,7 @@ describe("zendeskReader", () => {
       priority: "low",
       status: "open",
       requester_id: "2000051",
+      external_id: "ticket-449",
     });
   });
 

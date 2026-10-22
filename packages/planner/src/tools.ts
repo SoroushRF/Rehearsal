@@ -366,7 +366,7 @@ export class PlanningSession {
       (a) => a.caseId === caseId && a.kind === "stripe.refund.create",
     );
     if (!refund) throw new Refusal(`propose a refund for ${customerId} first`);
-    const ticket = await this.#observe({ vendor: "zendesk", kind: "ticket", id: ticketId });
+    const ticket = await this.#ticketForCustomer(ticketId, customerId);
     const current = ZendeskPriority.nullable().safeParse(ticket.projection.priority ?? null);
     if (!current.success) {
       throw new Refusal(`ticket ${ticketId} has an unexpected priority`);
@@ -399,7 +399,16 @@ export class PlanningSession {
     if (refund?.kind !== "stripe.refund.create") {
       throw new Refusal(`${refundStepId} is not a proposed refund`);
     }
-    const ticket = await this.#observe({ vendor: "zendesk", kind: "ticket", id: ticketId });
+    const charge = this.observations.find(
+      (o) =>
+        refund.evidence.includes(o.id) &&
+        o.entity.vendor === "stripe" &&
+        o.entity.id === refund.args.chargeId,
+    );
+    if (typeof charge?.projection.customer !== "string") {
+      throw new Refusal("refund customer evidence is missing");
+    }
+    const ticket = await this.#ticketForCustomer(ticketId, charge.projection.customer);
     const action = this.#add({
       id: `note_${refundStepId}`,
       kind: "zendesk.ticket.appendPrivateNote",
@@ -424,6 +433,14 @@ export class PlanningSession {
       },
     });
     return summary(action);
+  }
+
+  async #ticketForCustomer(ticketId: string, customerId: string): Promise<Observation> {
+    const ticket = await this.#observe({ vendor: "zendesk", kind: "ticket", id: ticketId });
+    if (ticket.projection.external_id !== customerId) {
+      throw new Refusal(`ticket ${ticketId} is not verified as belonging to ${customerId}`);
+    }
+    return ticket;
   }
 }
 
