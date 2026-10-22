@@ -4,8 +4,10 @@ import {
   type ExecutorDeps,
   executeRun,
   operationKey,
+  PLAN_LOCKED,
   type ProviderPort,
   planHash,
+  RUN_CANCELLED,
 } from "@rehearsal/core";
 import {
   FakeClock,
@@ -1191,6 +1193,84 @@ describe("reconcile through reads (T3.5)", () => {
       ["reconciled", null],
     ]);
     expect(s.world.refunds.filter((r) => r.charge === "ch_fixture_001")).toHaveLength(1);
+  });
+});
+
+describe("cancellation and lock order (T3.6)", () => {
+  it("a run cancelled before admission sends nothing", async () => {
+    const s = setup(happyPathBundle());
+    s.store.cancelled.add(RUN);
+    const result = await s.run();
+    expect(result).toMatchObject({ state: "cancelled", refusal: RUN_CANCELLED, receipts: [] });
+    expect(s.world.effects).toEqual([]);
+  });
+
+  it("a cancel mid-run stops before the next action; what happened keeps its receipt", async () => {
+    const s = setup(happyPathBundle());
+    const stripe = s.deps.providers.stripe;
+    s.deps.providers.stripe = {
+      ...stripe,
+      dispatch: async (req, ctx) => {
+        const res = await stripe.dispatch(req, ctx);
+        s.store.cancelled.add(RUN); // someone cancels right after the first refund lands
+        return res;
+      },
+    };
+    const result = await s.run();
+    expect(result.state).toBe("cancelled");
+    expect(outcomes(result.receipts)).toEqual({ refund_001: "confirmed" });
+    expect(s.world.refunds).toHaveLength(1);
+    expect(s.world.tickets.get("5531")?.comments).toHaveLength(0);
+    expect(s.journal.events.some((e) => e.type === "run.cancelled")).toBe(true);
+  });
+
+  it("a cancel during a 429 backoff stops the retry", async () => {
+    const s = setup(happyPathBundle());
+    s.world.fault("/v1/refunds", {
+      kind: "reject",
+      status: 429,
+      retryable: true,
+      retryAfterMs: 1000,
+    });
+    s.deps.sleep = async () => {
+      s.store.cancelled.add(RUN);
+    };
+    const result = await s.run();
+    expect(result.state).toBe("cancelled");
+    expect(result.receipts).toEqual([]);
+    expect((await s.journal.attemptsFor(s.hash, "refund_001")).map((a) => a.state)).toEqual([
+      "rejected",
+    ]);
+    expect(s.world.refunds).toHaveLength(0);
+  });
+
+  it("a cancel before an idempotent replay leaves the earlier unknown send unknown, unsent", async () => {
+    const s = setup(happyPathBundle());
+    s.world.fault("/v1/refunds", { kind: "drop_response_after_commit" });
+    s.deps.sleep = async () => {
+      s.store.cancelled.add(RUN);
+    };
+    const result = await s.run();
+    expect(result.state).toBe("cancelled");
+    const receipt = result.receipts.find((r) => r.actionId === "refund_001");
+    expect(receipt?.outcome).toBe("unknown_outcome");
+    expect(receipt?.limitations.join(" ")).toMatch(/run cancelled/);
+    expect(s.world.refunds).toHaveLength(1); // the lost send did land; it was not sent again
+  });
+
+  it("a delivery whose grant has since expired defers to a running delivery instead of failing", async () => {
+    const s = setup(happyPathBundle(), { expiresAt: "2026-10-21T11:59:00.000Z" });
+    const release = await s.store.lockPlan(s.manifest.orgId, s.manifest.planId);
+    try {
+      const result = await s.run();
+      expect(result).toMatchObject({ refusal: PLAN_LOCKED });
+      expect(result.state).not.toBe("failed");
+    } finally {
+      await release?.();
+    }
+    // Without the lock held, the same expired grant is refused (nothing sent either way).
+    expect((await s.run()).refusal).toMatch(/expired/);
+    expect(s.world.effects).toEqual([]);
   });
 });
 

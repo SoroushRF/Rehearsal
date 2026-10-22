@@ -106,6 +106,10 @@ export class PgApplyStore implements ApplyStore {
     };
   }
 
+  async runCancelled(orgId: string, runId: string): Promise<boolean> {
+    return (await this.runState(orgId, runId)) === "cancelled";
+  }
+
   async runState(orgId: string, runId: string): Promise<RunState | null> {
     const [row] = await this.db
       .select({ state: runs.state })

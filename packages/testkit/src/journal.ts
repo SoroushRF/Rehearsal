@@ -158,6 +158,12 @@ export class MemoryApplyStore implements ApplyStore {
   async loadGrant(_orgId: string, approvalId: string) {
     return this.grants.get(approvalId) ?? null;
   }
+  /** Run IDs a test has cancelled. */
+  readonly cancelled = new Set<string>();
+  async runCancelled(_orgId: string, runId: string) {
+    return this.cancelled.has(runId);
+  }
+
   readonly #locks = new Set<string>();
   async lockPlan(orgId: string, planId: string) {
     const key = `${orgId}:${planId}`;

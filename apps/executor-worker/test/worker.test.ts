@@ -8,10 +8,12 @@ import {
   PgApplyStore,
   type PgBoss,
   requestApply,
+  requestCancel,
   schema,
   startQueue,
 } from "@rehearsal/db";
 import { billingManifest, FakeClock, type FakeWorld, worldFromManifest } from "@rehearsal/testkit";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import policy from "../../../scenarios/billing/policy.v1.json" with { type: "json" };
 import { type ApplyJobResult, handleApplyJob, RetryLater, type WorkerContext } from "../src/worker";
@@ -262,6 +264,66 @@ describe.skipIf(!process.env.DB_TESTS)(
         expect(r.world.refunds).toHaveLength(2);
       },
     );
+
+    it("a human cancel during a run stops it before the next action, and it stays cancelled", async () => {
+      const r = await approvedRun();
+
+      const { ctx, paused, release } = pausedContext(r.world);
+
+      const a = handleApplyJob(jobOf(r), ctx); // paused right after its first refund
+
+      await paused;
+
+      expect(await requestCancel(db, { orgId: r.orgId, runId: r.runId })).toMatchObject({
+        kind: "cancelled",
+      });
+
+      release();
+
+      expect(stateOf(await a)).toBe("cancelled");
+
+      expect(await runState(r.runId)).toBe("cancelled");
+
+      expect(r.world.refunds).toHaveLength(1);
+
+      const receipts = (await db.select().from(schema.stepReceipts)).filter(
+        (x) => x.orgId === r.orgId,
+      );
+
+      expect(receipts.map((x) => x.actionId)).toEqual(["refund_001"]);
+    });
+
+    it("a stale delivery after the grant was revoked defers to the running one; never marks it failed", async () => {
+      const r = await approvedRun();
+
+      const { ctx, paused, release } = pausedContext(r.world);
+
+      const a = handleApplyJob(jobOf(r), ctx);
+
+      await paused;
+
+      await db
+
+        .update(schema.approvalGrants)
+
+        .set({ revokedAt: NOW })
+
+        .where(eq(schema.approvalGrants.orgId, r.orgId));
+
+      await expect(handleApplyJob(jobOf(r), contextFor(r.world))).rejects.toBeInstanceOf(
+        RetryLater,
+      );
+
+      expect(await runState(r.runId)).toBe("applying");
+
+      release();
+
+      await a; // the holder sees the revocation before its next send and holds
+
+      expect(await runState(r.runId)).not.toBe("failed");
+
+      expect(r.world.refunds).toHaveLength(1);
+    });
 
     it("skips a malformed job payload without retrying or touching anything", async () => {
       const r = await approvedRun();
