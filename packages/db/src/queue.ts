@@ -16,13 +16,28 @@ export const ApplyJob = z.object({
 });
 export type ApplyJob = z.infer<typeof ApplyJob>;
 
+/**
+ * A job may run more than once (a crash, a retry, a lock held by another revision). That is safe:
+ * the executor resumes from the journal and never re-sends past an unknown outcome. So retry
+ * generously with backoff, and give a run time to finish (retries sleep, reads reconcile).
+ */
+export const APPLY_QUEUE_OPTIONS = {
+  retryLimit: 50,
+  retryDelay: 5,
+  retryBackoff: true,
+  retryDelayMax: 300,
+  expireInSeconds: 1800,
+} as const;
+
 /** pg-boss keeps its tables in its own `pgboss` schema in the same database. */
 export async function startQueue(url = process.env.DATABASE_URL): Promise<PgBoss> {
   if (!url) throw new Error("DATABASE_URL is not set");
   const boss = new PgBoss(url);
   boss.on("error", (err) => console.error("pg-boss error", err));
   await boss.start();
-  await boss.createQueue(APPLY_QUEUE);
+  await boss.createQueue(APPLY_QUEUE, APPLY_QUEUE_OPTIONS);
+  // createQueue leaves an existing queue's settings alone; apply ours either way.
+  await boss.updateQueue(APPLY_QUEUE, APPLY_QUEUE_OPTIONS);
   return boss;
 }
 

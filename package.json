@@ -25,15 +25,18 @@
     "infra:up:full": "docker compose -f infra/compose.yaml --profile full up -d",
     "infra:down": "docker compose -f infra/compose.yaml down",
     "smoke:era": "tsx --env-file-if-exists=.env scripts/smoke/era-meta.ts",
-    "blockers": "node scripts/blockers/generate.ts"
+    "blockers": "node scripts/blockers/generate.ts",
+    "smoke:apply": "tsx --env-file-if-exists=.env scripts/smoke/apply-e2e.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",
     "@rehearsal/core": "workspace:*",
+    "@rehearsal/db": "workspace:*",
     "@rehearsal/providers": "workspace:*",
     "@rehearsal/testkit": "workspace:*",
     "@types/node": "^26.6.5",
     "drizzle-kit": "^0.31.11",
+    "drizzle-orm": "^0.45.4",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vitest": "^5.0.5"

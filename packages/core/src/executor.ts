@@ -96,6 +96,9 @@ export interface ExecutorDeps {
   reconcileAfterMs?: number;
 }
 
+/** RunOutcome.refusal when another run of the same plan holds the apply lock: retry later. */
+export const PLAN_LOCKED = "another run of this plan is applying";
+
 export interface RetryPolicy {
   /** Total sends of one step in one run, including the first. */
   maxAttempts: number;
@@ -272,7 +275,7 @@ export async function executeRun(job: ApplyJobInput, deps: ExecutorDeps): Promis
   const { manifest, grant } = admission;
   const release = await deps.store.lockPlan(job.orgId, job.planId);
   if (!release) {
-    const detail = "another run of this plan is applying";
+    const detail = PLAN_LOCKED;
     await journal.appendEvent(job.runId, "run.deferred", { detail });
     return { state: "held", receipts: [], refusal: detail, error: null };
   }
