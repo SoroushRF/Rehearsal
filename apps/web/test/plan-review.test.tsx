@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { PlanReview } from "../src/components/PlanReview";
 import { fixtureBundles } from "../src/fixtures";
 import { formatMoney, sumMoney } from "../src/format";
-import { evidenceFor, groupByCase, requiredRoles } from "../src/plan";
+import { droppedBy, evidenceFor, groupByCase, requiredRoles } from "../src/plan";
 
 const count = (html: string, needle: string) => html.split(needle).length - 1;
 
@@ -63,6 +63,19 @@ describe("happy-path review", () => {
       ["case_001", "cus_fixture_001", 3],
       ["case_002", "cus_fixture_002", 3],
     ]);
+  });
+
+  it("still names the customer from the ticket once the case's refund is excluded", () => {
+    const left = { ...manifest, actions: manifest.actions.filter((a) => a.id === "patch_001") };
+    expect(groupByCase(left).map((c) => c.customerId)).toEqual(["cus_fixture_001"]);
+  });
+
+  it("previews what an exclusion drops, dependents included", () => {
+    expect([...droppedBy(manifest.actions, ["refund_001"])].sort()).toEqual([
+      "note_001",
+      "refund_001",
+    ]);
+    expect([...droppedBy(manifest.actions, ["patch_001"])]).toEqual(["patch_001"]);
   });
 
   it("shows money, labels and who must sign", () => {
