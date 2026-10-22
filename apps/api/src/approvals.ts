@@ -5,7 +5,7 @@ import { type Db, schema } from "@rehearsal/db";
 import { and, desc, eq, gt, isNull, lte } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import type { ReviewerResolver } from "./auth";
-import { loadPlan } from "./plans";
+import { loadPlan, type Outcome } from "./plans";
 
 const { approvalGrants } = schema;
 
@@ -49,39 +49,40 @@ export function registerApprovalRoutes(app: FastifyInstance, deps: ApprovalDeps)
     const body = ApproveRequest.strict().safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: "invalid_request" });
 
-    return deps.db.transaction(async (tx) => {
+    // Reply only after the transaction commits, so an apply right after a 201 finds the grant.
+    const out = await deps.db.transaction(async (tx): Promise<Outcome> => {
       const loaded = await loadPlan(tx, me.orgId, req.params.id, body.data.revision);
-      if (loaded.kind === "not_found") return reply.code(404).send({ error: "plan_not_found" });
+      if (loaded.kind === "not_found") return [404, { error: "plan_not_found" }];
       if (loaded.kind === "corrupt") {
         req.log.error({ planId: req.params.id }, loaded.detail);
-        return reply.code(500).send({ error: "stored_plan_invalid" });
+        return [500, { error: "stored_plan_invalid" }];
       }
       const { plan, latestRevision } = loaded;
       if (plan.planHash !== body.data.planHash) {
-        return reply.code(409).send({ error: "hash_mismatch" });
+        return [409, { error: "hash_mismatch" }];
       }
       if (plan.revision !== latestRevision) {
-        return reply.code(409).send({ error: "stale_revision", latestRevision });
+        return [409, { error: "stale_revision", latestRevision }];
       }
 
       if (plan.manifest.actions.length === 0) {
-        return reply.code(422).send({ error: "empty_plan" });
+        return [422, { error: "empty_plan" }];
       }
       const graph = validateGraph(plan.manifest.actions);
-      if (graph.length > 0) return reply.code(422).send({ error: "invalid_graph", issues: graph });
+      if (graph.length > 0) return [422, { error: "invalid_graph", issues: graph }];
       for (const ref of plan.manifest.policies) {
         const policy = deps.policies.find((p) => p.id === ref.id && p.version === ref.version);
-        if (!policy) return reply.code(422).send({ error: "unknown_policy", policy: ref });
+        if (!policy) return [422, { error: "unknown_policy", policy: ref }];
         const { violations } = evaluateBillingPolicy(plan.manifest, policy);
         if (violations.length > 0) {
-          return reply.code(422).send({ error: "policy_violation", violations });
+          return [422, { error: "policy_violation", violations }];
         }
       }
 
       const required = [...new Set(plan.manifest.actions.map((a) => a.requiredRole))];
       const missing = required.filter((r) => !me.roles.includes(r));
       if (missing.length > 0) {
-        return reply.code(403).send({ error: "missing_roles", missing, held: me.roles });
+        return [403, { error: "missing_roles", missing, held: me.roles }];
       }
 
       const at = now();
@@ -101,7 +102,7 @@ export function registerApprovalRoutes(app: FastifyInstance, deps: ApprovalDeps)
         )
         .orderBy(desc(approvalGrants.grantedAt))
         .limit(1);
-      if (live) return reply.code(200).send({ grant: toGrant(live), existing: true });
+      if (live) return [200, { grant: toGrant(live), existing: true }];
 
       const grant = ApprovalGrant.parse({
         id: `grant_${randomUUID()}`,
@@ -122,8 +123,9 @@ export function registerApprovalRoutes(app: FastifyInstance, deps: ApprovalDeps)
         expiresAt: new Date(grant.expiresAt),
         revokedAt: null,
       });
-      return reply.code(201).send({ grant, existing: false });
+      return [201, { grant, existing: false }];
     });
+    return reply.code(out[0]).send(out[1]);
   });
 
   app.get<{ Params: { id: string } }>("/api/plans/:id/approvals", async (req, reply) => {
