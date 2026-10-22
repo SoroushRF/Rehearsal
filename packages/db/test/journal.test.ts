@@ -1,9 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { fileURLToPath } from "node:url";
 import type { Attempt, Receipt } from "@rehearsal/contracts";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { beforeAll, describe, expect, it } from "vitest";
-import { createDb, isLegalTransition, JournalConflictError, PgJournal } from "../src";
+import { createDb, isLegalTransition, JournalConflictError, migrateDb, PgJournal } from "../src";
 
 const HASH = "a".repeat(64);
 const BODY_HASH = "b".repeat(64);
@@ -49,9 +47,7 @@ describe.skipIf(!process.env.DB_TESTS)("PgJournal (real Postgres)", () => {
     process.env.DATABASE_URL ?? "postgres://rehearsal:rehearsal@localhost:5432/rehearsal",
   );
   beforeAll(async () => {
-    await migrate(db, {
-      migrationsFolder: fileURLToPath(new URL("../migrations", import.meta.url)),
-    });
+    await migrateDb(db);
   });
   const journalFor = () => new PgJournal(db, `org_${randomUUID()}`);
 

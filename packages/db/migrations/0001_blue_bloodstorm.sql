@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "runs_org_id_plan_hash_index" ON "runs" USING btree ("org_id","plan_hash");
