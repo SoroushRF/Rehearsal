@@ -1,4 +1,4 @@
-import { bind, faults, report, SEED, vendorFetch } from "./session";
+import { bind, DEMO, faults, report, vendorFetch } from "./session";
 
 /**
  * Era throttling on the operational Stripe container: the next request gets a 429 with
@@ -7,7 +7,7 @@ import { bind, faults, report, SEED, vendorFetch } from "./session";
  */
 
 const world = await bind("stripe", "operational");
-const path = `/v1/charges/${SEED.chargeId}`;
+const path = `/v1/charges/${DEMO.phantom.chargeIds[0]}`;
 
 await faults(world, { fail_next: 1, retry_after_seconds: 1 });
 try {
