@@ -11,7 +11,7 @@ Copy this file to `AGENTS.local.md` at the repo root and fill it in. Coding agen
 ## My machine
 
 - OS / shell:
-- GPU: <!-- e.g. RTX 4070 Laptop 8 GB → I run ml/ training -->
+- GPU: <!-- e.g. RTX 5080 16 GB → I run ml/ training -->
 - Docker Desktop: yes / no
 - Port overrides: <!-- if 3000/5173/5432/81xx clash locally -->
 
