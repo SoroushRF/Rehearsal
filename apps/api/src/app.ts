@@ -4,6 +4,7 @@ import fastifyStatic from "@fastify/static";
 import { CONTRACTS_VERSION, type HealthResponse } from "@rehearsal/contracts";
 import Fastify from "fastify";
 import { type ApplyDeps, registerApplyRoute } from "./apply";
+import { registerCancelRoute } from "./cancel";
 import { registerTenantTokenRoute, type TenantTokenDeps } from "./tenant-tokens";
 
 const webDist = fileURLToPath(new URL("../../web/dist/", import.meta.url));
@@ -27,12 +28,16 @@ export function buildApp(
   );
 
   // Command routes need Postgres; health stays available without it (core mode with no DB).
-  if (deps.apply) registerApplyRoute(app, deps.apply);
-  else {
+  if (deps.apply) {
+    registerApplyRoute(app, deps.apply);
+    registerCancelRoute(app, deps.apply);
+  } else {
     // Say "unavailable", not 404, so clients don't mistake an outage for a missing plan.
-    app.post("/api/plans/:id/apply", async (_req, reply) =>
-      reply.code(503).send({ error: "database_unavailable" }),
-    );
+    for (const route of ["/api/plans/:id/apply", "/api/runs/:id/cancel"]) {
+      app.post(route, async (_req, reply) =>
+        reply.code(503).send({ error: "database_unavailable" }),
+      );
+    }
   }
 
   // Only an API that holds ERA_ADMIN_TOKEN mints tenant tokens for the workers.

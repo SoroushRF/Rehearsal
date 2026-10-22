@@ -1,4 +1,4 @@
-import { APPLY_QUEUE, createDb, startQueue } from "@rehearsal/db";
+import { APPLY_QUEUE, createDb, reapStuckRuns, startQueue } from "@rehearsal/db";
 import {
   primeTokens,
   stripeReader,
@@ -72,8 +72,30 @@ await boss.work(APPLY_QUEUE, { batchSize: 1, includeMetadata: true }, async ([jo
   );
 });
 
+// Runs left approved/applying with no live job (a worker died on a job's last attempt, or it
+// expired) are re-enqueued; they resume from the journal. One reaper acts at a time.
+const REAP_EVERY_MS = 60_000;
+const STALE_AFTER_MS = 10 * 60_000;
+let sweeping: Promise<void> = Promise.resolve();
+const reaper = setInterval(() => {
+  sweeping = sweep();
+}, REAP_EVERY_MS);
+async function sweep() {
+  try {
+    const reaped = await reapStuckRuns(ctx.db, boss, {
+      now: new Date(),
+      staleAfterMs: STALE_AFTER_MS,
+    });
+    if (reaped.length > 0) console.log(`re-enqueued stuck runs: ${reaped.join(", ")}`);
+  } catch (err) {
+    console.error("reaper failed", err);
+  }
+}
+
 for (const signal of ["SIGTERM", "SIGINT"] as const) {
   process.once(signal, async () => {
+    clearInterval(reaper);
+    await sweeping; // a sweep in progress finishes before pg-boss stops
     // Let the active run finish (it is bounded by retries and timeouts); if it can't, the journal
     // keeps it safe and the job is retried.
     try {
