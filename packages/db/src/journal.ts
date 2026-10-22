@@ -178,12 +178,23 @@ export class PgJournal implements JournalPort {
     }));
   }
 
+  /**
+   * `seq` is a global insertion order, not a commit order: with concurrent writers a reader that
+   * tails `seq > lastSeen` can miss a row. One executor writes per run, so per-run order holds.
+   * A missing payload is stored as `{}` (the column is NOT NULL); the stored value is returned.
+   */
   async appendEvent(runId: string, type: string, payload: unknown): Promise<RunEvent> {
     const [row] = await this.db
       .insert(runEvents)
-      .values({ orgId: this.orgId, runId, type, payload })
+      .values({ orgId: this.orgId, runId, type, payload: payload ?? {} })
       .returning();
     if (!row) throw new Error("run event insert returned no row");
-    return { seq: row.seq, runId: row.runId, type: row.type, at: row.at.toISOString(), payload };
+    return {
+      seq: row.seq,
+      runId: row.runId,
+      type: row.type,
+      at: row.at.toISOString(),
+      payload: row.payload,
+    };
   }
 }

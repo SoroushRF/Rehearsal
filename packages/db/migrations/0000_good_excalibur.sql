@@ -78,5 +78,5 @@ CREATE TABLE "step_receipts" (
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX "plan_versions_plan_hash_index" ON "plan_versions" USING btree ("plan_hash");--> statement-breakpoint
-CREATE UNIQUE INDEX "step_attempts_operation_key_attempt_no_index" ON "step_attempts" USING btree ("operation_key","attempt_no");--> statement-breakpoint
+CREATE UNIQUE INDEX "step_attempts_org_id_operation_key_attempt_no_index" ON "step_attempts" USING btree ("org_id","operation_key","attempt_no");--> statement-breakpoint
 CREATE INDEX "step_attempts_org_id_plan_hash_action_id_index" ON "step_attempts" USING btree ("org_id","plan_hash","action_id");

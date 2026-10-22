@@ -73,7 +73,7 @@ export const stepAttempts = pgTable(
     settledAt: timestamp("settled_at", { withTimezone: true }),
   },
   (t) => [
-    uniqueIndex().on(t.operationKey, t.attemptNo),
+    uniqueIndex().on(t.orgId, t.operationKey, t.attemptNo),
     index().on(t.orgId, t.planHash, t.actionId),
   ],
 );

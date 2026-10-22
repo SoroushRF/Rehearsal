@@ -1,5 +1,5 @@
 {
-  "id": "0939731b-93dc-45e7-8820-73f8e2418222",
+  "id": "1e2dd67e-ce9f-4193-bf00-b2c3e8e2bce8",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -405,9 +405,15 @@
         }
       },
       "indexes": {
-        "step_attempts_operation_key_attempt_no_index": {
-          "name": "step_attempts_operation_key_attempt_no_index",
+        "step_attempts_org_id_operation_key_attempt_no_index": {
+          "name": "step_attempts_org_id_operation_key_attempt_no_index",
           "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
             {
               "expression": "operation_key",
               "isExpression": false,
