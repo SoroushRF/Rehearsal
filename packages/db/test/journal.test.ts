@@ -109,6 +109,12 @@ describe.skipIf(!process.env.DB_TESTS)("PgJournal (real Postgres)", () => {
     ).rejects.toThrow();
   });
 
+  it("lets two orgs use the same operation key", async () => {
+    const a = attempt();
+    await journalFor().prepareAttempt(a);
+    await journalFor().prepareAttempt(attempt({ operationKey: a.operationKey }));
+  });
+
   it("scopes everything to the organization", async () => {
     const mine = journalFor();
     const theirs = journalFor();
@@ -150,5 +156,7 @@ describe.skipIf(!process.env.DB_TESTS)("PgJournal (real Postgres)", () => {
     const first = await journal.appendEvent("run_1", "attempt.prepared", { n: 1 });
     const second = await journal.appendEvent("run_1", "attempt.confirmed", { n: 2 });
     expect(second.seq).toBeGreaterThan(first.seq);
+    const empty = await journal.appendEvent("run_1", "run.started", undefined);
+    expect(empty.payload).toEqual({});
   });
 });

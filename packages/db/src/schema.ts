@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   bigserial,
   index,
@@ -29,8 +30,9 @@ export const planVersions = pgTable(
 );
 
 /**
- * One run per approved plan hash. `state` is the only mutable column and follows `RunState`.
- * The unique index makes a repeated apply request return the existing run instead of a second one.
+ * A run applies one approved plan hash. `state` is the only mutable column and follows `RunState`.
+ * At most one run per hash may be active (`approved` or `applying`); a held, partial or failed run
+ * can be followed by a new one, which resumes from the journal instead of re-sending.
  */
 export const runs = pgTable(
   "runs",
@@ -41,11 +43,12 @@ export const runs = pgTable(
     revision: integer("revision").notNull(),
     planHash: text("plan_hash").notNull(),
     approvalId: text("approval_id").notNull(),
+    requestedBy: text("requested_by").notNull(),
     state: text("state").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex().on(t.orgId, t.planHash)],
+  (t) => [uniqueIndex().on(t.orgId, t.planHash).where(sql`${t.state} in ('approved', 'applying')`)],
 );
 
 export const approvalGrants = pgTable("approval_grants", {
@@ -80,7 +83,7 @@ export const stepAttempts = pgTable(
     settledAt: timestamp("settled_at", { withTimezone: true }),
   },
   (t) => [
-    uniqueIndex().on(t.operationKey, t.attemptNo),
+    uniqueIndex().on(t.orgId, t.operationKey, t.attemptNo),
     index().on(t.orgId, t.planHash, t.actionId),
   ],
 );
