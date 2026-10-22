@@ -8,10 +8,12 @@ import {
   PgApplyStore,
   type PgBoss,
   requestApply,
+  requestCancel,
   schema,
   startQueue,
 } from "@rehearsal/db";
 import { billingManifest, FakeClock, type FakeWorld, worldFromManifest } from "@rehearsal/testkit";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import policy from "../../../scenarios/billing/policy.v1.json" with { type: "json" };
 import { type ApplyJobResult, handleApplyJob, RetryLater, type WorkerContext } from "../src/worker";
@@ -263,6 +265,130 @@ describe.skipIf(!process.env.DB_TESTS)(
       },
     );
 
+    it("a human cancel during a run stops it before the next action, and it stays cancelled", async () => {
+      const r = await approvedRun();
+
+      const { ctx, paused, release } = pausedContext(r.world);
+
+      const a = handleApplyJob(jobOf(r), ctx); // paused right after its first refund
+
+      await paused;
+
+      expect(await requestCancel(db, { orgId: r.orgId, runId: r.runId })).toMatchObject({
+        kind: "cancelled",
+      });
+
+      release();
+
+      expect(stateOf(await a)).toBe("cancelled");
+
+      expect(await runState(r.runId)).toBe("cancelled");
+
+      expect(r.world.refunds).toHaveLength(1);
+
+      const receipts = (await db.select().from(schema.stepReceipts)).filter(
+        (x) => x.orgId === r.orgId,
+      );
+
+      expect(receipts.map((x) => x.actionId)).toEqual(["refund_001"]);
+    });
+
+    it("a stale delivery after the grant was revoked defers to the running one; never marks it failed", async () => {
+      const r = await approvedRun();
+
+      const { ctx, paused, release } = pausedContext(r.world);
+
+      const a = handleApplyJob(jobOf(r), ctx);
+
+      await paused;
+
+      await db
+
+        .update(schema.approvalGrants)
+
+        .set({ revokedAt: NOW })
+
+        .where(eq(schema.approvalGrants.orgId, r.orgId));
+
+      await expect(handleApplyJob(jobOf(r), contextFor(r.world))).rejects.toBeInstanceOf(
+        RetryLater,
+      );
+
+      expect(await runState(r.runId)).toBe("applying");
+
+      release();
+
+      await a; // the holder sees the revocation before its next send and holds
+
+      expect(await runState(r.runId)).not.toBe("failed");
+
+      expect(r.world.refunds).toHaveLength(1);
+    });
+
+    it("a cancelled run's job still resolves an in-flight refund by reading, and stays cancelled", async () => {
+      const r = await approvedRun();
+
+      const ctx = contextFor(r.world);
+
+      const stripe = r.world.provider("stripe");
+
+      const losing = {
+        ...ctx,
+
+        providers: {
+          ...ctx.providers,
+
+          stripe: {
+            ...stripe,
+
+            dispatch: async (
+              req: Parameters<typeof stripe.dispatch>[0],
+              c: Parameters<typeof stripe.dispatch>[1],
+            ) => {
+              await stripe.dispatch(req, c);
+
+              return { kind: "unknown" as const, error: "response lost (injected)" };
+            },
+          },
+        },
+
+        executor: { sleep: async () => {}, retry: { maxAttempts: 1 } },
+      };
+
+      await handleApplyJob(jobOf(r), losing);
+
+      expect(await requestCancel(db, { orgId: r.orgId, runId: r.runId })).toMatchObject({
+        kind: "not_active",
+      });
+
+      await new PgApplyStore(db).setRunState(r.orgId, r.runId, "cancelled");
+
+      const result = await handleApplyJob(jobOf(r), contextFor(r.world));
+
+      expect(stateOf(result)).toBe("cancelled");
+
+      expect(await runState(r.runId)).toBe("cancelled");
+
+      const receipts = (await db.select().from(schema.stepReceipts)).filter(
+        (x) => x.orgId === r.orgId,
+      );
+
+      const confirmed = receipts.filter(
+        (x) => (x.receipt as { outcome: string }).outcome === "confirmed",
+      );
+
+      expect(confirmed.map((x) => x.actionId).sort()).toEqual([
+        "patch_001",
+        "patch_002",
+        "refund_001",
+        "refund_002",
+      ]);
+
+      expect(r.world.refunds).toHaveLength(2);
+
+      expect(r.world.tickets.get("5531")?.comments).toHaveLength(0);
+    });
+
     it("skips a malformed job payload without retrying or touching anything", async () => {
       const r = await approvedRun();
       expect(await handleApplyJob({ runId: r.runId }, contextFor(r.world))).toEqual({
@@ -280,13 +406,10 @@ describe.skipIf(!process.env.DB_TESTS)(
       planHash: r.hash,
     });
 
-    it("never applies a cancelled run, and leaves it cancelled", async () => {
+    it("never applies a cancelled run (a read-only pass sends nothing), and leaves it cancelled", async () => {
       const r = await approvedRun();
       await new PgApplyStore(db).setRunState(r.orgId, r.runId, "cancelled");
-      expect(await handleApplyJob(jobOf(r), contextFor(r.world))).toEqual({
-        kind: "skipped",
-        reason: "run is cancelled",
-      });
+      expect(stateOf(await handleApplyJob(jobOf(r), contextFor(r.world)))).toBe("cancelled");
       expect(r.world.effects).toEqual([]);
       expect(await runState(r.runId)).toBe("cancelled");
     });

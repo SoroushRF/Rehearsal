@@ -68,8 +68,27 @@ export async function handleApplyJob(
   ) {
     return { kind: "skipped", reason: "job does not match a stored run" };
   }
+  const deps = (): Parameters<typeof executeRun>[1] => ({
+    store,
+    journal: new PgJournal(ctx.db, job.orgId),
+    providers: ctx.providers,
+    worlds: ctx.worlds,
+    clock: ctx.clock,
+    policies: ctx.policies,
+    newId: (prefix) => `${prefix}_${randomUUID()}`,
+    guard: createReadGuard({ providers: ctx.providers, worlds: ctx.worlds, clock: ctx.clock }),
+    ...ctx.executor,
+  });
+
   if (!(await store.transitionRun(job.orgId, job.runId, ["approved", "applying"], "applying"))) {
     const state = await store.runState(job.orgId, job.runId);
+    if (state === "cancelled") {
+      // A cancelled run sends nothing, but the executor still resolves any earlier send whose
+      // outcome is unknown through reads. Its state stays "cancelled".
+      const outcome = await executeRun(job, deps());
+      if (outcome.refusal === PLAN_LOCKED) throw new RetryLater(PLAN_LOCKED);
+      return { kind: "ran", outcome };
+    }
     return { kind: "skipped", reason: `run is ${state}` };
   }
 
@@ -82,17 +101,7 @@ export async function handleApplyJob(
 
   let outcome: RunOutcome;
   try {
-    outcome = await executeRun(job, {
-      store,
-      journal: new PgJournal(ctx.db, job.orgId),
-      providers: ctx.providers,
-      worlds: ctx.worlds,
-      clock: ctx.clock,
-      policies: ctx.policies,
-      newId: (prefix) => `${prefix}_${randomUUID()}`,
-      guard: createReadGuard({ providers: ctx.providers, worlds: ctx.worlds, clock: ctx.clock }),
-      ...ctx.executor,
-    });
+    outcome = await executeRun(job, deps());
   } catch (err) {
     // Journal down or an adapter bug. pg-boss retries; the journal makes the re-run safe.
     if (lastTry) await giveUp();
