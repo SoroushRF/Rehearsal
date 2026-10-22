@@ -41,6 +41,8 @@
 
 _(add dated entries)_
 
+- **2026-10-22:** The demo currency is CAD; the seeded cohort already matches the policy ([0005](../decisions/0005-currency-cad.md)).
+
 ## Handoff log
 
 _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
