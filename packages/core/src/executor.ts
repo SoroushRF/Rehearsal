@@ -616,12 +616,6 @@ async function applyLocked(
       );
     }
 
-    // Only now would a request actually be sent, so only now do the guards run.
-    const guardHold = deps.guard
-      ? await deps.guard(action, { manifest, confirmedReceipts: [...confirmedByAction.values()] })
-      : null;
-    if (guardHold) return hold(action, guardHold);
-
     let pre: Preconditions = {};
     if (provider.preconditions) {
       try {
@@ -633,6 +627,12 @@ async function applyLocked(
         });
       }
     }
+    // Capture the native stamp before semantic validation. A later read must never forgive
+    // a teammate's intervening edit by replacing the stamp after the guard has passed.
+    const guardHold = deps.guard
+      ? await deps.guard(action, { manifest, confirmedReceipts: [...confirmedByAction.values()] })
+      : null;
+    if (guardHold) return hold(action, guardHold);
     const { req: request, sha: bodySha256 } = prepareWith(pre);
 
     // A never-sent prepared row of this hash: reuse its exact bytes if nothing moved. If only a
