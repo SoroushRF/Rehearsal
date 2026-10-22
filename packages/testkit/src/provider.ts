@@ -290,7 +290,11 @@ export class FakeWorld {
     if (predicate.kind !== "stripe.charges.byCustomerInWindow") {
       throw new Error(`fake does not support ${predicate.kind}`);
     }
-    const seconds = (iso: string) => Date.parse(iso) / 1000;
+    const seconds = (iso: string) => {
+      const ms = Date.parse(iso);
+      if (Number.isNaN(ms)) throw new Error(`fake query: unreadable timestamp ${iso}`);
+      return ms / 1000;
+    };
     const inWindow = (c: FakeCharge) =>
       c.created === undefined ||
       (c.created >= seconds(predicate.createdGte) &&
