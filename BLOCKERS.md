@@ -12,7 +12,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 |---|---|---|---|
 | **T2.9** Decide currency: align policy.v1.json with the Era seed (USD vs CAD) [#40](https://github.com/SoroushRF/Rehearsal/issues/40) | @parsaabbasian | 🟨 ready | 5 |
 | **T1.5** Bounded Claude tool loop and planner-worker plan jobs [#6](https://github.com/SoroushRF/Rehearsal/issues/6) | @SoroushRF | 🟥 blocked | 4 |
-| **T2.2** API: store plans, get plan, create revisions with expected-hash check [#11](https://github.com/SoroushRF/Rehearsal/issues/11) | @parsaabbasian | 👀 in review | 3 |
+| **T2.2** API: store plans, get plan, create revisions with expected-hash check [#11](https://github.com/SoroushRF/Rehearsal/issues/11) | @parsaabbasian | 🟨 ready | 3 |
 | **T2.3** Clerk sign-in, support_lead / finance_lead roles, and server-side checks [#12](https://github.com/SoroushRF/Rehearsal/issues/12) | @parsaabbasian | 👀 in review | 2 |
 | **T4.5** ML smoke test: Qwen3.5-0.8B LoRA on 32 cases [#29](https://github.com/SoroushRF/Rehearsal/issues/29) | @skhdemo | 🟨 ready | 2 |
 | **T2.4** Approvals endpoint: hash-bound grant and refusal test matrix [#13](https://github.com/SoroushRF/Rehearsal/issues/13) | @parsaabbasian | 👀 in review | 1 |
@@ -43,10 +43,10 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | Task | Status | Blocked by | Blocks |
 |---|---|---|---|
 | **T2.1** Plan diff view from fixture bundles [#10](https://github.com/SoroushRF/Rehearsal/issues/10) | 🟨 ready | — |  |
-| **T2.2** API: store plans, get plan, create revisions with expected-hash check [#11](https://github.com/SoroushRF/Rehearsal/issues/11) | 👀 in review [PR #83](https://github.com/SoroushRF/Rehearsal/pull/83) | — | T2.4, T2.5 |
+| **T2.2** API: store plans, get plan, create revisions with expected-hash check [#11](https://github.com/SoroushRF/Rehearsal/issues/11) | 🟨 ready | — | T2.4, T2.5 |
 | **T2.3** Clerk sign-in, support_lead / finance_lead roles, and server-side checks [#12](https://github.com/SoroushRF/Rehearsal/issues/12) | 👀 in review [PR #84](https://github.com/SoroushRF/Rehearsal/pull/84) | — | T2.4 |
-| **T2.4** Approvals endpoint: hash-bound grant and refusal test matrix [#13](https://github.com/SoroushRF/Rehearsal/issues/13) | 👀 in review [PR #87](https://github.com/SoroushRF/Rehearsal/pull/87) | T2.2 (T2, in review)<br>T2.3 (T2, in review) | T2.8 |
-| **T2.5** Deploy thin slice and prove cloud workers reach the simulators [#14](https://github.com/SoroushRF/Rehearsal/issues/14) | 🟥 blocked | T2.2 (T2, in review)<br>T1.5 (T1, blocked) |  |
+| **T2.4** Approvals endpoint: hash-bound grant and refusal test matrix [#13](https://github.com/SoroushRF/Rehearsal/issues/13) | 👀 in review [PR #87](https://github.com/SoroushRF/Rehearsal/pull/87) | T2.2 (T2, ready)<br>T2.3 (T2, in review) | T2.8 |
+| **T2.5** Deploy thin slice and prove cloud workers reach the simulators [#14](https://github.com/SoroushRF/Rehearsal/issues/14) | 🟥 blocked | T2.2 (T2, ready)<br>T1.5 (T1, blocked) |  |
 | **T2.6** Run timeline, receipts and held-step views (polling GET /api/runs/:id/events) [#15](https://github.com/SoroushRF/Rehearsal/issues/15) | 👀 in review [PR #88](https://github.com/SoroushRF/Rehearsal/pull/88) | — | T2.7 |
 | **T2.7** Two-minute video script, recording, Devpost page [#16](https://github.com/SoroushRF/Rehearsal/issues/16) | 🟥 blocked | T2.6 (T2, in review) |  |
 | **T2.8** Thin Expo approver app on the same API _(stretch)_ [#17](https://github.com/SoroushRF/Rehearsal/issues/17) | 🟥 blocked | T2.4 (T2, in review) |  |
@@ -105,7 +105,7 @@ flowchart LR
   end
   subgraph T2[T2 Review & Approve]
     T2_1["T2.1 Plan diff view from fixture bundles"]:::ready
-    T2_2["T2.2 API: store plans, get plan, create revision"]:::review
+    T2_2["T2.2 API: store plans, get plan, create revision"]:::ready
     T2_3["T2.3 Clerk sign-in, support_lead / finance_lead "]:::review
     T2_4["T2.4 Approvals endpoint: hash-bound grant and re"]:::review
     T2_5["T2.5 Deploy thin slice and prove cloud workers r"]:::blocked
