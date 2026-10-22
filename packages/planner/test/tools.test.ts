@@ -111,7 +111,7 @@ function world() {
     window: INCIDENT.window,
     clock: new FakeClock("2026-10-02T12:00:00.000Z"),
   });
-  return { session, reads, records, charges };
+  return { session, reads, records, charges, tickets };
 }
 
 const caseOf = (key: string) => {
@@ -127,6 +127,35 @@ async function ok(session: PlanningSession, name: string, input: unknown) {
 }
 
 describe("planning tools", () => {
+  it("refuses another customer's ticket and an unknown link for both ticket tools", async () => {
+    const { session, tickets } = world();
+    const a = caseOf("c01");
+    const b = caseOf("c02");
+    await ok(session, "propose_duplicate_refund", {
+      chargeId: a.chargeIds[1],
+      duplicateOfChargeId: a.chargeIds[0],
+      rationale: "x",
+    });
+    for (const ticketId of [b.ticketId, a.ticketId]) {
+      if (ticketId === a.ticketId)
+        (tickets.get(String(ticketId)) as Record<string, unknown>).external_id = null;
+      expect(
+        await session.call("propose_ticket_priority", {
+          customerId: a.customerId,
+          ticketId: String(ticketId),
+          priority: "high",
+          rationale: "x",
+        }),
+      ).toMatchObject({ ok: false, error: /not verified/ });
+      expect(
+        await session.call("propose_refund_note", {
+          refundStepId: `refund_${a.chargeIds[1]}`,
+          ticketId: String(ticketId),
+        }),
+      ).toMatchObject({ ok: false, error: /not verified/ });
+    }
+    expect(session.actions).toHaveLength(1);
+  });
   it("refuses equal legitimate payments for different invoices or unknown invoices", async () => {
     const { session, charges } = world();
     const c = caseOf("k01");

@@ -38,6 +38,7 @@
 | T1.8 | _Stretch:_ SurrealDB precedents (explicit promotion, recall with trace) | after M3 | Behind the trim decision | #9 | T1.5 |
 | T1.9 | Signed Era tenant tokens in both workers: mint where the operator holds the admin token, pass to planner and executor workers, refresh before the 1-hour expiry | M2 | Tenant isolation and reset tests pass through the workers' config. **Done:** #46; design in [decision 0002](../decisions/0002-era-tenant-token-minting.md) | #39 | T1.1 |
 | T1.10 | Invoice-bound duplicate refunds with a retained paid original | M3 | **Done:** equal distinct invoices and refund cycles refused; excess charges use one original | #61 | — |
+| T1.11 | Verify ticket ownership in planning evidence | M3 | **Done:** ticket tools refuse wrong or missing customer links | #63 | — |
 
 ## Decisions
 

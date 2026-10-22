@@ -26,7 +26,7 @@ export interface ReadTarget {
 }
 
 export const STRIPE_CHARGE_PROJECTION = "stripe.charge.v2";
-export const ZENDESK_TICKET_PROJECTION = "zendesk.ticket.v1";
+export const ZENDESK_TICKET_PROJECTION = "zendesk.ticket.v2";
 
 /** The fields a plan depends on. Everything else (billing details, comment timestamps) is noise. */
 export function stripeChargeProjection(c: Record<string, unknown>): Record<string, unknown> {
@@ -49,6 +49,7 @@ export function zendeskTicketProjection(t: Record<string, unknown>): Record<stri
     priority: t.priority,
     status: t.status,
     requester_id: t.requester_id == null ? null : String(t.requester_id),
+    external_id: t.external_id ?? null,
   };
 }
 
