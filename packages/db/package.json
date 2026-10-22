@@ -8,10 +8,13 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "generate": "drizzle-kit generate",
     "migrate": "drizzle-kit migrate"
   },
   "dependencies": {
+    "@rehearsal/contracts": "workspace:*",
+    "@rehearsal/core": "workspace:*",
     "drizzle-orm": "^0.45.4",
     "pg": "^8.23.1"
   },
