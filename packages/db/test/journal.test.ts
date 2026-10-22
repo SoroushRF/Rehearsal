@@ -192,6 +192,8 @@ describe.skipIf(!process.env.DB_TESTS)("PgJournal (real Postgres)", () => {
       recordedAt: "2026-10-21T12:00:03.000Z",
     };
     await journal.recordReceipt(receipt);
+    expect(await journal.receiptsFor(HASH)).toEqual([receipt]);
+    expect(await journalFor().receiptsFor(HASH)).toEqual([]);
     const first = await journal.appendEvent("run_1", "attempt.prepared", { n: 1 });
     const second = await journal.appendEvent("run_1", "attempt.confirmed", { n: 2 });
     expect(second.seq).toBeGreaterThan(first.seq);

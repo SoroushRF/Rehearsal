@@ -60,6 +60,9 @@ _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
     - A rejected attempt is never re-sent by a later run; T3.4 adds bounded in-run retries.
     - An unexpected error stops the run (`step.error` event, `RunOutcome.error`); remaining steps get no receipt.
     - The note template formats CAD only, matching policy v1.
+    - Guards (`StepGuard`) run only right before a request would be sent, and get `confirmedReceipts` for this hash (earlier runs included) so T4 can build the own-write overlay with `advanceOverlay`.
+    - A prepared-but-never-sent attempt from another revision is ignored: it neither blocks nor gets reused.
+    - Admission doesn't refuse an *older* revision once a newer one is approved. That belongs to the approval lifecycle (T2).
     - Rejected-but-retryable steps aren't retried yet (T3.4).
     - Confirmed receipts carry a limitation saying the effect came from the write response, not a read-back.
     - Admission is a cross-track-review path.

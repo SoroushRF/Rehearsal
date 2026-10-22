@@ -157,6 +157,15 @@ export class PgJournal implements JournalPort {
     });
   }
 
+  async receiptsFor(planHash: string): Promise<Receipt[]> {
+    const rows = await this.db
+      .select({ receipt: stepReceipts.receipt })
+      .from(stepReceipts)
+      .where(and(eq(stepReceipts.orgId, this.orgId), eq(stepReceipts.planHash, planHash)))
+      .orderBy(asc(stepReceipts.recordedAt));
+    return rows.map((r) => r.receipt as Receipt);
+  }
+
   async bind(binding: ObjectBinding): Promise<void> {
     const { stepId, path } = binding.ref;
     const inserted = await this.db

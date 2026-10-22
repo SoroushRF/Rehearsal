@@ -53,8 +53,17 @@ export interface ApplyStore {
   loadGrant(orgId: string, approvalId: string): Promise<ApprovalGrant | null>;
 }
 
-/** Per-step guard hook (T4). Returning a reason holds the step; the model never sits here. */
-export type StepGuard = (action: Action, manifest: PlanManifest) => Promise<HoldReason | null>;
+export interface StepGuardContext {
+  manifest: PlanManifest;
+  /** Every confirmed receipt for this plan hash so far, including earlier runs (own-write overlay). */
+  confirmedReceipts: readonly Receipt[];
+}
+
+/**
+ * Per-step guard hook (T4). Runs only before a request would actually be sent; returning a reason
+ * holds the step. The model never sits here.
+ */
+export type StepGuard = (action: Action, ctx: StepGuardContext) => Promise<HoldReason | null>;
 
 export interface ExecutorDeps {
   store: ApplyStore;
@@ -171,9 +180,13 @@ async function admit(
     return { ok: false, detail: "grant is for a different plan, revision or hash" };
   }
   if (grant.revokedAt !== null) return { ok: false, detail: "grant was revoked" };
-  if (Date.parse(grant.grantedAt) > now)
-    return { ok: false, detail: "grant is dated in the future" };
-  if (Date.parse(grant.expiresAt) <= now) return { ok: false, detail: "grant expired" };
+  const grantedAt = Date.parse(grant.grantedAt);
+  const expiresAt = Date.parse(grant.expiresAt);
+  if (Number.isNaN(grantedAt) || Number.isNaN(expiresAt)) {
+    return { ok: false, detail: "grant timestamps are unreadable" };
+  }
+  if (grantedAt > now) return { ok: false, detail: "grant is dated in the future" };
+  if (expiresAt <= now) return { ok: false, detail: "grant expired" };
   const missing = [...new Set(manifest.actions.map((a) => a.requiredRole))].filter(
     (r) => !grant.roles.includes(r),
   );
@@ -213,6 +226,11 @@ export async function executeRun(job: ApplyJobInput, deps: ExecutorDeps): Promis
 
   const receipts: Receipt[] = [];
   const settled = new Map<string, ReceiptOutcome>();
+  const confirmedReceipts: Receipt[] = (await journal.receiptsFor(job.planHash)).filter(
+    (r) => r.outcome === "confirmed",
+  );
+  /** An attempt marked dispatched whose outcome isn't settled yet (for honest error labelling). */
+  let inFlightAttempt: string | null = null;
   const bindings = new Map<string, string | number>(
     (await journal.bindings(job.planHash)).map((b) => [bindingKey(b.ref), b.value]),
   );
@@ -251,10 +269,14 @@ export async function executeRun(job: ApplyJobInput, deps: ExecutorDeps): Promis
       }),
     );
     await journal.settle({ transition: opts.transition, bindings: newBindings, receipt });
+    // The journal is the record: reflect it in memory before anything else can fail.
     for (const b of newBindings) bindings.set(bindingKey(b.ref), b.value);
-    await journal.appendEvent(job.runId, "step.receipt", receipt);
     receipts.push(receipt);
+    if (receipt.outcome === "confirmed") confirmedReceipts.push(receipt);
     settled.set(action.id, receipt.outcome);
+    if (opts.transition?.attemptId === inFlightAttempt) inFlightAttempt = null;
+    // Events are a feed for the UI, not the record; losing one must not change the outcome.
+    await journal.appendEvent(job.runId, "step.receipt", receipt).catch(() => {});
   };
   const hold = (action: Action, holdReason: HoldReason) =>
     settle(action, receiptFor(action, "held", { holdReason }));
@@ -265,7 +287,9 @@ export async function executeRun(job: ApplyJobInput, deps: ExecutorDeps): Promis
   async function step(action: Action): Promise<void> {
     const key = operationKey(job.orgId, job.planId, action);
     const prior = await journal.attemptsForKey(key);
-    const latest = prior.at(-1);
+    // A prepared attempt from another plan hash was never sent; it neither blocks nor gets reused.
+    const relevant = prior.filter((a) => a.state !== "prepared" || a.planHash === job.planHash);
+    const latest = relevant.at(-1);
 
     if (
       latest &&
@@ -281,9 +305,6 @@ export async function executeRun(job: ApplyJobInput, deps: ExecutorDeps): Promis
       // TODO(T3.5): reconcile through reads. Until then never re-send; hold for an operator.
       return hold(action, { kind: "unresolved_outcome", attemptId: inFlight.id });
     }
-
-    const guardHold = deps.guard ? await deps.guard(action, manifest) : null;
-    if (guardHold) return hold(action, guardHold);
 
     const refs = resultRefsOf(action);
     const unresolved = refs.find((r) => !bindings.has(bindingKey(r)));
@@ -341,6 +362,10 @@ export async function executeRun(job: ApplyJobInput, deps: ExecutorDeps): Promis
       );
     }
 
+    // Only now would a request actually be sent, so only now do the guards run.
+    const guardHold = deps.guard ? await deps.guard(action, { manifest, confirmedReceipts }) : null;
+    if (guardHold) return hold(action, guardHold);
+
     if (latest?.state === "prepared" && !sameRequest(latest, request, bodySha256)) {
       return hold(action, {
         kind: "approval_invalid",
@@ -355,7 +380,7 @@ export async function executeRun(job: ApplyJobInput, deps: ExecutorDeps): Promis
         actionId: action.id,
         planHash: job.planHash,
         operationKey: key,
-        attemptNo: (latest?.attemptNo ?? 0) + 1,
+        attemptNo: (prior.at(-1)?.attemptNo ?? 0) + 1,
         state: "prepared",
         request: {
           method: request.method,
@@ -373,6 +398,7 @@ export async function executeRun(job: ApplyJobInput, deps: ExecutorDeps): Promis
     }
     // Marked dispatched BEFORE the network call: a crash after this point is an unknown outcome.
     await journal.transition(attemptId, "prepared", "dispatched", { dispatchedAt: at() });
+    inFlightAttempt = attemptId;
 
     let result: DispatchResult;
     try {
@@ -480,7 +506,7 @@ export async function executeRun(job: ApplyJobInput, deps: ExecutorDeps): Promis
       ? "completed"
       : confirmed > 0
         ? "partial"
-        : error === null && outcomes.some((o) => o === "held" || o === "unknown_outcome")
+        : inFlightAttempt !== null || outcomes.some((o) => o === "held" || o === "unknown_outcome")
           ? "held"
           : "failed";
   await journal.appendEvent(job.runId, "run.finished", { state, error }).catch(() => {});

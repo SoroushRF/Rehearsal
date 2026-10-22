@@ -1,5 +1,12 @@
 import type { ApprovalGrant, PlanManifest, ReplayBundle } from "@rehearsal/contracts";
-import { type BillingPolicyV1, executeRun, operationKey, planHash } from "@rehearsal/core";
+import {
+  type BillingPolicyV1,
+  type ExecutorDeps,
+  executeRun,
+  operationKey,
+  type ProviderPort,
+  planHash,
+} from "@rehearsal/core";
 import {
   FakeClock,
   type FakeWorld,
@@ -45,7 +52,7 @@ function setup(bundle: ReplayBundle, grantOver: Partial<ApprovalGrant> = {}) {
   const world = worldFromManifest(manifest.observations);
   const journal = new MemoryJournal();
   let n = 0;
-  const deps = {
+  const deps: ExecutorDeps & { providers: Record<"stripe" | "zendesk", ProviderPort> } = {
     store,
     journal,
     clock,
@@ -320,6 +327,85 @@ describe("failures inside the executor", () => {
     const again = await s.run();
     expect(outcomes(again.receipts)).toMatchObject({ refund_001: "rejected" });
     expect(s.world.refunds.length).toBe(refunds);
+  });
+});
+
+describe("second-round review fixes", () => {
+  it("a failed event write after settling doesn't change the outcome", async () => {
+    const s = setup(happyPathBundle());
+    s.journal.failNextEvent = "step.receipt";
+    const result = await s.run();
+    expect(result.state).toBe("completed");
+    expect(outcomes(result.receipts)).toMatchObject({ refund_001: "confirmed" });
+  });
+
+  it("an error after dispatch labels the run held, not failed", async () => {
+    const s = setup(happyPathBundle());
+    s.journal.failNextSettle = true;
+    const result = await s.run();
+    expect(result.error).not.toBeNull();
+    expect(result.state).toBe("held");
+  });
+
+  it("a never-sent prepared attempt from revision 1 doesn't block a changed revision 2", async () => {
+    const s = setup(happyPathBundle());
+    s.journal.failNextTransitionTo = "dispatched";
+    const rev1 = await s.run();
+    expect(rev1.error).toMatch(/crash before dispatched/);
+    expect(s.world.refunds).toHaveLength(0);
+
+    const rev2 = addRevision(s, (m) => {
+      const refund = m.actions.find((a) => a.id === "refund_001");
+      if (refund?.kind === "stripe.refund.create") refund.args.amount.amountMinor = 4000;
+    });
+    const result = await rev2.run();
+    expect(outcomes(result.receipts)).toMatchObject({
+      refund_001: "confirmed",
+      note_001: "confirmed",
+    });
+    const refunds = s.world.refunds.filter((r) => r.charge === "ch_fixture_001");
+    expect(refunds.map((r) => r.amount)).toEqual([4000]);
+
+    // The send is credited to revision 2's hash, under a new attempt; revision 1's row stays unsent.
+    const attempts = [...s.journal.attempts.values()].filter((a) => a.actionId === "refund_001");
+    expect(
+      attempts.map((a) => [a.planHash === s.hash ? "rev1" : "rev2", a.state, a.attemptNo]),
+    ).toEqual([
+      ["rev1", "prepared", 1],
+      ["rev2", "confirmed", 2],
+    ]);
+  });
+
+  it("guards see confirmed receipts, including those from an earlier run of the same hash", async () => {
+    const s = setup(happyPathBundle());
+    s.deps.guard = async (action) =>
+      action.id === "note_002" ? { kind: "row_changed", observationId: "x", fields: ["y"] } : null;
+    const first = await s.run();
+    expect(outcomes(first.receipts)).toMatchObject({ note_002: "held" });
+
+    let seen: string[] = [];
+    s.deps.guard = async (action, ctx) => {
+      if (action.id === "note_002") seen = ctx.confirmedReceipts.map((r) => r.actionId);
+      return null;
+    };
+    const second = await s.run();
+    expect(outcomes(second.receipts)).toMatchObject({ note_002: "confirmed" });
+    expect(seen).toEqual(expect.arrayContaining(["refund_001", "patch_002", "refund_002"]));
+  });
+
+  it("guards don't run for effects adopted from an earlier revision", async () => {
+    const s = setup(happyPathBundle());
+    await s.run();
+    s.deps.guard = async () => ({ kind: "row_changed", observationId: "x", fields: ["y"] });
+    const rev2 = await addRevision(s).run();
+    expect(rev2.state).toBe("completed");
+  });
+
+  it("refuses a grant whose timestamps can't be read", async () => {
+    const s = setup(happyPathBundle(), { expiresAt: "not-a-date" });
+    const result = await s.run();
+    expect(result.refusal).toMatch(/unreadable/);
+    expect(s.world.effects).toEqual([]);
   });
 });
 

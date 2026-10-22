@@ -43,6 +43,10 @@ export class MemoryJournal implements JournalPort {
     patch: Partial<Pick<Attempt, "providerStatus" | "error" | "dispatchedAt" | "settledAt">> = {},
   ): Promise<Attempt> {
     if (!LEGAL[from].includes(to)) throw new Error(`illegal attempt transition ${from} -> ${to}`);
+    if (this.failNextTransitionTo === to) {
+      this.failNextTransitionTo = null;
+      throw new Error(`crash before ${to} (injected)`);
+    }
     const current = this.attempts.get(attemptId);
     if (current?.state !== from) throw new Error(`attempt ${attemptId} is not in state ${from}`);
     const next = { ...current, ...patch, state: to };
@@ -66,6 +70,10 @@ export class MemoryJournal implements JournalPort {
 
   /** Set to make the next `settle` throw before writing anything (a crash mid-settle). */
   failNextSettle = false;
+  /** Set to make the next transition into this state throw (a crash just before it). */
+  failNextTransitionTo: AttemptState | null = null;
+  /** Set to make the next event of this type fail to write. */
+  failNextEvent: string | null = null;
 
   async settle(step: SettleStep): Promise<void> {
     if (this.failNextSettle) {
@@ -95,6 +103,10 @@ export class MemoryJournal implements JournalPort {
     this.receipts.push(structuredClone(receipt));
   }
 
+  async receiptsFor(planHash: string): Promise<Receipt[]> {
+    return this.receipts.filter((r) => r.planHash === planHash).map((r) => structuredClone(r));
+  }
+
   async bind(binding: ObjectBinding): Promise<void> {
     const key = `${binding.planHash}:${binding.ref.stepId}:${binding.ref.path}`;
     const existing = this.#bindings.get(key);
@@ -109,6 +121,10 @@ export class MemoryJournal implements JournalPort {
   }
 
   async appendEvent(runId: string, type: string, payload: unknown): Promise<RunEvent> {
+    if (this.failNextEvent === type) {
+      this.failNextEvent = null;
+      throw new Error("event write failed (injected)");
+    }
     const event = {
       seq: this.events.length + 1,
       runId,

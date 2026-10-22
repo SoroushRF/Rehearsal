@@ -95,6 +95,8 @@ export interface JournalPort {
    */
   settle(step: SettleStep): Promise<void>;
   recordReceipt(receipt: Receipt): Promise<void>;
+  /** Receipts recorded for one plan hash, oldest first. */
+  receiptsFor(planHash: string): Promise<Receipt[]>;
   bind(binding: ObjectBinding): Promise<void>;
   bindings(planHash: string): Promise<ObjectBinding[]>;
   appendEvent(runId: string, type: string, payload: unknown): Promise<RunEvent>;
