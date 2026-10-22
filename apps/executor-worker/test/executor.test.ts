@@ -13,6 +13,7 @@ import {
   happyPathBundle,
   MemoryApplyStore,
   MemoryJournal,
+  unknownOutcomeBundle,
   worldFromManifest,
 } from "@rehearsal/testkit";
 import { describe, expect, it } from "vitest";
@@ -237,9 +238,16 @@ describe("partial outcomes are honest", () => {
       note_001: "skipped_dependency",
     });
 
-    // Restart: the same job runs again with the same journal. The refund must not be issued twice.
+    // Restart: the same job runs again with the same journal. A read finds the refund the lost
+    // response created, so it is confirmed without a second send, and its note follows.
     const second = await s.run();
-    expect(outcomes(second.receipts)).toMatchObject({ refund_001: "held" });
+    expect(outcomes(second.receipts)).toMatchObject({
+      refund_001: "confirmed",
+      note_001: "confirmed",
+    });
+    expect(second.receipts.find((r) => r.actionId === "refund_001")?.limitations.join(" ")).toMatch(
+      /found by reading the provider; not re-sent/,
+    );
     expect(s.world.refunds.filter((r) => r.charge === "ch_fixture_001")).toHaveLength(1);
   });
 });
@@ -306,10 +314,11 @@ describe("failures inside the executor", () => {
     expect(first.error).toMatch(/journal unavailable/);
     expect(s.journal.events.at(-1)?.type).toBe("run.finished");
 
+    // Restart: the refund was applied before the crash; a read finds it, nothing is re-sent.
     const second = await s.run();
     expect(outcomes(second.receipts)).toMatchObject({
-      refund_001: "held",
-      note_001: "skipped_dependency",
+      refund_001: "confirmed",
+      note_001: "confirmed",
     });
     expect(s.world.refunds.filter((r) => r.charge === "ch_fixture_001")).toHaveLength(1);
   });
@@ -768,9 +777,9 @@ describe("retries (T3.4)", () => {
       expect(s.world.refunds.filter((r) => r.charge === "ch_fixture_001")).toHaveLength(1);
       expect(outcomes(result.receipts)).toMatchObject({ note_001: "skipped_dependency" });
 
-      // A later run holds it too: never re-sent past an unknown outcome.
+      // A later run reconciles by reading: the lost send did apply, so it is confirmed, not re-sent.
       const again = await s.run();
-      expect(outcomes(again.receipts)).toMatchObject({ refund_001: "held" });
+      expect(outcomes(again.receipts)).toMatchObject({ refund_001: "confirmed" });
       expect(s.world.refunds.filter((r) => r.charge === "ch_fixture_001")).toHaveLength(1);
     },
   );
@@ -808,6 +817,170 @@ describe("retries (T3.4)", () => {
     expect(outcomes(result.receipts)).toMatchObject({ note_001: "unknown_outcome" });
     expect(s.sleeps).toEqual([]);
     expect(s.world.tickets.get("5531")?.comments).toHaveLength(1);
+  });
+});
+
+describe("reconcile through reads (T3.5)", () => {
+  const advance = (s: ReturnType<typeof setup>, ms: number) =>
+    (s.deps.clock as FakeClock).advance(ms);
+  const states = async (s: ReturnType<typeof setup>, actionId: string) =>
+    (await s.journal.attemptsFor(s.hash, actionId)).map((a) => [a.state, a.providerStatus]);
+  /** Drop the response of the first Zendesk write whose body matches, after it applied (or not). */
+  function dropZendesk(s: ReturnType<typeof setup>, match: string, applied = true) {
+    const zendesk = s.deps.providers.zendesk;
+    let done = false;
+    s.deps.providers.zendesk = {
+      ...zendesk,
+      dispatch: async (req, ctx) => {
+        if (done || !req.body.includes(match)) return zendesk.dispatch(req, ctx);
+        done = true;
+        if (applied) await zendesk.dispatch(req, ctx);
+        return { kind: "unknown", error: "response lost (injected)" };
+      },
+    };
+  }
+
+  it("the unknown-outcome bundle passes with a restart: exactly one refund, every step confirmed", async () => {
+    const bundle = unknownOutcomeBundle();
+    const s = setup(bundle);
+    s.deps.retry = { maxAttempts: 1 }; // the process "dies" before any in-run replay
+    s.world.fault("/v1/refunds", { kind: "drop_response_after_commit" });
+    const first = await s.run();
+    expect(outcomes(first.receipts)).toMatchObject({ refund_001: "unknown_outcome" });
+
+    const second = await s.run(); // restart: same journal, same world
+    expect(second.state).toBe("completed");
+    const all = Object.fromEntries(
+      s.journal.receipts
+        .filter((r) => r.outcome === "confirmed")
+        .map((r) => [r.actionId, r.outcome]),
+    );
+    expect(all).toEqual(Object.fromEntries(bundle.expected.map((e) => [e.actionId, e.outcome])));
+    expect(s.world.refunds.filter((r) => r.charge === "ch_fixture_001")).toHaveLength(1);
+    expect(await states(s, "refund_001")).toEqual([["reconciled", null]]);
+    const refund = s.world.refunds.find((r) => r.charge === "ch_fixture_001");
+    expect(s.world.tickets.get("5531")?.comments.at(-1)?.body).toContain(refund?.id);
+  });
+
+  it("a crash right after dispatch (attempt left dispatched) is reconciled on restart", async () => {
+    const s = setup(happyPathBundle());
+    s.journal.failNextSettle = true; // the refund applies, then the process dies before settling
+    await s.run();
+    expect(await states(s, "refund_001")).toEqual([["dispatched", null]]);
+    const second = await s.run();
+    expect(outcomes(second.receipts)).toMatchObject({
+      refund_001: "confirmed",
+      note_001: "confirmed",
+    });
+    expect(await states(s, "refund_001")).toEqual([["reconciled", null]]);
+    expect(s.world.refunds.filter((r) => r.charge === "ch_fixture_001")).toHaveLength(1);
+  });
+
+  it("a read showing the send never landed re-sends once the window has passed", async () => {
+    const s = setup(happyPathBundle());
+    s.deps.retry = { maxAttempts: 1 };
+    s.world.fault("/v1/refunds", { kind: "server_error" }); // no effect, outcome unknown
+    await s.run();
+    advance(s, 61_000);
+    const second = await s.run();
+    expect(outcomes(second.receipts)).toMatchObject({ refund_001: "confirmed" });
+    expect(await states(s, "refund_001")).toEqual([
+      ["rejected", null],
+      ["confirmed", 200],
+    ]);
+    expect(s.world.refunds.filter((r) => r.charge === "ch_fixture_001")).toHaveLength(1);
+  });
+
+  it("doesn't trust 'not applied' while the send is recent (it could still land)", async () => {
+    const s = setup(happyPathBundle());
+    s.deps.retry = { maxAttempts: 1 };
+    s.world.fault("/v1/refunds", { kind: "server_error" });
+    await s.run();
+    advance(s, 5_000);
+    const second = await s.run();
+    expect(outcomes(second.receipts)).toMatchObject({ refund_001: "held" });
+    expect(s.world.refunds.filter((r) => r.charge === "ch_fixture_001")).toHaveLength(0);
+  });
+
+  it("finds a lost note by its operation marker and never appends it twice", async () => {
+    const s = setup(happyPathBundle());
+    dropZendesk(s, '"comment"');
+    const first = await s.run();
+    expect(outcomes(first.receipts)).toMatchObject({ note_001: "unknown_outcome" });
+    const second = await s.run();
+    expect(outcomes(second.receipts)).toMatchObject({ note_001: "confirmed" });
+    expect(s.world.tickets.get("5531")?.comments).toHaveLength(1);
+  });
+
+  it("re-sends a note that never landed, once, after the window", async () => {
+    const s = setup(happyPathBundle());
+    dropZendesk(s, '"comment"', false);
+    await s.run();
+    advance(s, 61_000);
+    const second = await s.run();
+    expect(outcomes(second.receipts)).toMatchObject({ note_001: "confirmed" });
+    expect(s.world.tickets.get("5531")?.comments).toHaveLength(1);
+  });
+
+  it("reconciles a lost patch by its fields", async () => {
+    const s = setup(happyPathBundle());
+    dropZendesk(s, '"safe_update"');
+    await s.run();
+    const second = await s.run();
+    expect(outcomes(second.receipts)).toMatchObject({ patch_001: "confirmed" });
+    expect(s.world.tickets.get("5531")?.priority).toBe("high");
+  });
+
+  it("holds a patch it can't tell apart: not ours, and the ticket moved since our read", async () => {
+    const s = setup(happyPathBundle());
+    dropZendesk(s, '"safe_update"', false);
+    await s.run();
+    s.world.teammateEdit("5531", "priority", "urgent");
+    advance(s, 61_000);
+    const second = await s.run();
+    expect(outcomes(second.receipts)).toMatchObject({ patch_001: "held" });
+    expect(s.world.tickets.get("5531")?.priority).toBe("urgent");
+  });
+
+  it("a failing reconcile read holds the step", async () => {
+    const s = setup(happyPathBundle());
+    s.deps.retry = { maxAttempts: 1 };
+    s.world.fault("/v1/refunds", { kind: "drop_response_after_commit" });
+    await s.run();
+    s.deps.providers.stripe = {
+      ...s.deps.providers.stripe,
+      reconcile: async () => {
+        throw new Error("read timed out");
+      },
+    };
+    const second = await s.run();
+    expect(outcomes(second.receipts)).toMatchObject({ refund_001: "held" });
+    expect(s.world.refunds.filter((r) => r.charge === "ch_fixture_001")).toHaveLength(1);
+  });
+
+  it("writes an in-run replay's reconciled marks in the same atomic settle", async () => {
+    const s = setup(happyPathBundle());
+    s.world.fault("/v1/refunds", { kind: "server_error" });
+    let n = 0;
+    const settle = s.journal.settle.bind(s.journal);
+    s.journal.settle = async (step) => {
+      if (step.receipt.actionId === "refund_001" && n++ === 0)
+        throw new Error("journal down (injected)");
+      return settle(step);
+    };
+    await s.run();
+    // Nothing of the failed settle landed: the first send is still unknown, not "reconciled".
+    expect(await states(s, "refund_001")).toEqual([
+      ["unknown_outcome", null],
+      ["dispatched", null],
+    ]);
+    const second = await s.run();
+    expect(outcomes(second.receipts)).toMatchObject({ refund_001: "confirmed" });
+    expect(await states(s, "refund_001")).toEqual([
+      ["reconciled", null],
+      ["reconciled", null],
+    ]);
+    expect(s.world.refunds.filter((r) => r.charge === "ch_fixture_001")).toHaveLength(1);
   });
 });
 

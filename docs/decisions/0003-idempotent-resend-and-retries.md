@@ -25,3 +25,15 @@ AGENTS.md says an unknown outcome "is reconciled through reads, never blindly re
 - A lost refund response is usually resolved within the run. The `unknown-outcome` bundle still needs T3.5 for the crash-and-restart case.
 - Real Stripe also caches a request's 500 under its key and replays it. On real Stripe, then, the re-send resolves lost responses and transport errors, not genuine 500s. Era's injected faults fire before the handler and are not cached.
 - The replay depends on the provider keeping the key. Real Stripe keeps keys for a limited time, and an Era tenant reset clears the cache, so never reset a world that is applying.
+
+## Addendum (T3.5): reconcile through reads
+
+- **What the states mean:**
+  - `reconciled` means a read **found** the effect. The executor treats it like `confirmed`.
+  - `rejected` with no `providerStatus` means a read showed the send **never happened**. The step may then be sent again.
+- **When "not applied" is trusted:** a request can still land after a read that missed it. "Not applied" is trusted only once the unknown send is older than `ExecutorDeps.reconcileAfterMs`, which defaults to 60 s. A more recent send is held.
+- **How each write is reconciled:**
+  - **Stripe refunds:** matched by `metadata.rehearsal_op`, paging through all of the charge's refunds.
+  - **Zendesk notes:** matched by their operation marker, across every page of comments.
+  - **Zendesk patches:** applied if the ticket holds our values. Not applied only if its `updated_at` still equals the stamp we sent. Anything else is indeterminate and held, because we can't tell whose write won.
+- **Atomicity:** the in-run replay's `reconciled` marks are now written in the same atomic settle as the confirmed receipt.
