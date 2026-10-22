@@ -36,7 +36,6 @@
 | T2.7 | Two-minute video script, recording, Devpost page | M4–M5 | Submitted | #16 | T2.6 |
 | T2.8 | _Stretch:_ thin Expo approver app on the same API | after M4 | Only if everything else is frozen | #17 | T2.4 |
 | T2.9 | Decide currency: align `policy.v1.json` with the Era seed (USD vs CAD) and record it in `docs/decisions/` | M2 | Decision merged; policy and seed agree | #40 | — |
-| T2.10 | Restrict SPA fallback to HTML navigation | M3 | **Done:** command/internal routes return 404 with built assets; CI tests after web build | #59 | — |
 
 ## Decisions
 

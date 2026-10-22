@@ -8,6 +8,7 @@ import {
   type ProviderPort,
   type ReconcileResult,
   type ResolvedBindings,
+  refundEffectMatches,
   type WorldContext,
 } from "@rehearsal/core";
 import { z } from "zod";
@@ -190,15 +191,34 @@ export function stripeWriter(target: WriteTarget): ProviderWriter {
         for (const refund of list.data) seen.add(refund.id);
         const refund = list.data.find((r) => r.metadata?.rehearsal_op === attempt.operationKey);
         if (refund) {
+          const effect = {
+            "refund.id": refund.id,
+            "refund.status": refund.status,
+            "refund.amount": refund.amount,
+            charge: refund.charge,
+            currency: refund.currency,
+          };
+          // A changed revision may be reconciling older content: correlate to the bytes
+          // that were actually dispatched, then let the executor compare revisions.
+          const sent = new URLSearchParams(attempt.request.body);
+          const original = {
+            ...action,
+            args: {
+              ...action.args,
+              chargeId: sent.get("charge") ?? "",
+              amount: { ...action.args.amount, amountMinor: Number(sent.get("amount")) },
+            },
+          };
+          if (!refundEffectMatches(original, effect)) {
+            return {
+              kind: "indeterminate",
+              detail: "refund read contradicts the journaled operation",
+            };
+          }
           return {
             kind: "applied",
             providerRef: { vendor: "stripe", kind: "refund", id: refund.id },
-            effect: {
-              "refund.id": refund.id,
-              "refund.status": refund.status,
-              "refund.amount": refund.amount,
-              charge: refund.charge,
-            },
+            effect,
           };
         }
         const last = list.data.at(-1);
