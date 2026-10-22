@@ -48,6 +48,22 @@ _(add dated entries)_
 
 _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
 
+- **2026-10-22, Artin (T3.6).** Branch `t3/T3.6-cancel-reaper`.
+  - **Cancellation:**
+    - `requestCancel` and `POST /api/runs/:id/cancel` move an `approved` or `applying` run to `cancelled`.
+    - The executor checks `ApplyStore.runCancelled` before admission, before every step and before every send, retries included. It stops there and the run ends `cancelled`.
+    - Receipts keep every effect that did happen; nothing is rolled back. An earlier send whose outcome is unknown stays `unknown_outcome` and is never re-sent.
+    - **A cancelled run still owes a read-only reconcile.** If a send was left in flight (the worker died after dispatch), the job's next delivery, or the reaper, which also picks up cancelled runs with in-flight attempts, runs a reconcile-only pass. It resolves those attempts by reading and writes their receipts. It never sends, and the run stays `cancelled`. A read that finds nothing never closes the attempt, because no replay will follow; it holds once and isn't re-held by later passes. The reaper retries that pass for 24 hours after the send.
+    - The 202 means cancel *requested*: a send already on the wire, or one in the brief window after the last check, still lands and gets its receipt.
+  - **Lock before admission:** the plan lock is taken before admission. A stale or overlapping delivery gets `PLAN_LOCKED` (so it retries and the run stays `applying`) instead of a refusal like "grant expired" that would mark a running run `failed`.
+  - **Reaper:** `reapStuckRuns` re-enqueues runs left `approved` or `applying` with no live pg-boss job (`created`, `retry` or `active`) for 10 minutes. The worker sweeps every 60 s, and a transaction advisory lock lets only one reaper act at a time.
+  - **ID divergence:** `id-divergence.test.ts` on Era rehearses the refund in the planning world, then advances the operational world's ID counter. The note carries the operational refund ID, never the rehearsed one.
+  - **Next:** T3.7 (bounded concurrency).
+  - **Gotchas:**
+    - A cancel can't interrupt a send already on the wire.
+    - The cancel route uses the same placeholder auth as apply, until T2.3.
+    - `retries.test.ts` "throttled refund" has a known, rare flake on the shared Era container (also noted in #68).
+
 - **2026-10-22, Artin (worker wiring).** Branch `t3/worker-wiring`. The executor worker now consumes `apply` jobs:
   - **`handleApplyJob`** (`apps/executor-worker/src/worker.ts`):
     - Re-validates the payload.

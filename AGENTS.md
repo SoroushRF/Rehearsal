@@ -80,7 +80,7 @@ Work is split into **feature tracks**, not frontend/backend. Each track owns one
 | Track | Current owner | Since |
 |---|---|---|
 | T1 Rehearse | @SoroushRF | 2026-10-20 |
-| T2 Review & Approve | _TBD_ | |
+| T2 Review & Approve | @parsaabbasian | 2026-10-22 |
 | T3 Apply | @ArtinMe | 2026-10-21 |
 | T4 Guard | @skhdemo | 2026-10-21 |
 | Integrator of the day | _rotates daily_ | |
