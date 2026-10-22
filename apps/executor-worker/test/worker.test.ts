@@ -147,7 +147,7 @@ describe.skipIf(!process.env.DB_TESTS)(
       expect(await runState(r.runId)).toBe("completed");
     });
 
-    it("defers when another run of the plan holds the lock, leaving the run approved", async () => {
+    it("defers when another run of the plan holds the lock, leaving the run applying", async () => {
       const r = await approvedRun();
       const ctx = contextFor(r.world);
       const release = await new PgApplyStore(createDb(url)).lockPlan(r.orgId, r.planId);
@@ -160,7 +160,7 @@ describe.skipIf(!process.env.DB_TESTS)(
           planHash: r.hash,
         };
         await expect(handleApplyJob(data, ctx)).rejects.toBeInstanceOf(RetryLater);
-        expect(await runState(r.runId)).toBe("approved");
+        expect(await runState(r.runId)).toBe("applying");
         expect(r.world.effects).toEqual([]);
       } finally {
         await release?.();
@@ -180,6 +180,88 @@ describe.skipIf(!process.env.DB_TESTS)(
       expect(stateOf(await handleApplyJob(data, contextFor(r.world)))).toBe("partial");
       expect(await runState(r.runId)).toBe("partial");
     });
+
+    /** Pause the first delivery mid-dispatch (after a refund was sent) until released. */
+
+    function pausedContext(world: FakeWorld) {
+      const ctx = contextFor(world);
+
+      const stripe = world.provider("stripe");
+
+      let release: () => void = () => {};
+
+      const gate = new Promise<void>((r) => {
+        release = r;
+      });
+
+      let reached: () => void = () => {};
+
+      const paused = new Promise<void>((r) => {
+        reached = r;
+      });
+
+      let first = true;
+
+      const providers = {
+        ...ctx.providers,
+
+        stripe: {
+          ...stripe,
+
+          dispatch: async (
+            req: Parameters<typeof stripe.dispatch>[0],
+            c: Parameters<typeof stripe.dispatch>[1],
+          ) => {
+            const res = await stripe.dispatch(req, c);
+
+            if (first) {
+              first = false;
+
+              reached();
+
+              await gate;
+            }
+
+            return res;
+          },
+        },
+      };
+
+      return { ctx: { ...ctx, providers }, paused, release: () => release() };
+    }
+
+    it.each([
+      ["a normal retry", undefined],
+
+      ["the last retry", { retryCount: 50, retryLimit: 50 }],
+    ] as const)(
+      "an overlapping redelivery on %s never overwrites the running delivery's outcome",
+
+      async (_label, attempt) => {
+        const r = await approvedRun();
+
+        const { ctx, paused, release } = pausedContext(r.world);
+
+        const a = handleApplyJob(jobOf(r), ctx); // holds the plan lock, paused after its first refund
+
+        await paused;
+
+        const b = handleApplyJob(jobOf(r), contextFor(r.world), attempt);
+
+        if (attempt) await b;
+        else await expect(b).rejects.toBeInstanceOf(RetryLater);
+
+        expect(await runState(r.runId)).toBe(attempt ? "failed" : "applying");
+
+        release();
+
+        expect(stateOf(await a)).toBe("completed");
+
+        expect(await runState(r.runId)).toBe("completed");
+
+        expect(r.world.refunds).toHaveLength(2);
+      },
+    );
 
     it("skips a malformed job payload without retrying or touching anything", async () => {
       const r = await approvedRun();

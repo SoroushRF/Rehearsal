@@ -74,7 +74,11 @@ export async function handleApplyJob(
   }
 
   const lastTry = attempt !== undefined && attempt.retryCount >= attempt.retryLimit;
-  const giveUp = () => store.transitionRun(job.orgId, job.runId, ["applying"], "failed");
+  const giveUp = async () => {
+    if (!(await store.transitionRun(job.orgId, job.runId, ["applying"], "failed"))) {
+      console.error(`run ${job.runId}: last retry, but it is no longer applying; left as is`);
+    }
+  };
 
   let outcome: RunOutcome;
   try {
@@ -96,14 +100,27 @@ export async function handleApplyJob(
   }
 
   if (outcome.refusal === PLAN_LOCKED) {
-    // Another revision of this plan is applying. Nothing happened here.
+    // The plan's lock is held: by another revision, or by an earlier delivery of this same job
+    // that is still running. Nothing happened here, and the run stays `applying` so the holder's
+    // final write still lands. On the last try, mark it failed so a new apply can pick it up;
+    // a holder that does finish this run still records its real outcome over that.
     if (lastTry) {
       await giveUp();
       return { kind: "ran", outcome: { ...outcome, state: "failed" } };
     }
-    await store.transitionRun(job.orgId, job.runId, ["applying"], "approved");
     throw new RetryLater(PLAN_LOCKED);
   }
-  await store.transitionRun(job.orgId, job.runId, ["applying"], outcome.state);
+  // This delivery held the lock and ran: its outcome is the truth, even over an overlapping
+  // delivery's last-try "failed". A cancelled or newer state is never overwritten.
+  const written = await store.transitionRun(
+    job.orgId,
+    job.runId,
+    ["applying", "failed"],
+    outcome.state,
+  );
+  if (!written) {
+    const now = await store.runState(job.orgId, job.runId);
+    console.error(`run ${job.runId} finished ${outcome.state} but is ${now}; state not written`);
+  }
   return { kind: "ran", outcome };
 }

@@ -1,4 +1,4 @@
-import { APPLY_QUEUE, APPLY_QUEUE_OPTIONS, createDb, startQueue } from "@rehearsal/db";
+import { APPLY_QUEUE, createDb, startQueue } from "@rehearsal/db";
 import {
   primeTokens,
   stripeReader,
@@ -58,11 +58,12 @@ const ctx: WorkerContext = {
 
 const boss = await startQueue();
 // One job at a time per worker: a run holds its plan's lock, and runs of one plan serialize anyway.
-await boss.work(APPLY_QUEUE, { batchSize: 1 }, async ([job]) => {
+await boss.work(APPLY_QUEUE, { batchSize: 1, includeMetadata: true }, async ([job]) => {
   if (!job) return;
+  // The job's own stored limit, not today's queue setting: queued jobs keep the limit they had.
   const result = await handleApplyJob(job.data, ctx, {
     retryCount: job.retryCount,
-    retryLimit: APPLY_QUEUE_OPTIONS.retryLimit,
+    retryLimit: job.retryLimit,
   });
   console.log(
     result.kind === "skipped"
