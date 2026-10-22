@@ -6,7 +6,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 
 ## Top blockers
 
-15 of 34 tasks done. These open tasks hold up the most other work:
+16 of 35 tasks done. These open tasks hold up the most other work:
 
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
@@ -33,6 +33,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T1.8** SurrealDB precedents (explicit promotion, recall with trace) _(stretch)_ [#9](https://github.com/SoroushRF/Rehearsal/issues/9) | 🟥 blocked | T1.5 (T1, blocked) |  |
 | **T1.9** Signed Era tenant tokens in both workers [#39](https://github.com/SoroushRF/Rehearsal/issues/39) | ✅ done |  | T1.2, T1.5, T3.3 (T3), T4.3 (T4) |
 | **T1.10** Bind duplicate refunds to invoice identity and retain a paid anchor [#61](https://github.com/SoroushRF/Rehearsal/issues/61) | ✅ done |  |  |
+| **T1.11** Verify customer ownership before proposing ticket changes [#63](https://github.com/SoroushRF/Rehearsal/issues/63) | ✅ done |  |  |
 
 ## T2 Review & Approve
 
@@ -99,6 +100,7 @@ flowchart LR
     T1_6["T1.6 ~20 benign and trap tasks plus baselines fo"]:::blocked
     T1_9["T1.9 Signed Era tenant tokens in both workers"]:::done
     T1_10["T1.10 Bind duplicate refunds to invoice identity"]:::done
+    T1_11["T1.11 Verify customer ownership before proposing"]:::done
   end
   subgraph T2[T2 Review & Approve]
     T2_1["T2.1 Plan diff view from fixture bundles"]:::ready
