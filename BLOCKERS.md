@@ -11,7 +11,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
 | **T1.3** Read adapters: charges, tickets and query predicates [#4](https://github.com/SoroushRF/Rehearsal/issues/4) | _TBD_ | 🟨 ready | 8 |
-| **T1.9** Signed Era tenant tokens in both workers [#39](https://github.com/SoroushRF/Rehearsal/issues/39) | _TBD_ | 👀 in review | 6 |
+| **T1.9** Signed Era tenant tokens in both workers [#39](https://github.com/SoroushRF/Rehearsal/issues/39) | _TBD_ | 🟨 ready | 6 |
 | **T1.2** Seed the incident cohort into both worlds, plus demo:reset [#3](https://github.com/SoroushRF/Rehearsal/issues/3) | _TBD_ | 🟥 blocked | 5 |
 | **T1.4** Typed planning tools that record evidence and dependency edges [#5](https://github.com/SoroushRF/Rehearsal/issues/5) | _TBD_ | 🟥 blocked | 5 |
 | **T2.9** Decide currency: align policy.v1.json with the Era seed (USD vs CAD) [#40](https://github.com/SoroushRF/Rehearsal/issues/40) | _TBD_ | 🟨 ready | 5 |
@@ -24,14 +24,14 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | Task | Status | Blocked by | Blocks |
 |---|---|---|---|
 | **T1.1** Era day-one gate: conformance tests and capability matrix [#2](https://github.com/SoroushRF/Rehearsal/issues/2) | ✅ done |  | T1.2, T1.3, T1.9 |
-| **T1.2** Seed the incident cohort into both worlds, plus demo:reset [#3](https://github.com/SoroushRF/Rehearsal/issues/3) | 🟥 blocked | T1.9 (T1, in review) | T1.5 |
+| **T1.2** Seed the incident cohort into both worlds, plus demo:reset [#3](https://github.com/SoroushRF/Rehearsal/issues/3) | 🟥 blocked | T1.9 (T1, ready) | T1.5 |
 | **T1.3** Read adapters: charges, tickets and query predicates [#4](https://github.com/SoroushRF/Rehearsal/issues/4) | 🟨 ready | — | T1.4, T4.3 (T4) |
 | **T1.4** Typed planning tools that record evidence and dependency edges [#5](https://github.com/SoroushRF/Rehearsal/issues/5) | 🟥 blocked | T1.3 (T1, ready) | T1.5 |
-| **T1.5** Bounded Claude tool loop and planner-worker plan jobs [#6](https://github.com/SoroushRF/Rehearsal/issues/6) | 🟥 blocked | T1.2 (T1, blocked)<br>T1.4 (T1, blocked)<br>T1.9 (T1, in review)<br>T2.9 (T2, ready) | T1.6, T1.7, T1.8, T2.5 (T2) |
+| **T1.5** Bounded Claude tool loop and planner-worker plan jobs [#6](https://github.com/SoroushRF/Rehearsal/issues/6) | 🟥 blocked | T1.2 (T1, blocked)<br>T1.4 (T1, blocked)<br>T1.9 (T1, ready)<br>T2.9 (T2, ready) | T1.6, T1.7, T1.8, T2.5 (T2) |
 | **T1.6** ~20 benign and trap tasks plus baselines for the scorecard [#7](https://github.com/SoroushRF/Rehearsal/issues/7) | 🟥 blocked | T1.5 (T1, blocked) |  |
 | **T1.7** Slack summary step (slack.message.postSummary) _(stretch)_ [#8](https://github.com/SoroushRF/Rehearsal/issues/8) | 🟥 blocked | T1.5 (T1, blocked) |  |
 | **T1.8** SurrealDB precedents (explicit promotion, recall with trace) _(stretch)_ [#9](https://github.com/SoroushRF/Rehearsal/issues/9) | 🟥 blocked | T1.5 (T1, blocked) |  |
-| **T1.9** Signed Era tenant tokens in both workers [#39](https://github.com/SoroushRF/Rehearsal/issues/39) | 👀 in review [PR #46](https://github.com/SoroushRF/Rehearsal/pull/46) | — | T1.2, T1.5, T3.3 (T3) |
+| **T1.9** Signed Era tenant tokens in both workers [#39](https://github.com/SoroushRF/Rehearsal/issues/39) | 🟨 ready | — | T1.2, T1.5, T3.3 (T3) |
 
 ## T2 Review & Approve
 
@@ -95,7 +95,7 @@ flowchart LR
     T1_4["T1.4 Typed planning tools that record evidence a"]:::blocked
     T1_5["T1.5 Bounded Claude tool loop and planner-worker"]:::blocked
     T1_6["T1.6 ~20 benign and trap tasks plus baselines fo"]:::blocked
-    T1_9["T1.9 Signed Era tenant tokens in both workers"]:::review
+    T1_9["T1.9 Signed Era tenant tokens in both workers"]:::ready
   end
   subgraph T2[T2 Review & Approve]
     T2_1["T2.1 Plan diff view from fixture bundles"]:::ready
