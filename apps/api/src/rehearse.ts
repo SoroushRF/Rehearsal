@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { PlanManifest } from "@rehearsal/contracts";
-import { validateGraph } from "@rehearsal/core";
+import { planHash, validateGraph } from "@rehearsal/core";
 import { type Db, type PgBoss, PLAN_QUEUE } from "@rehearsal/db";
 import { PLANNER_JOB_ROUTES, PlanJob } from "@rehearsal/providers";
 import type { FastifyInstance, FastifyReply } from "fastify";
@@ -138,10 +138,12 @@ export function registerRehearseRoutes(app: FastifyInstance, deps: RehearseDeps)
     let stored = await storePlan(deps.db, m);
     if (!stored) {
       // A repeat of a completion that stored but didn't finish the job is fine; anything else isn't.
+      // Compare canonical hashes: JSONB doesn't keep key order, so the stored copy reads back
+      // reordered. loadPlan has already checked the stored row against its own hash.
       const existing = await loadPlan(deps.db, m.orgId, m.planId, 1);
-      const same =
-        existing.kind === "found" && JSON.stringify(existing.plan.manifest) === JSON.stringify(m);
-      if (!same || existing.kind !== "found") return refuse("plan ID already holds another plan");
+      if (existing.kind !== "found" || existing.plan.planHash !== planHash(m)) {
+        return refuse("plan ID already holds another plan");
+      }
       stored = { planHash: existing.plan.planHash };
     }
     await deps.boss.complete(PLAN_QUEUE, found.job.id, {
