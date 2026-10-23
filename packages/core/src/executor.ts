@@ -478,11 +478,19 @@ async function applyLocked(
   const confirmedByAction = new Map<string, Receipt>();
   /** Attempts this hash already holds as unresolved; a reconcile-only pass doesn't re-hold them. */
   const heldUnresolved = new Set<string>();
-  /** Actions this hash already recorded as undone; their forward write is no longer on record. */
-  const compensatedHere = new Set<string>();
+  /**
+   * The compensation result this hash already recorded per action: any receipt after the action's
+   * confirmed one, or one copied from an undo. Final for this hash; never settled again.
+   */
+  const compensationHere = new Map<string, Receipt>();
   for (const r of await journal.receiptsFor(job.planHash)) {
     if (r.outcome === "confirmed") confirmedByAction.set(r.actionId, r);
-    if (r.outcome === "compensated") compensatedHere.add(r.actionId);
+    else if (
+      confirmedByAction.has(r.actionId) ||
+      typeof r.observedEffect.undoAttemptId === "string"
+    ) {
+      compensationHere.set(r.actionId, r);
+    }
     if (r.outcome === "held" && r.holdReason?.kind === "unresolved_outcome") {
       heldUnresolved.add(r.holdReason.attemptId);
     }
@@ -693,31 +701,57 @@ async function applyLocked(
     return "settled";
   }
 
-  /** A confirmed undo of this patch under any revision: our write is no longer on the ticket. */
-  const undoneBy = async (action: Action) =>
+  /** The latest undo of this patch ever sent, under any revision. A prepared row had no effect. */
+  const sentUndo = async (action: Action) =>
     action.kind === "zendesk.ticket.patchFields"
-      ? (await journal.attemptsForKey(undoKey(job.orgId, job.planId, action))).find(
-          (a) => a.state === "confirmed",
-        )
+      ? (await journal.attemptsForKey(undoKey(job.orgId, job.planId, action)))
+          .filter((a) => a.state !== "prepared")
+          .at(-1)
       : undefined;
-  const settleUndone = (action: Action, undo: Attempt) =>
-    settle(
+  /**
+   * Our write may no longer be on the ticket, so the forward patch is never adopted as confirmed.
+   * An unsettled undo holds the step; a settled one copies the receipt compensation wrote for it.
+   */
+  const settleFromUndo = async (action: Action, undo: Attempt) => {
+    const pointer = { undoAttemptId: undo.id };
+    const prior =
+      undo.state === "confirmed" || undo.state === "rejected"
+        ? (await journal.receiptsFor(undo.planHash)).filter((r) => r.actionId === action.id).at(-1)
+        : undefined;
+    if (!prior || prior.outcome === "confirmed") {
+      return settle(
+        action,
+        receiptFor(action, "held", {
+          holdReason: { kind: "unresolved_outcome", attemptId: undo.id },
+          observedEffect: pointer,
+          limitations: ["an undo of this patch has no settled outcome; not adopted"],
+        }),
+      );
+    }
+    return settle(
       action,
-      receiptFor(action, "compensated", {
-        providerRef: targetOf(action),
-        limitations: [`undone by attempt ${undo.id} under plan hash ${undo.planHash}; not re-sent`],
+      receiptFor(action, prior.outcome, {
+        providerRef: prior.providerRef,
+        observedEffect: { ...prior.observedEffect, ...pointer },
+        holdReason: prior.holdReason,
+        limitations: [
+          `compensated under plan hash ${undo.planHash}; not re-sent`,
+          ...prior.limitations,
+        ],
       }),
     );
+  };
 
   async function step(action: Action): Promise<void> {
-    if (compensatedHere.has(action.id)) {
-      settled.set(action.id, "compensated");
+    const compensation = compensationHere.get(action.id);
+    if (compensation) {
+      settled.set(action.id, compensation.outcome);
       return;
     }
     if (confirmedByAction.has(action.id)) {
       // Already confirmed (or adopted) for this hash in an earlier run; never settle it twice.
-      const undo = await undoneBy(action);
-      if (undo) return settleUndone(action, undo);
+      const undo = await sentUndo(action);
+      if (undo) return settleFromUndo(action, undo);
       settled.set(action.id, "confirmed");
       return;
     }
@@ -845,8 +879,8 @@ async function applyLocked(
       }
     }
     if (latest && latest.state !== "rejected") {
-      const undo = await undoneBy(action);
-      if (undo) return settleUndone(action, undo);
+      const undo = await sentUndo(action);
+      if (undo) return settleFromUndo(action, undo);
       // Confirmed under an earlier revision of this plan with the same content: adopt its results.
       const earlier = (await journal.bindings(latest.planHash)).filter(
         (b) => b.ref.stepId === latest.actionId,

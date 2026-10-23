@@ -140,43 +140,13 @@ async function compensate(action: Patch, ctx: CompensationContext, deps: Compens
 
   const key = undoKey(ctx.orgId, ctx.manifest.planId, action);
   const earlier = (await ctx.journal.attemptsForKey(key)).at(-1);
-  // A prepared row was never sent, so it had no effect and a fresh attempt may supersede it.
+  // A prepared row was never sent, so a fresh attempt may supersede it. The executor settles a
+  // patch with any sent undo before compensation runs; this only guards against a re-send.
   if (earlier && earlier.state !== "prepared") {
-    const recorded = earlier.planHash === ctx.planHash;
-    if (earlier.state === "confirmed" || earlier.state === "rejected") {
-      // Settled with its receipt under this hash already; under another revision, say so here.
-      if (recorded) return;
-      const refused = earlier.state === "rejected";
-      return record({
-        outcome: !refused
-          ? "compensated"
-          : earlier.providerStatus === 409
-            ? "compensation_conflict"
-            : "held",
-        ...(refused &&
-          earlier.providerStatus !== 409 && {
-            holdReason: {
-              kind: "unsupported_protection",
-              detail: `undo refused with ${earlier.providerStatus}; nothing written`,
-            },
-          }),
-        providerRef: { vendor: "zendesk", kind: "ticket", id: action.args.ticketId },
-        limitations: [
-          `undo attempt ${earlier.id} under plan hash ${earlier.planHash}; not re-sent`,
-        ],
-      });
-    }
-    const alreadyHeld = ctx.receipts.some(
-      (r) =>
-        r.actionId === action.id &&
-        r.holdReason?.kind === "unresolved_outcome" &&
-        r.holdReason.attemptId === earlier.id,
-    );
-    if (alreadyHeld) return;
-    // Sent without a settled outcome: never send it again.
     return record({
       outcome: "held",
       holdReason: { kind: "unresolved_outcome", attemptId: earlier.id },
+      observedEffect: { undoAttemptId: earlier.id },
       limitations: ["an earlier undo of this patch has no settled outcome; not re-sent"],
     });
   }

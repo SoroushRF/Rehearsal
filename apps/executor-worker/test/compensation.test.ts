@@ -109,6 +109,7 @@ function setup(bundle: ReplayBundle) {
     hash,
     ticketWrites,
     addRevision,
+    deps,
     run: () => executeRun(job, deps),
   };
 }
@@ -163,6 +164,18 @@ function noteFails(): ReplayBundle {
   bundle.perturbations = bundle.perturbations.filter((p) => p.kind === "fail_step");
   return bundle;
 }
+
+/** `patch_002` also sets status, with the given before values. */
+function twoFields(bundle: ReplayBundle, before: { priority?: "normal"; status?: "open" }) {
+  const patch = bundle.manifest.actions.find((a) => a.id === "patch_002");
+  if (patch?.kind !== "zendesk.ticket.patchFields") throw new Error("no patch_002");
+  patch.args = { ticketId: "5532", set: { priority: "high", status: "pending" }, before };
+  return bundle;
+}
+
+/** Every receipt `patch_002` has under one plan hash. */
+const patchReceipts = async (s: Setup, hash: string) =>
+  (await s.journal.receiptsFor(hash)).filter((r) => r.actionId === "patch_002");
 
 describe("conditional compensation", () => {
   it("passes the teammate-conflict bundle: their edit survives and nothing is written", async () => {
@@ -328,9 +341,89 @@ describe("conditional compensation", () => {
       (r) => r.actionId === "patch_002",
     );
     expect(receipts.map((r) => r.outcome)).toEqual(["compensated"]);
-    expect(receipts[0]?.limitations[0]).toMatch(/^undone by attempt att_\d+ under plan hash /);
+    expect(receipts[0]?.limitations[0]).toMatch(/^compensated under plan hash \w+; not re-sent$/);
     expect(s.ticketWrites()).toBe(writes);
     expect(s.world.tickets.get("5532")?.priority).toBe("normal");
+  });
+
+  it.each([
+    ["an identical revision", () => {}],
+    [
+      "a revision that changes the note, so nothing compensates",
+      (m: ReplayBundle["manifest"]) => {
+        const note = m.actions.find((a) => a.id === "note_002");
+        if (note?.kind === "zendesk.ticket.appendPrivateNote") note.args.template.version += 1;
+      },
+    ],
+  ])("holds, never adopts, a patch whose undo response was lost, under %s", async (_n, change) => {
+    const bundle = noteFails();
+    const s = setup(bundle);
+    replay(s, bundle, () => s.world.fault(TICKET, { kind: "drop_response_after_commit" }));
+    await s.run();
+    expect(s.world.tickets.get("5532")?.priority).toBe("normal");
+
+    const rev2 = s.addRevision(change);
+    await rev2.run();
+    await rev2.run();
+    const receipts = await patchReceipts(s, rev2.hash);
+    expect(receipts).toHaveLength(1);
+    expect(receipts[0]).toMatchObject({
+      outcome: "held",
+      holdReason: { kind: "unresolved_outcome" },
+      limitations: ["an undo of this patch has no settled outcome; not adopted"],
+    });
+  });
+
+  it.each([
+    [
+      "a partial undo (status has no before value)",
+      () => twoFields(noteFails(), { priority: "normal" }),
+      "held",
+      { priority: "normal", status: "pending" },
+    ],
+    [
+      "a partial undo that kept a teammate's priority",
+      () => twoFields(teammateConflictBundle(), { priority: "normal", status: "open" }),
+      "compensation_conflict",
+      { priority: "urgent", status: "open" },
+    ],
+  ])("keeps the outcome of %s on re-runs and revisions", async (_name, make, outcome, ticket) => {
+    const bundle = make();
+    const s = setup(bundle);
+    replay(s, bundle);
+    await s.run();
+    await s.run();
+    expect((await patchReceipts(s, s.hash)).map((r) => r.outcome)).toEqual(["confirmed", outcome]);
+
+    const rev2 = s.addRevision();
+    await rev2.run();
+    await rev2.run();
+    expect((await patchReceipts(s, rev2.hash)).map((r) => r.outcome)).toEqual([outcome]);
+    expect(s.world.tickets.get("5532")).toMatchObject(ticket);
+  });
+
+  it("reports a patch this hash confirmed as compensated once another revision undid it", async () => {
+    const bundle = noteFails();
+    const s = setup(bundle);
+    replay(s, bundle);
+    const compensate = s.deps.compensate;
+    s.deps.compensate = undefined;
+    await s.run();
+    s.deps.compensate = compensate;
+    const rev2 = s.addRevision();
+    await rev2.run();
+    expect((await patchReceipts(s, rev2.hash)).map((r) => r.outcome)).toEqual([
+      "confirmed",
+      "compensated",
+    ]);
+    const writes = s.ticketWrites();
+
+    await s.run();
+    expect((await patchReceipts(s, s.hash)).map((r) => r.outcome)).toEqual([
+      "confirmed",
+      "compensated",
+    ]);
+    expect(s.ticketWrites()).toBe(writes);
   });
 
   it("does not compensate twice across runs", async () => {
