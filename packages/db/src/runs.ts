@@ -54,7 +54,12 @@ const LIVE_JOB_STATES = ["created", "retry", "active"];
 export async function reapStuckRuns(
   db: Db,
   boss: PgBoss,
-  opts: { now: Date; staleAfterMs: number },
+  opts: {
+    now: Date;
+    staleAfterMs: number;
+    /** Called with runs handed to an operator in this sweep (log or alert on them). */
+    onHandOff?: (runIds: string[]) => void;
+  },
 ): Promise<string[]> {
   return db.transaction(async (tx) => {
     const { rows } = await tx.execute<{ ok: boolean }>(
@@ -117,7 +122,17 @@ export async function reapStuckRuns(
     // Runs that hit the cap and are still stuck: say so once, for an operator.
     const exhausted = await tx.execute<{ id: string; org_id: string; state: string }>(sql`
       select r.id, r.org_id, r.state from ${runs} r
-      where r.state in ('approved', 'applying', 'cancelled')
+      where (
+          r.state in ('approved', 'applying')
+          or (
+            -- A cancelled run needs an operator only while a send is still unresolved.
+            r.state = 'cancelled' and exists (
+              select 1 from ${stepAttempts} a
+              where a.org_id = r.org_id and a.plan_hash = r.plan_hash
+                and a.state in ('dispatched', 'unknown_outcome')
+            )
+          )
+        )
         and r.updated_at < ${cutoff}
         and (select count(*) from ${runEvents} e
               where e.org_id = r.org_id and e.run_id = r.id and e.type = 'run.reaped') >= ${MAX_REAPS}
@@ -134,7 +149,14 @@ export async function reapStuckRuns(
         type: "run.needs_operator",
         payload: { state: row.state, reaps: MAX_REAPS },
       });
+      // An approved/applying run with no job left would otherwise block re-applying its hash for
+      // good: mark it failed so a new apply can start and resume from the journal.
+      await tx
+        .update(runs)
+        .set({ state: "failed", updatedAt: opts.now })
+        .where(and(eq(runs.id, row.id), inArray(runs.state, ["approved", "applying"])));
     }
+    if (exhausted.rows.length > 0) opts.onHandOff?.(exhausted.rows.map((r) => r.id));
     return stuck.map((r) => r.id);
   });
 }

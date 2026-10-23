@@ -125,6 +125,14 @@ describe("run log", () => {
       "refund_001: provider answered 429; sending the same bytes again in 250 ms.",
     ],
     [event("run.refused", { detail: "grant expired" }), "Refused before any step: grant expired."],
+    [
+      event("run.needs_operator", { state: "applying", reaps: 12 }),
+      "Stuck: automatic retries are exhausted. An operator needs to look at this run.",
+    ],
+    [
+      event("run.reaped", { state: "applying" }),
+      "Re-queued: the run had stalled with no job running, so it was picked up again.",
+    ],
     [event("something.new", {}), "something.new"],
   ])("describes %j", (e, line) => {
     expect(describeEvent(e)).toBe(line);
