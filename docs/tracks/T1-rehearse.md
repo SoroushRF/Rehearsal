@@ -50,6 +50,14 @@
 
 _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
 
+- **2026-10-23 (Claude session for the T1 owner):** Review finding #108 (`fix/108-planner-deadline`).
+  - The planner worker's deadline now covers tool calls and finalization:
+    - The loop checks the signal before every turn and stops waiting on a tool call once the deadline passes.
+    - A plan that finishes after the deadline is reported as `timeout`, not handed back.
+    - Each jobs-API call gives up after 30 s.
+  - Planning readers get a 30 s per-request `timeoutMs`. It's opt-in on `ReadTarget`, so the executor's guard reads are unchanged.
+  - Gotcha: a stalled read is abandoned, not cancelled at the socket. Its own `timeoutMs` is what closes the request.
+
 - **2026-10-23 (Claude session for the T1 owner):** Review finding #107 (`fix/107-plan-completion-hash`, #110).
   - A repeat completion for an already-stored plan is matched on the canonical plan hash, not `JSON.stringify` (JSONB reorders keys). A different manifest under the same plan ID is still refused.
   - Not done: storing the plan and finishing the job are still two steps. The retry path is what recovers.

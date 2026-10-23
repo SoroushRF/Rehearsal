@@ -35,8 +35,16 @@ export interface FailPlanJob {
   message: string;
 }
 
-/** The worker's client for those routes. Errors carry the status so the caller can log them. */
-export function plannerJobsClient(apiUrl: string, secret: string, fetchImpl: typeof fetch = fetch) {
+/**
+ * The worker's client for those routes. Errors carry the status so the caller can log them. Each
+ * call gives up after `timeoutMs`, so an API that never answers can't hold the serial worker.
+ */
+export function plannerJobsClient(
+  apiUrl: string,
+  secret: string,
+  fetchImpl: typeof fetch = fetch,
+  timeoutMs = 30_000,
+) {
   const base = apiUrl.replace(/\/$/, "");
   const post = (path: string, body?: unknown) =>
     fetchImpl(`${base}${path}`, {
@@ -46,6 +54,7 @@ export function plannerJobsClient(apiUrl: string, secret: string, fetchImpl: typ
         ...(body !== undefined && { "content-type": "application/json" }),
       },
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   const expect = async (res: Response, ok: number[], what: string) => {
     if (!ok.includes(res.status)) {
