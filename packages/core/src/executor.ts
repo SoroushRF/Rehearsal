@@ -163,6 +163,11 @@ export interface RunOutcome {
   refusal: string | null;
   /** Set when the run stopped early on an unexpected error; later steps were not attempted. */
   error: string | null;
+  /**
+   * A refused run's read-only pass left an earlier send unresolved (its read was inconclusive):
+   * keep the run retryable so it is read again, bounded, rather than recording it as final.
+   */
+  unresolved?: boolean;
 }
 
 const RESULT_PATHS: ReadonlySet<string> = new Set(ResultPath.options);
@@ -364,6 +369,16 @@ async function admit(
   ) {
     return { ok: false, detail: "grant is for a different plan, revision or hash" };
   }
+  // Before the read-only exit: even a read must go to the operational world, never planning.
+  for (const [vendor, ctx] of Object.entries(deps.worlds)) {
+    if (ctx && ctx.world !== manifest.target.environment) {
+      return {
+        ok: false,
+        detail: `${vendor} is configured for the ${ctx.world} world, not operational`,
+      };
+    }
+  }
+
   if (readOnly) return { ok: true, manifest, grant };
   if (grant.revokedAt !== null) return { ok: false, detail: "grant was revoked" };
   const grantedAt = Date.parse(grant.grantedAt);
@@ -377,15 +392,6 @@ async function admit(
     (r) => !grant.roles.includes(r),
   );
   if (missing.length > 0) return { ok: false, detail: `grant lacks roles: ${missing.join(", ")}` };
-
-  for (const [vendor, ctx] of Object.entries(deps.worlds)) {
-    if (ctx && ctx.world !== manifest.target.environment) {
-      return {
-        ok: false,
-        detail: `${vendor} is configured for the ${ctx.world} world, not operational`,
-      };
-    }
-  }
 
   const graph = validateGraph(manifest.actions);
   if (graph.length > 0) return { ok: false, detail: `invalid graph: ${graph[0]?.detail}` };
@@ -429,12 +435,52 @@ export async function executeRun(job: ApplyJobInput, deps: ExecutorDeps): Promis
     const admission = await admit(job, deps);
     if (!admission.ok) {
       await journal.appendEvent(job.runId, "run.refused", { detail: admission.detail });
-      return { state: "failed", receipts: [], refusal: admission.detail, error: null };
+      const refused = { state: "failed" as const, receipts: [], refusal: admission.detail };
+      // Refused (say, the grant expired after a send): nothing new is sent and nothing is replayed,
+      // but an earlier send whose outcome is unknown is still read back against the stored,
+      // hash-checked plan, so a landed effect never stays without a receipt.
+      const readable = await admit(job, deps, true);
+      if (!readable.ok || !(await hasInFlight(job, deps, readable.manifest))) {
+        return { ...refused, error: null };
+      }
+      const outcome = await applyLocked(
+        job,
+        deps,
+        readable.manifest,
+        readable.grant,
+        true,
+        "failed",
+      );
+      return {
+        ...refused,
+        receipts: outcome.receipts,
+        error: outcome.error,
+        unresolved: outcome.unresolved,
+      };
     }
     return await applyLocked(job, deps, admission.manifest, admission.grant);
   } finally {
     await release();
   }
+}
+
+/** Any send of this plan (forward or undo, any revision) still in flight: dispatched or unknown. */
+async function hasInFlight(
+  job: ApplyJobInput,
+  deps: ExecutorDeps,
+  manifest: PlanManifest,
+): Promise<boolean> {
+  for (const action of manifest.actions) {
+    const keys = [operationKey(job.orgId, job.planId, action)];
+    if (action.kind === "zendesk.ticket.patchFields")
+      keys.push(undoKey(job.orgId, job.planId, action));
+    for (const key of keys) {
+      const attempts = await deps.journal.attemptsForKey(key);
+      if (attempts.some((a) => a.state === "dispatched" || a.state === "unknown_outcome"))
+        return true;
+    }
+  }
+  return false;
 }
 
 async function applyLocked(
@@ -444,11 +490,14 @@ async function applyLocked(
   grant: ApprovalGrant,
   /** Only resolve in-flight attempts through reads; never send, adopt, guard or hold new work. */
   reconcileOnly = false,
+  /** The state a read-only pass of a refused run reports (it never runs the plan). */
+  refusedAs?: RunState,
 ): Promise<RunOutcome> {
   const { journal, clock } = deps;
   const at = () => clock.now().toISOString();
   const admittedGrantFingerprint = fingerprint(grant);
-  await journal.appendEvent(job.runId, "run.admitted", {
+  // A read-only pass (cancelled or refused run) is not an admission: say what it is.
+  await journal.appendEvent(job.runId, reconcileOnly ? "run.reconciling" : "run.admitted", {
     planHash: job.planHash,
     approvalId: grant.id,
   });
@@ -1572,18 +1621,27 @@ async function applyLocked(
   const outcomes = manifest.actions.map((a) => settled.get(a.id));
   const confirmed = outcomes.filter((o) => o === "confirmed").length;
   // A cancelled run reads "cancelled"; its receipts still show every effect that did happen.
-  const state: RunState = cancelled
-    ? "cancelled"
-    : confirmed === outcomes.length
-      ? "completed"
-      : confirmed > 0
-        ? "partial"
-        : inFlightAttempts.size > 0 || outcomes.some((o) => o === "held" || o === "unknown_outcome")
-          ? "held"
-          : "failed";
+  const state: RunState = refusedAs
+    ? refusedAs
+    : cancelled
+      ? "cancelled"
+      : confirmed === outcomes.length
+        ? "completed"
+        : confirmed > 0
+          ? "partial"
+          : inFlightAttempts.size > 0 ||
+              outcomes.some((o) => o === "held" || o === "unknown_outcome")
+            ? "held"
+            : "failed";
+  // A refused run's read-only pass that left a send unresolved is retried too.
+  const unresolved = refusedAs !== undefined && (await hasInFlight(job, deps, manifest));
   // A run that stopped on an error isn't finished: the worker retries it.
   await journal
-    .appendEvent(job.runId, error === null ? "run.finished" : "run.stopped", { state, error })
+    .appendEvent(job.runId, error === null && !unresolved ? "run.finished" : "run.stopped", {
+      state,
+      error,
+      ...(unresolved ? { unresolved } : {}),
+    })
     .catch(() => {});
-  return { state, receipts, refusal: null, error };
+  return { state, receipts, refusal: null, error, ...(unresolved ? { unresolved } : {}) };
 }

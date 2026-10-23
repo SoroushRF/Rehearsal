@@ -48,12 +48,15 @@ export type ApplyJobResult =
  * Run one `apply` job. The payload only names a stored run; it must match that run, and the run
  * must still be `approved` or `applying` (claimed by compare-and-set), so a stale or duplicate job
  * can't revive a finished or cancelled run. The executor's admission then re-checks everything.
- * On the last retry a run that couldn't finish is marked `failed`, so a new apply can resume it.
+ * A run that can't finish (lock held, an error, a send it can't read back yet) stays `applying`
+ * even past pg-boss's last try: the reaper re-enqueues it, bounded by MAX_REAPS, then hands it to
+ * an operator and marks it failed. Nothing here marks a run failed on its own.
  */
 export async function handleApplyJob(
   data: unknown,
   ctx: WorkerContext,
-  attempt?: JobAttempt,
+  /** Where this delivery is in pg-boss's retries. Logged by the caller; exhaustion is the reaper's. */
+  _attempt?: JobAttempt,
 ): Promise<ApplyJobResult> {
   const parsed = ApplyJob.safeParse(data);
   if (!parsed.success) return { kind: "skipped", reason: "malformed apply job" };
@@ -101,31 +104,16 @@ export async function handleApplyJob(
     return { kind: "skipped", reason: `run is ${state}` };
   }
 
-  const lastTry = attempt !== undefined && attempt.retryCount >= attempt.retryLimit;
-  const giveUp = async () => {
-    if (!(await store.transitionRun(job.orgId, job.runId, ["applying"], "failed"))) {
-      console.error(`run ${job.runId}: last retry, but it is no longer applying; left as is`);
-    }
-  };
-
-  let outcome: RunOutcome;
-  try {
-    outcome = await executeRun(job, deps());
-  } catch (err) {
-    // Journal down or an adapter bug. pg-boss retries; the journal makes the re-run safe. Past
-    // the last try the run stays `applying` for the reaper (see the returned-error case below).
-    throw err;
-  }
+  // A thrown error (journal down, an adapter bug) propagates: pg-boss retries, and the journal
+  // makes the re-run safe. Past the last try the run stays `applying` for the reaper.
+  const outcome: RunOutcome = await executeRun(job, deps());
 
   if (outcome.refusal === PLAN_LOCKED) {
     // The plan's lock is held: by another revision, or by an earlier delivery of this same job
-    // that is still running. Nothing happened here, and the run stays `applying` so the holder's
-    // final write still lands. On the last try, mark it failed so a new apply can pick it up;
-    // a holder that does finish this run still records its real outcome over that.
-    if (lastTry) {
-      await giveUp();
-      return { kind: "ran", outcome: { ...outcome, state: "failed" } };
-    }
+    // that is still running and may have sent something this delivery can't see. Nothing
+    // happened here, and the run stays `applying`, even past the last try: the holder's final
+    // write still lands, and if the holder dies instead the reaper picks the run up (bounded by
+    // MAX_REAPS, then `run.needs_operator`). Marking it failed here could strand its sends (#121).
     throw new RetryLater(PLAN_LOCKED);
   }
   if (outcome.error !== null) {
@@ -136,6 +124,11 @@ export async function handleApplyJob(
     // operator (`run.needs_operator`) and marks it failed. Marking it failed here would leave a
     // send with no receipt where nothing ever looks at it again.
     throw new RetryLater(outcome.error);
+  }
+  if (outcome.unresolved) {
+    // Refused, but an earlier send of the run still can't be read back: keep the run `applying`
+    // so it is read again, with the same bounded hand-off as an error.
+    throw new RetryLater(`${outcome.refusal}; an earlier send is still unresolved`);
   }
   // This delivery held the lock and ran: its outcome is the truth, even over an overlapping
   // delivery's last-try "failed". A cancelled or newer state is never overwritten.
