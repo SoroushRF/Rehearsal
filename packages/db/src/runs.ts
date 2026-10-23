@@ -61,7 +61,8 @@ export async function reapStuckRuns(
     onHandOff?: (runIds: string[]) => void;
   },
 ): Promise<string[]> {
-  return db.transaction(async (tx) => {
+  const handedOff: string[] = [];
+  const reaped = await db.transaction(async (tx) => {
     const { rows } = await tx.execute<{ ok: boolean }>(
       sql`select pg_try_advisory_xact_lock(hashtextextended('rehearsal:reaper', 0)) as ok`,
     );
@@ -156,7 +157,11 @@ export async function reapStuckRuns(
         .set({ state: "failed", updatedAt: opts.now })
         .where(and(eq(runs.id, row.id), inArray(runs.state, ["approved", "applying"])));
     }
-    if (exhausted.rows.length > 0) opts.onHandOff?.(exhausted.rows.map((r) => r.id));
+    handedOff.push(...exhausted.rows.map((r) => r.id));
     return stuck.map((r) => r.id);
   });
+  // Only after commit: never report a hand-off that rolled back, and a throwing callback can't
+  // undo the sweep.
+  if (handedOff.length > 0) opts.onHandOff?.(handedOff);
+  return reaped;
 }
