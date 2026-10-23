@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { type ApiFetch, call, explain, StoredPlan } from "../api";
 import { shortHash } from "../format";
+import { useTenantKey } from "../identity";
 import {
   describeEvent,
   explainReceipt,
@@ -77,8 +78,9 @@ export function useRunEvents(apiFetch: ApiFetch, runId: string) {
 /** A run against the exact revision it applied, which may be older than the plan's latest. */
 export function RunTimeline({ apiFetch, runId }: { apiFetch: ApiFetch; runId: string }) {
   const { run, events, error } = useRunEvents(apiFetch, runId);
+  const key = useTenantKey();
   const applied = useQuery({
-    queryKey: ["plan", run?.planId, run?.revision],
+    queryKey: key("plan", run?.planId, run?.revision),
     enabled: run !== null,
     queryFn: () =>
       call(

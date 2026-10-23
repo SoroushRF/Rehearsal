@@ -14,6 +14,7 @@ import {
   StoredPlan,
 } from "../api";
 import { roleLabel, shortHash } from "../format";
+import { useTenantKey } from "../identity";
 import { droppedBy, requiredRoles } from "../plan";
 import { RunView } from "../runs";
 import { PlanReview } from "./PlanReview";
@@ -27,8 +28,9 @@ const planPath = (planId: string) => `/api/plans/${encodeURIComponent(planId)}`;
 
 /** Plans stored for the reviewer's organization, reviewed and approved through the API. */
 export function LivePlans({ apiFetch }: { apiFetch: ApiFetch }) {
+  const key = useTenantKey();
   const plans = useQuery({
-    queryKey: ["plans"],
+    queryKey: key("plans"),
     queryFn: () => call(apiFetch, PlanList, "/api/plans"),
   });
   const [chosen, setChosen] = useState<string | null>(null);
@@ -60,8 +62,9 @@ export function LivePlans({ apiFetch }: { apiFetch: ApiFetch }) {
 
 function LivePlan({ apiFetch, planId }: { apiFetch: ApiFetch; planId: string }) {
   const queryClient = useQueryClient();
+  const key = useTenantKey();
   const plan = useQuery({
-    queryKey: ["plan", planId],
+    queryKey: key("plan", planId),
     queryFn: () => call(apiFetch, StoredPlan, planPath(planId)),
   });
   const [unchecked, setUnchecked] = useState<ReadonlySet<string>>(new Set());
@@ -77,8 +80,8 @@ function LivePlan({ apiFetch, planId }: { apiFetch: ApiFetch; planId: string }) 
     onSuccess: (rev) => {
       setLastRevision(rev);
       setUnchecked(new Set());
-      queryClient.invalidateQueries({ queryKey: ["plan", planId] });
-      queryClient.invalidateQueries({ queryKey: ["plans"] });
+      queryClient.invalidateQueries({ queryKey: key("plan", planId) });
+      queryClient.invalidateQueries({ queryKey: key("plans") });
     },
   });
 
@@ -151,7 +154,7 @@ function LivePlan({ apiFetch, planId }: { apiFetch: ApiFetch; planId: string }) 
         apiFetch={apiFetch}
         plan={plan.data}
         editing={unchecked.size > 0}
-        onStale={() => queryClient.invalidateQueries({ queryKey: ["plan", planId] })}
+        onStale={() => queryClient.invalidateQueries({ queryKey: key("plan", planId) })}
       />
     </div>
   );
@@ -169,14 +172,15 @@ function ApprovalPanel({
   onStale: () => void;
 }) {
   const queryClient = useQueryClient();
+  const key = useTenantKey();
   const body = { revision: plan.revision, planHash: plan.planHash };
   const grants = useQuery({
-    queryKey: ["grants", plan.planId],
+    queryKey: key("grants", plan.planId),
     queryFn: () => call(apiFetch, GrantList, `${planPath(plan.planId)}/approvals`),
   });
   const approve = useMutation({
     mutationFn: () => call(apiFetch, Approved, `${planPath(plan.planId)}/approvals`, body),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["grants", plan.planId] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: key("grants", plan.planId) }),
     onError: (err) => {
       // The plan moved on under the reviewer: show them the current revision.
       if (
@@ -187,7 +191,7 @@ function ApprovalPanel({
     },
   });
   const runs = useQuery({
-    queryKey: ["runs", plan.planId],
+    queryKey: key("runs", plan.planId),
     queryFn: () => call(apiFetch, RunList, `${planPath(plan.planId)}/runs`),
   });
   const [shownRun, setShownRun] = useState<string | null>(null);
@@ -195,7 +199,7 @@ function ApprovalPanel({
     mutationFn: () => call(apiFetch, ApplyAccepted, `${planPath(plan.planId)}/apply`, body),
     onSuccess: (accepted) => {
       setShownRun(accepted.runId);
-      queryClient.invalidateQueries({ queryKey: ["runs", plan.planId] });
+      queryClient.invalidateQueries({ queryKey: key("runs", plan.planId) });
     },
   });
   const live = grants.data?.grants.find((g) => g.live && g.planHash === plan.planHash);
