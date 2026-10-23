@@ -721,43 +721,38 @@ describe.skipIf(!process.env.DB_TESTS)(
           },
         },
       };
-      const handedOff: string[] = [];
-      /** pg-boss gave up on its job, and the run's last update is outside the stale window. */
-      const exhaust = async () => {
-        await db.execute(sql`delete from pgboss.job where data->>'runId' = ${r.runId}`);
-        await db
-          .update(schema.runs)
-          .set({ updatedAt: new Date(Date.now() - 3_600_000) })
-          .where(eq(schema.runs.id, r.runId));
-      };
-      /** One reaper sweep that sees this run (another suite's sweep may hold the reaper lock). */
-      const sweep = async () => {
-        for (let i = 0; i < 50; i++) {
-          const reaped = await reapStuckRuns(db, boss, {
-            now: new Date(),
-            staleAfterMs: 10 * 60_000,
-            onHandOff: (ids) => handedOff.push(...ids),
-          });
-          if (reaped.includes(r.runId) || handedOff.includes(r.runId)) return reaped;
-          await new Promise((res) => setTimeout(res, 50));
-        }
-        throw new Error("the reaper never picked the run up");
-      };
+      // Past pg-boss's last try the run stays applying: the reaper's to hand off, not ours.
+      await expect(
+        handleApplyJob(jobOf(r), unreadable, { retryCount: 50, retryLimit: 50 }),
+      ).rejects.toBeInstanceOf(RetryLater);
+      expect(await runState(r.runId)).toBe("applying");
+
+      // It was already re-enqueued MAX_REAPS times (the reaper's own tests cover selection), its
+      // last job is gone and the run is stale. One sweep must hand it to an operator. Another
+      // suite's sweep may be the one that does, so check the database, not this sweep's result.
       for (let n = 0; n < MAX_REAPS; n++) {
-        await expect(
-          handleApplyJob(jobOf(r), unreadable, { retryCount: 50, retryLimit: 50 }),
-        ).rejects.toBeInstanceOf(RetryLater);
-        expect(await runState(r.runId)).toBe("applying");
-        await exhaust();
-        expect(await sweep()).toContain(r.runId);
+        await db.insert(schema.runEvents).values({
+          orgId: r.orgId,
+          runId: r.runId,
+          type: "run.reaped",
+          payload: {},
+        });
       }
-      await exhaust();
-      await sweep();
-      expect(handedOff).toContain(r.runId);
+      await db.execute(sql`delete from pgboss.job where data->>'runId' = ${r.runId}`);
+      await db
+        .update(schema.runs)
+        .set({ updatedAt: new Date(Date.now() - 3_600_000) })
+        .where(eq(schema.runs.id, r.runId));
+      const handedOff = async () =>
+        (await db.select().from(schema.runEvents)).filter(
+          (e) => e.runId === r.runId && e.type === "run.needs_operator",
+        ).length;
+      for (let i = 0; i < 50 && (await handedOff()) === 0; i++) {
+        await reapStuckRuns(db, boss, { now: new Date(), staleAfterMs: 10 * 60_000 });
+        if ((await handedOff()) === 0) await new Promise((res) => setTimeout(res, 50));
+      }
+      expect(await handedOff()).toBe(1);
       expect(await runState(r.runId)).toBe("failed");
-      const events = (await db.select().from(schema.runEvents)).filter((e) => e.runId === r.runId);
-      expect(events.filter((e) => e.type === "run.reaped")).toHaveLength(MAX_REAPS);
-      expect(events.filter((e) => e.type === "run.needs_operator")).toHaveLength(1);
       expect(r.world.refunds.filter((x) => x.charge === "ch_fixture_001")).toHaveLength(1);
     }, 60_000);
 
