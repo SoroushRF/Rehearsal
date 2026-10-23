@@ -1,5 +1,6 @@
 import type {
   Action,
+  Attempt,
   EntityRef,
   PlanManifest,
   Receipt,
@@ -9,6 +10,7 @@ import type { CompensationContext, CompensationResult, Compensator } from "./exe
 import { undoKey } from "./executor";
 import { sha256Hex } from "./hash";
 import type { Clock, DispatchResult, Preconditions, ProviderPort, WorldContext } from "./ports";
+import { operationMarker } from "./templates";
 
 type Patch = Extract<Action, { kind: "zendesk.ticket.patchFields" }>;
 type Field = keyof Patch["args"]["set"];
@@ -44,7 +46,19 @@ export function compensationTargets(
   const latest = new Map(receipts.map((r) => [r.actionId, r]));
   const failed = new Set(
     manifest.actions
-      .filter((a) => outcomes.get(a.id) === "rejected" && definitelyRefused(latest.get(a.id)))
+      .filter((a) => {
+        const outcome = outcomes.get(a.id);
+        if (
+          outcome === "confirmed" ||
+          outcome === "compensated" ||
+          outcome === "compensation_conflict"
+        ) {
+          return false;
+        }
+        if (outcome === "rejected" && definitelyRefused(latest.get(a.id))) return true;
+        // This run skipped or held the step, but an earlier receipt on this hash was a real refusal.
+        return receipts.some((r) => r.actionId === a.id && definitelyRefused(r));
+      })
       .map((a) => a.caseId),
   );
   const done = new Set(
@@ -87,6 +101,13 @@ export function decideUndo(action: Patch, current: Record<string, unknown>): Und
   return decision;
 }
 
+/** The guarded patch plus the undo's operation marker, so a later read can attribute it. */
+function undoBody(body: string, operationKey: string): string {
+  const parsed = JSON.parse(body) as { ticket: Record<string, unknown> };
+  parsed.ticket.comment = { body: operationMarker(operationKey), public: false };
+  return JSON.stringify(parsed);
+}
+
 /** The inverse typed patch: restore only the reverted fields, recording our value as "before". */
 export function inversePatch(action: Patch, revert: UndoDecision["revert"]): Patch {
   const ours = Object.fromEntries(
@@ -122,14 +143,103 @@ const UNDO_ROUNDS = 3;
  * Conditional compensation (T4). For each target patch: capture the ticket's stamp, re-read it,
  * and write back the before value only of fields that still hold ours, with a stamp-guarded patch
  * journaled before dispatch. A 409 re-reads and decides again, a bounded number of times. A
- * teammate's value is never overwritten; a lost undo response is held, never re-sent.
+ * teammate's value is never overwritten. A lost undo response is held; a later run reads the ticket
+ * and records it, or sends a fresh undo once a read shows it never landed.
  */
+/** A held patch in a case that still failed, so an in-flight undo can be read or sent again. */
+function heldUndoTargets(
+  manifest: PlanManifest,
+  outcomes: ReadonlyMap<string, ReceiptOutcome>,
+  receipts: readonly Receipt[],
+): Patch[] {
+  const failed = new Set(compensationTargets(manifest, outcomes, receipts).map((a) => a.caseId));
+  // The patch itself may be held, so it is not a target, but its case still failed.
+  for (const action of manifest.actions) {
+    if (outcomes.get(action.id) === "rejected") {
+      const receipt = receipts.filter((r) => r.actionId === action.id).at(-1);
+      if (definitelyRefused(receipt)) failed.add(action.caseId);
+    }
+    if (
+      outcomes.get(action.id) !== "confirmed" &&
+      outcomes.get(action.id) !== "compensated" &&
+      outcomes.get(action.id) !== "compensation_conflict" &&
+      receipts.some((r) => r.actionId === action.id && definitelyRefused(r))
+    ) {
+      failed.add(action.caseId);
+    }
+  }
+  const done = new Set(compensationTargets(manifest, outcomes, receipts).map((a) => a.id));
+  return manifest.actions.filter(
+    (a): a is Patch =>
+      a.kind === "zendesk.ticket.patchFields" &&
+      a.compensation === "conditional_reversible" &&
+      failed.has(a.caseId) &&
+      outcomes.get(a.id) === "held" &&
+      receipts.filter((r) => r.actionId === a.id).at(-1)?.holdReason?.kind ===
+        "unresolved_outcome" &&
+      !done.has(a.id),
+  );
+}
+
 export function createCompensator(deps: CompensatorDeps): Compensator {
   return async (ctx) => {
-    for (const action of compensationTargets(ctx.manifest, ctx.outcomes, ctx.receipts)) {
+    const seen = new Set<string>();
+    for (const action of [
+      ...compensationTargets(ctx.manifest, ctx.outcomes, ctx.receipts),
+      ...heldUndoTargets(ctx.manifest, ctx.outcomes, ctx.receipts),
+    ]) {
+      if (seen.has(action.id)) continue;
+      seen.add(action.id);
       await compensate(action, ctx, deps);
     }
   };
+}
+
+/** Whether an in-flight undo's own fields, and its private marker, are on the ticket. */
+async function undoRead(
+  provider: ProviderPort,
+  world: WorldContext,
+  action: Patch,
+  attempt: Attempt,
+): Promise<"landed" | "absent" | "unknown"> {
+  let sent: Patch["args"]["set"];
+  try {
+    const ticket =
+      (JSON.parse(attempt.request.body) as { ticket?: Record<string, unknown> }).ticket ?? {};
+    sent = {};
+    if (typeof ticket.priority === "string")
+      sent.priority = ticket.priority as typeof sent.priority;
+    if (typeof ticket.status === "string") sent.status = ticket.status as typeof sent.status;
+    if (sent.priority === undefined && sent.status === undefined) return "unknown";
+  } catch {
+    return "unknown";
+  }
+  try {
+    const fields = await provider.reconcile(
+      attempt,
+      { ...action, args: { ...action.args, set: sent } },
+      world,
+    );
+    if (fields.kind === "not_applied") return "absent";
+    if (fields.kind !== "applied") return "unknown";
+    const marked = await provider.reconcile(
+      attempt,
+      {
+        ...action,
+        kind: "zendesk.ticket.appendPrivateNote",
+        args: {
+          ticketId: action.args.ticketId,
+          public: false,
+          template: { id: "refund-confirmed", version: 1 },
+          bindings: {},
+        },
+      },
+      world,
+    );
+    return marked.kind === "applied" ? "landed" : "unknown";
+  } catch {
+    return "unknown";
+  }
 }
 
 async function compensate(action: Patch, ctx: CompensationContext, deps: CompensatorDeps) {
@@ -143,15 +253,91 @@ async function compensate(action: Patch, ctx: CompensationContext, deps: Compens
 
   const key = undoKey(ctx.orgId, ctx.manifest.planId, action);
   const earlier = (await ctx.journal.attemptsForKey(key)).at(-1);
+  // Close this in-flight undo only after a fresh one is actually dispatched.
+  // `reject` — a negative read showed it never landed. `reconcile` — it landed, but a field remains.
+  let closeEarlier: "reject" | "reconcile" | null = null;
   // A prepared row was never sent and a refused one wrote nothing, so a fresh round may follow.
-  // The executor settles a patch with any other sent undo first; this only guards a re-send.
+  // An in-flight undo is read here: restored values are recorded, and a negative read sends a
+  // fresh undo only once it is old enough. Dependents never see the patch as confirmed meanwhile.
   if (earlier && earlier.state !== "prepared" && earlier.state !== "rejected") {
-    return record({
-      outcome: "held",
-      holdReason: { kind: "unresolved_outcome", attemptId: earlier.id },
-      observedEffect: { undoAttemptId: earlier.id },
-      limitations: ["an earlier undo of this patch has no settled outcome; not re-sent"],
-    });
+    const open = earlier.state === "unknown_outcome" || earlier.state === "dispatched";
+    // Confirmed or reconciled already: the executor recorded what that undo means.
+    if (!open) return;
+    const sentAt = Date.parse(earlier.dispatchedAt ?? earlier.preparedAt);
+    const oldEnough = deps.clock.now().getTime() - sentAt >= (ctx.reconcileAfterMs ?? 60_000);
+    const read = await undoRead(provider, world, action, earlier);
+    if (read === "landed") {
+      const current = (
+        await provider
+          .observe({ vendor: "zendesk", kind: "ticket", id: action.args.ticketId }, world)
+          .catch(() => null)
+      )?.projection as Record<string, unknown> | undefined;
+      const still = current
+        ? Object.entries(action.args.set).filter(
+            ([field, written]) =>
+              written !== undefined &&
+              current[field] === written &&
+              typeof action.args.before[field as Field] === "string",
+          )
+        : [];
+      if (current && still.length === 0) {
+        const changed = Object.entries(action.args.set).filter(([field, written]) => {
+          if (written === undefined || current[field] === written) return false;
+          return current[field] !== action.args.before[field as Field];
+        });
+        if (earlier.state === "dispatched") {
+          await ctx.journal.transition(earlier.id, "dispatched", "unknown_outcome", {
+            error: "outcome unknown",
+          });
+        }
+        const settledAt = deps.clock.now().toISOString();
+        const transition = {
+          attemptId: earlier.id,
+          from: "unknown_outcome" as const,
+          to: "reconciled" as const,
+          patch: { settledAt },
+        };
+        if (changed.length > 0) {
+          return record({
+            outcome: "compensation_conflict",
+            providerRef: { vendor: "zendesk", kind: "ticket", id: action.args.ticketId },
+            observedEffect: { priority: current.priority, status: current.status },
+            limitations: changed.map(
+              ([field]) => `kept ${field} = ${String(current[field])}: changed by someone else`,
+            ),
+            transition,
+          });
+        }
+        return record({
+          outcome: "compensated",
+          providerRef: { vendor: "zendesk", kind: "ticket", id: action.args.ticketId },
+          observedEffect: { priority: current.priority, status: current.status },
+          limitations: [
+            `outcome of undo attempt ${earlier.id} found by reading the provider; not re-sent`,
+          ],
+          transition,
+        });
+      }
+      // A field still holds our value. Reconcile this undo only once the follow-up is dispatched.
+      if (current) closeEarlier = "reconcile";
+    } else if (read === "absent" && oldEnough && (await ctx.maySend())) {
+      closeEarlier = "reject";
+    } else {
+      const already = ctx.receipts.some(
+        (r) =>
+          r.actionId === action.id &&
+          r.outcome === "held" &&
+          r.holdReason?.kind === "unresolved_outcome" &&
+          r.holdReason.attemptId === earlier.id,
+      );
+      if (already) return;
+      return record({
+        outcome: "held",
+        holdReason: { kind: "unresolved_outcome", attemptId: earlier.id },
+        observedEffect: { undoAttemptId: earlier.id },
+        limitations: ["an earlier undo of this patch has no settled outcome; not re-sent"],
+      });
+    }
   }
 
   const ticket: EntityRef = { vendor: "zendesk", kind: "ticket", id: action.args.ticketId };
@@ -175,7 +361,36 @@ async function compensate(action: Patch, ctx: CompensationContext, deps: Compens
     }
 
     const decision = decideUndo(action, current);
+    // A field this undo already restored is not a conflict. A teammate restoring the same value
+    // leaves no marker, and a field this undo never sent stays a conflict.
+    if (earlier && (await undoRead(provider, world, action, earlier)) === "landed") {
+      let sent: Set<string>;
+      try {
+        const ticket =
+          (JSON.parse(earlier.request.body) as { ticket?: Record<string, unknown> }).ticket ?? {};
+        sent = new Set(
+          (["priority", "status"] as const).filter((field) => typeof ticket[field] === "string"),
+        );
+      } catch {
+        sent = new Set();
+      }
+      for (const field of Object.keys(decision.kept) as Field[]) {
+        if (sent.has(field) && current[field] === action.args.before[field]) {
+          delete decision.kept[field];
+        }
+      }
+    }
     if (Object.keys(decision.revert).length === 0) {
+      // A late landing of our own undo restores the before value and then 409s the fresh send.
+      // The marker says it was ours; a teammate restoring the same value leaves no marker.
+      if (earlier && (await undoRead(provider, world, action, earlier)) === "landed") {
+        return record({
+          outcome: "compensated",
+          providerRef: ticket,
+          observedEffect: { priority: current.priority, status: current.status },
+          limitations: ["our earlier undo landed; nothing further written"],
+        });
+      }
       return record({
         ...verdict(decision),
         providerRef: ticket,
@@ -197,7 +412,9 @@ async function compensate(action: Patch, ctx: CompensationContext, deps: Compens
     }
 
     const inverse = inversePatch(action, decision.revert);
-    const request = provider.prepare(inverse, new Map(), key, pre);
+    const prepared = provider.prepare(inverse, new Map(), key, pre);
+    // A private marker distinguishes our undo from someone else restoring the same value.
+    const request = { ...prepared, body: undoBody(prepared.body, key) };
     const attemptId = ctx.newId("att");
     const now = () => deps.clock.now().toISOString();
     await ctx.journal.prepareAttempt({
@@ -221,6 +438,28 @@ async function compensate(action: Patch, ctx: CompensationContext, deps: Compens
       settledAt: null,
     });
     await ctx.journal.transition(attemptId, "prepared", "dispatched", { dispatchedAt: now() });
+    if (closeEarlier && earlier) {
+      if (earlier.state === "dispatched") {
+        await ctx.journal.transition(earlier.id, "dispatched", "unknown_outcome", {
+          error: "outcome unknown",
+        });
+      }
+      if (earlier.state === "dispatched" || earlier.state === "unknown_outcome") {
+        await ctx.journal.transition(
+          earlier.id,
+          "unknown_outcome",
+          closeEarlier === "reject" ? "rejected" : "reconciled",
+          closeEarlier === "reject"
+            ? {
+                providerStatus: null,
+                error: "undo not visible; a fresh undo is permitted",
+                settledAt: now(),
+              }
+            : { settledAt: now() },
+        );
+      }
+      closeEarlier = null;
+    }
 
     let result: DispatchResult;
     try {

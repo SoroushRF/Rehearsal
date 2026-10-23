@@ -31,7 +31,7 @@
 | T4.1 | Pure guards: observation projection compare, query-membership diff (added/removed, empty results count), own-write overlay advanced only by confirmed receipts | M1 | Unit tests on fixture observations | #25 | — |
 | T4.2 | Injection scripts: phantom charge, teammate field edit, Era faults, reset. Exposed as `pnpm demo:phantom` / `demo:conflict` / `demo:reset`. | M2 | Scripts run against local worlds | #26 | — |
 | T4.3 | Wire guards into T3's admission; hold reasons in receipts; dependents skipped | M2–M3 | `phantom` bundle passes on Era. **Done:** `evals/providers/test/phantom.test.ts` | #27 | T4.1, T4.2, T3.2, T1.3, T3.3, T1.9 |
-| T4.4 | Conditional compensation on owned fields: re-read, revert only if our value is still there, otherwise record a conflict | M3 | `teammate-conflict` bundle passes on Era | #28 | T4.3, T3.3 |
+| T4.4 | Conditional compensation on owned fields: re-read, revert only if our value is still there, otherwise record a conflict | M3 | `teammate-conflict` bundle passes on Era. **Done:** `evals/providers/test/compensation.test.ts` | #28 | T4.3, T3.3 |
 | T4.5 | ML smoke test: Qwen3.5-0.8B LoRA on 32 cases, weights change, save and reload, peak memory measured (Python 3.12, CUDA 12.7-compatible wheels) | M1 | Smoke log + adapter hash in `ml/manifests/` | #29 | — |
 | T4.6 | ML pilot: labels from replay bundles plus perturbations; base vs. tuned vs. rules vs. Claude zero-shot; go/no-go | M2–M3 | Report in `evals/impact/`; decision recorded | #30 | T4.5 |
 | T4.7 | _If go:_ impact service behind `ImpactPort` (timeout → abstain), advisory only | M4 | Integration test: model absent or failing → same execution | #31 | T4.6 |
@@ -43,6 +43,15 @@
 ## Handoff log
 
 _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
+
+### 2026-10-22, T4.4 done on Era
+
+- **`teammate-conflict` passes on Era** (`evals/providers/test/compensation.test.ts`, `ERA_CONFORMANCE=1`). Evidence: `era_integration`.
+  - It seeds the T1.2 cohort into both worlds and builds the plan from planning-world reads. c02's note is refused in the harness (Era's faults only give 429s and 5xx).
+  - Untouched, compensation restores c02's priority with a stamp-guarded patch and keeps the refund. c01 is left as applied.
+  - A teammate edit through the ordinary ticket API, after the failed note, is kept: `compensation_conflict`, nothing written after the edit.
+- **A lost undo is reconciled by a read.** The undo carries a private marker. A later run records it only when that marker is on the ticket, so someone else restoring the same value is not `compensated`. A read that shows the undo never landed allows one fresh undo once the attempt is old enough. The old attempt stays open until that fresh undo is dispatched, so a dependent of the patch stays recovery-only (#99) and a revision that no longer compensates does not adopt the patch. That read is fixture evidence (`apps/executor-worker/test/compensation.test.ts`); the Era gate does not drop an undo response.
+- **Next.** T4.5, the ML smoke test, on the GPU machine. Follow-ups from the part-1 review (a 429 on the undo, the label when a teammate sets a field back to our before value, two patches of one field, duplicate held receipts, Postgres) are not in this task.
 
 ### 2026-10-22, T4.4 part 1
 
