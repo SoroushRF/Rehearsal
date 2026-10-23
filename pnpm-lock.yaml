@@ -100,6 +100,12 @@ importers:
 
   apps/planner-worker:
     dependencies:
+      '@anthropic-ai/sdk':
+        specifier: ^1.1.0
+        version: 1.1.0(zod@4.6.7)
+      '@rehearsal/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@rehearsal/planner':
         specifier: workspace:*
         version: link:../../packages/planner
@@ -107,6 +113,9 @@ importers:
         specifier: workspace:*
         version: link:../../packages/providers
     devDependencies:
+      '@rehearsal/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@rehearsal/testkit':
         specifier: workspace:*
         version: link:../../packages/testkit

@@ -4,16 +4,19 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch --env-file-if-exists=../../.env src/main.ts",
+    "dev": "tsx watch --env-file-if-exists=../../.env.planner src/main.ts",
     "start": "tsx src/main.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.1.0",
+    "@rehearsal/core": "workspace:*",
     "@rehearsal/planner": "workspace:*",
     "@rehearsal/providers": "workspace:*"
   },
   "devDependencies": {
+    "@rehearsal/contracts": "workspace:*",
     "@rehearsal/testkit": "workspace:*"
   }
 }

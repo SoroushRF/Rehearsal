@@ -1,19 +1,94 @@
-import { PROMPT_VERSION } from "@rehearsal/planner";
-import { primeTokens, workerWorlds } from "@rehearsal/providers";
+import Anthropic from "@anthropic-ai/sdk";
+import type { BillingPolicyV1 } from "@rehearsal/core";
+import { DEFAULT_PLANNER_MODEL, PROMPT_VERSION } from "@rehearsal/planner";
+import {
+  plannerJobsClient,
+  primeTokens,
+  STRIPE_CHARGE_PROJECTION,
+  stripeReader,
+  workerWorlds,
+  ZENDESK_TICKET_PROJECTION,
+  zendeskReader,
+} from "@rehearsal/providers";
+import policy from "../../../scenarios/billing/policy.v1.json" with { type: "json" };
 import { plannerCredentialViolations } from "./credentials";
+import { handlePlanJob } from "./job";
 
 /**
- * Planner worker: holds the model key and planning-world capability ONLY.
- * No operational-world URLs, no Era admin token, no executor code.
- * TODO(A): consume "plan" jobs from pg-boss and run the bounded tool loop.
+ * Planner worker: holds the model key and planning-world capability ONLY. No operational-world
+ * URLs, no Era admin token, no database, no executor code. It takes `plan` jobs from the API with
+ * its own secret, plans in the planning world, and hands the manifest back to the API.
  */
 const forbidden = plannerCredentialViolations();
 if (forbidden.length > 0) {
   console.error(`planner-worker must not receive: ${forbidden.join(", ")}`);
   process.exit(1);
 }
+const secret = process.env.PLANNER_WORKER_SECRET;
+const apiUrl = process.env.REHEARSAL_API_URL;
+if (!secret || !apiUrl || !process.env.ANTHROPIC_API_KEY) {
+  console.error(
+    "planner-worker needs REHEARSAL_API_URL, PLANNER_WORKER_SECRET and ANTHROPIC_API_KEY",
+  );
+  process.exit(1);
+}
 
 // Mint once at startup so a misconfigured minter fails here, not mid-plan.
 const worlds = workerWorlds("planner");
 await primeTokens(worlds);
-console.log(`planner-worker ready (prompt ${PROMPT_VERSION})`);
+if (worlds.stripe.tenant !== worlds.zendesk.tenant) {
+  console.error("planner-worker expects one planning tenant for Stripe and Zendesk");
+  process.exit(1);
+}
+
+// The simulators accept any bearer; real read-only credentials would come from the environment.
+const readers = {
+  stripe: stripeReader({
+    world: "planning",
+    config: worlds.stripe,
+    authorization: "Bearer sk_test_rehearsal_planner",
+  }),
+  zendesk: zendeskReader({
+    world: "planning",
+    config: worlds.zendesk,
+    authorization: "Bearer rehearsal-planner",
+  }),
+};
+const model = process.env.PLANNER_MODEL || DEFAULT_PLANNER_MODEL;
+const anthropic = new Anthropic();
+const jobs = plannerJobsClient(apiUrl, secret);
+const ctx = {
+  jobs,
+  client: anthropic.messages,
+  model,
+  readers,
+  ctx: { world: "planning", tenant: worlds.stripe.tenant } as const,
+  policy: policy as BillingPolicyV1,
+  adapters: { stripe: STRIPE_CHARGE_PROJECTION, zendesk: ZENDESK_TICKET_PROJECTION },
+  log: (line: string) => console.log(line),
+};
+
+const IDLE_POLL_MS = 2_000;
+const ERROR_BACKOFF_MS = 10_000;
+let stopping = false;
+for (const signal of ["SIGTERM", "SIGINT"] as const) {
+  // A run in progress finishes (it is bounded); an unfinished one expires and is retried.
+  process.once(signal, () => {
+    stopping = true;
+  });
+}
+
+console.log(
+  `planner-worker ready: ${model}, prompt ${PROMPT_VERSION}, planning ${worlds.stripe.baseUrl} + ${worlds.zendesk.baseUrl}`,
+);
+while (!stopping) {
+  try {
+    const job = await jobs.next();
+    if (job) await handlePlanJob(job, ctx);
+    else await new Promise((r) => setTimeout(r, IDLE_POLL_MS));
+  } catch (err) {
+    console.error("planner-worker:", (err as Error).message);
+    await new Promise((r) => setTimeout(r, ERROR_BACKOFF_MS));
+  }
+}
+process.exit(0);
