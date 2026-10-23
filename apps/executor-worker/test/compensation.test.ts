@@ -227,25 +227,127 @@ describe("conditional compensation", () => {
     });
   });
 
+  /** After the note fails, a teammate edits the ticket right after each compensation re-read. */
+  const editAfterReread = (s: Setup, edit: () => void, times = Number.POSITIVE_INFINITY) => {
+    let left = times;
+    const observe = s.providers.zendesk.observe;
+    s.providers.zendesk.observe = async (entity, ctx) => {
+      const read = await observe(entity, ctx);
+      if (entity.id === "5532" && left-- > 0) edit();
+      return read;
+    };
+  };
+
   it("keeps an edit made between the compensation re-read and the undo (409)", async () => {
     const bundle = noteFails();
     const s = setup(bundle);
-    replay(s, bundle, () => {
-      const observe = s.providers.zendesk.observe;
-      s.providers.zendesk.observe = async (entity, ctx) => {
-        const read = await observe(entity, ctx);
-        if (entity.id === "5532") s.world.teammateEdit("5532", "priority", "low");
-        return read;
-      };
+    replay(s, bundle, () =>
+      editAfterReread(s, () => s.world.teammateEdit("5532", "priority", "low"), 1),
+    );
+    const result = await s.run();
+
+    // The 409 re-reads: the field is no longer ours, so it's a conflict and nothing is written.
+    expect(result.receipts.at(-1)).toMatchObject({
+      actionId: "patch_002",
+      outcome: "compensation_conflict",
+      observedEffect: { priority: "low" },
     });
+    expect(s.world.tickets.get("5532")?.priority).toBe("low");
+  });
+
+  it("undoes our field after a 409 caused by an edit to another field", async () => {
+    const bundle = noteFails();
+    const s = setup(bundle);
+    replay(s, bundle, () =>
+      editAfterReread(s, () => s.world.teammateEdit("5532", "status", "pending"), 1),
+    );
+    const result = await s.run();
+
+    expect(result.receipts.at(-1)).toMatchObject({ actionId: "patch_002", outcome: "compensated" });
+    expect(s.world.tickets.get("5532")).toMatchObject({ priority: "normal", status: "pending" });
+    expect((await s.journal.attemptsFor(s.hash, "patch_002")).map((a) => a.state)).toEqual([
+      "confirmed",
+      "rejected",
+      "confirmed",
+    ]);
+  });
+
+  it("holds, not conflicts, when the ticket keeps changing but our value stays", async () => {
+    const bundle = noteFails();
+    const s = setup(bundle);
+    replay(s, bundle, () =>
+      editAfterReread(s, () => s.world.teammateEdit("5532", "status", "pending")),
+    );
     const result = await s.run();
 
     expect(result.receipts.at(-1)).toMatchObject({
       actionId: "patch_002",
-      outcome: "compensation_conflict",
-      observedEffect: { status: 409 },
+      outcome: "held",
+      holdReason: { kind: "unsupported_protection" },
     });
-    expect(s.world.tickets.get("5532")?.priority).toBe("low");
+    expect(s.world.tickets.get("5532")?.priority).toBe("high");
+    expect(await s.journal.attemptsFor(s.hash, "patch_002")).toHaveLength(4);
+  });
+
+  it("copies the undo when another revision resolved this hash's lost patch and undid it", async () => {
+    const bundle = noteFails();
+    const s = setup(bundle);
+    replay(s, bundle);
+    s.world.fault(TICKET, { kind: "drop_response_after_commit" });
+    await s.run();
+    expect((await patchReceipts(s, s.hash)).map((r) => r.outcome)).toEqual(["unknown_outcome"]);
+
+    const rev2 = s.addRevision();
+    await rev2.run();
+    expect((await patchReceipts(s, rev2.hash)).map((r) => r.outcome)).toEqual([
+      "confirmed",
+      "compensated",
+    ]);
+
+    await s.run();
+    expect((await patchReceipts(s, s.hash)).map((r) => r.outcome)).toEqual([
+      "unknown_outcome",
+      "compensated",
+    ]);
+    expect(s.world.tickets.get("5532")?.priority).toBe("normal");
+  });
+
+  it("keeps an applied note that depends on a patch undone since", async () => {
+    const bundle = happyPathBundle();
+    const note = bundle.manifest.actions.find((a) => a.id === "note_002");
+    if (!note) throw new Error("no note_002");
+    bundle.manifest.actions.push({
+      ...structuredClone(note),
+      id: "note_002b",
+      dependsOn: ["refund_002", "patch_002"],
+    });
+    const s = setup(bundle);
+    const dispatch = s.providers.zendesk.dispatch;
+    let firstNote = true;
+    s.providers.zendesk.dispatch = async (request, ctx) => {
+      if (request.path === TICKET && request.body.includes('"comment"') && firstNote) {
+        firstNote = false;
+        return { kind: "rejected", status: 422, body: { error: "injected" }, retryable: false };
+      }
+      return dispatch(request, ctx);
+    };
+    const first = await s.run();
+    expect(outcomes(first.receipts)).toMatchObject({
+      note_002: "rejected",
+      note_002b: "confirmed",
+      patch_002: "compensated",
+    });
+
+    await s.run();
+    const rev2 = s.addRevision();
+    await rev2.run();
+    for (const hash of [s.hash, rev2.hash]) {
+      const receipts = (await s.journal.receiptsFor(hash)).filter(
+        (r) => r.actionId === "note_002b",
+      );
+      expect(receipts.map((r) => r.outcome)).toEqual(["confirmed"]);
+    }
+    expect(s.world.tickets.get("5532")?.comments).toHaveLength(1);
   });
 
   it("holds a lost undo response and never re-sends it on a later run", async () => {
@@ -380,27 +482,43 @@ describe("conditional compensation", () => {
       () => twoFields(noteFails(), { priority: "normal" }),
       "held",
       { priority: "normal", status: "pending" },
+      ["held"],
+    ],
+    [
+      // Nothing was written, so revision 2 adopts the applied patch and compensates it itself.
+      "a teammate's priority plus a status to undo by hand (the hold wins)",
+      () => twoFields(teammateConflictBundle(), {}),
+      "held",
+      { priority: "urgent", status: "pending" },
+      ["confirmed", "held"],
     ],
     [
       "a partial undo that kept a teammate's priority",
       () => twoFields(teammateConflictBundle(), { priority: "normal", status: "open" }),
       "compensation_conflict",
       { priority: "urgent", status: "open" },
+      ["compensation_conflict"],
     ],
-  ])("keeps the outcome of %s on re-runs and revisions", async (_name, make, outcome, ticket) => {
-    const bundle = make();
-    const s = setup(bundle);
-    replay(s, bundle);
-    await s.run();
-    await s.run();
-    expect((await patchReceipts(s, s.hash)).map((r) => r.outcome)).toEqual(["confirmed", outcome]);
+  ])(
+    "keeps the outcome of %s on re-runs and revisions",
+    async (_n, make, outcome, ticket, rev2Outcomes) => {
+      const bundle = make();
+      const s = setup(bundle);
+      replay(s, bundle);
+      await s.run();
+      await s.run();
+      expect((await patchReceipts(s, s.hash)).map((r) => r.outcome)).toEqual([
+        "confirmed",
+        outcome,
+      ]);
 
-    const rev2 = s.addRevision();
-    await rev2.run();
-    await rev2.run();
-    expect((await patchReceipts(s, rev2.hash)).map((r) => r.outcome)).toEqual([outcome]);
-    expect(s.world.tickets.get("5532")).toMatchObject(ticket);
-  });
+      const rev2 = s.addRevision();
+      await rev2.run();
+      await rev2.run();
+      expect((await patchReceipts(s, rev2.hash)).map((r) => r.outcome)).toEqual(rev2Outcomes);
+      expect(s.world.tickets.get("5532")).toMatchObject(ticket);
+    },
+  );
 
   it("reports a patch this hash confirmed as compensated once another revision undid it", async () => {
     const bundle = noteFails();

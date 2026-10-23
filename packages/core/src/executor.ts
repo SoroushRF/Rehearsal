@@ -817,6 +817,8 @@ async function applyLocked(
       // This hash's own attempt was applied, yet this hash has no receipt for it (the
       // confirmedByAction check above would have returned): another revision's run reconciled it.
       // Read it back so this hash records its own receipt and bindings; never re-send.
+      const undo = await sentUndo(action);
+      if (undo) return settleFromUndo(action, undo);
       if (unresolved) {
         return hold(action, { kind: "predecessor_not_confirmed", stepId: unresolved.stepId });
       }
@@ -1180,6 +1182,13 @@ async function applyLocked(
 
   let error: string | null = null;
 
+  const alreadyApplied = async (action: Action) =>
+    confirmedByAction.has(action.id) ||
+    compensationHere.has(action.id) ||
+    (await journal.attemptsForKey(operationKey(job.orgId, job.planId, action))).some(
+      (a) => a.state === "confirmed" || a.state === "reconciled",
+    );
+
   /** One action, with the dependency, cancel and error handling every case shares. */
   async function runAction(action: Action): Promise<"next" | "stop"> {
     const blocked = action.dependsOn.find((d) => settled.get(d) !== "confirmed");
@@ -1190,7 +1199,8 @@ async function applyLocked(
         return "next";
       }
       if (await checkCancelled(`step ${action.id}`)) return "stop";
-      if (blocked) {
+      // An action already applied keeps its own record even if a predecessor was undone since.
+      if (blocked && !(await alreadyApplied(action))) {
         await settle(
           action,
           receiptFor(action, "skipped_dependency", {
