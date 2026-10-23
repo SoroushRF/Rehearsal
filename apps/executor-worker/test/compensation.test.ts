@@ -1284,4 +1284,36 @@ describe("conditional compensation", () => {
     expect((await patchReceipts(s, s.hash)).at(-1)?.outcome).toBe("confirmed");
     expect(s.world.tickets.get("5532")?.priority).toBe("urgent");
   });
+
+  it("unwinds a restored field when a later patch conflicts on another (#109)", async () => {
+    const bundle = stackedPriority(noteFails());
+    const later = bundle.manifest.actions.find((a) => a.id === "patch_002b");
+    if (later?.kind !== "zendesk.ticket.patchFields") throw new Error("no patch_002b");
+    later.args = {
+      ticketId: later.args.ticketId,
+      set: { priority: "urgent", status: "pending" },
+      before: { priority: "high", status: "open" },
+    };
+    const s = setup(bundle);
+    replay(s, bundle, () => s.world.teammateEdit("5532", "status", "solved"));
+    const first = await s.run();
+
+    expect(outcomes(first.receipts)).toMatchObject({
+      patch_002: "compensated",
+      patch_002b: "compensation_conflict",
+    });
+    expect(
+      first.receipts
+        .filter((r) => r.actionId === "patch_002b")
+        .at(-1)
+        ?.limitations.join(" "),
+    ).toMatch(/restored priority/);
+    expect(s.world.tickets.get("5532")).toMatchObject({ priority: "normal", status: "solved" });
+    const writes = s.ticketWrites();
+
+    const second = await s.run();
+    expect(second.receipts.some((r) => r.actionId === "patch_002")).toBe(false);
+    expect(s.ticketWrites()).toBe(writes);
+    expect(s.world.tickets.get("5532")).toMatchObject({ priority: "normal", status: "solved" });
+  });
 });

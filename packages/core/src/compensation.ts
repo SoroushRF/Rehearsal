@@ -213,22 +213,22 @@ function laterOverlapping(manifest: PlanManifest, action: Patch): Patch[] {
 }
 
 /**
- * `wait`: a later undo has not restored the field, and has not settled as a real conflict either.
- * An older patch must not be judged yet. `keep`: it settled as a conflict, so a matching value is
- * not proof the older write is still ours.
+ * One shared field of a later patch. `wait`: its undo has not settled. `keep`: the undo settled
+ * and this field was not restored, so a matching value is not our older write. `clear`: this field
+ * was restored, or the later patch never wrote.
  */
-function laterUndoGate(receipt: Receipt | undefined): "wait" | "keep" | "clear" {
+function fieldUndoGate(receipt: Receipt | undefined, field: Field): "wait" | "keep" | "clear" {
   if (receipt?.outcome === "unknown_outcome" || receipt?.outcome === "held") return "wait";
-  // A rejected or skipped later patch wrote nothing. A compensated one restored its field.
   if (
     !receipt ||
-    receipt.outcome === "compensated" ||
     receipt.outcome === "rejected" ||
-    receipt.outcome === "skipped_dependency"
+    receipt.outcome === "skipped_dependency" ||
+    receipt.outcome === "compensated" ||
+    receipt.limitations.some((line) => line.startsWith(`restored ${field} `))
   ) {
     return "clear";
   }
-  // Confirmed: a later write we are not undoing. Conflict: it settled without restoring.
+  // Confirmed: a later write we are not undoing. Conflict without a restored line: not our older write.
   return "keep";
 }
 
@@ -246,12 +246,15 @@ export function createCompensator(deps: CompensatorDeps): Compensator {
       const blocked = new Set<Field>();
       let wait = false;
       for (const other of laterOverlapping(ctx.manifest, action)) {
+        const receipt = latest.get(other.id);
         const shared = writtenFields(action).filter((field) =>
           writtenFields(other).includes(field),
         );
-        const gate = laterUndoGate(latest.get(other.id));
-        if (gate === "wait") wait = true;
-        else if (gate === "keep") for (const field of shared) blocked.add(field);
+        for (const field of shared) {
+          const gate = fieldUndoGate(receipt, field);
+          if (gate === "wait") wait = true;
+          else if (gate === "keep") blocked.add(field);
+        }
       }
       if (wait) continue;
       await compensate(action, ctx, deps, blocked);
