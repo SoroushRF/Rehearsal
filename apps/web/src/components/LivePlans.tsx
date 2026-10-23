@@ -1,6 +1,6 @@
 import { ApprovalGrant } from "@rehearsal/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { z } from "zod";
 import {
   type ApiFetch,
@@ -18,6 +18,7 @@ import { useTenantKey } from "../identity";
 import { droppedBy, requiredRoles } from "../plan";
 import { RunView } from "../runs";
 import { PlanReview } from "./PlanReview";
+import { RehearseBar } from "./Rehearse";
 import { RunTimeline } from "./RunTimeline";
 
 const PlanList = z.object({ plans: z.array(PlanSummary) });
@@ -35,14 +36,24 @@ export function LivePlans({ apiFetch }: { apiFetch: ApiFetch }) {
   });
   const [chosen, setChosen] = useState<string | null>(null);
   const planId = chosen ?? plans.data?.plans[0]?.planId ?? null;
+  // A freshly stored plan is the one to look at next.
+  const showStored = useCallback((id: string) => setChosen(id), []);
 
   if (plans.isPending) return <p className="mt-6 text-sm text-slate-500">Loading plans…</p>;
   if (plans.isError) return <Problem>{explain(plans.error)}</Problem>;
-  if (!planId) return <p className="mt-6 text-slate-600">No plans for this organization yet.</p>;
+  if (!planId) {
+    return (
+      <div className="mt-6">
+        <RehearseBar apiFetch={apiFetch} onStored={showStored} />
+        <p className="mt-4 text-slate-600">No plans for this organization yet.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="mt-6">
-      <nav aria-label="Plans" className="flex flex-wrap gap-2">
+      <RehearseBar apiFetch={apiFetch} onStored={showStored} />
+      <nav aria-label="Plans" className="mt-4 flex flex-wrap gap-2">
         {plans.data.plans.map((p) => (
           <button
             key={p.planId}

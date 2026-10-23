@@ -36,6 +36,7 @@
 | T2.7 | Two-minute video script, recording, Devpost page | M4–M5 | Submitted | #16 | T2.6 |
 | T2.8 | _Stretch:_ thin Expo approver app on the same API | after M4 | Only if everything else is frozen | #17 | T2.4 |
 | T2.9 | Decide currency: align `policy.v1.json` with the Era seed (USD vs CAD) and record it in `docs/decisions/` | M2 | Decision merged; policy and seed agree | #40 | — |
+| T2.10 | Rehearse button: start a plan from the review page, follow the planner, show the stored plan | M3 | Planner states and failures in plain words; stored plan selected on arrival | #116 | T1.5 |
 
 ## Decisions
 
@@ -46,6 +47,8 @@ _(add dated entries)_
 ## Handoff log
 
 _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
+
+- **2026-10-23, Parsa (T2.10).** Branch `t2/T2.10-rehearse-button`, stacked on `fix/105-scope-caches-by-identity` (#115). "Rehearse INC-BILL-0927" calls `POST /api/incidents/:id/rehearse`, polls `GET /api/rehearsals/:id` every 2 s (queued, planning, retrying, stored, failed with the planner's reason), then selects and shows the stored plan. One rehearsal at a time; read-only roles get a clear refusal. The incident ID is a constant in `Rehearse.tsx`, because the API has no incident list. Playwright covers success, failure, retry and refusal against a fake planner API. **Not run against the real planner worker or Claude** (needs the API, Postgres, planner worker and an Anthropic key).
 
 - **2026-10-23, Parsa (#105).** Branch `fix/105-scope-caches-by-identity`. Every cached query on the review page is keyed by the verified user and org (`useTenantKey`), and `IdentityScope` remounts the live page on a new identity and cancels/removes the previous identity's cache, including on sign-out. Playwright switches org and signs out/in against a fake API with slow responses, and asserts no content, grant or editing state from the first identity appears, even while the second loads; both tests fail with the scoping removed. **Gotcha:** any new query that holds tenant data must be keyed through `useTenantKey`. Not tested against a live Clerk session. **Related:** #106 (event cursor) is fixed on the T3 side in #114; the API's `?after=` query needs no change.
 

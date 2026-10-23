@@ -57,6 +57,9 @@ describe("explain", () => {
       { error: "policy_violation", violations: [{ rule: "R3.finance_threshold", detail: "d" }] },
       "Breaks policy: R3.finance_threshold (d)",
     ],
+    [{ error: "forbidden" }, "Your role can read plans but not ask for a rehearsal."],
+    [{ error: "incident_not_found" }, "This deployment can't rehearse that incident."],
+    [{ error: "not_enqueued" }, "The planner queue didn't accept the request. Try again."],
     [{ error: "something_new" }, "Refused: something_new."],
   ])("explains %j", (body, text) => {
     expect(explain(refused(body))).toBe(text);
