@@ -54,6 +54,8 @@ const ctx: WorkerContext = {
   },
   clock,
   policies: [policy as WorkerContext["policies"][number]],
+  // Independent cases applied at once per run (cases sharing a record always run in order).
+  executor: { caseConcurrency: Number(process.env.EXECUTOR_CASE_CONCURRENCY ?? 4) || 1 },
 };
 
 const boss = await startQueue();

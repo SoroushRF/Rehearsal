@@ -98,6 +98,11 @@ export interface ExecutorDeps {
   /** Injectable for tests; defaults to a real timer. */
   sleep?: (ms: number) => Promise<void>;
   /**
+   * Independent cases applied at once (default 1: one at a time). Cases that share a charge or
+   * ticket, or depend on each other, always run in one sequential group.
+   */
+  caseConcurrency?: number;
+  /**
    * Minimum age before a negative read permits an identical idempotency-protected replay.
    * Non-idempotent unknown writes remain held regardless of age. Default 60 s.
    */
@@ -218,6 +223,71 @@ function resultRefsOf(action: Action): ResultRef[] {
   return Object.values(action.args.bindings).filter(
     (b): b is ResultRef => typeof b === "object" && b !== null,
   );
+}
+
+/**
+ * Partition a plan's actions into groups that may run concurrently. Cases are joined into one
+ * sequential group when they touch any record in common: a record one writes, a record any of
+ * them cites as evidence, a customer or requester their queries cover, or a cross-case dependency.
+ * So one case's write can never look like outside drift to another case's guard, and two writes to
+ * one record never run side by side. Inside a group actions keep their topological order.
+ */
+export function caseGroups(
+  manifest: Pick<PlanManifest, "actions" | "observations" | "queryObservations">,
+): Action[][] {
+  const { actions } = manifest;
+  const parent = new Map<string, string>();
+  const find = (c: string): string => {
+    const p = parent.get(c) ?? c;
+    if (p === c) return c;
+    const root = find(p);
+    parent.set(c, root);
+    return root;
+  };
+  const union = (a: string, b: string) => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent.set(ra, rb);
+  };
+  const observations = new Map(manifest.observations.map((o) => [o.id, o]));
+  const queries = new Map(manifest.queryObservations.map((q) => [q.id, q]));
+  const caseOf = new Map(actions.map((a) => [a.id, a.caseId]));
+  const firstCaseFor = new Map<string, string>();
+  const touch = (key: string, caseId: string) => {
+    const first = firstCaseFor.get(key);
+    if (first) union(first, caseId);
+    else firstCaseFor.set(key, caseId);
+  };
+  for (const a of actions) {
+    if (!parent.has(a.caseId)) parent.set(a.caseId, a.caseId);
+    const t = targetOf(a);
+    touch(`record:${t.vendor}:${t.kind}:${t.id}`, a.caseId);
+    for (const id of a.evidence) {
+      const o = observations.get(id);
+      // Unknown evidence can't be placed: keep that case with every other such case.
+      touch(o ? `record:${o.entity.vendor}:${o.entity.kind}:${o.entity.id}` : "unplaced", a.caseId);
+    }
+    for (const id of a.queryEvidence) {
+      const q = queries.get(id)?.predicate;
+      const who =
+        q?.kind === "stripe.charges.byCustomerInWindow"
+          ? `customer:${q.customerId}`
+          : q?.kind === "zendesk.tickets.byRequester"
+            ? `requester:${q.requesterId}`
+            : "unplaced";
+      touch(who, a.caseId);
+    }
+    for (const d of a.dependsOn) {
+      const other = caseOf.get(d);
+      if (other) union(other, a.caseId);
+    }
+  }
+  const groups = new Map<string, Action[]>();
+  for (const a of topoOrder(actions)) {
+    const root = find(a.caseId);
+    groups.set(root, [...(groups.get(root) ?? []), a]);
+  }
+  return [...groups.values()];
 }
 
 /** Run-level admission. Any failure means nothing is dispatched. */
@@ -351,6 +421,8 @@ async function applyLocked(
   const settled = new Map<string, ReceiptOutcome>();
   /** Set once a cancel is seen; no further action is admitted or sent. */
   let cancelled = false;
+  /** Set on an unexpected failure in any lane: no lane starts another action or send. */
+  let stopped = false;
   const checkCancelled = async (where: string) => {
     if (cancelled) return true;
     if (await deps.store.runCancelled?.(job.orgId, job.runId)) {
@@ -369,8 +441,11 @@ async function applyLocked(
       heldUnresolved.add(r.holdReason.attemptId);
     }
   }
-  /** An attempt marked dispatched whose outcome isn't settled yet (for honest error labelling). */
-  let inFlightAttempt: string | null = null;
+  /**
+   * Attempts marked dispatched (or left unknown) whose step hasn't settled yet, across every case
+   * running at once. Non-empty at the end means the run can't honestly be called failed.
+   */
+  const inFlightAttempts = new Set<string>();
   const bindings = new Map<string, string | number>(
     (await journal.bindings(job.planHash)).map((b) => [bindingKey(b.ref), b.value]),
   );
@@ -423,7 +498,9 @@ async function applyLocked(
     receipts.push(receipt);
     if (receipt.outcome === "confirmed") confirmedByAction.set(receipt.actionId, receipt);
     settled.set(action.id, receipt.outcome);
-    if (opts.transition?.attemptId === inFlightAttempt) inFlightAttempt = null;
+    for (const t of [...(opts.transitions ?? []), ...(opts.transition ? [opts.transition] : [])]) {
+      inFlightAttempts.delete(t.attemptId);
+    }
     // Events are a feed for the UI, not the record; losing one must not change the outcome.
     await journal.appendEvent(job.runId, "step.receipt", receipt).catch(() => {});
   };
@@ -777,13 +854,18 @@ async function applyLocked(
       }
       // A cancel stops the next send, including a retry. An earlier send of this step whose
       // outcome is unknown stays unknown (it is reconciled by a later run, never re-sent here).
-      if (await checkCancelled(`send ${action.id}`)) {
+      // Another lane hit an unexpected error: send nothing more here either.
+      if (stopped || (await checkCancelled(`send ${action.id}`))) {
         if (unknownSends.length > 0) {
           return settle(
             action,
             receiptFor(action, "unknown_outcome", {
               holdReason: { kind: "unresolved_outcome", attemptId: unknownSends[0] as string },
-              limitations: ["run cancelled; earlier send outcome remains unknown"],
+              limitations: [
+                cancelled
+                  ? "run cancelled; earlier send outcome remains unknown"
+                  : "run stopped on an error in another case; earlier send outcome remains unknown",
+              ],
             }),
           );
         }
@@ -840,7 +922,7 @@ async function applyLocked(
       const current: string = attemptId;
       // Marked dispatched BEFORE the network call: a crash after this point is an unknown outcome.
       await journal.transition(current, "prepared", "dispatched", { dispatchedAt: at() });
-      inFlightAttempt = current;
+      inFlightAttempts.add(current);
 
       let result: DispatchResult;
       try {
@@ -903,8 +985,8 @@ async function applyLocked(
         if (result.retryable && canRetry && delay <= policy.maxDelayMs) {
           // A retryable refusal (429) had no effect: send the same bytes again after the delay.
           await journal.transition(current, "dispatched", "rejected", rejectedPatch);
-          // An earlier unknown send may still have applied; the run isn't settled until it is.
-          inFlightAttempt = unknownSends[0] ?? null;
+          // This send had no effect. An earlier unknown send stays in flight until it settles.
+          inFlightAttempts.delete(current);
           await journal
             .appendEvent(job.runId, "step.retry", {
               actionId: action.id,
@@ -999,15 +1081,17 @@ async function applyLocked(
   }
 
   let error: string | null = null;
-  for (const action of topoOrder(manifest.actions)) {
+
+  /** One action, with the dependency, cancel and error handling every case shares. */
+  async function runAction(action: Action): Promise<"next" | "stop"> {
     const blocked = action.dependsOn.find((d) => settled.get(d) !== "confirmed");
     try {
       if (reconcileOnly) {
         // Only steps with an earlier send in flight have anything to resolve.
         await step(action);
-        continue;
+        return "next";
       }
-      if (await checkCancelled(`step ${action.id}`)) break;
+      if (await checkCancelled(`step ${action.id}`)) return "stop";
       if (blocked) {
         await settle(
           action,
@@ -1015,20 +1099,45 @@ async function applyLocked(
             holdReason: { kind: "predecessor_not_confirmed", stepId: blocked },
           }),
         );
-        continue;
+        return "next";
       }
       await step(action);
-      if (cancelled) break;
+      return cancelled ? "stop" : "next";
     } catch (err) {
-      // Unexpected failure (journal down, adapter bug). Stop: the remaining steps are not attempted,
-      // and anything already dispatched stays in the journal as dispatched, so it is never re-sent.
-      error = `${action.id}: ${(err as Error).message}`;
+      // Unexpected failure (journal down, adapter bug). Stop: no further action starts in any
+      // case, and anything already dispatched stays in the journal as dispatched, never re-sent.
+      error ??= `${action.id}: ${(err as Error).message}`;
       await journal
-        .appendEvent(job.runId, "step.error", { actionId: action.id, error })
+        .appendEvent(job.runId, "step.error", {
+          actionId: action.id,
+          error: (err as Error).message,
+        })
         .catch(() => {});
-      break;
+      return "stop";
     }
   }
+
+  // Each group runs its actions in order; up to `caseConcurrency` groups run at once.
+  const requested = deps.caseConcurrency ?? 1;
+  const width = Number.isFinite(requested) ? Math.floor(requested) : 1;
+  // One at a time keeps the exact global topological order; otherwise independent groups.
+  const groups = width <= 1 ? [topoOrder(manifest.actions)] : caseGroups(manifest);
+  const limit = Math.max(1, Math.min(width, groups.length));
+  let nextGroup = 0;
+  const lane = async () => {
+    while (!stopped && !cancelled) {
+      const group = groups[nextGroup++];
+      if (!group) return;
+      for (const action of group) {
+        if (stopped || cancelled) return;
+        if ((await runAction(action)) === "stop") {
+          if (!cancelled) stopped = true;
+          return;
+        }
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: limit }, lane));
 
   const outcomes = manifest.actions.map((a) => settled.get(a.id));
   const confirmed = outcomes.filter((o) => o === "confirmed").length;
@@ -1039,7 +1148,7 @@ async function applyLocked(
       ? "completed"
       : confirmed > 0
         ? "partial"
-        : inFlightAttempt !== null || outcomes.some((o) => o === "held" || o === "unknown_outcome")
+        : inFlightAttempts.size > 0 || outcomes.some((o) => o === "held" || o === "unknown_outcome")
           ? "held"
           : "failed";
   await journal.appendEvent(job.runId, "run.finished", { state, error }).catch(() => {});

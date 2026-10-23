@@ -38,7 +38,7 @@ These must pass on Era, not just on fixtures:
 | T3.4 | Retries: bounded backoff, Retry-After on 429 and transient errors; validation and permission errors are rejected, not retried | M2 | Era fault injection → retried, one effect | #21 | T3.3 |
 | T3.5 | Unknown outcome: a test transport that forwards then drops the response, crash and restart, reconcile through reads | M3 | `unknown-outcome` bundle passes on Era | #22 | T3.4 |
 | T3.6 | ID divergence test, partial-completion run state, cancellation before the next admitted action | M3 | Tests green; UI shows partial honestly | #23 | T3.3 |
-| T3.7 | Bounded concurrency across independent cases. Only after everything above is green. | M4 | Optional | #24 | T3.5, T3.6 |
+| T3.7 | Bounded concurrency across independent cases. Only after everything above is green. | M4 | `caseConcurrency` groups and live Era test | #24 | T3.5, T3.6 |
 
 ## Decisions
 
@@ -47,6 +47,17 @@ _(add dated entries)_
 ## Handoff log
 
 _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
+
+- **2026-10-22, Artin (T3.7).** Branch `t3/T3.7-concurrency`. `ExecutorDeps.caseConcurrency` (default 1) runs independent cases at once:
+  - **Grouping:** `caseGroups(manifest)` joins cases into one sequential group when they touch any record in common: a record one writes, a record any of them cites as evidence, a customer or requester their queries cover, or a cross-case dependency. So one case's write never looks like outside drift to another case's guard, and two writes to one record never run side by side. With concurrency 1, the exact global topological order is kept.
+  - **Run state:** in-flight attempts are tracked as a set across cases. An unexpected error stops new actions in every case, and a cancel stops every lane before its next action.
+  - **Backoff:** a 429 in one case no longer blocks the others.
+  - **The worker** uses `EXECUTOR_CASE_CONCURRENCY` (default 4).
+  - **Tests:**
+    - Fake: the limit is honored and actually exceeded 1; results match a sequential run; backoff doesn't block other cases; a shared ticket is never written concurrently; error and cancel stop all lanes; grouping.
+    - Postgres: the worker with concurrent cases.
+    - Live Era: four cases at once, each effect once (`concurrency.test.ts`).
+  - **T3 is complete.**
 
 - **2026-10-22, Artin (T3.6).** Branch `t3/T3.6-cancel-reaper`.
   - **Cancellation:**

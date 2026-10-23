@@ -21,7 +21,7 @@ export interface WorkerContext {
   clock: Clock;
   policies: readonly BillingPolicyV1[];
   /** Overrides for tests (retry sleeps, the reconcile window). */
-  executor?: Pick<ExecutorDeps, "retry" | "sleep" | "reconcileAfterMs">;
+  executor?: Pick<ExecutorDeps, "retry" | "sleep" | "reconcileAfterMs" | "caseConcurrency">;
 }
 
 /** Thrown so pg-boss retries the job later; the run itself is fine. */

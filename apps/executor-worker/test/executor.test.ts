@@ -1,13 +1,17 @@
 import type { ApprovalGrant, PlanManifest, ReplayBundle } from "@rehearsal/contracts";
 import {
   type BillingPolicyV1,
+  caseGroups,
+  createReadGuard,
   type ExecutorDeps,
   executeRun,
+  fingerprint,
   operationKey,
   PLAN_LOCKED,
   type ProviderPort,
   planHash,
   RUN_CANCELLED,
+  topoOrder,
 } from "@rehearsal/core";
 import {
   FakeClock,
@@ -1343,6 +1347,258 @@ describe("cancellation and lock order (T3.6)", () => {
     // Without the lock held, the same expired grant is refused (nothing sent either way).
     expect((await s.run()).refusal).toMatch(/expired/);
     expect(s.world.effects).toEqual([]);
+  });
+});
+
+describe("bounded concurrency across cases (T3.7)", () => {
+  /**
+   * The happy bundle widened to `n` customer cases, each with its own customer, charge, ticket,
+   * evidence and customer query, as the planner records them. With `shareTicket`, the extra cases
+   * all write case_001's ticket.
+   */
+  function wideBundle(n: number, shareTicket = false): ReplayBundle {
+    const bundle = happyPathBundle();
+    const m = bundle.manifest;
+    const byId = <T extends { id: string }>(list: T[], id: string) => {
+      const found = list.find((x) => x.id === id);
+      if (!found) throw new Error(`fixture has no ${id}`);
+      return found;
+    };
+    const chargeObs = byId(m.observations, "obs_charge_001");
+    const ticketObs = byId(m.observations, "obs_ticket_001");
+    const query = byId(m.queryObservations, "q_charges_001");
+    const template = m.actions.filter((a) => a.caseId === "case_001");
+    for (let k = 3; k <= n; k++) {
+      const tag = String(k).padStart(3, "0");
+      const customer = `cus_fixture_${tag}`;
+      const chargeId = `ch_fixture_${tag}`;
+      const ticketId = shareTicket ? "5531" : `55${tag}`;
+      const charge = { ...chargeObs.projection, id: chargeId, customer };
+      m.observations.push({
+        ...chargeObs,
+        id: `obs_charge_${tag}`,
+        entity: { ...chargeObs.entity, id: chargeId },
+        projection: charge,
+        fingerprint: fingerprint(charge),
+      });
+      if (!shareTicket) {
+        const ticket = { ...ticketObs.projection, id: ticketId, requester_id: customer };
+        m.observations.push({
+          ...ticketObs,
+          id: `obs_ticket_${tag}`,
+          entity: { ...ticketObs.entity, id: ticketId },
+          projection: ticket,
+          fingerprint: fingerprint(ticket),
+        });
+      }
+      const projections = { [chargeId]: charge };
+      m.queryObservations.push({
+        ...query,
+        id: `q_charges_${tag}`,
+        predicate: { ...query.predicate, customerId: customer } as typeof query.predicate,
+        matchingIds: [chargeId],
+        projections,
+        fingerprint: fingerprint({ matchingIds: [chargeId], projections }),
+      });
+      for (const a of template) {
+        const copy = structuredClone(a);
+        copy.id = a.id.replace("001", tag);
+        copy.caseId = `case_${tag}`;
+        copy.obligationId = `obl_overcharge_${tag}`;
+        copy.dependsOn = a.dependsOn.map((d) => d.replace("001", tag));
+        copy.evidence = a.evidence.map((e) =>
+          e === "obs_ticket_001" && shareTicket ? e : e.replace("001", tag),
+        );
+        copy.queryEvidence = a.queryEvidence.map((q) => q.replace("001", tag));
+        if (copy.kind === "stripe.refund.create") copy.args.chargeId = chargeId;
+        else copy.args.ticketId = ticketId;
+        if (copy.kind === "zendesk.ticket.appendPrivateNote") {
+          copy.args.bindings.refundId = {
+            $ref: "result",
+            stepId: `refund_${tag}`,
+            path: "refund.id",
+          };
+        }
+        bundle.manifest.actions.push(copy);
+      }
+    }
+    return bundle;
+  }
+  /** The setup, with T4's real read guard on the same providers the executor sends through. */
+  function guarded(bundle: ReplayBundle) {
+    const s = setup(bundle);
+    s.deps.guard = createReadGuard({
+      providers: s.deps.providers,
+      worlds: s.deps.worlds,
+      clock: s.deps.clock,
+    });
+    return s;
+  }
+  /** Count how many sends are on the wire at once, per vendor path. */
+  function track(s: ReturnType<typeof setup>) {
+    const live = { now: 0, max: 0, perTicket: new Map<string, number>(), maxPerTicket: 0 };
+    for (const vendor of ["stripe", "zendesk"] as const) {
+      const port = s.deps.providers[vendor];
+      s.deps.providers[vendor] = {
+        ...port,
+        dispatch: async (req, ctx) => {
+          live.now += 1;
+          live.max = Math.max(live.max, live.now);
+          const t = /tickets\/(\d+)/.exec(req.path)?.[1];
+          if (t) {
+            const c = (live.perTicket.get(t) ?? 0) + 1;
+            live.perTicket.set(t, c);
+            live.maxPerTicket = Math.max(live.maxPerTicket, c);
+          }
+          await new Promise((r) => setTimeout(r, 5));
+          try {
+            return await port.dispatch(req, ctx);
+          } finally {
+            live.now -= 1;
+            if (t) live.perTicket.set(t, (live.perTicket.get(t) ?? 1) - 1);
+          }
+        },
+      };
+    }
+    return live;
+  }
+
+  it("applies independent cases at once, never more than the limit, with the sequential results", async () => {
+    const sequential = guarded(wideBundle(6));
+    const expected = outcomes((await sequential.run()).receipts);
+
+    const s = guarded(wideBundle(6));
+    s.deps.caseConcurrency = 3;
+    const live = track(s);
+    const result = await s.run();
+    expect(result.state).toBe("completed");
+    expect(outcomes(result.receipts)).toEqual(expected);
+    expect(live.max).toBeGreaterThan(1);
+    expect(live.max).toBeLessThanOrEqual(3);
+    expect(s.world.refunds).toHaveLength(6);
+    // Each note names its own case's refund.
+    for (let k = 1; k <= 6; k++) {
+      const tag = String(k).padStart(3, "0");
+      const ticket = k === 1 ? "5531" : k === 2 ? "5532" : `55${tag}`;
+      const refund = s.world.refunds.find((r) => r.charge === `ch_fixture_${tag}`);
+      expect(s.world.tickets.get(ticket)?.comments.at(-1)?.body).toContain(refund?.id);
+    }
+  });
+
+  it("a case waiting out a 429 doesn't block the others", async () => {
+    const s = guarded(wideBundle(4));
+    s.deps.caseConcurrency = 4;
+    s.world.fault("/v1/refunds", {
+      kind: "reject",
+      status: 429,
+      retryable: true,
+      retryAfterMs: 1000,
+    });
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    let confirmedWhileWaiting = 0;
+    s.deps.sleep = async () => {
+      // Let the other cases run while this one "sleeps".
+      await new Promise((r) => setTimeout(r, 30));
+      confirmedWhileWaiting = s.journal.receipts.filter((r) => r.outcome === "confirmed").length;
+      release();
+    };
+    const result = await Promise.all([s.run(), gate]).then(([r]) => r);
+    expect(result.state).toBe("completed");
+    expect(confirmedWhileWaiting).toBeGreaterThan(0);
+  });
+
+  it("cases that share a ticket never write to it at the same time", async () => {
+    const s = guarded(wideBundle(5, true));
+    s.deps.caseConcurrency = 5;
+    const live = track(s);
+    const result = await s.run();
+    expect(result.state).toBe("completed");
+    expect(live.maxPerTicket).toBe(1);
+  });
+
+  it("an unexpected error stops new actions in every case; the run reads honestly", async () => {
+    const s = guarded(wideBundle(6));
+    s.deps.caseConcurrency = 3;
+    s.journal.failNextSettle = true; // the first settle throws
+    const result = await s.run();
+    expect(result.error).toMatch(/journal unavailable/);
+    expect(["held", "partial"]).toContain(result.state);
+    expect(s.world.refunds.length).toBeLessThan(6); // nobody kept starting new cases
+  });
+
+  it("a cancel stops every lane before its next action", async () => {
+    const s = guarded(wideBundle(6));
+    s.deps.caseConcurrency = 3;
+    const stripe = s.deps.providers.stripe;
+    let sends = 0;
+    s.deps.providers.stripe = {
+      ...stripe,
+      dispatch: async (req, ctx) => {
+        sends += 1;
+        if (sends === 2) s.store.cancelled.add(RUN);
+        return stripe.dispatch(req, ctx);
+      },
+    };
+    const result = await s.run();
+    expect(result.state).toBe("cancelled");
+    expect(s.world.refunds.length).toBeLessThanOrEqual(3); // at most the sends already under way
+  });
+
+  it("a case citing another case's record as evidence runs with it: no false hold", async () => {
+    const overlapping = () => {
+      const b = wideBundle(4);
+      const refund = b.manifest.actions.find((a) => a.id === "refund_003");
+      refund?.evidence.push("obs_charge_001"); // case 3 also relies on case 1's charge
+      return b;
+    };
+    expect(caseGroups(overlapping().manifest)).toHaveLength(3);
+    const sequential = guarded(overlapping());
+    const expected = outcomes((await sequential.run()).receipts);
+    const s = guarded(overlapping());
+    s.deps.caseConcurrency = 4;
+    // Open the race: case 1's refund lands but settles slowly, while case 3's guard re-reads
+    // case 1's charge in between. Without grouping, case 3 would see our own refund as drift.
+    const stripe = s.deps.providers.stripe;
+    s.deps.providers.stripe = {
+      ...stripe,
+      dispatch: async (req, ctx) => {
+        const res = await stripe.dispatch(req, ctx);
+        if (req.body.includes("ch_fixture_001")) await new Promise((r) => setTimeout(r, 80));
+        return res;
+      },
+    };
+    const guard = s.deps.guard;
+    s.deps.guard = async (action, ctx) => {
+      if (action.id === "refund_003") await new Promise((r) => setTimeout(r, 30));
+      return guard ? guard(action, ctx) : null;
+    };
+    const result = await s.run();
+    expect(outcomes(result.receipts)).toEqual(expected);
+    expect(result.state).toBe("completed");
+  });
+
+  it("caseConcurrency 1 keeps the exact global order; a bad value falls back to 1", async () => {
+    const s = guarded(wideBundle(3));
+    s.deps.caseConcurrency = Number.NaN;
+    const result = await s.run();
+    expect(result.state).toBe("completed");
+    expect(result.receipts.map((r) => r.actionId)).toEqual(
+      topoOrder(s.manifest.actions).map((a) => a.id),
+    );
+  });
+
+  it("groups cases that share a record or depend on each other", () => {
+    const shared = wideBundle(4, true).manifest;
+    expect(caseGroups(shared).map((g) => new Set(g.map((a) => a.caseId)).size)).toEqual([3, 1]);
+    const independent = wideBundle(4).manifest;
+    expect(caseGroups(independent)).toHaveLength(4);
+    const crossDep = structuredClone(independent);
+    const note = crossDep.actions.find((a) => a.id === "note_003");
+    if (note) note.dependsOn.push("refund_004");
+    expect(caseGroups(crossDep)).toHaveLength(3);
   });
 });
 
