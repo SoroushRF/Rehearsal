@@ -6,6 +6,7 @@ import type {
   Receipt,
   ReceiptOutcome,
 } from "@rehearsal/contracts";
+import { topoOrder } from "./dag";
 import type { CompensationContext, CompensationResult, Compensator } from "./executor";
 import { undoKey } from "./executor";
 import { sha256Hex } from "./hash";
@@ -181,15 +182,23 @@ function heldUndoTargets(
   );
 }
 
+/**
+ * Later writes first. Undoing an earlier patch while a later one still holds the field makes that
+ * later value look like a teammate edit, so a chain (normal → high → urgent) would stop at high.
+ */
+function compensationOrder(manifest: PlanManifest, actions: readonly Patch[]): Patch[] {
+  const wanted = new Set(actions.map((a) => a.id));
+  return topoOrder(manifest.actions)
+    .filter((a): a is Patch => wanted.has(a.id))
+    .reverse();
+}
+
 export function createCompensator(deps: CompensatorDeps): Compensator {
   return async (ctx) => {
-    const seen = new Set<string>();
-    for (const action of [
+    for (const action of compensationOrder(ctx.manifest, [
       ...compensationTargets(ctx.manifest, ctx.outcomes, ctx.receipts),
       ...heldUndoTargets(ctx.manifest, ctx.outcomes, ctx.receipts),
-    ]) {
-      if (seen.has(action.id)) continue;
-      seen.add(action.id);
+    ])) {
       await compensate(action, ctx, deps);
     }
   };
@@ -383,12 +392,16 @@ async function compensate(action: Patch, ctx: CompensationContext, deps: Compens
     if (Object.keys(decision.revert).length === 0) {
       // A late landing of our own undo restores the before value and then 409s the fresh send.
       // The marker says it was ours; a teammate restoring the same value leaves no marker.
+      // Fields that marker restored were taken out of `kept` above. A field it never restored
+      // is still a conflict or a manual hold, not proof the whole patch was undone.
       if (earlier && (await undoRead(provider, world, action, earlier)) === "landed") {
+        const settled = verdict(decision);
+        const late = "our earlier undo landed; nothing further written";
         return record({
-          outcome: "compensated",
+          ...settled,
           providerRef: ticket,
           observedEffect: { priority: current.priority, status: current.status },
-          limitations: ["our earlier undo landed; nothing further written"],
+          limitations: settled.outcome === "compensated" ? [late] : [...describe(decision), late],
         });
       }
       return record({

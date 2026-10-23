@@ -167,6 +167,25 @@ function noteFails(): ReplayBundle {
   return bundle;
 }
 
+/** A second patch on 5532, depending on `patch_002`: priority high → urgent. */
+function stackedPriority(bundle: ReplayBundle): ReplayBundle {
+  const actions = bundle.manifest.actions;
+  const patch = actions.find((a) => a.id === "patch_002");
+  if (patch?.kind !== "zendesk.ticket.patchFields") throw new Error("no patch_002");
+  actions.splice(actions.indexOf(patch) + 1, 0, {
+    ...structuredClone(patch),
+    id: "patch_002b",
+    dependsOn: ["patch_002"],
+    rationale: "Raise priority again while the remedy is in flight.",
+    args: {
+      ticketId: patch.args.ticketId,
+      set: { priority: "urgent" },
+      before: { priority: "high" },
+    },
+  });
+  return bundle;
+}
+
 /** `patch_002` also sets status, with the given before values. */
 function twoFields(bundle: ReplayBundle, before: { priority?: "normal"; status?: "open" }) {
   const patch = bundle.manifest.actions.find((a) => a.id === "patch_002");
@@ -1126,5 +1145,64 @@ describe("conditional compensation", () => {
     expect(receipts.some((r) => r.outcome === "compensation_conflict")).toBe(false);
     expect(receipts.at(-1)?.outcome).toBe("compensated");
     expect(s.world.tickets.get("5532")?.priority).toBe("normal");
+  });
+
+  it("keeps a teammate's field when a follow-up undo lands late (#103)", async () => {
+    const bundle = twoFields(noteFails(), { priority: "normal", status: "open" });
+    const s = setup(bundle);
+    replay(s, bundle, () => {
+      s.world.teammateEdit("5532", "status", "solved");
+      s.world.fault(TICKET, { kind: "drop_response_after_commit" });
+    });
+    await s.run();
+    expect(s.world.tickets.get("5532")).toMatchObject({ priority: "normal", status: "solved" });
+    // The follow-up only exists because status is back to the value we wrote.
+    s.world.teammateEdit("5532", "status", "pending");
+    const dispatch = s.providers.zendesk.dispatch;
+    s.providers.zendesk.dispatch = async (request, ctx) => {
+      if (request.body.includes('"status":"open"') && request.body.includes('"safe_update"')) {
+        s.world.teammateEdit("5532", "status", "solved");
+      }
+      return dispatch(request, ctx);
+    };
+    const writes = s.ticketWrites();
+
+    await s.run();
+    const receipt = (await patchReceipts(s, s.hash)).at(-1);
+    expect(receipt?.outcome).toBe("compensation_conflict");
+    expect(receipt?.limitations.join(" ")).toMatch(/kept status = solved/);
+    expect(s.world.tickets.get("5532")).toMatchObject({ priority: "normal", status: "solved" });
+    expect(s.ticketWrites()).toBe(writes);
+  });
+
+  it("unwinds two patches of one field back to the original value (#109)", async () => {
+    const bundle = stackedPriority(noteFails());
+    const s = setup(bundle);
+    replay(s, bundle);
+    const result = await s.run();
+
+    expect(result.error).toBeNull();
+    expect(outcomes(result.receipts)).toMatchObject({
+      patch_002: "compensated",
+      patch_002b: "compensated",
+      note_002: "rejected",
+    });
+    expect(result.receipts.some((r) => r.outcome === "compensation_conflict")).toBe(false);
+    expect(s.world.tickets.get("5532")?.priority).toBe("normal");
+    expect(s.ticketWrites()).toBe(4);
+  });
+
+  it("keeps a teammate's edit on a two-patch chain (#109)", async () => {
+    const bundle = stackedPriority(noteFails());
+    const s = setup(bundle);
+    replay(s, bundle, () => s.world.teammateEdit("5532", "priority", "low"));
+    const result = await s.run();
+
+    expect(outcomes(result.receipts)).toMatchObject({
+      patch_002: "compensation_conflict",
+      patch_002b: "compensation_conflict",
+    });
+    expect(s.world.tickets.get("5532")?.priority).toBe("low");
+    expect(s.ticketWrites()).toBe(2);
   });
 });
