@@ -6,7 +6,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 
 ## Top blockers
 
-23 of 35 tasks done. These open tasks hold up the most other work:
+24 of 35 tasks done. These open tasks hold up the most other work:
 
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
@@ -61,7 +61,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T3.4** Retries with bounded backoff and Retry-After [#21](https://github.com/SoroushRF/Rehearsal/issues/21) | ✅ done |  | T3.5 |
 | **T3.5** Unknown outcome: lost response, restart, reconcile through reads [#22](https://github.com/SoroushRF/Rehearsal/issues/22) | ✅ done |  | T3.7 |
 | **T3.6** ID divergence test, partial-completion state, cancellation [#23](https://github.com/SoroushRF/Rehearsal/issues/23) | ✅ done |  | T3.7 |
-| **T3.7** Bounded concurrency across independent cases [#24](https://github.com/SoroushRF/Rehearsal/issues/24) | 🟨 ready | — |  |
+| **T3.7** Bounded concurrency across independent cases [#24](https://github.com/SoroushRF/Rehearsal/issues/24) | ✅ done |  |  |
 
 ## T4 Guard
 
@@ -72,7 +72,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T4.1** Pure guards: observation compare, query-membership diff, own-write overlay [#25](https://github.com/SoroushRF/Rehearsal/issues/25) | ✅ done |  | T4.3 |
 | **T4.2** Injection scripts and demo:phantom / demo:conflict / demo:reset [#26](https://github.com/SoroushRF/Rehearsal/issues/26) | ✅ done |  | T1.6 (T1), T4.3 |
 | **T4.3** Wire guards into executor admission [#27](https://github.com/SoroushRF/Rehearsal/issues/27) | ✅ done |  | T4.4 |
-| **T4.4** Conditional compensation on owned fields [#28](https://github.com/SoroushRF/Rehearsal/issues/28) | 🟨 ready | — |  |
+| **T4.4** Conditional compensation on owned fields [#28](https://github.com/SoroushRF/Rehearsal/issues/28) | 👀 in review [PR #92](https://github.com/SoroushRF/Rehearsal/pull/92) | — |  |
 | **T4.5** ML smoke test: Qwen3.5-0.8B LoRA on 32 cases [#29](https://github.com/SoroushRF/Rehearsal/issues/29) | 🟨 ready | — | T4.6 |
 | **T4.6** ML pilot and go/no-go [#30](https://github.com/SoroushRF/Rehearsal/issues/30) | 🟥 blocked | T4.5 (T4, ready) | T4.7 |
 | **T4.7** Impact service behind ImpactPort (if ML go) [#31](https://github.com/SoroushRF/Rehearsal/issues/31) | 🟥 blocked | T4.6 (T4, blocked) |  |
@@ -117,13 +117,13 @@ flowchart LR
     T3_4["T3.4 Retries with bounded backoff and Retry-Afte"]:::done
     T3_5["T3.5 Unknown outcome: lost response, restart, re"]:::done
     T3_6["T3.6 ID divergence test, partial-completion stat"]:::done
-    T3_7["T3.7 Bounded concurrency across independent case"]:::ready
+    T3_7["T3.7 Bounded concurrency across independent case"]:::done
   end
   subgraph T4[T4 Guard]
     T4_1["T4.1 Pure guards: observation compare, query-mem"]:::done
     T4_2["T4.2 Injection scripts and demo:phantom / demo:c"]:::done
     T4_3["T4.3 Wire guards into executor admission"]:::done
-    T4_4["T4.4 Conditional compensation on owned fields"]:::ready
+    T4_4["T4.4 Conditional compensation on owned fields"]:::review
     T4_5["T4.5 ML smoke test: Qwen3.5-0.8B LoRA on 32 case"]:::ready
     T4_6["T4.6 ML pilot and go/no-go"]:::blocked
     T4_7["T4.7 Impact service behind ImpactPort (if ML go)"]:::blocked
