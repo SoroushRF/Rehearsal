@@ -6,11 +6,11 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 
 ## Top blockers
 
-26 of 35 tasks done. These open tasks hold up the most other work:
+26 of 36 tasks done. These open tasks hold up the most other work:
 
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
-| **T1.5** Bounded Claude tool loop and planner-worker plan jobs [#6](https://github.com/SoroushRF/Rehearsal/issues/6) | @SoroushRF | 🟨 ready | 3 |
+| **T1.5** Bounded Claude tool loop and planner-worker plan jobs [#6](https://github.com/SoroushRF/Rehearsal/issues/6) | @SoroushRF | 🟨 ready | 4 |
 | **T4.5** ML smoke test: Qwen3.5-0.8B LoRA on 32 cases [#29](https://github.com/SoroushRF/Rehearsal/issues/29) | @skhdemo | 👀 in review | 2 |
 | **T4.6** ML pilot and go/no-go [#30](https://github.com/SoroushRF/Rehearsal/issues/30) | @skhdemo | 🟥 blocked | 1 |
 
@@ -24,7 +24,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T1.2** Seed the incident cohort into both worlds, plus demo:reset [#3](https://github.com/SoroushRF/Rehearsal/issues/3) | ✅ done |  | T1.5 |
 | **T1.3** Read adapters: charges, tickets and query predicates [#4](https://github.com/SoroushRF/Rehearsal/issues/4) | ✅ done |  | T1.4, T4.3 (T4) |
 | **T1.4** Typed planning tools that record evidence and dependency edges [#5](https://github.com/SoroushRF/Rehearsal/issues/5) | ✅ done |  | T1.5 |
-| **T1.5** Bounded Claude tool loop and planner-worker plan jobs [#6](https://github.com/SoroushRF/Rehearsal/issues/6) | 🟨 ready | — | T1.6, T1.7, T1.8, T2.5 (T2) |
+| **T1.5** Bounded Claude tool loop and planner-worker plan jobs [#6](https://github.com/SoroushRF/Rehearsal/issues/6) | 🟨 ready | — | T1.6, T1.7, T1.8, T2.5 (T2), T2.10 (T2) |
 | **T1.6** ~20 benign and trap tasks plus baselines for the scorecard [#7](https://github.com/SoroushRF/Rehearsal/issues/7) | ✅ done |  |  |
 | **T1.7** Slack summary step (slack.message.postSummary) _(stretch)_ [#8](https://github.com/SoroushRF/Rehearsal/issues/8) | 🟥 blocked | T1.5 (T1, ready) |  |
 | **T1.8** SurrealDB precedents (explicit promotion, recall with trace) _(stretch)_ [#9](https://github.com/SoroushRF/Rehearsal/issues/9) | 🟥 blocked | T1.5 (T1, ready) |  |
@@ -48,6 +48,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T2.7** Two-minute video script, recording, Devpost page [#16](https://github.com/SoroushRF/Rehearsal/issues/16) | 🟨 ready | — |  |
 | **T2.8** Thin Expo approver app on the same API _(stretch)_ [#17](https://github.com/SoroushRF/Rehearsal/issues/17) | 🟨 ready | — |  |
 | **T2.9** Decide currency: align policy.v1.json with the Era seed (USD vs CAD) [#40](https://github.com/SoroushRF/Rehearsal/issues/40) | ✅ done |  | T1.5 (T1) |
+| **T2.10** Rehearse button: start a plan from the review page and follow it [#116](https://github.com/SoroushRF/Rehearsal/issues/116) | 🟥 blocked | T1.5 (T1, ready) |  |
 
 ## T3 Apply
 
@@ -109,6 +110,7 @@ flowchart LR
     T2_6["T2.6 Run timeline, receipts and held-step views "]:::done
     T2_7["T2.7 Two-minute video script, recording, Devpost"]:::ready
     T2_9["T2.9 Decide currency: align policy.v1.json with "]:::done
+    T2_10["T2.10 Rehearse button: start a plan from the rev"]:::blocked
   end
   subgraph T3[T3 Apply]
     T3_1["T3.1 Drizzle migrations, Postgres journal, pg-bo"]:::done
@@ -147,6 +149,7 @@ flowchart LR
   T3_2 --> T2_5
   T3_2 --> T2_6
   T2_6 --> T2_7
+  T1_5 --> T2_10
   T3_1 --> T3_2
   T3_2 --> T3_3
   T1_9 --> T3_3
