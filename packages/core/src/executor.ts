@@ -455,7 +455,7 @@ export async function executeRun(job: ApplyJobInput, deps: ExecutorDeps): Promis
         ...refused,
         receipts: outcome.receipts,
         error: outcome.error,
-        unresolved: await hasInFlight(job, deps, readable.manifest),
+        unresolved: outcome.unresolved,
       };
     }
     return await applyLocked(job, deps, admission.manifest, admission.grant);
@@ -1633,9 +1633,15 @@ async function applyLocked(
               outcomes.some((o) => o === "held" || o === "unknown_outcome")
             ? "held"
             : "failed";
+  // A refused run's read-only pass that left a send unresolved is retried too.
+  const unresolved = refusedAs !== undefined && (await hasInFlight(job, deps, manifest));
   // A run that stopped on an error isn't finished: the worker retries it.
   await journal
-    .appendEvent(job.runId, error === null ? "run.finished" : "run.stopped", { state, error })
+    .appendEvent(job.runId, error === null && !unresolved ? "run.finished" : "run.stopped", {
+      state,
+      error,
+      ...(unresolved ? { unresolved } : {}),
+    })
     .catch(() => {});
-  return { state, receipts, refusal: null, error };
+  return { state, receipts, refusal: null, error, ...(unresolved ? { unresolved } : {}) };
 }

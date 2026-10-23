@@ -1691,6 +1691,39 @@ describe("read-only passes read only the operational world (#121)", () => {
     expect(reads()).toBe(0);
   });
 
+  it("a run refused for a reason other than its grant reads back its lost send and sends nothing", async () => {
+    const { s } = lostThenMisconfigured();
+    expect(outcomes((await s.run()).receipts).refund_001).toBe("unknown_outcome");
+    const effects = s.world.effects.length;
+    s.deps.policies = []; // the plan's policy is no longer loaded: refused, grant still live
+    const result = await s.run();
+    expect(result.refusal).toMatch(/policy .* is not loaded/);
+    expect(outcomes(result.receipts).refund_001).toBe("confirmed");
+    expect(s.world.effects.length).toBe(effects);
+    expect(s.journal.events.at(-1)?.type).toBe("run.finished");
+  });
+
+  it("a refused run whose lost send can't be read stays unresolved and says it stopped", async () => {
+    const { s } = lostThenMisconfigured();
+    await s.run();
+    const effects = s.world.effects.length;
+    const stripe = s.deps.providers.stripe;
+    s.deps.providers.stripe = {
+      ...stripe,
+      reconcile: async () => {
+        throw new Error("read unavailable (injected)");
+      },
+    };
+    s.deps.policies = [];
+    const result = await s.run();
+    expect(result.unresolved).toBe(true);
+    expect(s.journal.events.at(-1)).toMatchObject({
+      type: "run.stopped",
+      payload: { unresolved: true },
+    });
+    expect(s.world.effects.length).toBe(effects);
+  });
+
   it("a cancelled run never reads a misconfigured world", async () => {
     const { s, misconfigure, reads } = lostThenMisconfigured();
     await s.run();
