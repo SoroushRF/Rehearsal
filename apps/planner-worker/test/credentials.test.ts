@@ -8,12 +8,14 @@ it("refuses operational URLs, the admin token and the executor's minting secret"
       ERA_ZENDESK_OPERATIONAL_URL: "http://127.0.0.1:8112",
       ERA_ADMIN_TOKEN: "admin",
       EXECUTOR_WORKER_SECRET: "executor-secret",
+      DATABASE_URL: "postgres://rehearsal@127.0.0.1/rehearsal",
     }),
   ).toEqual([
     "ERA_STRIPE_OPERATIONAL_URL",
     "ERA_ZENDESK_OPERATIONAL_URL",
     "ERA_ADMIN_TOKEN",
     "EXECUTOR_WORKER_SECRET",
+    "DATABASE_URL",
   ]);
 });
 
