@@ -2,13 +2,16 @@ import type { ApprovalGrant, PlanManifest, ReplayBundle } from "@rehearsal/contr
 import {
   type BillingPolicyV1,
   caseGroups,
+  createReadGuard,
   type ExecutorDeps,
   executeRun,
+  fingerprint,
   operationKey,
   PLAN_LOCKED,
   type ProviderPort,
   planHash,
   RUN_CANCELLED,
+  topoOrder,
 } from "@rehearsal/core";
 import {
   FakeClock,
@@ -1348,20 +1351,67 @@ describe("cancellation and lock order (T3.6)", () => {
 });
 
 describe("bounded concurrency across cases (T3.7)", () => {
-  /** The happy bundle widened to `n` independent customer cases (own charge and ticket each). */
+  /**
+   * The happy bundle widened to `n` customer cases, each with its own customer, charge, ticket,
+   * evidence and customer query, as the planner records them. With `shareTicket`, the extra cases
+   * all write case_001's ticket.
+   */
   function wideBundle(n: number, shareTicket = false): ReplayBundle {
     const bundle = happyPathBundle();
-    const template = bundle.manifest.actions.filter((a) => a.caseId === "case_001");
+    const m = bundle.manifest;
+    const byId = <T extends { id: string }>(list: T[], id: string) => {
+      const found = list.find((x) => x.id === id);
+      if (!found) throw new Error(`fixture has no ${id}`);
+      return found;
+    };
+    const chargeObs = byId(m.observations, "obs_charge_001");
+    const ticketObs = byId(m.observations, "obs_ticket_001");
+    const query = byId(m.queryObservations, "q_charges_001");
+    const template = m.actions.filter((a) => a.caseId === "case_001");
     for (let k = 3; k <= n; k++) {
       const tag = String(k).padStart(3, "0");
+      const customer = `cus_fixture_${tag}`;
+      const chargeId = `ch_fixture_${tag}`;
+      const ticketId = shareTicket ? "5531" : `55${tag}`;
+      const charge = { ...chargeObs.projection, id: chargeId, customer };
+      m.observations.push({
+        ...chargeObs,
+        id: `obs_charge_${tag}`,
+        entity: { ...chargeObs.entity, id: chargeId },
+        projection: charge,
+        fingerprint: fingerprint(charge),
+      });
+      if (!shareTicket) {
+        const ticket = { ...ticketObs.projection, id: ticketId, requester_id: customer };
+        m.observations.push({
+          ...ticketObs,
+          id: `obs_ticket_${tag}`,
+          entity: { ...ticketObs.entity, id: ticketId },
+          projection: ticket,
+          fingerprint: fingerprint(ticket),
+        });
+      }
+      const projections = { [chargeId]: charge };
+      m.queryObservations.push({
+        ...query,
+        id: `q_charges_${tag}`,
+        predicate: { ...query.predicate, customerId: customer } as typeof query.predicate,
+        matchingIds: [chargeId],
+        projections,
+        fingerprint: fingerprint({ matchingIds: [chargeId], projections }),
+      });
       for (const a of template) {
         const copy = structuredClone(a);
         copy.id = a.id.replace("001", tag);
         copy.caseId = `case_${tag}`;
         copy.obligationId = `obl_overcharge_${tag}`;
         copy.dependsOn = a.dependsOn.map((d) => d.replace("001", tag));
-        if (copy.kind === "stripe.refund.create") copy.args.chargeId = `ch_fixture_${tag}`;
-        else copy.args.ticketId = shareTicket ? "5531" : `55${tag}`;
+        copy.evidence = a.evidence.map((e) =>
+          e === "obs_ticket_001" && shareTicket ? e : e.replace("001", tag),
+        );
+        copy.queryEvidence = a.queryEvidence.map((q) => q.replace("001", tag));
+        if (copy.kind === "stripe.refund.create") copy.args.chargeId = chargeId;
+        else copy.args.ticketId = ticketId;
         if (copy.kind === "zendesk.ticket.appendPrivateNote") {
           copy.args.bindings.refundId = {
             $ref: "result",
@@ -1374,16 +1424,15 @@ describe("bounded concurrency across cases (T3.7)", () => {
     }
     return bundle;
   }
-  /** Seed the extra cases' records into the world the setup built from the observations. */
-  function seedWide(s: ReturnType<typeof setup>, n: number) {
-    const charge = s.world.charges.get("ch_fixture_001");
-    const ticket = s.world.tickets.get("5531");
-    if (!charge || !ticket) throw new Error("fixture world is missing case_001");
-    for (let k = 3; k <= n; k++) {
-      const tag = String(k).padStart(3, "0");
-      s.world.charges.set(`ch_fixture_${tag}`, { ...charge, id: `ch_fixture_${tag}` });
-      s.world.tickets.set(`55${tag}`, { ...ticket, id: `55${tag}`, comments: [] });
-    }
+  /** The setup, with T4's real read guard on the same providers the executor sends through. */
+  function guarded(bundle: ReplayBundle) {
+    const s = setup(bundle);
+    s.deps.guard = createReadGuard({
+      providers: s.deps.providers,
+      worlds: s.deps.worlds,
+      clock: s.deps.clock,
+    });
+    return s;
   }
   /** Count how many sends are on the wire at once, per vendor path. */
   function track(s: ReturnType<typeof setup>) {
@@ -1415,12 +1464,10 @@ describe("bounded concurrency across cases (T3.7)", () => {
   }
 
   it("applies independent cases at once, never more than the limit, with the sequential results", async () => {
-    const sequential = setup(wideBundle(6));
-    seedWide(sequential, 6);
+    const sequential = guarded(wideBundle(6));
     const expected = outcomes((await sequential.run()).receipts);
 
-    const s = setup(wideBundle(6));
-    seedWide(s, 6);
+    const s = guarded(wideBundle(6));
     s.deps.caseConcurrency = 3;
     const live = track(s);
     const result = await s.run();
@@ -1439,8 +1486,7 @@ describe("bounded concurrency across cases (T3.7)", () => {
   });
 
   it("a case waiting out a 429 doesn't block the others", async () => {
-    const s = setup(wideBundle(4));
-    seedWide(s, 4);
+    const s = guarded(wideBundle(4));
     s.deps.caseConcurrency = 4;
     s.world.fault("/v1/refunds", {
       kind: "reject",
@@ -1465,8 +1511,7 @@ describe("bounded concurrency across cases (T3.7)", () => {
   });
 
   it("cases that share a ticket never write to it at the same time", async () => {
-    const s = setup(wideBundle(5, true));
-    seedWide(s, 5);
+    const s = guarded(wideBundle(5, true));
     s.deps.caseConcurrency = 5;
     const live = track(s);
     const result = await s.run();
@@ -1475,8 +1520,7 @@ describe("bounded concurrency across cases (T3.7)", () => {
   });
 
   it("an unexpected error stops new actions in every case; the run reads honestly", async () => {
-    const s = setup(wideBundle(6));
-    seedWide(s, 6);
+    const s = guarded(wideBundle(6));
     s.deps.caseConcurrency = 3;
     s.journal.failNextSettle = true; // the first settle throws
     const result = await s.run();
@@ -1486,8 +1530,7 @@ describe("bounded concurrency across cases (T3.7)", () => {
   });
 
   it("a cancel stops every lane before its next action", async () => {
-    const s = setup(wideBundle(6));
-    seedWide(s, 6);
+    const s = guarded(wideBundle(6));
     s.deps.caseConcurrency = 3;
     const stripe = s.deps.providers.stripe;
     let sends = 0;
@@ -1504,13 +1547,40 @@ describe("bounded concurrency across cases (T3.7)", () => {
     expect(s.world.refunds.length).toBeLessThanOrEqual(3); // at most the sends already under way
   });
 
+  it("a case citing another case's record as evidence runs with it: no false hold", async () => {
+    const overlapping = () => {
+      const b = wideBundle(4);
+      const refund = b.manifest.actions.find((a) => a.id === "refund_003");
+      refund?.evidence.push("obs_charge_001"); // case 3 also relies on case 1's charge
+      return b;
+    };
+    expect(caseGroups(overlapping().manifest)).toHaveLength(3);
+    const sequential = guarded(overlapping());
+    const expected = outcomes((await sequential.run()).receipts);
+    const s = guarded(overlapping());
+    s.deps.caseConcurrency = 4;
+    const result = await s.run();
+    expect(outcomes(result.receipts)).toEqual(expected);
+    expect(result.state).toBe("completed");
+  });
+
+  it("caseConcurrency 1 keeps the exact global order; a bad value falls back to 1", async () => {
+    const s = guarded(wideBundle(3));
+    s.deps.caseConcurrency = Number.NaN;
+    const result = await s.run();
+    expect(result.state).toBe("completed");
+    expect(result.receipts.map((r) => r.actionId)).toEqual(
+      topoOrder(s.manifest.actions).map((a) => a.id),
+    );
+  });
+
   it("groups cases that share a record or depend on each other", () => {
-    const shared = wideBundle(4, true).manifest.actions;
+    const shared = wideBundle(4, true).manifest;
     expect(caseGroups(shared).map((g) => new Set(g.map((a) => a.caseId)).size)).toEqual([3, 1]);
-    const independent = wideBundle(4).manifest.actions;
+    const independent = wideBundle(4).manifest;
     expect(caseGroups(independent)).toHaveLength(4);
     const crossDep = structuredClone(independent);
-    const note = crossDep.find((a) => a.id === "note_003");
+    const note = crossDep.actions.find((a) => a.id === "note_003");
     if (note) note.dependsOn.push("refund_004");
     expect(caseGroups(crossDep)).toHaveLength(3);
   });

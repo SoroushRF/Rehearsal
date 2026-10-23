@@ -49,7 +49,7 @@ _(add dated entries)_
 _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
 
 - **2026-10-22, Artin (T3.7).** Branch `t3/T3.7-concurrency`. `ExecutorDeps.caseConcurrency` (default 1) runs independent cases at once:
-  - **Grouping:** `caseGroups` joins cases that share a target record (a charge or ticket) or depend on each other into one group. Actions inside a group keep their topological order, so concurrency never puts two writes to one record side by side.
+  - **Grouping:** `caseGroups(manifest)` joins cases into one sequential group when they touch any record in common: a record one writes, a record any of them cites as evidence, a customer or requester their queries cover, or a cross-case dependency. So one case's write never looks like outside drift to another case's guard, and two writes to one record never run side by side. With concurrency 1, the exact global topological order is kept.
   - **Run state:** in-flight attempts are tracked as a set across cases. An unexpected error stops new actions in every case, and a cancel stops every lane before its next action.
   - **Backoff:** a 429 in one case no longer blocks the others.
   - **The worker** uses `EXECUTOR_CASE_CONCURRENCY` (default 4).

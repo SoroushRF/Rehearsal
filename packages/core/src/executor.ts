@@ -226,11 +226,16 @@ function resultRefsOf(action: Action): ResultRef[] {
 }
 
 /**
- * Partition actions into groups that may run concurrently. A group is every case connected by a
- * shared target record (a charge or ticket) or a cross-case dependency; inside a group actions
- * keep their topological order, so concurrency never puts two writes to one record side by side.
+ * Partition a plan's actions into groups that may run concurrently. Cases are joined into one
+ * sequential group when they touch any record in common: a record one writes, a record any of
+ * them cites as evidence, a customer or requester their queries cover, or a cross-case dependency.
+ * So one case's write can never look like outside drift to another case's guard, and two writes to
+ * one record never run side by side. Inside a group actions keep their topological order.
  */
-export function caseGroups(actions: readonly Action[]): Action[][] {
+export function caseGroups(
+  manifest: Pick<PlanManifest, "actions" | "observations" | "queryObservations">,
+): Action[][] {
+  const { actions } = manifest;
   const parent = new Map<string, string>();
   const find = (c: string): string => {
     const p = parent.get(c) ?? c;
@@ -244,15 +249,34 @@ export function caseGroups(actions: readonly Action[]): Action[][] {
     const rb = find(b);
     if (ra !== rb) parent.set(ra, rb);
   };
+  const observations = new Map(manifest.observations.map((o) => [o.id, o]));
+  const queries = new Map(manifest.queryObservations.map((q) => [q.id, q]));
   const caseOf = new Map(actions.map((a) => [a.id, a.caseId]));
-  const ownerOfTarget = new Map<string, string>();
+  const firstCaseFor = new Map<string, string>();
+  const touch = (key: string, caseId: string) => {
+    const first = firstCaseFor.get(key);
+    if (first) union(first, caseId);
+    else firstCaseFor.set(key, caseId);
+  };
   for (const a of actions) {
     if (!parent.has(a.caseId)) parent.set(a.caseId, a.caseId);
     const t = targetOf(a);
-    const key = `${t.vendor}:${t.kind}:${t.id}`;
-    const owner = ownerOfTarget.get(key);
-    if (owner) union(owner, a.caseId);
-    else ownerOfTarget.set(key, a.caseId);
+    touch(`record:${t.vendor}:${t.kind}:${t.id}`, a.caseId);
+    for (const id of a.evidence) {
+      const o = observations.get(id);
+      // Unknown evidence can't be placed: keep that case with every other such case.
+      touch(o ? `record:${o.entity.vendor}:${o.entity.kind}:${o.entity.id}` : "unplaced", a.caseId);
+    }
+    for (const id of a.queryEvidence) {
+      const q = queries.get(id)?.predicate;
+      const who =
+        q?.kind === "stripe.charges.byCustomerInWindow"
+          ? `customer:${q.customerId}`
+          : q?.kind === "zendesk.tickets.byRequester"
+            ? `requester:${q.requesterId}`
+            : "unplaced";
+      touch(who, a.caseId);
+    }
     for (const d of a.dependsOn) {
       const other = caseOf.get(d);
       if (other) union(other, a.caseId);
@@ -397,6 +421,8 @@ async function applyLocked(
   const settled = new Map<string, ReceiptOutcome>();
   /** Set once a cancel is seen; no further action is admitted or sent. */
   let cancelled = false;
+  /** Set on an unexpected failure in any lane: no lane starts another action or send. */
+  let stopped = false;
   const checkCancelled = async (where: string) => {
     if (cancelled) return true;
     if (await deps.store.runCancelled?.(job.orgId, job.runId)) {
@@ -828,7 +854,8 @@ async function applyLocked(
       }
       // A cancel stops the next send, including a retry. An earlier send of this step whose
       // outcome is unknown stays unknown (it is reconciled by a later run, never re-sent here).
-      if (await checkCancelled(`send ${action.id}`)) {
+      // Another lane hit an unexpected error: send nothing more here either.
+      if (stopped || (await checkCancelled(`send ${action.id}`))) {
         if (unknownSends.length > 0) {
           return settle(
             action,
@@ -1050,8 +1077,6 @@ async function applyLocked(
   }
 
   let error: string | null = null;
-  /** Set on an unexpected failure: no case starts another action. */
-  let stopped = false;
 
   /** One action, with the dependency, cancel and error handling every case shares. */
   async function runAction(action: Action): Promise<"next" | "stop"> {
@@ -1089,8 +1114,11 @@ async function applyLocked(
   }
 
   // Each group runs its actions in order; up to `caseConcurrency` groups run at once.
-  const groups = caseGroups(manifest.actions);
-  const limit = Math.max(1, Math.min(deps.caseConcurrency ?? 1, groups.length));
+  const requested = deps.caseConcurrency ?? 1;
+  const width = Number.isFinite(requested) ? Math.floor(requested) : 1;
+  // One at a time keeps the exact global topological order; otherwise independent groups.
+  const groups = width <= 1 ? [topoOrder(manifest.actions)] : caseGroups(manifest);
+  const limit = Math.max(1, Math.min(width, groups.length));
   let nextGroup = 0;
   const lane = async () => {
     while (!stopped && !cancelled) {
