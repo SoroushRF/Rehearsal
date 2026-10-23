@@ -1,7 +1,15 @@
 import { randomUUID } from "node:crypto";
 import type { Attempt, Receipt } from "@rehearsal/contracts";
 import { beforeAll, describe, expect, it } from "vitest";
-import { createDb, isLegalTransition, JournalConflictError, migrateDb, PgJournal } from "../src";
+import {
+  createDb,
+  type Db,
+  isLegalTransition,
+  JournalConflictError,
+  migrateDb,
+  PgJournal,
+} from "../src";
+import { stallInsert, tailAcrossLateCommit } from "./events-helpers";
 
 const HASH = "a".repeat(64);
 const BODY_HASH = "b".repeat(64);
@@ -199,5 +207,59 @@ describe.skipIf(!process.env.DB_TESTS)("PgJournal (real Postgres)", () => {
     expect(second.seq).toBeGreaterThan(first.seq);
     const empty = await journal.appendEvent("run_1", "run.started", undefined);
     expect(empty.payload).toEqual({});
+  });
+
+  it("never lets a tailing reader skip an event that commits late: two plain appenders (#106)", async () => {
+    const orgId = `org_${randomUUID()}`;
+    const runId = `run_${randomUUID()}`;
+    const stall = await stallInsert(db, runId, "a", 1);
+    try {
+      const journal = new PgJournal(db, orgId);
+      const { types, bWaited } = await tailAcrossLateCommit(
+        db,
+        orgId,
+        runId,
+        () => journal.appendEvent(runId, "a", {}),
+        stall.stalled,
+        () => journal.appendEvent(runId, "b", {}),
+      );
+      expect(types).toEqual(["a", "b"]);
+      expect(bWaited).toBe(true);
+    } finally {
+      await stall.unstall();
+    }
+  });
+
+  it("never lets a tailing reader skip an event that commits late: a journal inside an outer transaction (#106)", async () => {
+    const orgId = `org_${randomUUID()}`;
+    const runId = `run_${randomUUID()}`;
+    let commitA = () => {};
+    const aOpen = new Promise<void>((r) => {
+      commitA = r;
+    });
+    let aWrote = () => {};
+    const aInserted = new Promise<void>((r) => {
+      aWrote = r;
+    });
+    const { types, bWaited } = await tailAcrossLateCommit(
+      db,
+      orgId,
+      runId,
+      () =>
+        db.transaction(async (tx) => {
+          await new PgJournal(tx as unknown as Db, orgId).appendEvent(runId, "a", {});
+          aWrote();
+          await aOpen;
+        }),
+      () => aInserted,
+      async () => {
+        const b = new PgJournal(db, orgId).appendEvent(runId, "b", {});
+        // A commits only after the reader's first poll.
+        setTimeout(commitA, 300);
+        return b;
+      },
+    );
+    expect(types).toEqual(["a", "b"]);
+    expect(bWaited).toBe(true);
   });
 });

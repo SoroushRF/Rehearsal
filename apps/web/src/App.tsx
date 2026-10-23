@@ -7,6 +7,7 @@ import { LivePlans } from "./components/LivePlans";
 import { PlanReview } from "./components/PlanReview";
 import { ReplayPage } from "./components/ReplayPage";
 import { type FixtureBundle, fixtureBundles } from "./fixtures";
+import { IdentityScope, identityOf } from "./identity";
 import { replayParam } from "./replay";
 
 /**
@@ -37,17 +38,24 @@ export function App({ bundles = fixtureBundles }: { bundles?: FixtureBundle[] })
 }
 
 function SignedInOrFixtures({ bundles }: { bundles: FixtureBundle[] }) {
-  const { isSignedIn, orgId } = useAuth();
+  const { isSignedIn, userId, orgId } = useAuth();
   const apiFetch = useApiFetch();
-  if (isSignedIn && orgId) return <LivePlans apiFetch={apiFetch} />;
+  const identity = isSignedIn && userId && orgId ? identityOf(userId, orgId) : null;
   return (
-    <>
-      <p className="mt-6 text-sm text-slate-600">
-        Sign in and choose an organization to review live plans. Until then, these are the shared
-        fixtures.
-      </p>
-      <FixturePlans bundles={bundles} />
-    </>
+    <IdentityScope
+      identity={identity}
+      fallback={
+        <>
+          <p className="mt-6 text-sm text-slate-600">
+            Sign in and choose an organization to review live plans. Until then, these are the
+            shared fixtures.
+          </p>
+          <FixturePlans bundles={bundles} />
+        </>
+      }
+    >
+      <LivePlans apiFetch={apiFetch} />
+    </IdentityScope>
   );
 }
 

@@ -116,6 +116,14 @@ export function explain(err: unknown): string {
       return `Breaks policy: ${(r.violations ?? []).map((v) => `${v.rule} (${v.detail})`).join("; ")}`;
     case "approval_invalid":
       return `No live approval for this exact plan${r.detail ? `: ${r.detail}` : ""}.`;
+    case "forbidden":
+      return "Your role can read plans but not ask for a rehearsal.";
+    case "incident_not_found":
+      return "This deployment can't rehearse that incident.";
+    case "not_enqueued":
+      return "The planner queue didn't accept the request. Try again.";
+    case "rehearsal_not_found":
+      return "This rehearsal doesn't exist in your organization.";
     case "plan_not_found":
       return "This plan doesn't exist in your organization.";
     case "database_unavailable":
