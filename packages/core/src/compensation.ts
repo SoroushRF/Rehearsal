@@ -212,23 +212,54 @@ function laterOverlapping(manifest: PlanManifest, action: Patch): Patch[] {
   });
 }
 
+/** Fields this undo request wrote back to the patch's before value. */
+function undoRestoredFields(attempt: Attempt, action: Patch): Set<Field> {
+  let ticket: Record<string, unknown>;
+  try {
+    ticket =
+      (JSON.parse(attempt.request.body) as { ticket?: Record<string, unknown> }).ticket ?? {};
+  } catch {
+    return new Set();
+  }
+  const restored = new Set<Field>();
+  for (const field of writtenFields(action)) {
+    const before = action.args.before[field];
+    if (typeof before === "string" && ticket[field] === before) restored.add(field);
+  }
+  return restored;
+}
+
+/** Restoration proof from an undo that has already settled, not from receipt prose. */
+function restoredByUndo(attempt: Attempt | undefined, action: Patch): Set<Field> {
+  if (!attempt || (attempt.state !== "confirmed" && attempt.state !== "reconciled"))
+    return new Set();
+  return undoRestoredFields(attempt, action);
+}
+
 /**
- * One shared field of a later patch. `wait`: its undo has not settled. `keep`: the undo settled
- * and this field was not restored, so a matching value is not our older write. `clear`: this field
- * was restored, or the later patch never wrote.
+ * One shared field of a later patch. `wait`: a sent undo has not settled. A hold with no
+ * dispatched attempt is not an undo. `keep`: this field was not restored, so a matching value is
+ * not our older write. `clear`: this field was restored, or the later patch never wrote.
  */
-function fieldUndoGate(receipt: Receipt | undefined, field: Field): "wait" | "keep" | "clear" {
-  if (receipt?.outcome === "unknown_outcome" || receipt?.outcome === "held") return "wait";
+function fieldUndoGate(
+  receipt: Receipt | undefined,
+  field: Field,
+  restored: boolean,
+  sent: boolean,
+): "wait" | "keep" | "clear" {
+  if (receipt?.outcome === "unknown_outcome") return "wait";
+  if (receipt?.outcome === "held") return sent ? "wait" : "clear";
   if (
     !receipt ||
     receipt.outcome === "rejected" ||
     receipt.outcome === "skipped_dependency" ||
     receipt.outcome === "compensated" ||
+    restored ||
     receipt.limitations.some((line) => line.startsWith(`restored ${field} `))
   ) {
     return "clear";
   }
-  // Confirmed: a later write we are not undoing. Conflict without a restored line: not our older write.
+  // Confirmed: a later write we are not undoing. Conflict without a restored field: not ours.
   return "keep";
 }
 
@@ -250,8 +281,17 @@ export function createCompensator(deps: CompensatorDeps): Compensator {
         const shared = writtenFields(action).filter((field) =>
           writtenFields(other).includes(field),
         );
+        const [undos, forwards] = await Promise.all([
+          ctx.journal.attemptsForKey(undoKey(ctx.orgId, ctx.manifest.planId, other)),
+          ctx.journal.attemptsFor(ctx.planHash, other.id),
+        ]);
+        const sent = [...undos, ...forwards].some((item) => item.state !== "prepared");
+        const restored = restoredByUndo(
+          undos.filter((item) => item.state === "confirmed" || item.state === "reconciled").at(-1),
+          other,
+        );
         for (const field of shared) {
-          const gate = fieldUndoGate(receipt, field);
+          const gate = fieldUndoGate(receipt, field, restored.has(field), sent);
           if (gate === "wait") wait = true;
           else if (gate === "keep") blocked.add(field);
         }
@@ -379,9 +419,14 @@ async function compensate(
             outcome: "compensation_conflict",
             providerRef: { vendor: "zendesk", kind: "ticket", id: action.args.ticketId },
             observedEffect: { priority: current.priority, status: current.status },
-            limitations: changed.map(
-              ([field]) => `kept ${field} = ${String(current[field])}: changed by someone else`,
-            ),
+            limitations: [
+              ...[...undoRestoredFields(earlier, action)].map(
+                (field) => `restored ${field} to ${String(action.args.before[field])}`,
+              ),
+              ...changed.map(
+                ([field]) => `kept ${field} = ${String(current[field])}: changed by someone else`,
+              ),
+            ],
             transition,
           });
         }
