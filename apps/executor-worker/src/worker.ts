@@ -93,6 +93,9 @@ export async function handleApplyJob(
       // outcome is unknown through reads. Its state stays "cancelled".
       const outcome = await executeRun(job, deps());
       if (outcome.refusal === PLAN_LOCKED) throw new RetryLater(PLAN_LOCKED);
+      // The read-only pass stopped on an error (journal down): try it again. The run stays
+      // cancelled either way, and the reaper picks it up while a send is still in flight.
+      if (outcome.error !== null) throw new RetryLater(outcome.error);
       return { kind: "ran", outcome };
     }
     return { kind: "skipped", reason: `run is ${state}` };
@@ -124,6 +127,16 @@ export async function handleApplyJob(
       return { kind: "ran", outcome: { ...outcome, state: "failed" } };
     }
     throw new RetryLater(PLAN_LOCKED);
+  }
+  if (outcome.error !== null) {
+    // The executor stopped on an unexpected error (a failed journal write, an adapter bug). An
+    // effect may have landed without a receipt, so its state is not the run's truth: retry, and
+    // the next delivery reconciles through the journal and reads. The last try marks it failed.
+    if (lastTry) {
+      await giveUp();
+      return { kind: "ran", outcome: { ...outcome, state: "failed" } };
+    }
+    throw new RetryLater(outcome.error);
   }
   // This delivery held the lock and ran: its outcome is the truth, even over an overlapping
   // delivery's last-try "failed". A cancelled or newer state is never overwritten.
