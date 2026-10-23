@@ -26,7 +26,8 @@
     "infra:down": "docker compose -f infra/compose.yaml down",
     "smoke:era": "tsx --env-file-if-exists=.env scripts/smoke/era-meta.ts",
     "blockers": "node scripts/blockers/generate.ts",
-    "smoke:apply": "tsx --env-file-if-exists=.env scripts/smoke/apply-e2e.ts"
+    "smoke:apply": "tsx --env-file-if-exists=.env scripts/smoke/apply-e2e.ts",
+    "eval:scorecard": "tsx --env-file-if-exists=.env evals/scorecard/src/main.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",

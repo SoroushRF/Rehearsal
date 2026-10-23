@@ -32,8 +32,8 @@
 | T1.2 | Seed the incident: 5–10 overcharged customers, plus benign controls, injected identically into both worlds; `pnpm demo:reset` | M1 | Reset → identical worlds every time; fixtures copied from real GET responses. **Done:** #52 | #3 | T1.1, T1.9 |
 | T1.3 | Read adapters: get charge, get ticket, and the two query predicates, with full pagination and `complete` set honestly | M1 | Unit tests against recorded responses, plus one live test. **Done:** #49 (`stripeReader`/`zendeskReader` in `packages/providers/src/read.ts`) | #4 | T1.1 |
 | T1.4 | Typed planning tools that record evidence and add dependency edges themselves (the model can't define its own evidence) | M2 | A tool call produces observations and actions matching contracts v1. **Done:** `PlanningSession` in `packages/planner/src/tools.ts` | #5 | T1.3 |
-| T1.5 | Bounded Claude tool loop: pinned model, versioned prompt, step limit, no shell, browser or raw HTTP; planner worker consumes `plan` jobs | M2 | Real plan for the seeded cohort is stored and viewable in T2's UI | #6 | T1.2, T1.4, T1.9, T2.9 |
-| T1.6 | ~20 benign and trap tasks, plus baselines (no review; per-call approval counts) for the scorecard | M3–M4 | `pnpm eval:scorecard` prints the comparison table | #7 | T1.5, T4.2 |
+| T1.5 | Bounded Claude tool loop: pinned model, versioned prompt, step limit, no shell, browser or raw HTTP; planner worker consumes `plan` jobs | M2 | Real plan for the seeded cohort is stored and viewable in T2's UI. **Done (code):** `runPlanningLoop`, `POST /api/incidents/:id/rehearse`, planner worker; jobs through the API ([0006](../decisions/0006-planner-jobs-through-api.md)). Live run with a real model key still to do | #6 | T1.2, T1.4, T1.9, T2.9 |
+| T1.6 | ~20 benign and trap tasks, plus baselines (no review; per-call approval counts) for the scorecard | M3–M4 | `pnpm eval:scorecard` prints the comparison table. **Done:** 20 tasks × direct / per-call / Rehearsal on Era with a scripted planner; table in [`evals/scorecard/results/latest.txt`](../../evals/scorecard/results/latest.txt). Claude-planner rows not run yet (no model key) | #7 | T1.5, T4.2 |
 | T1.7 | _Stretch:_ Slack summary step (`slack.message.postSummary`) | after M3 | Behind the trim decision | #8 | T1.5 |
 | T1.8 | _Stretch:_ SurrealDB precedents (explicit promotion, recall with trace) | after M3 | Behind the trim decision | #9 | T1.5 |
 | T1.9 | Signed Era tenant tokens in both workers: mint where the operator holds the admin token, pass to planner and executor workers, refresh before the 1-hour expiry | M2 | Tenant isolation and reset tests pass through the workers' config. **Done:** #46; design in [decision 0002](../decisions/0002-era-tenant-token-minting.md) | #39 | T1.1 |
@@ -43,11 +43,48 @@
 
 ## Decisions
 
+- **2026-10-22:** The planner worker has no database. It takes `plan` jobs and hands back manifests through `/internal/planner/jobs/*` with its own secret; the API checks each manifest against its job before storing revision 1. See [0006](../decisions/0006-planner-jobs-through-api.md).
 - **2026-10-21:** Era tenant tokens are minted by the API (the operator, sole holder of `ERA_ADMIN_TOKEN`). Each worker fetches its own world's token with its own secret and refreshes it 5 min before expiry. Requests fail closed when no valid token is available. See [0002](../decisions/0002-era-tenant-token-minting.md).
 
 ## Handoff log
 
 _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
+
+- **2026-10-22 (Claude session for the T1 owner):** T1.6 scorecard (`t1/T1.6-scorecard-tasks`, `t1/T1.6-scorecard-runner`).
+  - `evals/scorecard`: 20 tasks (10 benign controls, 10 traps) with gold end states for all 11 cohort cases; scoring into invalid allows, duplicates, wrongful holds and unresolved outcomes; `pnpm eval:scorecard` runs every task in three modes on Era and writes `results/latest.txt` (the JSON run record is gitignored).
+  - Every mode gets the same plan from a scripted rule-following agent (`scripted-rules`, `scorecard-agent.v1`) reading one seeded planning tenant, then its own fresh operational tenant per task, the same drift and the same transport faults.
+  - Modes:
+    - **direct** sends every intent through the real typed writers, with a fresh key per call, and re-sends the same bytes once after a 429 or a lost response.
+    - **per_call** does the same behind a modelled reviewer. The reviewer is diligent: they reject exactly what the planning tools refuse.
+    - **rehearsal** stores one approval for the plan hash, then runs `executeRun` with the read guard, restarting up to twice to reconcile.
+  - Result on Era (2026-10-22, three identical runs):
+    - Confirmed success: Rehearsal 18/20, per-call 14/20, direct 10/20. All three pass the 10 benign controls.
+    - Rehearsal had 0 invalid allows and 0 duplicates. Direct had 20 and 4, per-call 11 and 2.
+    - Review effort: 37 signatures for Rehearsal against 425 per-call prompts.
+    - Cost: Rehearsal's write phase makes about 2× the Era calls (guard reads).
+  - **Finding for T4:** Rehearsal's 2 wrongful holds (T3, T10) are refund notes on a ticket whose priority a teammate changed. The note's guard compares the whole ticket row, so the edit that rightly holds the patch also holds the note. The gold was written before the run and says the note should go through.
+  - Gotchas:
+    - Faults are transport wrappers, not Era's container-wide `/_admin/faults`, so a 429 hits exactly one write.
+    - The containers from `pnpm infra:up` without a `.env` use the `.env.example` admin token.
+    - The planning reads (about 1,000 per run) are reported separately in the model panel.
+  - Not done: a Claude-planner panel. It needs a real model key, and its intents would need replaying per mode.
+
+- **2026-10-22 (Claude session for the T1 owner):** T1.5 tool loop and plan jobs (`t1/T1.5-tool-loop`).
+  - `runPlanningLoop` (`packages/planner/src/loop.ts`) runs a manual Messages API loop with the 7 planning tools only, `SYSTEM_PROMPT` and `PROMPT_VERSION` (`billing-remedy.v1+<hash of prompt and limits>`), and limits of 40 turns, 200 tool calls and 16k tokens per turn. The model is pinned (`PLANNER_MODEL`, default `claude-sonnet-5-5`); a reply from any other model fails the run. Refusal, truncation, limits, an empty plan or an invalid graph all fail closed. Nothing partial is stored.
+  - The brief (`incidentBrief`) lists only who reported the incident. The agent has to find the duplicates and the controls itself.
+  - API: `POST /api/incidents/:id/rehearse` queues a `plan` job (reviewer with a role only) and `GET /api/rehearsals/:id` shows queued, planning, retrying, failed or stored. The worker talks to the API through `/internal/planner/jobs/{next,complete,fail}`. `DATABASE_URL` is now forbidden in the planner worker.
+  - The worker reads its own `.env.planner` (see `.env.example`), because the shared `.env` holds credentials it refuses.
+  - Evidence:
+    - `fixture`: loop tests with a scripted model, and worker tests.
+    - Real Postgres: `DB_TESTS=1` for the rehearse routes.
+    - Real Era (2026-10-22), with a rule-following scripted model in place of Claude: the real worker code read the seeded planning world and stored a 24-step plan through the real API (8 CAD refunds of the c01–c08 `…b` charges, 8 priority patches, 8 notes). The USD control was refused by policy, the hash recomputes, and graph and policy are clean.
+    - `pnpm --filter @rehearsal/planner-worker start` with a dummy key reached the Anthropic API, got a 401 and reported it on the job as `planner_error`.
+  - **Not done:** a run with a real `ANTHROPIC_API_KEY`; there was none on this machine. To do it: `pnpm infra:up`, `pnpm demo:reset`, start the API with `.env`, start the worker with `.env.planner`, then `POST /api/incidents/INC-BILL-0927/rehearse` as a signed-in reviewer. The plan shows up in T2's plan list.
+  - Gotchas:
+    - There is no Rehearse button in the web UI yet (T2 territory).
+    - Repeated rehearse requests queue repeated runs.
+    - A failed run retries once after 30 s, even for a 401.
+    - On real Era, requesters also have baseline tickets, so the ticket whose `external_id` is the customer's is the one to use (the prompt says so).
 
 - **2026-10-22 (Claude session for the T1 owner):** T1.4 planning tools (`t1/T1.4-planning-tools`).
   - `PlanningSession` takes the two planning-world readers, the policy and the incident window. `call(name, input)` validates strict Zod input and returns `{ok, result | error}` for the tool loop to feed back. `planningToolDefinitions()` is the Anthropic `tools` array; `TOOL_SCHEMA_HASH` goes into the manifest.

@@ -29,6 +29,21 @@ export const APPLY_QUEUE_OPTIONS = {
   expireInSeconds: 1800,
 } as const;
 
+export const PLAN_QUEUE = "plan";
+
+// T1.5: the payload is `PlanJob` in @rehearsal/providers, shared with the planner worker, which
+// reaches the queue only through the API (docs/decisions/0006-planner-jobs-through-api.md).
+
+/**
+ * Planning spends model tokens and produces a different plan each time, so it is retried once (a
+ * worker that died mid-run), not fifty times. A run is bounded by its turn limit well inside this.
+ */
+export const PLAN_QUEUE_OPTIONS = {
+  retryLimit: 1,
+  retryDelay: 30,
+  expireInSeconds: 900,
+} as const;
+
 /** pg-boss keeps its tables in its own `pgboss` schema in the same database. */
 export async function startQueue(url = process.env.DATABASE_URL): Promise<PgBoss> {
   if (!url) throw new Error("DATABASE_URL is not set");
@@ -38,6 +53,8 @@ export async function startQueue(url = process.env.DATABASE_URL): Promise<PgBoss
   await boss.createQueue(APPLY_QUEUE, APPLY_QUEUE_OPTIONS);
   // createQueue leaves an existing queue's settings alone; apply ours either way.
   await boss.updateQueue(APPLY_QUEUE, APPLY_QUEUE_OPTIONS);
+  await boss.createQueue(PLAN_QUEUE, PLAN_QUEUE_OPTIONS);
+  await boss.updateQueue(PLAN_QUEUE, PLAN_QUEUE_OPTIONS);
   return boss;
 }
 

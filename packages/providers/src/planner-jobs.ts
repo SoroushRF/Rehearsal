@@ -1,0 +1,72 @@
+import { z } from "zod";
+
+/**
+ * T1.5: the planner worker's side of the API. Like tenant tokens, the worker reaches its jobs
+ * through the API with its own secret and never holds a database URL
+ * (docs/decisions/0006-planner-jobs-through-api.md).
+ */
+export const PLANNER_JOB_ROUTES = {
+  next: "/internal/planner/jobs/next",
+  complete: "/internal/planner/jobs/:id/complete",
+  fail: "/internal/planner/jobs/:id/fail",
+} as const;
+
+/** A request to rehearse one incident for one org. The plan ID is fixed when the job is created. */
+export const PlanJob = z.object({
+  orgId: z.string().min(1),
+  incidentId: z.string().min(1),
+  planId: z.string().min(1),
+  requestedBy: z.string().min(1),
+});
+export type PlanJob = z.infer<typeof PlanJob>;
+
+/** `POST next` answers 204 when there is nothing to do, or one claimed job. */
+export const ClaimedPlanJob = z.object({ id: z.uuid(), data: PlanJob });
+export type ClaimedPlanJob = z.infer<typeof ClaimedPlanJob>;
+
+export interface CompletePlanJob {
+  manifest: unknown;
+  summary: string;
+  stats?: { turns: number; toolCalls: number; usage: Record<string, number> };
+}
+
+export interface FailPlanJob {
+  reason: string;
+  message: string;
+}
+
+/** The worker's client for those routes. Errors carry the status so the caller can log them. */
+export function plannerJobsClient(apiUrl: string, secret: string, fetchImpl: typeof fetch = fetch) {
+  const base = apiUrl.replace(/\/$/, "");
+  const post = (path: string, body?: unknown) =>
+    fetchImpl(`${base}${path}`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${secret}`,
+        ...(body !== undefined && { "content-type": "application/json" }),
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  const expect = async (res: Response, ok: number[], what: string) => {
+    if (!ok.includes(res.status)) {
+      throw new Error(`${what} → ${res.status} ${(await res.text()).slice(0, 500)}`);
+    }
+    return res;
+  };
+  return {
+    async next(): Promise<ClaimedPlanJob | null> {
+      const res = await expect(await post(PLANNER_JOB_ROUTES.next), [200, 204], "next plan job");
+      return res.status === 204 ? null : ClaimedPlanJob.parse(await res.json());
+    },
+    async complete(id: string, body: CompletePlanJob): Promise<{ planHash: string }> {
+      const path = PLANNER_JOB_ROUTES.complete.replace(":id", encodeURIComponent(id));
+      const res = await expect(await post(path, body), [201], "complete plan job");
+      return z.object({ planHash: z.string() }).parse(await res.json());
+    },
+    async fail(id: string, body: FailPlanJob): Promise<void> {
+      const path = PLANNER_JOB_ROUTES.fail.replace(":id", encodeURIComponent(id));
+      await expect(await post(path, body), [204], "fail plan job");
+    },
+  };
+}
+export type PlannerJobsClient = ReturnType<typeof plannerJobsClient>;
