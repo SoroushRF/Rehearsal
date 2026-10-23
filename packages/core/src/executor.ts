@@ -1199,11 +1199,14 @@ async function applyLocked(
 
   let error: string | null = null;
 
-  /** Sent at least once under any revision: `step()` confirms it, or reconciles it by a read. */
+  /**
+   * Took effect, or may have, under any revision: `step()` confirms it, or reconciles a lost
+   * response by a read. A prepared or refused attempt wrote nothing, so it doesn't count.
+   */
   const alreadySent = async (action: Action) =>
     confirmedByAction.has(action.id) ||
     (await journal.attemptsForKey(operationKey(job.orgId, job.planId, action))).some(
-      (a) => a.state !== "prepared",
+      (a) => a.state !== "prepared" && a.state !== "rejected",
     );
 
   /** One action, with the dependency, cancel and error handling every case shares. */

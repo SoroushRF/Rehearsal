@@ -370,6 +370,40 @@ describe("conditional compensation", () => {
     },
   );
 
+  it.each([
+    ["a re-run of the same hash", (s: Setup) => s.run()],
+    ["another revision", (s: Setup) => s.addRevision().run()],
+  ])(
+    "never sends a throttled dependent after its predecessor was undone, under %s",
+    async (_n, next) => {
+      const s = dependentNote();
+      // note_002b is throttled past the retry cap: rejected, nothing written.
+      const dispatch = s.providers.zendesk.dispatch;
+      let notes = 0;
+      s.providers.zendesk.dispatch = async (request, ctx) => {
+        if (request.path === TICKET && request.body.includes('"comment"') && ++notes === 2) {
+          s.world.fault(TICKET, {
+            kind: "reject",
+            status: 429,
+            retryable: true,
+            retryAfterMs: 60_000,
+          });
+        }
+        return dispatch(request, ctx);
+      };
+      const first = await s.run();
+      expect(outcomes(first.receipts)).toMatchObject({
+        note_002: "rejected",
+        note_002b: "rejected",
+        patch_002: "compensated",
+      });
+
+      const second = await next(s);
+      expect(outcomes(second.receipts).note_002b).toBe("skipped_dependency");
+      expect(s.world.tickets.get("5532")?.comments).toHaveLength(0);
+    },
+  );
+
   it("still skips an applied dependent whose predecessor is held, not undone", async () => {
     const s = setup(happyPathBundle());
     await s.run();
