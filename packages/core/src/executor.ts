@@ -483,6 +483,8 @@ async function applyLocked(
    * confirmed one, or one copied from an undo. Final for this hash; never settled again.
    */
   const compensationHere = new Map<string, Receipt>();
+  /** Actions whose outcome in this run comes from compensation or a copied undo. */
+  const compensated = new Set<string>();
   for (const r of await journal.receiptsFor(job.planHash)) {
     if (r.outcome === "confirmed") confirmedByAction.set(r.actionId, r);
     else if (
@@ -490,6 +492,7 @@ async function applyLocked(
       typeof r.observedEffect.undoAttemptId === "string"
     ) {
       compensationHere.set(r.actionId, r);
+      compensated.add(r.actionId);
     }
     if (r.outcome === "held" && r.holdReason?.kind === "unresolved_outcome") {
       heldUnresolved.add(r.holdReason.attemptId);
@@ -713,6 +716,7 @@ async function applyLocked(
    * An unsettled undo holds the step; a settled one copies the receipt compensation wrote for it.
    */
   const settleFromUndo = async (action: Action, undo: Attempt) => {
+    compensated.add(action.id);
     const pointer = { undoAttemptId: undo.id };
     const prior =
       undo.state === "confirmed" || undo.state === "rejected"
@@ -1184,7 +1188,6 @@ async function applyLocked(
 
   const alreadyApplied = async (action: Action) =>
     confirmedByAction.has(action.id) ||
-    compensationHere.has(action.id) ||
     (await journal.attemptsForKey(operationKey(job.orgId, job.planId, action))).some(
       (a) => a.state === "confirmed" || a.state === "reconciled",
     );
@@ -1200,7 +1203,10 @@ async function applyLocked(
       }
       if (await checkCancelled(`step ${action.id}`)) return "stop";
       // An action already applied keeps its own record even if a predecessor was undone since.
-      if (blocked && !(await alreadyApplied(action))) {
+      const onlyUndone = action.dependsOn
+        .filter((d) => settled.get(d) !== "confirmed")
+        .every((d) => compensated.has(d));
+      if (blocked && !(onlyUndone && (await alreadyApplied(action)))) {
         await settle(
           action,
           receiptFor(action, "skipped_dependency", {
