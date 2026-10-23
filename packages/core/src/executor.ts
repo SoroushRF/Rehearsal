@@ -83,6 +83,34 @@ export interface StepGuardContext {
  */
 export type StepGuard = (action: Action, ctx: StepGuardContext) => Promise<HoldReason | null>;
 
+/** One compensation receipt for an action, settled atomically with its attempt transition. */
+export interface CompensationResult
+  extends Partial<Pick<Receipt, "providerRef" | "observedEffect" | "holdReason" | "limitations">> {
+  outcome: ReceiptOutcome;
+  transition?: SettleTransition;
+}
+
+export interface CompensationContext {
+  orgId: string;
+  planHash: string;
+  manifest: PlanManifest;
+  /** This run's outcome per action; actions it never reached are absent. */
+  outcomes: ReadonlyMap<string, ReceiptOutcome>;
+  /** Every receipt for this plan hash so far, this run's included. */
+  receipts: readonly Receipt[];
+  journal: JournalPort;
+  newId: (prefix: string) => string;
+  /** False once the run is cancelled or its grant was revoked, changed or expired. */
+  maySend: () => Promise<boolean>;
+  record: (action: Action, result: CompensationResult) => Promise<void>;
+}
+
+/**
+ * Compensation hook (T4). Runs once after the steps, only if the run finished without a cancel or
+ * an unexpected error. It journals its own sends and records receipts through `record`.
+ */
+export type Compensator = (ctx: CompensationContext) => Promise<void>;
+
 export interface ExecutorDeps {
   store: ApplyStore;
   journal: JournalPort;
@@ -93,6 +121,7 @@ export interface ExecutorDeps {
   policies: readonly BillingPolicyV1[];
   newId: (prefix: string) => string;
   guard?: StepGuard;
+  compensate?: Compensator;
   /** Bounded in-run retries; see DEFAULT_RETRY. */
   retry?: Partial<RetryPolicy>;
   /** Injectable for tests; defaults to a real timer. */
@@ -358,6 +387,15 @@ async function applyLocked(
       await journal.appendEvent(job.runId, "run.cancelled", { before: where }).catch(() => {});
     }
     return cancelled;
+  };
+  const grantStillValid = async () => {
+    const current = await deps.store.loadGrant(job.orgId, grant.id);
+    return (
+      current !== null &&
+      fingerprint(current) === admittedGrantFingerprint &&
+      current.revokedAt === null &&
+      Date.parse(current.expiresAt) > clock.now().getTime()
+    );
   };
   /** Latest confirmed receipt per action for this hash (earlier runs included), never duplicated. */
   const confirmedByAction = new Map<string, Receipt>();
@@ -791,13 +829,7 @@ async function applyLocked(
       }
       // Admission is not a lease to keep spending after revocation or expiry. Re-read the
       // same immutable grant before every send, including a retry after backoff.
-      const currentGrant = await deps.store.loadGrant(job.orgId, grant.id);
-      if (
-        !currentGrant ||
-        fingerprint(currentGrant) !== admittedGrantFingerprint ||
-        currentGrant.revokedAt !== null ||
-        Date.parse(currentGrant.expiresAt) <= clock.now().getTime()
-      ) {
+      if (!(await grantStillValid())) {
         const reason: HoldReason = {
           kind: "approval_invalid",
           detail: "approval changed, was revoked, or expired before dispatch",
@@ -1027,6 +1059,26 @@ async function applyLocked(
         .appendEvent(job.runId, "step.error", { actionId: action.id, error })
         .catch(() => {});
       break;
+    }
+  }
+
+  if (deps.compensate && !reconcileOnly && !cancelled && error === null) {
+    try {
+      await deps.compensate({
+        orgId: job.orgId,
+        planHash: job.planHash,
+        manifest,
+        outcomes: settled,
+        receipts: await journal.receiptsFor(job.planHash),
+        journal,
+        newId: deps.newId,
+        maySend: async () => !(await checkCancelled("compensation")) && (await grantStillValid()),
+        record: (action, { outcome, transition, ...extra }) =>
+          settle(action, receiptFor(action, outcome, extra), { transition }),
+      });
+    } catch (err) {
+      error = `compensation: ${(err as Error).message}`;
+      await journal.appendEvent(job.runId, "step.error", { error }).catch(() => {});
     }
   }
 

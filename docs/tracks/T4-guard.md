@@ -44,6 +44,13 @@
 
 _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
 
+### 2026-10-22, T4.4 part 1
+
+- **Compensation is in, behind a `compensate` hook in the executor** (like `guard`). `createCompensator` in `packages/core/src/compensation.ts` implements it, and the executor worker installs it. The rules are in [decision 0006](../decisions/0006-when-compensation-runs.md).
+- **The `teammate-conflict` bundle passes on the fake world** (`apps/executor-worker/test/compensation.test.ts`).
+- **The bundle's teammate edit now lands after the failed note**, not after the patch. An edit before the note makes the read guard hold the note, so the case never fails and nothing is compensated.
+- **Next.** Part 2: the same bundle on Era (`evals/providers/test/compensation.test.ts`, written and passing locally), then mark T4.4 done.
+
 ### 2026-10-22, T4.2 follow-up
 
 - **The demo scripts act on the T1.2 cohort.** `DEMO` in `scripts/inject/session.ts` replaces `SEED`:
