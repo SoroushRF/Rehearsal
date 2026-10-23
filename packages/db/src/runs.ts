@@ -2,7 +2,7 @@ import { and, eq, inArray, lt, or, sql } from "drizzle-orm";
 import type { PgBoss } from "pg-boss";
 import type { Db } from "./index";
 import { APPLY_QUEUE, enqueueApply } from "./queue";
-import { runs, stepAttempts } from "./schema";
+import { runs, stepAttempts, stepReceipts } from "./schema";
 
 export type CancelResult =
   | { kind: "cancelled"; runId: string }
@@ -36,7 +36,10 @@ export async function requestCancel(
   return row ? { kind: "not_active", state: row.state } : { kind: "not_found" };
 }
 
-/** How long the reaper keeps re-trying a cancelled run's read-only reconcile of a send in flight. */
+/**
+ * How long the reaper keeps re-trying a cancelled run's read-only reconcile of a send in flight
+ * once the attempt has a receipt (held or unknown). Without any receipt it keeps trying.
+ */
 export const CANCELLED_RECONCILE_FOR_MS = 24 * 3_600_000;
 
 /** pg-boss job states that mean someone will still run the job. */
@@ -73,8 +76,16 @@ export async function reapStuckRuns(
                 select 1 from ${stepAttempts} a
                 where a.org_id = ${runs.orgId} and a.plan_hash = ${runs.planHash}
                   and a.state in ('dispatched', 'unknown_outcome')
-                  -- Retry a cancelled run's read-only reconcile for a day, not forever.
-                  and a.dispatched_at > ${new Date(opts.now.getTime() - CANCELLED_RECONCILE_FOR_MS)}
+                  -- Retry for a day after the send; past that, only until some receipt names the
+                  -- attempt, so an effect is never left with no record at all.
+                  and (
+                    a.dispatched_at > ${new Date(opts.now.getTime() - CANCELLED_RECONCILE_FOR_MS)}
+                    or not exists (
+                      select 1 from ${stepReceipts} r
+                      where r.org_id = a.org_id and r.plan_hash = a.plan_hash
+                        and r.receipt->'holdReason'->>'attemptId' = a.id
+                    )
+                  )
               )`,
             ),
           ),

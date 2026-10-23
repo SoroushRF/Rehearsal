@@ -98,8 +98,9 @@ describe.skipIf(!process.env.DB_TESTS)("run commands: cancel and reaper (real Po
     const old = new Date(Date.now() - 3_600_000);
     const withSend = await run("cancelled", old);
     const [row] = await db.select().from(schema.runs).where(eq(schema.runs.id, withSend.id));
+    const sendId = `att_${randomUUID()}`;
     await db.insert(schema.stepAttempts).values({
-      id: `att_${randomUUID()}`,
+      id: sendId,
       orgId: withSend.orgId,
       planHash: row?.planHash ?? "",
       actionId: "refund_001",
@@ -125,7 +126,16 @@ describe.skipIf(!process.env.DB_TESTS)("run commands: cancel and reaper (real Po
     await db.execute(
       sql`update pgboss.job set state = 'completed' where name = ${APPLY_QUEUE} and data->>'runId' = ${withSend.id}`,
     );
-    // ...within the day the reaper tries again; after a day it stops (an operator takes over).
+    // ...it leaves a held receipt naming the attempt. Within the day the reaper tries again;
+    // after a day it stops (an operator takes over).
+    await db.insert(schema.stepReceipts).values({
+      id: `rcp_${randomUUID()}`,
+      orgId: withSend.orgId,
+      planHash: row?.planHash ?? "",
+      actionId: "refund_001",
+      receipt: { outcome: "held", holdReason: { kind: "unresolved_outcome", attemptId: sendId } },
+      recordedAt: new Date(),
+    });
     const soon = await reapStuckRuns(db, boss, {
       now: new Date(Date.now() + 3_600_000),
       staleAfterMs: 60_000,
@@ -139,6 +149,49 @@ describe.skipIf(!process.env.DB_TESTS)("run commands: cancel and reaper (real Po
       staleAfterMs: 60_000,
     });
     expect(muchLater).not.toContain(withSend.id);
+  });
+
+  it("past a day, keeps re-trying a cancelled run's in-flight send until some receipt names it", async () => {
+    const old = new Date(Date.now() - 3 * 24 * 3_600_000);
+    const r = await run("cancelled", old);
+    const [row] = await db.select().from(schema.runs).where(eq(schema.runs.id, r.id));
+    const attemptId = `att_${randomUUID()}`;
+    await db.insert(schema.stepAttempts).values({
+      id: attemptId,
+      orgId: r.orgId,
+      planHash: row?.planHash ?? "",
+      actionId: "refund_001",
+      operationKey: `op_${randomUUID()}`,
+      attemptNo: 1,
+      state: "dispatched",
+      request: {
+        method: "POST",
+        path: "/v1/refunds",
+        encoding: "form",
+        body: "",
+        bodySha256: "0".repeat(64),
+      },
+      preparedAt: old,
+      dispatchedAt: old, // the worker died three days ago, before any pass recorded anything
+    });
+    const sweep = () =>
+      reapStuckRuns(db, boss, { now: new Date(Date.now() + 3_600_000), staleAfterMs: 60_000 });
+    const drain = () =>
+      db.execute(
+        sql`update pgboss.job set state = 'completed' where name = ${APPLY_QUEUE} and data->>'runId' = ${r.id}`,
+      );
+    expect(await sweep()).toContain(r.id); // no receipt yet: still owed a reconcile
+    await drain();
+
+    await db.insert(schema.stepReceipts).values({
+      id: `rcp_${randomUUID()}`,
+      orgId: r.orgId,
+      planHash: row?.planHash ?? "",
+      actionId: "refund_001",
+      receipt: { outcome: "held", holdReason: { kind: "unresolved_outcome", attemptId } },
+      recordedAt: new Date(),
+    });
+    expect(await sweep()).not.toContain(r.id); // recorded as held: an operator takes it from here
   });
 
   it("concurrent reapers enqueue a stuck run once", async () => {
