@@ -1652,6 +1652,56 @@ describe("bounded concurrency across cases (T3.7)", () => {
   });
 });
 
+describe("read-only passes read only the operational world (#121)", () => {
+  /** refund_001's response is lost; then the workers are pointed at the planning world. */
+  function lostThenMisconfigured() {
+    const s = setup(happyPathBundle());
+    s.deps.retry = { maxAttempts: 1 };
+    const stripe = s.deps.providers.stripe;
+    let lose = true;
+    s.deps.providers.stripe = {
+      ...stripe,
+      dispatch: async (req, ctx) => {
+        const res = await stripe.dispatch(req, ctx);
+        if (!lose) return res;
+        lose = false;
+        return { kind: "unknown", error: "response lost (injected)" };
+      },
+    };
+    let reads = 0;
+    const misconfigure = () => {
+      s.deps.worlds = { ...s.deps.worlds, stripe: { world: "planning", tenant: "test" } };
+      s.deps.providers.stripe = {
+        ...stripe,
+        reconcile: async (...args) => {
+          reads++;
+          return stripe.reconcile(...args);
+        },
+      };
+    };
+    return { s, misconfigure, reads: () => reads };
+  }
+
+  it("a refused run never reads a misconfigured world", async () => {
+    const { s, misconfigure, reads } = lostThenMisconfigured();
+    expect(outcomes((await s.run()).receipts).refund_001).toBe("unknown_outcome");
+    misconfigure();
+    const result = await s.run();
+    expect(result.refusal).toMatch(/configured for the planning world/);
+    expect(reads()).toBe(0);
+  });
+
+  it("a cancelled run never reads a misconfigured world", async () => {
+    const { s, misconfigure, reads } = lostThenMisconfigured();
+    await s.run();
+    s.store.cancelled.add(RUN);
+    misconfigure();
+    const result = await s.run();
+    expect(result.state).toBe("cancelled");
+    expect(reads()).toBe(0);
+  });
+});
+
 describe("operation keys", () => {
   it("are stable across revisions, unique per action, and org-scoped", () => {
     const { manifest } = setup(happyPathBundle());

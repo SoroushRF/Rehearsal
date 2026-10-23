@@ -369,6 +369,16 @@ async function admit(
   ) {
     return { ok: false, detail: "grant is for a different plan, revision or hash" };
   }
+  // Before the read-only exit: even a read must go to the operational world, never planning.
+  for (const [vendor, ctx] of Object.entries(deps.worlds)) {
+    if (ctx && ctx.world !== manifest.target.environment) {
+      return {
+        ok: false,
+        detail: `${vendor} is configured for the ${ctx.world} world, not operational`,
+      };
+    }
+  }
+
   if (readOnly) return { ok: true, manifest, grant };
   if (grant.revokedAt !== null) return { ok: false, detail: "grant was revoked" };
   const grantedAt = Date.parse(grant.grantedAt);
@@ -382,15 +392,6 @@ async function admit(
     (r) => !grant.roles.includes(r),
   );
   if (missing.length > 0) return { ok: false, detail: `grant lacks roles: ${missing.join(", ")}` };
-
-  for (const [vendor, ctx] of Object.entries(deps.worlds)) {
-    if (ctx && ctx.world !== manifest.target.environment) {
-      return {
-        ok: false,
-        detail: `${vendor} is configured for the ${ctx.world} world, not operational`,
-      };
-    }
-  }
 
   const graph = validateGraph(manifest.actions);
   if (graph.length > 0) return { ok: false, detail: `invalid graph: ${graph[0]?.detail}` };
