@@ -99,8 +99,10 @@ describe.skipIf(!process.env.DB_TESTS)("PgApplyStore (real Postgres)", () => {
     expect(await new PgApplyStore(dying).lockPlan(s.orgId, s.planId)).not.toBeNull();
     // The worker process dies: Postgres terminates its backend, and the session lock goes with it.
     const key = `rehearsal:apply:${s.orgId}:${s.planId}`;
+    // The timeout form waits until the backend has actually exited (and dropped its locks);
+    // without it the next lock attempt could race the dying session.
     const killed = await other.$client.query(
-      `select pg_terminate_backend(pid) as ok from pg_locks
+      `select pg_terminate_backend(pid, 5000) as ok from pg_locks
         where locktype = 'advisory' and granted
           and ((classid::bigint << 32) | objid::bigint)::bit(64) = hashtextextended($1, 0)::bit(64)`,
       [key],
