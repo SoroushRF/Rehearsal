@@ -130,7 +130,8 @@ function replay(s: Setup, bundle: ReplayBundle, afterFail: () => void = () => {}
       (a) =>
         a.kind !== "stripe.refund.create" &&
         path === `/api/v2/tickets/${a.args.ticketId}.json` &&
-        (a.kind === "zendesk.ticket.appendPrivateNote") === body.includes('"comment"'),
+        (a.kind === "zendesk.ticket.appendPrivateNote") ===
+          (body.includes('"comment"') && !body.includes('"safe_update"')),
     )?.id;
   const zendesk = s.providers.zendesk;
   const dispatch = zendesk.dispatch;
@@ -172,6 +173,12 @@ function twoFields(bundle: ReplayBundle, before: { priority?: "normal"; status?:
   patch.args = { ticketId: "5532", set: { priority: "high", status: "pending" }, before };
   return bundle;
 }
+
+/** Comments on 5532 other than an undo's attribution marker. */
+const noteComments = (s: Setup) =>
+  (s.world.tickets.get("5532")?.comments ?? []).filter(
+    (c) => !/^\[rehearsal-op:[^\]]+\]$/.test(c.body),
+  );
 
 /** Every receipt `patch_002` has under one plan hash. */
 const patchReceipts = async (s: Setup, hash: string) =>
@@ -366,7 +373,7 @@ describe("conditional compensation", () => {
       const second = await next(s);
       expect(outcomes(second.receipts).note_002b).toBe("confirmed");
       expect(second.receipts.some((r) => r.outcome === "skipped_dependency")).toBe(false);
-      expect(s.world.tickets.get("5532")?.comments).toHaveLength(1);
+      expect(noteComments(s)).toHaveLength(1);
     },
   );
 
@@ -400,7 +407,7 @@ describe("conditional compensation", () => {
 
       const second = await next(s);
       expect(outcomes(second.receipts).note_002b).toBe("skipped_dependency");
-      expect(s.world.tickets.get("5532")?.comments).toHaveLength(0);
+      expect(noteComments(s)).toHaveLength(0);
     },
   );
 
@@ -538,7 +545,7 @@ describe("conditional compensation", () => {
     for (const hash of [s.hash, rev2.hash]) {
       expect(await noteReceipts(s, hash)).toEqual(["confirmed"]);
     }
-    expect(s.world.tickets.get("5532")?.comments).toHaveLength(1);
+    expect(noteComments(s)).toHaveLength(1);
   });
 
   it("reconciles a lost undo by reading the ticket and does not re-send it", async () => {
@@ -608,6 +615,47 @@ describe("conditional compensation", () => {
     });
     expect(s.ticketWrites()).toBe(writes);
     expect(s.world.tickets.get("5532")).toMatchObject({ priority: "normal", status: "pending" });
+  });
+
+  it("does not record a lost undo as compensated when someone else restored the value", async () => {
+    const bundle = noteFails();
+    const s = setup(bundle);
+    replay(s, bundle, () => s.world.fault(TICKET, { kind: "server_error" }));
+    await s.run();
+    expect(s.world.tickets.get("5532")?.priority).toBe("high");
+    s.world.teammateEdit("5532", "priority", "normal");
+    const writes = s.ticketWrites();
+
+    await s.run();
+    expect((await patchReceipts(s, s.hash)).some((r) => r.outcome === "compensated")).toBe(false);
+    expect(s.ticketWrites()).toBe(writes);
+    expect(s.world.tickets.get("5532")?.priority).toBe("normal");
+    expect(s.world.tickets.get("5532")?.comments).toHaveLength(0);
+  });
+
+  it("does not call the patch confirmed when the fresh undo does not finish", async () => {
+    const bundle = noteFails();
+    const s = setup(bundle);
+    replay(s, bundle, () => s.world.fault(TICKET, { kind: "server_error" }));
+    await s.run();
+    (s.deps.clock as FakeClock).advance(60_000);
+    const prepare = s.journal.prepareAttempt.bind(s.journal);
+    s.journal.prepareAttempt = async (attempt) => {
+      if (attempt.actionId === "patch_002" && attempt.attemptNo > 1) {
+        throw new Error("fresh undo failed");
+      }
+      return prepare(attempt);
+    };
+
+    const third = await s.run();
+    expect(third.error).toBe("compensation: fresh undo failed");
+    expect(third.state).not.toBe("completed");
+    expect((await patchReceipts(s, s.hash)).at(-1)).toMatchObject({
+      outcome: "held",
+      holdReason: { kind: "unresolved_outcome" },
+      limitations: ["fresh undo did not finish; the patch is not confirmed"],
+    });
+    expect(s.world.tickets.get("5532")?.priority).toBe("high");
   });
 
   it("holds a lost undo when the ticket changed to something the read can't settle", async () => {

@@ -9,6 +9,7 @@ import type { CompensationContext, CompensationResult, Compensator } from "./exe
 import { undoKey } from "./executor";
 import { sha256Hex } from "./hash";
 import type { Clock, DispatchResult, Preconditions, ProviderPort, WorldContext } from "./ports";
+import { operationMarker } from "./templates";
 
 type Patch = Extract<Action, { kind: "zendesk.ticket.patchFields" }>;
 type Field = keyof Patch["args"]["set"];
@@ -85,6 +86,13 @@ export function decideUndo(action: Patch, current: Record<string, unknown>): Und
     else decision.unrevertable.push(field);
   }
   return decision;
+}
+
+/** The guarded patch plus the undo's operation marker, so a later read can attribute it. */
+function undoBody(body: string, operationKey: string): string {
+  const parsed = JSON.parse(body) as { ticket: Record<string, unknown> };
+  parsed.ticket.comment = { body: operationMarker(operationKey), public: false };
+  return JSON.stringify(parsed);
 }
 
 /** The inverse typed patch: restore only the reverted fields, recording our value as "before". */
@@ -198,7 +206,9 @@ async function compensate(action: Patch, ctx: CompensationContext, deps: Compens
     }
 
     const inverse = inversePatch(action, decision.revert);
-    const request = provider.prepare(inverse, new Map(), key, pre);
+    const prepared = provider.prepare(inverse, new Map(), key, pre);
+    // A private marker distinguishes our undo from someone else restoring the same value.
+    const request = { ...prepared, body: undoBody(prepared.body, key) };
     const attemptId = ctx.newId("att");
     const now = () => deps.clock.now().toISOString();
     await ctx.journal.prepareAttempt({

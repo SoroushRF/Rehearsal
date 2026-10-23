@@ -164,7 +164,9 @@ async function apply(
   const sent: string[] = [];
   providers.zendesk.dispatch = async (request, ctx): Promise<DispatchResult> => {
     const note =
-      request.path === `/api/v2/tickets/${C02_TICKET}.json` && request.body.includes('"comment"');
+      request.path === `/api/v2/tickets/${C02_TICKET}.json` &&
+      request.body.includes('"comment"') &&
+      !request.body.includes('"safe_update"');
     if (note) {
       await afterFail();
       return {

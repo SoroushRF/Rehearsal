@@ -485,6 +485,11 @@ async function applyLocked(
   const compensationHere = new Map<string, Receipt>();
   /** Actions whose outcome in this run comes from compensation or a copied undo. */
   const compensated = new Set<string>();
+  /**
+   * Patches whose lost undo was shown not to have landed, marked confirmed only so compensation
+   * can send a fresh one. If that send does not finish, the patch must not stay confirmed.
+   */
+  const pendingUndoRetry = new Map<string, string>();
   for (const r of await journal.receiptsFor(job.planHash)) {
     if (r.outcome === "confirmed") confirmedByAction.set(r.actionId, r);
     else if (
@@ -815,15 +820,37 @@ async function applyLocked(
         { ...action, args: { ...action.args, set: sent } },
         world,
       );
-      if (result.kind === "applied") {
-        return {
-          kind: "applied",
-          effect: result.effect,
-          providerRef: result.providerRef,
-          sent: new Set(Object.keys(sent)),
-        };
+      if (result.kind !== "applied") return result;
+      // The field values alone are not proof: someone else can set the before value. The undo
+      // carries its operation marker in a private comment; a read has to find that too.
+      const marked = await provider.reconcile(
+        undo,
+        {
+          ...action,
+          kind: "zendesk.ticket.appendPrivateNote",
+          args: {
+            ticketId: action.args.ticketId,
+            public: false,
+            template: { id: "refund-confirmed", version: 1 },
+            bindings: {},
+          },
+        },
+        world,
+      );
+      if (marked.kind !== "applied") {
+        return marked.kind === "not_applied"
+          ? {
+              kind: "indeterminate",
+              detail: "restored value is on the ticket but this undo left no marker",
+            }
+          : marked;
       }
-      return result;
+      return {
+        kind: "applied",
+        effect: result.effect,
+        providerRef: result.providerRef,
+        sent: new Set(Object.keys(sent)),
+      };
     } catch (err) {
       return { kind: "indeterminate", detail: `reconcile read failed: ${(err as Error).message}` };
     }
@@ -892,6 +919,7 @@ async function applyLocked(
           error: "undo not visible; a fresh undo is permitted",
           settledAt: at(),
         });
+        pendingUndoRetry.set(action.id, undo.id);
         settled.set(action.id, "confirmed");
         return;
       }
@@ -1495,6 +1523,18 @@ async function applyLocked(
       error = `compensation: ${(err as Error).message}`;
       await journal.appendEvent(job.runId, "step.error", { error }).catch(() => {});
     }
+  }
+  // A fresh undo that did not finish must not leave this run calling the patch confirmed.
+  for (const action of manifest.actions) {
+    const attemptId = pendingUndoRetry.get(action.id);
+    if (attemptId === undefined || settled.get(action.id) !== "confirmed") continue;
+    await settle(
+      action,
+      receiptFor(action, "held", {
+        holdReason: { kind: "unresolved_outcome", attemptId },
+        limitations: ["fresh undo did not finish; the patch is not confirmed"],
+      }),
+    );
   }
 
   const outcomes = manifest.actions.map((a) => settled.get(a.id));

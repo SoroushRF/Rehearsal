@@ -50,7 +50,7 @@ _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
   - It seeds the T1.2 cohort into both worlds and builds the plan from planning-world reads. c02's note is refused in the harness (Era's faults only give 429s and 5xx).
   - Untouched, compensation restores c02's priority with a stamp-guarded patch and keeps the refund. c01 is left as applied.
   - A teammate edit through the ordinary ticket API, after the failed note, is kept: `compensation_conflict`, nothing written after the edit.
-- **A lost undo is reconciled by a read.** A later run reads the ticket. Restored values are recorded and not re-sent. A read that shows the undo never landed allows one fresh undo once the attempt is old enough (the same wait as a forward reconcile). A read that can't tell leaves the hold and writes nothing.
+- **A lost undo is reconciled by a read.** The undo carries a private marker. A later run records it only when that marker is on the ticket, so someone else restoring the same value is not `compensated`. A read that shows the undo never landed allows one fresh undo once the attempt is old enough. If that send does not finish, the run does not call the patch confirmed. #99's recovery-only rule (a dependent is not re-sent after its predecessor was undone) stays in place.
 - **Next.** T4.5, the ML smoke test, on the GPU machine. Follow-ups from the part-1 review (a 429 on the undo, the label when a teammate sets a field back to our before value, two patches of one field, duplicate held receipts, Postgres) are not in this task.
 
 ### 2026-10-22, T4.4 part 1
