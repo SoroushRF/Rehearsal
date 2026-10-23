@@ -215,7 +215,7 @@ export class PgJournal implements JournalPort {
 
   /**
    * Per run, `seq` order is commit order (see `insertRunEvent`), so a reader tailing
-   * `seq > lastSeen` never misses a row. Inside a settle transaction the run's lock is held until
+   * `seq > lastSeen` never misses a row. Inside an outer transaction the run's lock is held until
    * that commits. A missing payload is stored as `{}` (the column is NOT NULL); the stored value
    * is returned.
    */
