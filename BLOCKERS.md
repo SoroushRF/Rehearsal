@@ -11,7 +11,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
 | **T1.5** Bounded Claude tool loop and planner-worker plan jobs [#6](https://github.com/SoroushRF/Rehearsal/issues/6) | @SoroushRF | 🟨 ready | 3 |
-| **T4.5** ML smoke test: Qwen3.5-0.8B LoRA on 32 cases [#29](https://github.com/SoroushRF/Rehearsal/issues/29) | @skhdemo | 🟨 ready | 2 |
+| **T4.5** ML smoke test: Qwen3.5-0.8B LoRA on 32 cases [#29](https://github.com/SoroushRF/Rehearsal/issues/29) | @skhdemo | 👀 in review | 2 |
 | **T4.6** ML pilot and go/no-go [#30](https://github.com/SoroushRF/Rehearsal/issues/30) | @skhdemo | 🟥 blocked | 1 |
 
 ## T1 Rehearse
@@ -73,8 +73,8 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T4.2** Injection scripts and demo:phantom / demo:conflict / demo:reset [#26](https://github.com/SoroushRF/Rehearsal/issues/26) | ✅ done |  | T1.6 (T1), T4.3 |
 | **T4.3** Wire guards into executor admission [#27](https://github.com/SoroushRF/Rehearsal/issues/27) | ✅ done |  | T4.4 |
 | **T4.4** Conditional compensation on owned fields [#28](https://github.com/SoroushRF/Rehearsal/issues/28) | ✅ done |  |  |
-| **T4.5** ML smoke test: Qwen3.5-0.8B LoRA on 32 cases [#29](https://github.com/SoroushRF/Rehearsal/issues/29) | 🟨 ready | — | T4.6 |
-| **T4.6** ML pilot and go/no-go [#30](https://github.com/SoroushRF/Rehearsal/issues/30) | 🟥 blocked | T4.5 (T4, ready) | T4.7 |
+| **T4.5** ML smoke test: Qwen3.5-0.8B LoRA on 32 cases [#29](https://github.com/SoroushRF/Rehearsal/issues/29) | 👀 in review [PR #102](https://github.com/SoroushRF/Rehearsal/pull/102) | — | T4.6 |
+| **T4.6** ML pilot and go/no-go [#30](https://github.com/SoroushRF/Rehearsal/issues/30) | 🟥 blocked | T4.5 (T4, in review) | T4.7 |
 | **T4.7** Impact service behind ImpactPort (if ML go) [#31](https://github.com/SoroushRF/Rehearsal/issues/31) | 🟥 blocked | T4.6 (T4, blocked) |  |
 
 ## Task graph
@@ -124,7 +124,7 @@ flowchart LR
     T4_2["T4.2 Injection scripts and demo:phantom / demo:c"]:::done
     T4_3["T4.3 Wire guards into executor admission"]:::done
     T4_4["T4.4 Conditional compensation on owned fields"]:::done
-    T4_5["T4.5 ML smoke test: Qwen3.5-0.8B LoRA on 32 case"]:::ready
+    T4_5["T4.5 ML smoke test: Qwen3.5-0.8B LoRA on 32 case"]:::review
     T4_6["T4.6 ML pilot and go/no-go"]:::blocked
     T4_7["T4.7 Impact service behind ImpactPort (if ML go)"]:::blocked
   end
