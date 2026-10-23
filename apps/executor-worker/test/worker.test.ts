@@ -7,6 +7,7 @@ import {
   migrateDb,
   PgApplyStore,
   type PgBoss,
+  PgJournal,
   requestApply,
   requestCancel,
   schema,
@@ -14,7 +15,7 @@ import {
 } from "@rehearsal/db";
 import { billingManifest, FakeClock, type FakeWorld, worldFromManifest } from "@rehearsal/testkit";
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import policy from "../../../scenarios/billing/policy.v1.json" with { type: "json" };
 import { type ApplyJobResult, handleApplyJob, RetryLater, type WorkerContext } from "../src/worker";
 
@@ -460,6 +461,106 @@ describe.skipIf(!process.env.DB_TESTS)(
       );
       expect(result).toEqual({ kind: "skipped", reason: "job does not match a stored run" });
       expect(await runState(r.runId)).toBe("approved");
+    });
+
+    /** Fail the journal's settle transaction for `actionId`'s confirmed receipt, `times` times. */
+    function failSettle(actionId: string, times = 1) {
+      const settle = PgJournal.prototype.settle;
+      let left = times;
+      const spy = vi.spyOn(PgJournal.prototype, "settle").mockImplementation(function (
+        this: PgJournal,
+        step,
+      ) {
+        if (step.receipt.actionId === actionId && left > 0) {
+          left--;
+          return Promise.reject(new Error("settle failed (injected)"));
+        }
+        return settle.call(this, step);
+      });
+      return spy;
+    }
+
+    const refundReceipt = async (orgId: string) =>
+      (await db.select().from(schema.stepReceipts))
+        .filter((x) => x.orgId === orgId && x.actionId === "refund_001")
+        .map((x) => (x.receipt as { outcome: string }).outcome);
+
+    it("retries a run whose executor returned an error, and reconciles the effect it left (#104)", async () => {
+      const r = await approvedRun();
+      const ctx = contextFor(r.world);
+      // The refund lands, then its settle transaction fails: the attempt stays dispatched.
+      const spy = failSettle("refund_001");
+      try {
+        await expect(
+          handleApplyJob(jobOf(r), ctx, { retryCount: 0, retryLimit: 3 }),
+        ).rejects.toBeInstanceOf(RetryLater);
+      } finally {
+        spy.mockRestore();
+      }
+      expect(await runState(r.runId)).toBe("applying");
+      expect(r.world.refunds.filter((x) => x.charge === "ch_fixture_001")).toHaveLength(1);
+
+      // The redelivery reads the refund back instead of sending another one.
+      const again = await handleApplyJob(jobOf(r), ctx, { retryCount: 1, retryLimit: 3 });
+      expect(stateOf(again)).toBe("completed");
+      expect(await runState(r.runId)).toBe("completed");
+      expect(r.world.refunds.filter((x) => x.charge === "ch_fixture_001")).toHaveLength(1);
+      expect(await refundReceipt(r.orgId)).toEqual(["confirmed"]);
+    });
+
+    it("past the last retry, a run whose executor returned an error stays applying for the reaper (#104)", async () => {
+      const r = await approvedRun();
+      const spy = failSettle("refund_001");
+      try {
+        await expect(
+          handleApplyJob(jobOf(r), contextFor(r.world), { retryCount: 3, retryLimit: 3 }),
+        ).rejects.toBeInstanceOf(RetryLater);
+      } finally {
+        spy.mockRestore();
+      }
+      // Not failed: the refund has no receipt yet, so the reaper must still pick the run up
+      // (bounded by MAX_REAPS, then `run.needs_operator`).
+      expect(await runState(r.runId)).toBe("applying");
+      // The reaper's re-enqueued job resumes it from the journal: read back, not sent again.
+      const resumed = await handleApplyJob(jobOf(r), contextFor(r.world));
+      expect(stateOf(resumed)).toBe("completed");
+      expect(r.world.refunds.filter((x) => x.charge === "ch_fixture_001")).toHaveLength(1);
+      expect(await refundReceipt(r.orgId)).toEqual(["confirmed"]);
+    });
+
+    it("retries a cancelled run's read-only pass that returned an error, and it stays cancelled (#104)", async () => {
+      const r = await approvedRun();
+      const ctx = contextFor(r.world);
+      const stripe = r.world.provider("stripe");
+      // The first refund lands but its response is lost.
+      await handleApplyJob(jobOf(r), {
+        ...ctx,
+        providers: {
+          ...ctx.providers,
+          stripe: {
+            ...stripe,
+            dispatch: async (req, c) => {
+              await stripe.dispatch(req, c);
+              return { kind: "unknown" as const, error: "response lost (injected)" };
+            },
+          },
+        },
+        executor: { sleep: async () => {}, retry: { maxAttempts: 1 } },
+      });
+      await new PgApplyStore(db).setRunState(r.orgId, r.runId, "cancelled");
+
+      const spy = failSettle("refund_001");
+      try {
+        await expect(
+          handleApplyJob(jobOf(r), ctx, { retryCount: 0, retryLimit: 3 }),
+        ).rejects.toBeInstanceOf(RetryLater);
+      } finally {
+        spy.mockRestore();
+      }
+      expect(await runState(r.runId)).toBe("cancelled");
+      expect(stateOf(await handleApplyJob(jobOf(r), ctx))).toBe("cancelled");
+      expect(await refundReceipt(r.orgId)).toContain("confirmed");
+      expect(r.world.refunds).toHaveLength(2);
     });
 
     it("on the last retry, a run still blocked by the plan lock ends failed so it can be re-applied", async () => {
