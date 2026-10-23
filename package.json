@@ -17,6 +17,7 @@
     "format": "biome format --write .",
     "fixtures:write": "tsx scripts/seed/write-bundles.ts",
     "fixtures:capture": "tsx --env-file-if-exists=.env scripts/seed/capture-era-fixtures.ts",
+    "replay:build": "tsx scripts/replay/write.ts",
     "infra:up": "docker compose -f infra/compose.yaml up -d",
     "demo:reset": "tsx --env-file-if-exists=.env scripts/inject/reset.ts",
     "demo:phantom": "tsx --env-file-if-exists=.env scripts/inject/phantom.ts",

@@ -1,0 +1,12 @@
+[
+  {
+    "id": "happy-path",
+    "title": "Two customers refunded, nothing changes after approval",
+    "evidence": "fixture"
+  },
+  {
+    "id": "phantom",
+    "title": "A new duplicate charge appears after approval: that refund is held",
+    "evidence": "fixture"
+  }
+]
