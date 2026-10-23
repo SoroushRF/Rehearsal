@@ -28,11 +28,18 @@ const plans = apply && { db: apply.db, auth: reviewer };
 // The same policy file the executor loads, so approval refuses what admission would refuse.
 const approvals = apply && { db: apply.db, reviewer, policies: [policy as BillingPolicyV1] };
 const runs = apply && { db: apply.db, auth: reviewer };
+const rehearse = apply && {
+  db: apply.db,
+  boss: apply.boss,
+  reviewer,
+  plannerSecret: process.env.PLANNER_WORKER_SECRET,
+};
 const app = buildApp({
   apply,
   plans,
   approvals,
   runs,
+  rehearse,
   reviewer,
   tenantTokens: tenantTokenDepsFromEnv(),
 });

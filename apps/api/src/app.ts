@@ -8,6 +8,7 @@ import { type ApprovalDeps, registerApprovalRoutes } from "./approvals";
 import { type ReviewerResolver, registerMeRoute } from "./auth";
 import { registerCancelRoute } from "./cancel";
 import { type PlanDeps, registerPlanRoutes } from "./plans";
+import { type RehearseDeps, registerRehearseRoutes } from "./rehearse";
 import { type RunDeps, registerRunRoutes } from "./runs";
 import { registerTenantTokenRoute, type TenantTokenDeps } from "./tenant-tokens";
 
@@ -23,6 +24,7 @@ export function buildApp(
     plans?: PlanDeps;
     approvals?: ApprovalDeps;
     runs?: RunDeps;
+    rehearse?: RehearseDeps;
     /** Clerk-backed in production; without it nobody is signed in. */
     reviewer?: ReviewerResolver;
     tenantTokens?: TenantTokenDeps;
@@ -68,6 +70,12 @@ export function buildApp(
   else {
     app.get("/api/runs/:id/events", unavailable);
     app.get("/api/plans/:id/runs", unavailable);
+  }
+
+  if (deps.rehearse) registerRehearseRoutes(app, deps.rehearse);
+  else {
+    app.post("/api/incidents/:id/rehearse", unavailable);
+    app.get("/api/rehearsals/:id", unavailable);
   }
 
   // Only an API that holds ERA_ADMIN_TOKEN mints tenant tokens for the workers.

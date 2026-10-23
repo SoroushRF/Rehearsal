@@ -40,10 +40,14 @@ export function tenantTokenDepsFromEnv(env = process.env): TenantTokenDeps | und
   return { adminToken, secrets, env };
 }
 
-function roleFor(authorization: string | undefined, deps: TenantTokenDeps): WorkerRole | undefined {
+/** The worker whose secret this bearer token is, compared in constant time. */
+export function workerRole(
+  authorization: string | undefined,
+  secrets: Partial<Record<WorkerRole, string>>,
+): WorkerRole | undefined {
   const presented = Buffer.from(authorization?.replace(/^Bearer /, "") ?? "");
   for (const role of Object.keys(WORKER_ROLES) as WorkerRole[]) {
-    const secret = deps.secrets[role];
+    const secret = secrets[role];
     if (!secret) continue;
     const expected = Buffer.from(secret);
     if (presented.length === expected.length && timingSafeEqual(presented, expected)) return role;
@@ -54,7 +58,7 @@ function roleFor(authorization: string | undefined, deps: TenantTokenDeps): Work
 export function registerTenantTokenRoute(app: FastifyInstance, deps: TenantTokenDeps): void {
   const mint = deps.mint ?? mintTenantToken;
   app.post(TENANT_TOKEN_ROUTE, async (req, reply) => {
-    const role = roleFor(req.headers.authorization, deps);
+    const role = workerRole(req.headers.authorization, deps.secrets);
     if (!role) return reply.code(401).send({ error: "unauthorized" });
     const body = MintRequest.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: "invalid_request" });
