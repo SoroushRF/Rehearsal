@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.1.0",
     "@rehearsal/contracts": "workspace:*",
     "@rehearsal/core": "workspace:*",
     "@rehearsal/testkit": "workspace:*",
