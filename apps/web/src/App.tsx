@@ -5,14 +5,19 @@ import { useState } from "react";
 import { AccountBar, clerkKey, useApiFetch } from "./auth";
 import { LivePlans } from "./components/LivePlans";
 import { PlanReview } from "./components/PlanReview";
+import { ReplayPage } from "./components/ReplayPage";
 import { type FixtureBundle, fixtureBundles } from "./fixtures";
 import { IdentityScope, identityOf } from "./identity";
+import { replayParam } from "./replay";
 
 /**
  * Review UI (T2). A signed-in reviewer with an organization reviews that org's stored plans
  * through the API; everyone else sees the shared fixture bundles, read-only.
  */
 export function App({ bundles = fixtureBundles }: { bundles?: FixtureBundle[] }) {
+  // `?replay=<id>` opens a saved run: public, read-only, no sign-in and no API.
+  const replay = replayParam(window.location.search);
+  if (replay !== null) return <ReplayPage id={replay} />;
   return (
     <main className="mx-auto max-w-4xl p-6 font-sans text-slate-900">
       <header className="flex flex-wrap items-start justify-between gap-4">
