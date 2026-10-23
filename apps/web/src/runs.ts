@@ -115,6 +115,10 @@ export function describeEvent(e: RunEvent): string {
       return `${String(p.actionId)}: provider answered ${String(p.status)}; sending the same bytes again in ${String(p.delayMs)} ms.`;
     case "step.reconcile":
       return `${String(p.actionId)}: reconciling an unknown outcome through reads.`;
+    case "run.reaped":
+      return "Re-queued: the run had stalled with no job running, so it was picked up again.";
+    case "run.needs_operator":
+      return "Stuck: automatic retries are exhausted. An operator needs to look at this run.";
     case "step.error":
       return `${String(p.actionId)}: stopped on an unexpected error (${String(p.error)}).`;
     case "step.receipt": {

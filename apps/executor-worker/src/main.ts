@@ -85,6 +85,8 @@ async function sweep() {
     const reaped = await reapStuckRuns(ctx.db, boss, {
       now: new Date(),
       staleAfterMs: STALE_AFTER_MS,
+      onHandOff: (ids) =>
+        console.error(`runs need an operator (retries exhausted): ${ids.join(", ")}`),
     });
     if (reaped.length > 0) console.log(`re-enqueued stuck runs: ${reaped.join(", ")}`);
   } catch (err) {

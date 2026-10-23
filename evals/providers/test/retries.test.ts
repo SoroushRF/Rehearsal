@@ -41,7 +41,11 @@ describe.skipIf(!ENABLED)("executor retries under Era fault injection", () => {
   afterAll(resetScratchTenants);
 
   /** A one-refund plan on a freshly injected CAD charge, approved and ready to run. */
-  async function refundRun(chargeId: string, sleep?: (ms: number) => Promise<void>) {
+  async function refundRun(
+    chargeId: string,
+    sleep?: (ms: number) => Promise<void>,
+    beforeRun?: () => Promise<void>,
+  ) {
     const template = JSON.parse(readFileSync(new URL("stripe.charge.json", FIXTURES), "utf8"));
     const charge = {
       ...template,
@@ -88,6 +92,7 @@ describe.skipIf(!ENABLED)("executor retries under Era fault injection", () => {
     });
     const journal = new MemoryJournal();
     let n = 0;
+    await beforeRun?.();
     const result = await executeRun(
       { orgId: manifest.orgId, runId: "run", planId: manifest.planId, revision: 1, planHash: hash },
       {
@@ -122,16 +127,26 @@ describe.skipIf(!ENABLED)("executor retries under Era fault injection", () => {
   }
 
   it("retries a throttled refund after Era's Retry-After and applies it once", async () => {
-    await setFaults(stripe, { fail_next: 1, retry_after_seconds: 1 });
-    const started = Date.now();
-    const { result, refunds, attempts } = await refundRun("ch_rehearsalT34throt");
+    // Throttle every request from just before the run; the backoff waits out Era's Retry-After
+    // and lifts the throttle, so exactly the first send is refused. (A one-shot `fail_next` can be
+    // consumed by any request that reaches the container first, which made this flaky.)
+    const waits: number[] = [];
+    const { result, refunds, attempts } = await refundRun(
+      "ch_rehearsalT34throt",
+      async (ms) => {
+        waits.push(ms);
+        await new Promise((r) => setTimeout(r, ms));
+        await setFaults(stripe, null);
+      },
+      () => setFaults(stripe, { throttle: true, retry_after_seconds: 1 }),
+    );
     expect(result.state).toBe("completed");
     expect(attempts).toEqual([
       ["rejected", 429],
       ["confirmed", 200],
     ]);
     expect(refunds).toBe(1);
-    expect(Date.now() - started).toBeGreaterThanOrEqual(1000); // waited out Retry-After
+    expect(waits).toEqual([1000]); // Era's Retry-After, honoured
   });
 
   it("re-sends a refund after an Era 500 under the same key and applies it once", async () => {

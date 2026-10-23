@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   APPLY_QUEUE,
   createDb,
+  MAX_REAPS,
   migrateDb,
   type PgBoss,
   reapStuckRuns,
@@ -98,8 +99,9 @@ describe.skipIf(!process.env.DB_TESTS)("run commands: cancel and reaper (real Po
     const old = new Date(Date.now() - 3_600_000);
     const withSend = await run("cancelled", old);
     const [row] = await db.select().from(schema.runs).where(eq(schema.runs.id, withSend.id));
+    const sendId = `att_${randomUUID()}`;
     await db.insert(schema.stepAttempts).values({
-      id: `att_${randomUUID()}`,
+      id: sendId,
       orgId: withSend.orgId,
       planHash: row?.planHash ?? "",
       actionId: "refund_001",
@@ -121,24 +123,107 @@ describe.skipIf(!process.env.DB_TESTS)("run commands: cancel and reaper (real Po
     expect(reaped).toContain(withSend.id);
     expect(reaped).not.toContain(quiet.id);
 
-    // Its job runs and finishes without resolving the send (the read stays inconclusive)...
-    await db.execute(
-      sql`update pgboss.job set state = 'completed' where name = ${APPLY_QUEUE} and data->>'runId' = ${withSend.id}`,
+    // Every pass's job ends without resolving the send: the reaper retries up to the cap, then
+    // hands the run to an operator once and stops.
+    const drain = () =>
+      db.execute(
+        sql`update pgboss.job set state = 'completed' where name = ${APPLY_QUEUE} and data->>'runId' = ${withSend.id}`,
+      );
+    await drain();
+    let reaps = 1;
+    for (let i = 1; i <= MAX_REAPS + 2; i++) {
+      const later = new Date(Date.now() + i * 3_600_000);
+      if (
+        (await reapStuckRuns(db, boss, { now: later, staleAfterMs: 60_000 })).includes(withSend.id)
+      ) {
+        reaps += 1;
+      }
+      await drain();
+    }
+    expect(reaps).toBe(MAX_REAPS);
+    const handOffs = await db.execute(
+      sql`select 1 from run_events where run_id = ${withSend.id} and type = 'run.needs_operator'`,
     );
-    // ...within the day the reaper tries again; after a day it stops (an operator takes over).
-    const soon = await reapStuckRuns(db, boss, {
-      now: new Date(Date.now() + 3_600_000),
+    expect(handOffs.rows).toHaveLength(1);
+  });
+
+  it("an applying run whose worker keeps dying is capped, handed off once, and freed to re-apply", async () => {
+    const stuck = await run("applying", new Date(Date.now() - 3_600_000));
+    const handed: string[] = [];
+    const drain = () =>
+      db.execute(
+        sql`update pgboss.job set state = 'failed' where name = ${APPLY_QUEUE} and data->>'runId' = ${stuck.id}`,
+      );
+    let reaps = 0;
+    for (let i = 0; i <= MAX_REAPS + 1; i++) {
+      const later = new Date(Date.now() + i * 3_600_000);
+      const swept = await reapStuckRuns(db, boss, {
+        now: later,
+        staleAfterMs: 60_000,
+        onHandOff: (ids) => handed.push(...ids.filter((id) => id === stuck.id)),
+      });
+      if (swept.includes(stuck.id)) {
+        reaps += 1;
+      }
+      await drain();
+    }
+    expect(reaps).toBe(MAX_REAPS);
+    const handOffs = await db.execute(
+      sql`select 1 from run_events where run_id = ${stuck.id} and type = 'run.needs_operator'`,
+    );
+    expect(handOffs.rows).toHaveLength(1);
+    expect(handed).toEqual([stuck.id]);
+    // Marked failed, so re-applying its hash starts a new run instead of returning this dead one.
+    expect(await stateOf(stuck.id)).toBe("failed");
+  });
+
+  it("no hand-off for a cancelled run whose last reconcile resolved its send", async () => {
+    const old = new Date(Date.now() - 3_600_000);
+    const r = await run("cancelled", old);
+    const [row] = await db.select().from(schema.runs).where(eq(schema.runs.id, r.id));
+    const attemptId = `att_${randomUUID()}`;
+    await db.insert(schema.stepAttempts).values({
+      id: attemptId,
+      orgId: r.orgId,
+      planHash: row?.planHash ?? "",
+      actionId: "refund_001",
+      operationKey: `op_${randomUUID()}`,
+      attemptNo: 1,
+      state: "dispatched",
+      request: {
+        method: "POST",
+        path: "/v1/refunds",
+        encoding: "form",
+        body: "",
+        bodySha256: "0".repeat(64),
+      },
+      preparedAt: old,
+      dispatchedAt: old,
+    });
+    const drain = () =>
+      db.execute(
+        sql`update pgboss.job set state = 'completed' where name = ${APPLY_QUEUE} and data->>'runId' = ${r.id}`,
+      );
+    for (let i = 1; i <= MAX_REAPS; i++) {
+      await reapStuckRuns(db, boss, {
+        now: new Date(Date.now() + i * 3_600_000),
+        staleAfterMs: 60_000,
+      });
+      await drain();
+    }
+    // The last pass found the refund: the send is reconciled.
+    await db
+      .update(schema.stepAttempts)
+      .set({ state: "reconciled" })
+      .where(eq(schema.stepAttempts.id, attemptId));
+    await reapStuckRuns(db, boss, {
+      now: new Date(Date.now() + (MAX_REAPS + 2) * 3_600_000),
       staleAfterMs: 60_000,
     });
-    expect(soon).toContain(withSend.id);
-    await db.execute(
-      sql`update pgboss.job set state = 'completed' where name = ${APPLY_QUEUE} and data->>'runId' = ${withSend.id}`,
+    const handOffs = await db.execute(
+      sql`select 1 from run_events where run_id = ${r.id} and type = 'run.needs_operator'`,
     );
-    const muchLater = await reapStuckRuns(db, boss, {
-      now: new Date(Date.now() + 2 * 24 * 3_600_000),
-      staleAfterMs: 60_000,
-    });
-    expect(muchLater).not.toContain(withSend.id);
+    expect(handOffs.rows).toHaveLength(0);
   });
 
   it("concurrent reapers enqueue a stuck run once", async () => {
