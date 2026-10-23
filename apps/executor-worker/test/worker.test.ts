@@ -389,6 +389,25 @@ describe.skipIf(!process.env.DB_TESTS)(
       expect(r.world.tickets.get("5531")?.comments).toHaveLength(0);
     });
 
+    it("runs independent cases at once against the Postgres journal, each effect once", async () => {
+      const r = await approvedRun();
+
+      const ctx = {
+        ...contextFor(r.world),
+        executor: { sleep: async () => {}, caseConcurrency: 2 },
+      };
+
+      expect(stateOf(await handleApplyJob(jobOf(r), ctx))).toBe("completed");
+
+      const receipts = (await db.select().from(schema.stepReceipts)).filter(
+        (x) => x.orgId === r.orgId,
+      );
+
+      expect(receipts).toHaveLength(r.manifest.actions.length);
+
+      expect(r.world.refunds).toHaveLength(2);
+    });
+
     it("skips a malformed job payload without retrying or touching anything", async () => {
       const r = await approvedRun();
       expect(await handleApplyJob({ runId: r.runId }, contextFor(r.world))).toEqual({
