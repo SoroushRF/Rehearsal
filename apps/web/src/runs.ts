@@ -107,6 +107,8 @@ export function describeEvent(e: RunEvent): string {
   switch (e.type) {
     case "run.admitted":
       return `Admitted: approval ${String(p.approvalId)} is live for this exact hash.`;
+    case "run.reconciling":
+      return "Reading back earlier sends whose outcome is unknown. Nothing new is sent.";
     case "run.refused":
       return `Refused before any step: ${String(p.detail)}.`;
     case "run.deferred":

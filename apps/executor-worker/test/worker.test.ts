@@ -4,17 +4,19 @@ import { planHash } from "@rehearsal/core";
 import {
   APPLY_QUEUE,
   createDb,
+  MAX_REAPS,
   migrateDb,
   PgApplyStore,
   type PgBoss,
   PgJournal,
+  reapStuckRuns,
   requestApply,
   requestCancel,
   schema,
   startQueue,
 } from "@rehearsal/db";
 import { billingManifest, FakeClock, type FakeWorld, worldFromManifest } from "@rehearsal/testkit";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import policy from "../../../scenarios/billing/policy.v1.json" with { type: "json" };
 import { type ApplyJobResult, handleApplyJob, RetryLater, type WorkerContext } from "../src/worker";
@@ -251,10 +253,10 @@ describe.skipIf(!process.env.DB_TESTS)(
 
         const b = handleApplyJob(jobOf(r), contextFor(r.world), attempt);
 
-        if (attempt) await b;
-        else await expect(b).rejects.toBeInstanceOf(RetryLater);
+        // Even on the last try it never marks the run failed: the holder may have sent something.
+        await expect(b).rejects.toBeInstanceOf(RetryLater);
 
-        expect(await runState(r.runId)).toBe(attempt ? "failed" : "applying");
+        expect(await runState(r.runId)).toBe("applying");
 
         release();
 
@@ -597,28 +599,205 @@ describe.skipIf(!process.env.DB_TESTS)(
       expect(r.world.refunds).toHaveLength(2);
     });
 
-    it("on the last retry, a run still blocked by the plan lock ends failed so it can be re-applied", async () => {
+    it("past the last retry, a run still blocked by the plan lock stays applying for the reaper (#121)", async () => {
       const r = await approvedRun();
       const release = await new PgApplyStore(createDb(url)).lockPlan(r.orgId, r.planId);
       try {
-        const result = await handleApplyJob(jobOf(r), contextFor(r.world), {
-          retryCount: 50,
-          retryLimit: 50,
-        });
-        expect(stateOf(result)).toBe("failed");
-        expect(await runState(r.runId)).toBe("failed");
+        await expect(
+          handleApplyJob(jobOf(r), contextFor(r.world), { retryCount: 50, retryLimit: 50 }),
+        ).rejects.toBeInstanceOf(RetryLater);
+        // The holder may have sent something this delivery can't see: never mark it failed here.
+        expect(await runState(r.runId)).toBe("applying");
       } finally {
         await release?.();
       }
-      const again = await requestApply(db, boss, {
-        orgId: r.orgId,
-        userId: "user_finance",
-        planId: r.planId,
-        revision: 1,
-        planHash: r.hash,
-        now: NOW,
+    });
+
+    it("an overlapping delivery's last lock retry never strands the holder's unreceipted refund (#121)", async () => {
+      const r = await approvedRun();
+      const ctx = contextFor(r.world);
+      const stripe = r.world.provider("stripe");
+      let landed = () => {};
+      const refundLanded = new Promise<void>((res) => {
+        landed = res;
       });
-      expect(again).toMatchObject({ kind: "accepted", existing: false });
+      let resume = () => {};
+      const gate = new Promise<void>((res) => {
+        resume = res;
+      });
+      let paused = false;
+      const pausing: WorkerContext = {
+        ...ctx,
+        providers: {
+          ...ctx.providers,
+          stripe: {
+            ...stripe,
+            dispatch: async (req, c) => {
+              const res = await stripe.dispatch(req, c);
+              if (!paused) {
+                paused = true;
+                landed();
+                await gate; // the refund is committed; the response hasn't come back yet
+              }
+              return res;
+            },
+          },
+        },
+      };
+      // Delivery A holds the plan lock, its refund committed but unanswered.
+      const a = handleApplyJob(jobOf(r), pausing, { retryCount: 0, retryLimit: 50 });
+      await refundLanded;
+      // Delivery B of the same job, on its last try, can't get the lock.
+      await expect(
+        handleApplyJob(jobOf(r), ctx, { retryCount: 50, retryLimit: 50 }),
+      ).rejects.toBeInstanceOf(RetryLater);
+      // A's refund settle then fails once, so A returns an executor error.
+      const spy = failSettle("refund_001");
+      try {
+        resume();
+        await expect(a).rejects.toBeInstanceOf(RetryLater);
+      } finally {
+        spy.mockRestore();
+      }
+      expect(await runState(r.runId)).toBe("applying");
+
+      const again = await handleApplyJob(jobOf(r), ctx, { retryCount: 1, retryLimit: 50 });
+      expect(stateOf(again)).toBe("completed");
+      expect(r.world.refunds.filter((x) => x.charge === "ch_fixture_001")).toHaveLength(1);
+      expect(await refundReceipt(r.orgId)).toEqual(["confirmed"]);
+    });
+
+    /** The same worker context with the clock past the approval's expiry (NOW + 1 h). */
+    const expired = (world: FakeWorld): WorkerContext => ({
+      ...contextFor(world),
+      clock: new FakeClock(new Date(NOW.getTime() + 2 * 3_600_000).toISOString()),
+    });
+
+    it("an expired grant still reads back an unreceipted refund, and sends nothing new (#121)", async () => {
+      const r = await approvedRun();
+      const spy = failSettle("refund_001");
+      try {
+        await expect(
+          handleApplyJob(jobOf(r), contextFor(r.world), { retryCount: 0, retryLimit: 50 }),
+        ).rejects.toBeInstanceOf(RetryLater);
+      } finally {
+        spy.mockRestore();
+      }
+      const effects = r.world.effects.length;
+
+      const after = await handleApplyJob(jobOf(r), expired(r.world), {
+        retryCount: 1,
+        retryLimit: 50,
+      });
+      expect(after).toMatchObject({ kind: "ran", outcome: { refusal: "grant expired" } });
+      expect(stateOf(after)).toBe("failed");
+      expect(await runState(r.runId)).toBe("failed");
+      expect(await refundReceipt(r.orgId)).toEqual(["confirmed"]);
+      expect(r.world.effects.length).toBe(effects); // read only: no new send, no replay
+      expect(r.world.refunds.filter((x) => x.charge === "ch_fixture_001")).toHaveLength(1);
+    });
+
+    it("a run stranded by an expired grant and an unreadable send is reaped, then handed to an operator (#121)", async () => {
+      const r = await approvedRun();
+      const spy = failSettle("refund_001");
+      try {
+        await expect(
+          handleApplyJob(jobOf(r), contextFor(r.world), { retryCount: 0, retryLimit: 50 }),
+        ).rejects.toBeInstanceOf(RetryLater);
+      } finally {
+        spy.mockRestore();
+      }
+      const ctx = expired(r.world);
+      const stripe = r.world.provider("stripe");
+      const unreadable: WorkerContext = {
+        ...ctx,
+        providers: {
+          ...ctx.providers,
+          stripe: {
+            ...stripe,
+            reconcile: async () => {
+              throw new Error("stripe read unavailable (injected)");
+            },
+          },
+        },
+      };
+      const handedOff: string[] = [];
+      /** pg-boss gave up on its job, and the run's last update is outside the stale window. */
+      const exhaust = async () => {
+        await db.execute(sql`delete from pgboss.job where data->>'runId' = ${r.runId}`);
+        await db
+          .update(schema.runs)
+          .set({ updatedAt: new Date(Date.now() - 3_600_000) })
+          .where(eq(schema.runs.id, r.runId));
+      };
+      /** One reaper sweep that sees this run (another suite's sweep may hold the reaper lock). */
+      const sweep = async () => {
+        for (let i = 0; i < 50; i++) {
+          const reaped = await reapStuckRuns(db, boss, {
+            now: new Date(),
+            staleAfterMs: 10 * 60_000,
+            onHandOff: (ids) => handedOff.push(...ids),
+          });
+          if (reaped.includes(r.runId) || handedOff.includes(r.runId)) return reaped;
+          await new Promise((res) => setTimeout(res, 50));
+        }
+        throw new Error("the reaper never picked the run up");
+      };
+      for (let n = 0; n < MAX_REAPS; n++) {
+        await expect(
+          handleApplyJob(jobOf(r), unreadable, { retryCount: 50, retryLimit: 50 }),
+        ).rejects.toBeInstanceOf(RetryLater);
+        expect(await runState(r.runId)).toBe("applying");
+        await exhaust();
+        expect(await sweep()).toContain(r.runId);
+      }
+      await exhaust();
+      await sweep();
+      expect(handedOff).toContain(r.runId);
+      expect(await runState(r.runId)).toBe("failed");
+      const events = (await db.select().from(schema.runEvents)).filter((e) => e.runId === r.runId);
+      expect(events.filter((e) => e.type === "run.reaped")).toHaveLength(MAX_REAPS);
+      expect(events.filter((e) => e.type === "run.needs_operator")).toHaveLength(1);
+      expect(r.world.refunds.filter((x) => x.charge === "ch_fixture_001")).toHaveLength(1);
+    }, 60_000);
+
+    it("an expired grant keeps a run retryable while its unreceipted send can't be read (#121)", async () => {
+      const r = await approvedRun();
+      const spy = failSettle("refund_001");
+      try {
+        await expect(
+          handleApplyJob(jobOf(r), contextFor(r.world), { retryCount: 0, retryLimit: 50 }),
+        ).rejects.toBeInstanceOf(RetryLater);
+      } finally {
+        spy.mockRestore();
+      }
+      const effects = r.world.effects.length;
+      const ctx = expired(r.world);
+      const stripe = r.world.provider("stripe");
+      const unreadable: WorkerContext = {
+        ...ctx,
+        providers: {
+          ...ctx.providers,
+          stripe: {
+            ...stripe,
+            reconcile: async () => {
+              throw new Error("stripe read unavailable (injected)");
+            },
+          },
+        },
+      };
+      // Even on the last try: the reaper re-enqueues it, bounded, then hands it to an operator.
+      await expect(
+        handleApplyJob(jobOf(r), unreadable, { retryCount: 50, retryLimit: 50 }),
+      ).rejects.toBeInstanceOf(RetryLater);
+      expect(await runState(r.runId)).toBe("applying");
+      expect(r.world.effects.length).toBe(effects);
+
+      // Once the read works, the refund is recorded and the refusal stands.
+      const after = await handleApplyJob(jobOf(r), ctx, { retryCount: 0, retryLimit: 50 });
+      expect(stateOf(after)).toBe("failed");
+      expect(await refundReceipt(r.orgId)).toContain("confirmed");
+      expect(r.world.effects.length).toBe(effects);
     });
   },
 );
