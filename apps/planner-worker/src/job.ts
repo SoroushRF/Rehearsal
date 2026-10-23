@@ -56,7 +56,9 @@ export async function handlePlanJob(
     policy: deps.policy,
     window: brief.window,
   });
-  const signal = AbortSignal.timeout(deps.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  const timeoutMs = deps.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const signal = AbortSignal.timeout(timeoutMs);
+  const timedOut = () => fail("timeout", `no plan within ${timeoutMs} ms`);
   const run = randomUUID().slice(0, 8);
   log(`[${run}] planning ${job.incidentId} for ${job.orgId} as ${job.planId} (${deps.model})`);
   let result: Awaited<ReturnType<typeof runPlanningLoop>>;
@@ -72,11 +74,13 @@ export async function handlePlanJob(
     });
   } catch (err) {
     if (err instanceof PlanningLoopError) return fail(err.reason, err.message);
-    if (signal.aborted)
-      return fail("timeout", `no plan within ${deps.timeoutMs ?? DEFAULT_TIMEOUT_MS} ms`);
+    if (signal.aborted) return timedOut();
     // A model or network error. Reported, so the job retries once instead of hanging until expiry.
     return fail("planner_error", (err as Error).message.slice(0, 2000));
   }
+  // Past the deadline the queue may already have expired the job; don't hand back a late plan.
+  // The jobs client bounds each API call on its own, so reporting can't hang either.
+  if (signal.aborted) return timedOut();
 
   const { planHash } = await deps.jobs.complete(claimed.id, {
     manifest: result.manifest,

@@ -42,16 +42,20 @@ if (worlds.stripe.tenant !== worlds.zendesk.tenant) {
 }
 
 // The simulators accept any bearer; real read-only credentials would come from the environment.
+// A read that times out comes back to the model as a failed read; the run's deadline still holds.
+const READ_TIMEOUT_MS = 30_000;
 const readers = {
   stripe: stripeReader({
     world: "planning",
     config: worlds.stripe,
     authorization: "Bearer sk_test_rehearsal_planner",
+    timeoutMs: READ_TIMEOUT_MS,
   }),
   zendesk: zendeskReader({
     world: "planning",
     config: worlds.zendesk,
     authorization: "Bearer rehearsal-planner",
+    timeoutMs: READ_TIMEOUT_MS,
   }),
 };
 const model = process.env.PLANNER_MODEL || DEFAULT_PLANNER_MODEL;
