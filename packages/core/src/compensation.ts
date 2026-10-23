@@ -193,13 +193,72 @@ function compensationOrder(manifest: PlanManifest, actions: readonly Patch[]): P
     .reverse();
 }
 
+function writtenFields(action: Patch): Field[] {
+  return (Object.entries(action.args.set) as [Field, string | undefined][])
+    .filter(([, value]) => value !== undefined)
+    .map(([field]) => field);
+}
+
+/** Later patches that wrote one of `action`'s fields on the same ticket, latest last. */
+function laterOverlapping(manifest: PlanManifest, action: Patch): Patch[] {
+  const order = topoOrder(manifest.actions);
+  const start = order.findIndex((item) => item.id === action.id);
+  const mine = new Set(writtenFields(action));
+  return order.slice(start + 1).filter((item): item is Patch => {
+    if (item.kind !== "zendesk.ticket.patchFields" || item.args.ticketId !== action.args.ticketId) {
+      return false;
+    }
+    return writtenFields(item).some((field) => mine.has(field));
+  });
+}
+
+/**
+ * `wait`: a later undo has not restored the field, and has not settled as a real conflict either.
+ * An older patch must not be judged yet. `keep`: it settled as a conflict, so a matching value is
+ * not proof the older write is still ours.
+ */
+function laterUndoGate(receipt: Receipt | undefined): "wait" | "keep" | "clear" {
+  if (receipt?.outcome === "unknown_outcome" || receipt?.outcome === "held") return "wait";
+  // A rejected or skipped later patch wrote nothing. A compensated one restored its field.
+  if (
+    !receipt ||
+    receipt.outcome === "compensated" ||
+    receipt.outcome === "rejected" ||
+    receipt.outcome === "skipped_dependency"
+  ) {
+    return "clear";
+  }
+  // Confirmed: a later write we are not undoing. Conflict: it settled without restoring.
+  return "keep";
+}
+
 export function createCompensator(deps: CompensatorDeps): Compensator {
   return async (ctx) => {
-    for (const action of compensationOrder(ctx.manifest, [
+    const actions = compensationOrder(ctx.manifest, [
       ...compensationTargets(ctx.manifest, ctx.outcomes, ctx.receipts),
       ...heldUndoTargets(ctx.manifest, ctx.outcomes, ctx.receipts),
-    ])) {
-      await compensate(action, ctx, deps);
+    ]);
+    const latest = new Map<string, Receipt>();
+    for (const receipt of await ctx.journal.receiptsFor(ctx.planHash)) {
+      latest.set(receipt.actionId, receipt);
+    }
+    for (const action of actions) {
+      const blocked = new Set<Field>();
+      let wait = false;
+      for (const other of laterOverlapping(ctx.manifest, action)) {
+        const shared = writtenFields(action).filter((field) =>
+          writtenFields(other).includes(field),
+        );
+        const gate = laterUndoGate(latest.get(other.id));
+        if (gate === "wait") wait = true;
+        else if (gate === "keep") for (const field of shared) blocked.add(field);
+      }
+      if (wait) continue;
+      await compensate(action, ctx, deps, blocked);
+      const recorded = (await ctx.journal.receiptsFor(ctx.planHash))
+        .filter((receipt) => receipt.actionId === action.id)
+        .at(-1);
+      if (recorded) latest.set(action.id, recorded);
     }
   };
 }
@@ -251,7 +310,13 @@ async function undoRead(
   }
 }
 
-async function compensate(action: Patch, ctx: CompensationContext, deps: CompensatorDeps) {
+async function compensate(
+  action: Patch,
+  ctx: CompensationContext,
+  deps: CompensatorDeps,
+  /** Fields a later patch wrote and did not restore. Matching them is not proof they are still ours. */
+  blocked: ReadonlySet<Field> = new Set(),
+) {
   const provider = deps.providers.zendesk;
   const world = deps.worlds.zendesk;
   const record = (r: CompensationResult) => ctx.record(action, r);
@@ -388,6 +453,12 @@ async function compensate(action: Patch, ctx: CompensationContext, deps: Compens
           delete decision.kept[field];
         }
       }
+    }
+    for (const field of blocked) {
+      if (decision.revert[field] === undefined && !decision.unrevertable.includes(field)) continue;
+      decision.kept[field] = current[field];
+      delete decision.revert[field];
+      decision.unrevertable = decision.unrevertable.filter((item) => item !== field);
     }
     if (Object.keys(decision.revert).length === 0) {
       // A late landing of our own undo restores the before value and then 409s the fresh send.

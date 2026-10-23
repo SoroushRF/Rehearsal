@@ -47,7 +47,7 @@ _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
 ### 2026-10-23, compensation follow-ups #103 and #109
 
 - **A late undo no longer hides a leftover conflict (#103).** If an earlier undo restored only some fields, and a follow-up 409 leaves another field with a teammate's value, the receipt is `compensation_conflict`. It is `compensated` only when nothing genuine remains. Fixture evidence: `apps/executor-worker/test/compensation.test.ts`.
-- **Stacked patches on one field are undone latest first (#109).** A chain normal → high → urgent returns to normal, and a real teammate edit (a value neither patch wrote) is kept. The current planner still emits one patch per ticket. A teammate value that happens to equal an earlier patch's own write is not covered.
+- **Stacked patches on one field are undone latest first (#109).** A chain normal → high → urgent returns to normal. An older patch waits, with no receipt, while the later undo is unresolved or has given up (a 500 that never landed, a lost response, or repeated 409s). A teammate edit is kept, including one equal to an earlier patch's own write. The current planner still emits one patch per ticket.
 - **Next.** ML tasks T4.5–T4.7 stay on hold.
 
 ### 2026-10-22, T4.4 done on Era
