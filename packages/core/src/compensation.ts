@@ -6,8 +6,8 @@ import type {
   ReceiptOutcome,
 } from "@rehearsal/contracts";
 import type { CompensationContext, CompensationResult, Compensator } from "./executor";
-import { operationKey } from "./executor";
-import { fingerprint, sha256Hex } from "./hash";
+import { undoKey } from "./executor";
+import { sha256Hex } from "./hash";
 import type { Clock, DispatchResult, Preconditions, ProviderPort, WorldContext } from "./ports";
 
 type Patch = Extract<Action, { kind: "zendesk.ticket.patchFields" }>;
@@ -94,12 +94,6 @@ export function inversePatch(action: Patch, revert: UndoDecision["revert"]): Pat
   ) as Patch["args"]["before"];
   return { ...action, args: { ticketId: action.args.ticketId, set: revert, before: ours } };
 }
-
-/** The undo's own key: a different operation from the forward write, stable across runs. */
-export function undoKey(orgId: string, action: Patch, planId: string): string {
-  return `op_${fingerprint({ undo: operationKey(orgId, planId, action) })}`;
-}
-
 const describe = (d: UndoDecision) => [
   ...Object.entries(d.revert).map(([f, v]) => `restored ${f} to ${String(v)}`),
   ...Object.entries(d.kept).map(([f, v]) => `kept ${f} = ${String(v)}: changed by someone else`),
@@ -144,7 +138,7 @@ async function compensate(action: Patch, ctx: CompensationContext, deps: Compens
   if (!provider || !world) return held("no Zendesk provider to compensate with");
   if (!provider.preconditions) return held("no stamp precondition to guard the undo with");
 
-  const key = undoKey(ctx.orgId, action, ctx.manifest.planId);
+  const key = undoKey(ctx.orgId, ctx.manifest.planId, action);
   const earlier = (await ctx.journal.attemptsForKey(key)).at(-1);
   // A prepared row was never sent, so it had no effect and a fresh attempt may supersede it.
   if (earlier && earlier.state !== "prepared") {

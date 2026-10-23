@@ -13,7 +13,8 @@ The build plan says not to roll back every customer because one branch failed, a
 3. **Scope.** Only that case's confirmed `zendesk.ticket.patchFields` actions marked `conditional_reversible`. Refunds and notes are never undone, and other cases are untouched.
 4. **Per field.** Re-read the ticket after capturing its stamp. A field that still holds our value gets its before value back through a stamp-guarded patch, journaled before dispatch. A field someone else changed is kept and gives `compensation_conflict`. A 409 on the undo means the ticket moved after the re-read, which is also `compensation_conflict`.
 5. **Never twice.** A patch with a `compensated` or `compensation_conflict` receipt is skipped, and so is one whose undo attempt already settled. An undo sent without a settled outcome (lost response, crash after dispatch) is held once and never re-sent. An undo prepared but never sent had no effect, so a fresh attempt supersedes it.
-6. **Same admission as any send.** No undo is sent after a cancel or once the grant is revoked, changed or expired. The patch gets an `approval_invalid` hold saying our value is still there.
+6. **Undone stays undone.** A later run, or a later revision of the plan, reports a patch with a confirmed undo as `compensated`. It never adopts the forward write as `confirmed`.
+7. **Same admission as any send.** No undo is sent after a cancel or once the grant is revoked, changed or expired. The patch gets an `approval_invalid` hold saying our value is still there.
 
 ## Consequences
 

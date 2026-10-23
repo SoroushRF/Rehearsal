@@ -82,6 +82,24 @@ function setup(bundle: ReplayBundle) {
   };
   /** Ticket writes sent to the world (forward patches, notes and undos), in order. */
   const ticketWrites = (path = TICKET) => world.effects.filter((e) => e.path === path).length;
+  /** Store revision 2 (edited by `change`) with its own run and grant, like a re-approval. */
+  const addRevision = (change: (m: typeof manifest) => void = () => {}) => {
+    const rev2 = structuredClone({ ...manifest, revision: 2, parentRevision: 1 });
+    change(rev2);
+    const hash2 = planHash(rev2);
+    store.plans.set(`${manifest.planId}@2`, { planHash: hash2, manifest: rev2 });
+    store.runs.set("run_2", {
+      planId: manifest.planId,
+      revision: 2,
+      planHash: hash2,
+      approvalId: "grant_2",
+    });
+    store.grants.set("grant_2", { ...grant, id: "grant_2", revision: 2, planHash: hash2 });
+    return {
+      hash: hash2,
+      run: () => executeRun({ ...job, runId: "run_2", revision: 2, planHash: hash2 }, deps),
+    };
+  };
   return {
     world,
     store,
@@ -90,6 +108,7 @@ function setup(bundle: ReplayBundle) {
     providers,
     hash,
     ticketWrites,
+    addRevision,
     run: () => executeRun(job, deps),
   };
 }
@@ -281,6 +300,36 @@ describe("conditional compensation", () => {
       "prepared",
       "confirmed",
     ]);
+    expect(s.world.tickets.get("5532")?.priority).toBe("normal");
+  });
+
+  it.each([
+    ["an identical revision", () => {}],
+    [
+      "a revision that changes case 2's refund",
+      (m: ReplayBundle["manifest"]) => {
+        const refund = m.actions.find((a) => a.id === "refund_002");
+        if (refund?.kind === "stripe.refund.create") refund.args.reason = "requested_by_customer";
+      },
+    ],
+  ])("never reports an undone patch as confirmed under %s", async (_name, change) => {
+    const bundle = noteFails();
+    const s = setup(bundle);
+    replay(s, bundle);
+    await s.run();
+    expect(s.world.tickets.get("5532")?.priority).toBe("normal");
+
+    const rev2 = s.addRevision(change);
+    const writes = s.ticketWrites();
+    await rev2.run();
+    await rev2.run();
+    // One receipt for the revision, saying the patch was undone, however often it runs.
+    const receipts = (await s.journal.receiptsFor(rev2.hash)).filter(
+      (r) => r.actionId === "patch_002",
+    );
+    expect(receipts.map((r) => r.outcome)).toEqual(["compensated"]);
+    expect(receipts[0]?.limitations[0]).toMatch(/^undone by attempt att_\d+ under plan hash /);
+    expect(s.ticketWrites()).toBe(writes);
     expect(s.world.tickets.get("5532")?.priority).toBe("normal");
   });
 

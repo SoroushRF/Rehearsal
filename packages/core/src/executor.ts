@@ -196,6 +196,11 @@ export function operationKey(orgId: string, planId: string, action: Action): str
   }).slice(0, 32)}`;
 }
 
+/** The key of an action's compensating undo: its own operation, stable across revisions. */
+export function undoKey(orgId: string, planId: string, action: Action): string {
+  return `op_${fingerprint({ undo: operationKey(orgId, planId, action) })}`;
+}
+
 /** Allowlisted values a confirmed response yields for later steps, plus the created object. */
 function resultsOf(
   action: Action,
@@ -473,8 +478,11 @@ async function applyLocked(
   const confirmedByAction = new Map<string, Receipt>();
   /** Attempts this hash already holds as unresolved; a reconcile-only pass doesn't re-hold them. */
   const heldUnresolved = new Set<string>();
+  /** Actions this hash already recorded as undone; their forward write is no longer on record. */
+  const compensatedHere = new Set<string>();
   for (const r of await journal.receiptsFor(job.planHash)) {
     if (r.outcome === "confirmed") confirmedByAction.set(r.actionId, r);
+    if (r.outcome === "compensated") compensatedHere.add(r.actionId);
     if (r.outcome === "held" && r.holdReason?.kind === "unresolved_outcome") {
       heldUnresolved.add(r.holdReason.attemptId);
     }
@@ -685,9 +693,31 @@ async function applyLocked(
     return "settled";
   }
 
+  /** A confirmed undo of this patch under any revision: our write is no longer on the ticket. */
+  const undoneBy = async (action: Action) =>
+    action.kind === "zendesk.ticket.patchFields"
+      ? (await journal.attemptsForKey(undoKey(job.orgId, job.planId, action))).find(
+          (a) => a.state === "confirmed",
+        )
+      : undefined;
+  const settleUndone = (action: Action, undo: Attempt) =>
+    settle(
+      action,
+      receiptFor(action, "compensated", {
+        providerRef: targetOf(action),
+        limitations: [`undone by attempt ${undo.id} under plan hash ${undo.planHash}; not re-sent`],
+      }),
+    );
+
   async function step(action: Action): Promise<void> {
+    if (compensatedHere.has(action.id)) {
+      settled.set(action.id, "compensated");
+      return;
+    }
     if (confirmedByAction.has(action.id)) {
       // Already confirmed (or adopted) for this hash in an earlier run; never settle it twice.
+      const undo = await undoneBy(action);
+      if (undo) return settleUndone(action, undo);
       settled.set(action.id, "confirmed");
       return;
     }
@@ -815,6 +845,8 @@ async function applyLocked(
       }
     }
     if (latest && latest.state !== "rejected") {
+      const undo = await undoneBy(action);
+      if (undo) return settleUndone(action, undo);
       // Confirmed under an earlier revision of this plan with the same content: adopt its results.
       const earlier = (await journal.bindings(latest.planHash)).filter(
         (b) => b.ref.stepId === latest.actionId,
