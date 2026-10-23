@@ -861,7 +861,11 @@ async function applyLocked(
             action,
             receiptFor(action, "unknown_outcome", {
               holdReason: { kind: "unresolved_outcome", attemptId: unknownSends[0] as string },
-              limitations: ["run cancelled; earlier send outcome remains unknown"],
+              limitations: [
+                cancelled
+                  ? "run cancelled; earlier send outcome remains unknown"
+                  : "run stopped on an error in another case; earlier send outcome remains unknown",
+              ],
             }),
           );
         }

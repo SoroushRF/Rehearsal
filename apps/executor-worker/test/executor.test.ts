@@ -1559,6 +1559,22 @@ describe("bounded concurrency across cases (T3.7)", () => {
     const expected = outcomes((await sequential.run()).receipts);
     const s = guarded(overlapping());
     s.deps.caseConcurrency = 4;
+    // Open the race: case 1's refund lands but settles slowly, while case 3's guard re-reads
+    // case 1's charge in between. Without grouping, case 3 would see our own refund as drift.
+    const stripe = s.deps.providers.stripe;
+    s.deps.providers.stripe = {
+      ...stripe,
+      dispatch: async (req, ctx) => {
+        const res = await stripe.dispatch(req, ctx);
+        if (req.body.includes("ch_fixture_001")) await new Promise((r) => setTimeout(r, 80));
+        return res;
+      },
+    };
+    const guard = s.deps.guard;
+    s.deps.guard = async (action, ctx) => {
+      if (action.id === "refund_003") await new Promise((r) => setTimeout(r, 30));
+      return guard ? guard(action, ctx) : null;
+    };
     const result = await s.run();
     expect(outcomes(result.receipts)).toEqual(expected);
     expect(result.state).toBe("completed");
