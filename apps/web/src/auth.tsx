@@ -12,6 +12,7 @@ import { type ReactNode, useCallback } from "react";
 import { z } from "zod";
 import { Badge } from "./components/Badge";
 import { roleLabel } from "./format";
+import { identityOf } from "./identity";
 
 /** Without a publishable key the app runs read-only on fixtures: no sign-in, no commands. */
 export const clerkKey: string | undefined = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || undefined;
@@ -73,7 +74,9 @@ function VerifiedRoles() {
   const { userId, orgId } = useAuth();
   const apiFetch = useApiFetch();
   const me = useQuery({
-    queryKey: ["me", userId, orgId],
+    // Keyed by the verified user and org, so a switch never shows the previous role.
+    queryKey: ["tenant", orgId && userId ? identityOf(userId, orgId) : "none", "me"],
+    enabled: Boolean(userId && orgId),
     queryFn: async () => {
       const res = await apiFetch("/api/me");
       if (res.status === 401) return null;
