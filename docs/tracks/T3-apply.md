@@ -48,6 +48,7 @@ _(add dated entries)_
 
 _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
 
+- **2026-10-22, Artin (fix #99).** Branch `t3/recovery-only-dependents`. The dependency bypass from #92 (an action already sent keeps its record after a predecessor is undone) now only recovers: `step(action, recoveryFor)` reconciles an in-flight send by a read, but a negative read holds it as `unresolved_outcome` instead of an idempotent replay, and nothing is ever freshly prepared or sent (a defensive `skipped_dependency` before the send path). A repeated pass adds no duplicate hold. **Gotchas:** the defensive skip isn't reachable from today's attempt histories (a send past an undone predecessor needs a non-rejected earlier attempt, which `step()` settles first), so no test pins it.
 - **2026-10-22, Artin (T3.7).** Branch `t3/T3.7-concurrency`. `ExecutorDeps.caseConcurrency` (default 1) runs independent cases at once:
   - **Grouping:** `caseGroups(manifest)` joins cases into one sequential group when they touch any record in common: a record one writes, a record any of them cites as evidence, a customer or requester their queries cover, or a cross-case dependency. So one case's write never looks like outside drift to another case's guard, and two writes to one record never run side by side. With concurrency 1, the exact global topological order is kept.
   - **Run state:** in-flight attempts are tracked as a set across cases. An unexpected error stops new actions in every case, and a cancel stops every lane before its next action.

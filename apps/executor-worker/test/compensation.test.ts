@@ -404,6 +404,87 @@ describe("conditional compensation", () => {
     },
   );
 
+  /**
+   * `refund_002` after `patch_002`, plus a second patch on 5532 that is refused (422) so case 2 is
+   * compensated. The first refund send is lost: it reaches Stripe only when `lands` is set.
+   */
+  function lostRefundAfterUndo(lands: boolean) {
+    const bundle = happyPathBundle();
+    const actions = bundle.manifest.actions;
+    const refund = actions.find((a) => a.id === "refund_002");
+    const patch = actions.find((a) => a.id === "patch_002");
+    if (!refund || patch?.kind !== "zendesk.ticket.patchFields") throw new Error("no case 2");
+    refund.dependsOn = ["patch_002"];
+    actions.push({
+      ...structuredClone(patch),
+      id: "patch_002_fail",
+      args: { ...patch.args, set: { priority: "low" } },
+    });
+    const s = setup(bundle);
+    s.deps.retry = { maxAttempts: 1 };
+    s.deps.reconcileAfterMs = 0; // a negative read would permit an idempotent replay at once
+    const zendesk = s.providers.zendesk.dispatch;
+    s.providers.zendesk.dispatch = async (request, ctx) =>
+      request.path === TICKET && request.body.includes('"low"')
+        ? { kind: "rejected", status: 422, body: { error: "injected" }, retryable: false }
+        : zendesk(request, ctx);
+    const stripe = s.providers.stripe.dispatch;
+    let lost = true;
+    s.providers.stripe.dispatch = async (request, ctx) => {
+      if (request.path === "/v1/refunds" && request.body.includes("ch_fixture_002") && lost) {
+        lost = false;
+        if (lands) await stripe(request, ctx);
+        return { kind: "unknown", error: "transport failure" };
+      }
+      return stripe(request, ctx);
+    };
+    const refunds = () => s.world.refunds.filter((r) => r.charge === "ch_fixture_002").length;
+    return { s, refunds };
+  }
+
+  it.each([
+    ["a re-run of the same hash", (s: Setup) => s.run()],
+    ["another revision", (s: Setup) => s.addRevision().run()],
+  ])(
+    "never sends a lost refund again once its predecessor was undone, under %s",
+    async (_n, next) => {
+      const { s, refunds } = lostRefundAfterUndo(false);
+      const first = await s.run();
+      expect(outcomes(first.receipts)).toMatchObject({
+        patch_002: "compensated",
+        patch_002_fail: "rejected",
+        refund_002: "unknown_outcome",
+      });
+      expect(refunds()).toBe(0);
+
+      // Past the reconcile age the read finds nothing: the refund is held, and nothing is sent.
+      const second = await next(s);
+      expect(second.error).toBeNull();
+      expect(second.receipts.filter((r) => r.actionId === "refund_002")).toMatchObject([
+        { outcome: "held", holdReason: { kind: "unresolved_outcome" } },
+      ]);
+      // Another pass of the same hash adds no duplicate hold and still sends nothing.
+      const third = await next(s);
+      expect(third.receipts.filter((r) => r.actionId === "refund_002")).toEqual([]);
+      expect(refunds()).toBe(0);
+      expect(s.world.tickets.get("5532")?.priority).toBe("normal");
+    },
+  );
+
+  it.each([
+    ["a re-run of the same hash", (s: Setup) => s.run()],
+    ["another revision", (s: Setup) => s.addRevision().run()],
+  ])(
+    "records a lost refund that landed once its predecessor was undone, under %s",
+    async (_n, next) => {
+      const { s, refunds } = lostRefundAfterUndo(true);
+      expect(outcomes((await s.run()).receipts).refund_002).toBe("unknown_outcome");
+      const second = await next(s);
+      expect(outcomes(second.receipts).refund_002).toBe("confirmed");
+      expect(refunds()).toBe(1);
+    },
+  );
+
   it("still skips an applied dependent whose predecessor is held, not undone", async () => {
     const s = setup(happyPathBundle());
     await s.run();

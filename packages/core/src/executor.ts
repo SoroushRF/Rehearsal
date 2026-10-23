@@ -583,7 +583,9 @@ async function applyLocked(
   /**
    * Resolve in-flight attempts of one key through the provider's reads. "settled" means the step
    * now has its receipt (confirmed, or held); otherwise the read showed nothing was applied and
-   * the attempts were closed as rejected (no status), so the step may be sent.
+   * the attempts were closed as rejected (no status), so the step may be sent. With `noReplay`
+   * (a cancelled run, or a dependent whose predecessor was undone) a negative read never permits
+   * a send: the attempts stay in flight and the step is held.
    */
   async function reconcileInFlight(
     action: Action,
@@ -592,6 +594,7 @@ async function applyLocked(
     provider: ProviderPort,
     world: WorldContext,
     sameAsNewest: boolean,
+    noReplay: boolean,
   ): Promise<"settled" | "resend"> {
     const newest = inFlight.at(-1) as Attempt;
     let result: ReconcileResult;
@@ -677,9 +680,11 @@ async function applyLocked(
     const sentAt = Date.parse(newest.dispatchedAt ?? newest.preparedAt);
     const oldEnough = clock.now().getTime() - sentAt >= (deps.reconcileAfterMs ?? 60_000);
     // A cancelled run never replays, so the replay that makes "not applied" safe to act on never
-    // comes: keep the attempts in flight (a late landing is still found later) and hold.
+    // comes: keep the attempts in flight (a late landing is still found later) and hold. Nor does
+    // a dependent whose predecessor was undone: idempotency stops a duplicate, not a send that
+    // the undone predecessor no longer supports.
     if (
-      !reconcileOnly &&
+      !noReplay &&
       result.kind === "not_applied" &&
       oldEnough &&
       sameAsNewest &&
@@ -696,8 +701,8 @@ async function applyLocked(
       return "resend";
     }
     const heldAttempt = inFlight[0]?.id ?? newest.id;
-    if (reconcileOnly && heldUnresolved.has(heldAttempt)) {
-      // Already held for this exact attempt: a repeated read-only pass adds no duplicate receipt.
+    if (noReplay && heldUnresolved.has(heldAttempt)) {
+      // Already held for this exact attempt: a repeated pass adds no duplicate receipt.
       settled.set(action.id, "held");
       return "settled";
     }
@@ -938,7 +943,11 @@ async function applyLocked(
     );
   };
 
-  async function step(action: Action): Promise<void> {
+  /**
+   * `recoveryFor` names an undone predecessor this action depends on: the action may only have its
+   * earlier send recorded (confirmed by a read, or held), never a new one.
+   */
+  async function step(action: Action, recoveryFor?: string): Promise<void> {
     const compensation = compensationHere.get(action.id);
     if (compensation) {
       settled.set(action.id, compensation.outcome);
@@ -989,7 +998,15 @@ async function applyLocked(
       // An effect found under different content (a revision changed the amount or text) is
       // recorded but never confirmed as this revision's.
       const sameAsNewest = sameContent(inFlight.at(-1) as Attempt);
-      const outcome = await reconcileInFlight(action, key, inFlight, provider, world, sameAsNewest);
+      const outcome = await reconcileInFlight(
+        action,
+        key,
+        inFlight,
+        provider,
+        world,
+        sameAsNewest,
+        reconcileOnly || recoveryFor !== undefined,
+      );
       if (outcome === "settled") return;
       if (reconcileOnly) return; // no effect was found; a cancelled run sends nothing new
       prior = await journal.attemptsForKey(key); // read showed no effect: the step may be sent
@@ -1101,6 +1118,15 @@ async function applyLocked(
       );
     }
 
+    if (recoveryFor !== undefined) {
+      // Nothing earlier took effect to record, and the predecessor this send needs was undone.
+      return settle(
+        action,
+        receiptFor(action, "skipped_dependency", {
+          holdReason: { kind: "predecessor_not_confirmed", stepId: recoveryFor },
+        }),
+      );
+    }
     let pre: Preconditions = {};
     if (provider.preconditions) {
       try {
@@ -1402,7 +1428,8 @@ async function applyLocked(
       const onlyUndone = action.dependsOn
         .filter((d) => settled.get(d) !== "confirmed")
         .every((d) => compensated.has(d));
-      if (blocked && !(onlyUndone && (await alreadySent(action)))) {
+      const recovering = blocked !== undefined && onlyUndone && (await alreadySent(action));
+      if (blocked && !recovering) {
         await settle(
           action,
           receiptFor(action, "skipped_dependency", {
@@ -1411,7 +1438,8 @@ async function applyLocked(
         );
         return "next";
       }
-      await step(action);
+      // Past an undone predecessor, only an earlier send is resolved: nothing new is sent.
+      await step(action, recovering ? blocked : undefined);
       return cancelled ? "stop" : "next";
     } catch (err) {
       // Unexpected failure (journal down, adapter bug). Stop: no further action starts in any
