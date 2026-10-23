@@ -24,6 +24,8 @@ export interface ReadTarget {
   pageSize?: number;
   /** Stop and report `complete: false` after this many pages. */
   maxPages?: number;
+  /** Per-request timeout. Unset, a request waits as long as the world takes. */
+  timeoutMs?: number;
 }
 
 export const STRIPE_CHARGE_PROJECTION = "stripe.charge.v2";
@@ -90,6 +92,7 @@ function assertTarget(target: ReadTarget, ctx: WorldContext) {
 async function getJson(target: ReadTarget, path: string): Promise<Record<string, unknown>> {
   const res = await eraFetch(target.config, path, {
     headers: { authorization: target.authorization },
+    ...(target.timeoutMs !== undefined && { signal: AbortSignal.timeout(target.timeoutMs) }),
   });
   if (!res.ok) throw new Error(`GET ${path} → ${res.status}`);
   return (await res.json()) as Record<string, unknown>;

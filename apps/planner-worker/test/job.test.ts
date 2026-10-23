@@ -110,6 +110,24 @@ function model(turns: (Anthropic.Message | Error)[]): MessagesClient {
   };
 }
 
+/** Look up one customer's charges, refund the duplicate, finish. */
+const refundOneDuplicate = () => [
+  reply([["list_customer_charges", { customerId: duplicate.customerId }]]),
+  reply([
+    [
+      "propose_duplicate_refund",
+      {
+        chargeId: duplicate.chargeIds[1],
+        duplicateOfChargeId: duplicate.chargeIds[0],
+        rationale: "Charged twice for one invoice.",
+      },
+    ],
+  ]),
+  reply([]),
+];
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 function fakeJobs() {
   const completed: [string, CompletePlanJob][] = [];
   const failed: [string, FailPlanJob][] = [];
@@ -141,21 +159,7 @@ function deps(client: MessagesClient, jobs: PlannerJobsClient): PlanJobContext {
 describe("plan job", () => {
   it("plans in the planning world and hands revision 1 to the API", async () => {
     const { jobs, completed, failed } = fakeJobs();
-    const client = model([
-      reply([["list_customer_charges", { customerId: duplicate.customerId }]]),
-      reply([
-        [
-          "propose_duplicate_refund",
-          {
-            chargeId: duplicate.chargeIds[1],
-            duplicateOfChargeId: duplicate.chargeIds[0],
-            rationale: "Charged twice for one invoice.",
-          },
-        ],
-      ]),
-      reply([]),
-    ]);
-    const result = await handlePlanJob(JOB, deps(client, jobs));
+    const result = await handlePlanJob(JOB, deps(model(refundOneDuplicate()), jobs));
 
     expect(result).toEqual({ kind: "stored", planId: JOB.data.planId, planHash: "sha256:stored" });
     expect(failed).toEqual([]);
@@ -186,6 +190,46 @@ describe("plan job", () => {
     const result = await handlePlanJob(JOB, deps(model([new Error("overloaded")]), jobs));
     expect(result).toMatchObject({ kind: "failed", reason: "planner_error" });
     expect(failed[0]?.[1].message).toBe("overloaded");
+  });
+
+  it("fails a run whose read never returns at the deadline, and takes the next job", async () => {
+    const { jobs, completed, failed } = fakeJobs();
+    const stalled: PlanningReader = { ...stripe, observe: () => new Promise(() => {}) };
+    const client = model([reply([["get_charge", { chargeId: duplicate.chargeIds[0] }]])]);
+    const run = handlePlanJob(JOB, {
+      ...deps(client, jobs),
+      readers: { stripe: stalled, zendesk },
+      timeoutMs: 20,
+    });
+    const result = await Promise.race([run, sleep(2_000).then(() => "wedged" as const)]);
+
+    expect(result).toMatchObject({ kind: "failed", reason: "timeout" });
+    expect(completed).toEqual([]);
+    expect(failed.map(([id, b]) => [id, b.reason])).toEqual([[JOB.id, "timeout"]]);
+
+    // The worker is free again: the next job plans and stores as usual.
+    const second = await handlePlanJob(JOB, deps(model(refundOneDuplicate()), jobs));
+    expect(second).toMatchObject({ kind: "stored" });
+    expect(completed).toHaveLength(1);
+  });
+
+  it("doesn't hand back a plan that finished after the deadline", async () => {
+    const { jobs, completed, failed } = fakeJobs();
+    // A complete plan, but the closing turn comes back after the deadline.
+    const turns = refundOneDuplicate();
+    let n = 0;
+    const slow: MessagesClient = {
+      async create() {
+        if (n === turns.length - 1) await sleep(80);
+        const next = turns[n++];
+        if (!next) throw new Error("script ran out");
+        return next;
+      },
+    };
+    const result = await handlePlanJob(JOB, { ...deps(slow, jobs), timeoutMs: 40 });
+    expect(result).toMatchObject({ kind: "failed", reason: "timeout" });
+    expect(completed).toEqual([]);
+    expect(failed).toHaveLength(1);
   });
 
   it("refuses an incident it has no brief for, without calling the model", async () => {

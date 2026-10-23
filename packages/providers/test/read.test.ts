@@ -62,6 +62,21 @@ describe("stripeReader", () => {
     serve({ data: [charge], has_more: true }, { data: [charge], has_more: false });
     expect((await stripeReader(target()).query(august, CUTOFF, ctx)).complete).toBe(false);
   });
+  it("fails a read the world never answers once timeoutMs passes", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      (_input, init) =>
+        new Promise((_, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+        }),
+    );
+    await expect(
+      stripeReader(target({ timeoutMs: 20 })).observe(
+        { vendor: "stripe", kind: "charge", id: CHARGE },
+        ctx,
+      ),
+    ).rejects.toThrow();
+  });
+
   it("observes a charge as its v1 projection", async () => {
     serve(fixture("stripe.charge.json"));
     const obs = await stripeReader(target()).observe(

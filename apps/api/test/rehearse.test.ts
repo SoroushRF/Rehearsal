@@ -1,10 +1,11 @@
+import { planHash } from "@rehearsal/core";
 import { createDb, type Db, migrateDb, type PgBoss, PLAN_QUEUE, startQueue } from "@rehearsal/db";
 import { PLANNER_JOB_ROUTES, PlanJob } from "@rehearsal/providers";
 import { billingManifest, INCIDENT } from "@rehearsal/testkit";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app";
 import type { Reviewer } from "../src/auth";
-import { loadPlan } from "../src/plans";
+import { loadPlan, storePlan } from "../src/plans";
 import type { RehearseDeps } from "../src/rehearse";
 
 const SECRET = "planner-secret";
@@ -160,6 +161,38 @@ describe.skipIf(!process.env.DB_TESTS)("rehearse through the plan queue (real Po
     expect(
       (await other.inject({ method: "GET", url: `/api/rehearsals/${rehearsalId}` })).statusCode,
     ).toBe(404);
+  });
+
+  it("finishes a job whose plan was stored before a crash, but not with another plan", async () => {
+    // As if the first completion stored the plan and then failed before finishing the job.
+    // JSONB hands the stored manifest back with its keys reordered.
+    const { app, rehearsalId, manifest } = await claimed();
+    const first = await storePlan(db, manifest);
+    expect(first).not.toBeNull();
+
+    const res = await complete(app, rehearsalId, { manifest, summary: "8 refunds." });
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({ planHash: first?.planHash });
+    expect(await status(app, rehearsalId)).toMatchObject({
+      state: "stored",
+      planHash: first?.planHash,
+    });
+
+    // A different manifest under a plan ID that's already taken is still refused.
+    const next = await claimed();
+    expect(await storePlan(db, next.manifest)).not.toBeNull();
+    const { versions } = next.manifest;
+    const changed = {
+      ...next.manifest,
+      versions: { ...versions, planner: { ...versions.planner, promptVersion: "other" } },
+    };
+    const refused = await complete(next.app, next.rehearsalId, { manifest: changed, summary: "" });
+    expect(refused.statusCode).toBe(422);
+    expect(refused.json()).toMatchObject({ detail: "plan ID already holds another plan" });
+    expect(await loadPlan(db, next.me.orgId, next.planId, 1)).toMatchObject({
+      kind: "found",
+      plan: { planHash: planHash(next.manifest) },
+    });
   });
 
   it("rejects a manifest that doesn't match the job, and fails the run", async () => {

@@ -83,6 +83,7 @@ export async function runPlanningLoop(opts: PlanningLoopOptions): Promise<Planni
   let toolCalls = 0;
 
   for (let turn = 1; turn <= limits.maxTurns; turn++) {
+    opts.signal?.throwIfAborted();
     const response = await opts.client.create(
       {
         model: opts.model,
@@ -147,7 +148,8 @@ export async function runPlanningLoop(opts: PlanningLoopOptions): Promise<Planni
     // Sequential, in the model's order: propose tools depend on what earlier calls proposed.
     const results: Anthropic.ToolResultBlockParam[] = [];
     for (const call of calls) {
-      const result = await opts.session.call(call.name, call.input);
+      // The deadline covers tool calls too: a read that never answers must not hold the run.
+      const result = await untilAborted(opts.session.call(call.name, call.input), opts.signal);
       log.toolCalls.push(
         result.ok
           ? { name: call.name, ok: true }
@@ -165,6 +167,17 @@ export async function runPlanningLoop(opts: PlanningLoopOptions): Promise<Planni
     opts.onTurn?.(log);
   }
   throw new PlanningLoopError("turn_limit", `no finished plan after ${limits.maxTurns} turns`);
+}
+
+/** Settle with `pending`, or reject with the signal's reason as soon as it aborts. */
+function untilAborted<T>(pending: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+  if (!signal) return pending;
+  signal.throwIfAborted();
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+    pending.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+  });
 }
 
 function finish(

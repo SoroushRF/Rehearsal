@@ -50,6 +50,18 @@
 
 _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
 
+- **2026-10-23 (Claude session for the T1 owner):** Review finding #108 (`fix/108-planner-deadline`).
+  - The planner worker's deadline now covers tool calls and finalization:
+    - The loop checks the signal before every turn and stops waiting on a tool call once the deadline passes.
+    - A plan that finishes after the deadline is reported as `timeout`, not handed back.
+    - Each jobs-API call gives up after 30 s.
+  - Planning readers get a 30 s per-request `timeoutMs`. It's opt-in on `ReadTarget`, so the executor's guard reads are unchanged.
+  - Gotcha: a stalled read is abandoned, not cancelled at the socket. Its own `timeoutMs` is what closes the request.
+
+- **2026-10-23 (Claude session for the T1 owner):** Review finding #107 (`fix/107-plan-completion-hash`, #110).
+  - A repeat completion for an already-stored plan is matched on the canonical plan hash, not `JSON.stringify` (JSONB reorders keys). A different manifest under the same plan ID is still refused.
+  - Not done: storing the plan and finishing the job are still two steps. The retry path is what recovers.
+
 - **2026-10-22 (Claude session for the T1 owner):** T1.6 scorecard (`t1/T1.6-scorecard-tasks`, `t1/T1.6-scorecard-runner`).
   - `evals/scorecard`: 20 tasks (10 benign controls, 10 traps) with gold end states for all 11 cohort cases; scoring into invalid allows, duplicates, wrongful holds and unresolved outcomes; `pnpm eval:scorecard` runs every task in three modes on Era and writes `results/latest.txt` (the JSON run record is gitignored).
   - Every mode gets the same plan from a scripted rule-following agent (`scripted-rules`, `scorecard-agent.v1`) reading one seeded planning tenant, then its own fresh operational tenant per task, the same drift and the same transport faults.
