@@ -528,6 +528,40 @@ describe.skipIf(!process.env.DB_TESTS)(
       expect(await refundReceipt(r.orgId)).toEqual(["confirmed"]);
     });
 
+    it("a run retried after errors repeats no receipt and is never reported finished meanwhile", async () => {
+      const r = await approvedRun();
+      // A teammate edit holds case 1's patch and note; settling refund_002 fails on every pass.
+      r.world.teammateEdit("5531", "priority", "urgent");
+      const spy = failSettle("refund_002", Number.POSITIVE_INFINITY);
+      try {
+        for (let i = 0; i < 3; i++) {
+          await expect(
+            handleApplyJob(jobOf(r), contextFor(r.world), { retryCount: i, retryLimit: 5 }),
+          ).rejects.toBeInstanceOf(RetryLater);
+        }
+      } finally {
+        spy.mockRestore();
+      }
+      const receipts = (await db.select().from(schema.stepReceipts)).filter(
+        (x) => x.orgId === r.orgId,
+      );
+      const per = (id: string) => receipts.filter((x) => x.actionId === id).length;
+      expect(per("patch_001")).toBe(1);
+      expect(per("note_001")).toBe(1);
+      const events = (await db.select().from(schema.runEvents)).filter((e) => e.runId === r.runId);
+      expect(events.filter((e) => e.type === "run.stopped")).toHaveLength(3);
+      expect(events.some((e) => e.type === "run.finished")).toBe(false);
+      expect(r.world.refunds.filter((x) => x.charge === "ch_fixture_002")).toHaveLength(1);
+
+      // Once the journal recovers, the retry finishes and records the refund it left.
+      const done = await handleApplyJob(jobOf(r), contextFor(r.world), {
+        retryCount: 3,
+        retryLimit: 5,
+      });
+      expect(stateOf(done)).toBe("partial");
+      expect(r.world.refunds.filter((x) => x.charge === "ch_fixture_002")).toHaveLength(1);
+    });
+
     it("retries a cancelled run's read-only pass that returned an error, and it stays cancelled (#104)", async () => {
       const r = await approvedRun();
       const ctx = contextFor(r.world);

@@ -129,6 +129,8 @@ export function describeEvent(e: RunEvent): string {
     }
     case "run.finished":
       return `Run finished: ${String(p.state)}${p.error ? ` (${String(p.error)})` : ""}.`;
+    case "run.stopped":
+      return `Stopped on an unexpected error (${String(p.error)}). It is retried automatically until retries run out, then handed to an operator.`;
     default:
       return e.type;
   }

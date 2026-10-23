@@ -209,6 +209,20 @@ describe.skipIf(!process.env.DB_TESTS)("PgJournal (real Postgres)", () => {
     expect(empty.payload).toEqual({});
   });
 
+  it("lists a run's receipts since it last finished", async () => {
+    const journal = journalFor();
+    const runId = `run_${randomUUID()}`;
+    const receipt = (actionId: string) => ({ actionId }) as unknown as Receipt;
+    await journal.appendEvent(runId, "step.receipt", receipt("old"));
+    await journal.appendEvent(runId, "run.finished", { state: "partial", error: null });
+    expect(await journal.runReceipts(runId)).toEqual([]);
+    await journal.appendEvent(runId, "step.receipt", receipt("a"));
+    await journal.appendEvent(runId, "run.stopped", { state: "held", error: "x" });
+    await journal.appendEvent(runId, "step.receipt", receipt("b"));
+    await journal.appendEvent(`run_${randomUUID()}`, "step.receipt", receipt("other run"));
+    expect((await journal.runReceipts(runId)).map((r) => r.actionId)).toEqual(["a", "b"]);
+  });
+
   it("never lets a tailing reader skip an event that commits late: two plain appenders (#106)", async () => {
     const orgId = `org_${randomUUID()}`;
     const runId = `run_${randomUUID()}`;
