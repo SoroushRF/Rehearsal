@@ -22,6 +22,13 @@
       "when": 1792639702388,
       "tag": "0002_brainy_goliath",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792718548060,
+      "tag": "0003_perpetual_arclight",
+      "breakpoints": true
     }
   ]
 }

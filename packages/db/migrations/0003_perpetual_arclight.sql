@@ -1,0 +1,1 @@
+CREATE INDEX "run_events_org_id_run_id_type_index" ON "run_events" USING btree ("org_id","run_id","type");

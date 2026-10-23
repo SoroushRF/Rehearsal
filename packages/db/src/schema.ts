@@ -109,11 +109,16 @@ export const objectBindings = pgTable(
   (t) => [primaryKey({ columns: [t.orgId, t.planHash, t.stepId, t.path] })],
 );
 
-export const runEvents = pgTable("run_events", {
-  seq: bigserial("seq", { mode: "number" }).primaryKey(),
-  orgId: text("org_id").notNull(),
-  runId: text("run_id").notNull(),
-  type: text("type").notNull(),
-  payload: jsonb("payload").notNull(),
-  at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const runEvents = pgTable(
+  "run_events",
+  {
+    seq: bigserial("seq", { mode: "number" }).primaryKey(),
+    orgId: text("org_id").notNull(),
+    runId: text("run_id").notNull(),
+    type: text("type").notNull(),
+    payload: jsonb("payload").notNull(),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  // The reaper counts a run's events by type on every sweep; the timeline reads by run.
+  (t) => [index().on(t.orgId, t.runId, t.type)],
+);
