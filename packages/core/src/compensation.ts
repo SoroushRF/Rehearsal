@@ -143,9 +143,9 @@ async function compensate(action: Patch, ctx: CompensationContext, deps: Compens
 
   const key = undoKey(ctx.orgId, ctx.manifest.planId, action);
   const earlier = (await ctx.journal.attemptsForKey(key)).at(-1);
-  // A prepared row was never sent, so a fresh attempt may supersede it. The executor settles a
-  // patch with any sent undo before compensation runs; this only guards against a re-send.
-  if (earlier && earlier.state !== "prepared") {
+  // A prepared row was never sent and a refused one wrote nothing, so a fresh round may follow.
+  // The executor settles a patch with any other sent undo first; this only guards a re-send.
+  if (earlier && earlier.state !== "prepared" && earlier.state !== "rejected") {
     return record({
       outcome: "held",
       holdReason: { kind: "unresolved_outcome", attemptId: earlier.id },

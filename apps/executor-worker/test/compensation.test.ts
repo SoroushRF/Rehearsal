@@ -312,7 +312,8 @@ describe("conditional compensation", () => {
     expect(s.world.tickets.get("5532")?.priority).toBe("normal");
   });
 
-  it("keeps an applied note that depends on a patch undone since", async () => {
+  /** Happy path plus `note_002b` after `[refund_002, patch_002]`; the first note on 5532 is refused. */
+  function dependentNote() {
     const bundle = happyPathBundle();
     const note = bundle.manifest.actions.find((a) => a.id === "note_002");
     if (!note) throw new Error("no note_002");
@@ -331,6 +332,84 @@ describe("conditional compensation", () => {
       }
       return dispatch(request, ctx);
     };
+    return s;
+  }
+
+  const noteReceipts = async (s: Setup, hash: string) =>
+    (await s.journal.receiptsFor(hash))
+      .filter((r) => r.actionId === "note_002b")
+      .map((r) => r.outcome);
+
+  it.each([
+    ["a re-run of the same hash", (s: Setup) => s.run()],
+    ["another revision", (s: Setup) => s.addRevision().run()],
+  ])(
+    "reconciles a lost dependent send after its predecessor was undone, under %s",
+    async (_n, next) => {
+      const s = dependentNote();
+      // note_002b commits on the ticket, but its response is lost.
+      const dispatch = s.providers.zendesk.dispatch;
+      let notes = 0;
+      s.providers.zendesk.dispatch = async (request, ctx) => {
+        if (request.path === TICKET && request.body.includes('"comment"') && ++notes === 2) {
+          s.world.fault(TICKET, { kind: "drop_response_after_commit" });
+        }
+        return dispatch(request, ctx);
+      };
+      const first = await s.run();
+      expect(outcomes(first.receipts)).toMatchObject({
+        note_002: "rejected",
+        note_002b: "unknown_outcome",
+        patch_002: "compensated",
+      });
+
+      const second = await next(s);
+      expect(outcomes(second.receipts).note_002b).toBe("confirmed");
+      expect(second.receipts.some((r) => r.outcome === "skipped_dependency")).toBe(false);
+      expect(s.world.tickets.get("5532")?.comments).toHaveLength(1);
+    },
+  );
+
+  it("still skips an applied dependent whose predecessor is held, not undone", async () => {
+    const s = setup(happyPathBundle());
+    await s.run();
+    const rev2 = s.addRevision((m) => {
+      const refund = m.actions.find((a) => a.id === "refund_001");
+      if (refund?.kind === "stripe.refund.create") refund.args.amount.amountMinor = 4000;
+    });
+    const result = await rev2.run();
+    expect(outcomes(result.receipts)).toMatchObject({
+      refund_001: "held",
+      note_001: "skipped_dependency",
+    });
+  });
+
+  it("compensates again after a crash between 409 rounds", async () => {
+    const bundle = noteFails();
+    const s = setup(bundle);
+    replay(s, bundle, () =>
+      editAfterReread(s, () => s.world.teammateEdit("5532", "status", "pending"), 1),
+    );
+    // Round 1 gets a 409 and is marked rejected; the run dies before round 2 is journaled.
+    const prepare = s.journal.prepareAttempt.bind(s.journal);
+    let prepares = 0;
+    s.journal.prepareAttempt = async (attempt) => {
+      // The forward patch, then undo round 1, then round 2.
+      if (attempt.actionId === "patch_002" && ++prepares === 3) {
+        throw new Error("crash between rounds");
+      }
+      return prepare(attempt);
+    };
+    expect((await s.run()).error).toBe("compensation: crash between rounds");
+    expect(s.world.tickets.get("5532")?.priority).toBe("high");
+
+    const second = await s.run();
+    expect(second.receipts.at(-1)).toMatchObject({ actionId: "patch_002", outcome: "compensated" });
+    expect(s.world.tickets.get("5532")?.priority).toBe("normal");
+  });
+
+  it("keeps an applied note that depends on a patch undone since", async () => {
+    const s = dependentNote();
     const first = await s.run();
     expect(outcomes(first.receipts)).toMatchObject({
       note_002: "rejected",
@@ -342,10 +421,7 @@ describe("conditional compensation", () => {
     const rev2 = s.addRevision();
     await rev2.run();
     for (const hash of [s.hash, rev2.hash]) {
-      const receipts = (await s.journal.receiptsFor(hash)).filter(
-        (r) => r.actionId === "note_002b",
-      );
-      expect(receipts.map((r) => r.outcome)).toEqual(["confirmed"]);
+      expect(await noteReceipts(s, hash)).toEqual(["confirmed"]);
     }
     expect(s.world.tickets.get("5532")?.comments).toHaveLength(1);
   });

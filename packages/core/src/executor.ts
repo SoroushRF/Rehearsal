@@ -704,25 +704,38 @@ async function applyLocked(
     return "settled";
   }
 
-  /** The latest undo of this patch ever sent, under any revision. A prepared row had no effect. */
-  const sentUndo = async (action: Action) =>
-    action.kind === "zendesk.ticket.patchFields"
-      ? (await journal.attemptsForKey(undoKey(job.orgId, job.planId, action)))
-          .filter((a) => a.state !== "prepared")
-          .at(-1)
-      : undefined;
+  /**
+   * The latest undo of this patch ever sent, under any revision, with the receipt compensation
+   * settled it with. A prepared row had no effect. Neither had a refused undo left without a
+   * receipt (a crash between 409 rounds): it counts as never sent, so compensation runs again.
+   */
+  const sentUndo = async (action: Action) => {
+    if (action.kind !== "zendesk.ticket.patchFields") return undefined;
+    const attempt = (await journal.attemptsForKey(undoKey(job.orgId, job.planId, action)))
+      .filter((a) => a.state !== "prepared")
+      .at(-1);
+    if (!attempt) return undefined;
+    const last =
+      attempt.state === "confirmed" || attempt.state === "rejected"
+        ? (await journal.receiptsFor(attempt.planHash))
+            .filter((r) => r.actionId === action.id)
+            .at(-1)
+        : undefined;
+    const receipt = last && last.outcome !== "confirmed" ? last : undefined;
+    if (attempt.state === "rejected" && !receipt) return undefined;
+    return { attempt, receipt };
+  };
   /**
    * Our write may no longer be on the ticket, so the forward patch is never adopted as confirmed.
    * An unsettled undo holds the step; a settled one copies the receipt compensation wrote for it.
    */
-  const settleFromUndo = async (action: Action, undo: Attempt) => {
+  const settleFromUndo = async (
+    action: Action,
+    { attempt: undo, receipt: prior }: { attempt: Attempt; receipt: Receipt | undefined },
+  ) => {
     compensated.add(action.id);
     const pointer = { undoAttemptId: undo.id };
-    const prior =
-      undo.state === "confirmed" || undo.state === "rejected"
-        ? (await journal.receiptsFor(undo.planHash)).filter((r) => r.actionId === action.id).at(-1)
-        : undefined;
-    if (!prior || prior.outcome === "confirmed") {
+    if (!prior) {
       return settle(
         action,
         receiptFor(action, "held", {
@@ -1186,10 +1199,11 @@ async function applyLocked(
 
   let error: string | null = null;
 
-  const alreadyApplied = async (action: Action) =>
+  /** Sent at least once under any revision: `step()` confirms it, or reconciles it by a read. */
+  const alreadySent = async (action: Action) =>
     confirmedByAction.has(action.id) ||
     (await journal.attemptsForKey(operationKey(job.orgId, job.planId, action))).some(
-      (a) => a.state === "confirmed" || a.state === "reconciled",
+      (a) => a.state !== "prepared",
     );
 
   /** One action, with the dependency, cancel and error handling every case shares. */
@@ -1202,11 +1216,11 @@ async function applyLocked(
         return "next";
       }
       if (await checkCancelled(`step ${action.id}`)) return "stop";
-      // An action already applied keeps its own record even if a predecessor was undone since.
+      // An action already sent keeps its own record even if a predecessor was undone since.
       const onlyUndone = action.dependsOn
         .filter((d) => settled.get(d) !== "confirmed")
         .every((d) => compensated.has(d));
-      if (blocked && !(onlyUndone && (await alreadyApplied(action)))) {
+      if (blocked && !(onlyUndone && (await alreadySent(action)))) {
         await settle(
           action,
           receiptFor(action, "skipped_dependency", {
