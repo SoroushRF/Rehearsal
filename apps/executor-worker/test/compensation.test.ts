@@ -460,7 +460,7 @@ describe("conditional compensation", () => {
     expect(s.world.tickets.get("5532")?.comments).toHaveLength(1);
   });
 
-  it("holds a lost undo response and never re-sends it on a later run", async () => {
+  it("reconciles a lost undo by reading the ticket and does not re-send it", async () => {
     const bundle = noteFails();
     const s = setup(bundle);
     replay(s, bundle, () => s.world.fault(TICKET, { kind: "drop_response_after_commit" }));
@@ -470,12 +470,77 @@ describe("conditional compensation", () => {
       outcome: "held",
       holdReason: { kind: "unresolved_outcome" },
     });
+    expect(s.world.tickets.get("5532")?.priority).toBe("normal");
     const writes = s.ticketWrites();
 
-    // Not re-sent, and not held again for the same attempt.
+    await s.run();
+    expect((await patchReceipts(s, s.hash)).at(-1)).toMatchObject({
+      outcome: "compensated",
+      limitations: [
+        expect.stringMatching(/outcome of undo attempt .+ found by reading the provider/),
+      ],
+    });
+    expect(s.ticketWrites()).toBe(writes);
+
+    // Settled: a further run adds nothing.
+    await s.run();
+    expect(await patchReceipts(s, s.hash)).toHaveLength(3);
+  });
+
+  it("sends a fresh undo once a read shows the lost one never landed", async () => {
+    const bundle = noteFails();
+    const s = setup(bundle);
+    replay(s, bundle, () => s.world.fault(TICKET, { kind: "server_error" }));
+    const first = await s.run();
+    expect(first.receipts.at(-1)).toMatchObject({
+      actionId: "patch_002",
+      outcome: "held",
+      holdReason: { kind: "unresolved_outcome" },
+    });
+    expect(s.world.tickets.get("5532")?.priority).toBe("high");
+    const writes = s.ticketWrites();
+
+    // Too soon to be sure the first undo isn't still landing.
     const second = await s.run();
     expect(second.receipts.some((r) => r.actionId === "patch_002")).toBe(false);
     expect(s.ticketWrites()).toBe(writes);
+    expect(s.world.tickets.get("5532")?.priority).toBe("high");
+
+    (s.deps.clock as FakeClock).advance(60_000);
+    const third = await s.run();
+    expect(third.receipts.at(-1)).toMatchObject({ actionId: "patch_002", outcome: "compensated" });
+    expect(s.ticketWrites()).toBe(writes + 1);
+    expect(s.world.tickets.get("5532")?.priority).toBe("normal");
+  });
+
+  it("keeps a manual hold when a read shows only part of a lost undo landed", async () => {
+    const bundle = twoFields(noteFails(), { priority: "normal" });
+    const s = setup(bundle);
+    replay(s, bundle, () => s.world.fault(TICKET, { kind: "drop_response_after_commit" }));
+    await s.run();
+    const writes = s.ticketWrites();
+
+    await s.run();
+    expect((await patchReceipts(s, s.hash)).at(-1)).toMatchObject({
+      outcome: "held",
+      holdReason: { kind: "unsupported_protection" },
+    });
+    expect(s.ticketWrites()).toBe(writes);
+    expect(s.world.tickets.get("5532")).toMatchObject({ priority: "normal", status: "pending" });
+  });
+
+  it("holds a lost undo when the ticket changed to something the read can't settle", async () => {
+    const bundle = noteFails();
+    const s = setup(bundle);
+    replay(s, bundle, () => s.world.fault(TICKET, { kind: "drop_response_after_commit" }));
+    await s.run();
+    s.world.teammateEdit("5532", "priority", "urgent");
+    const writes = s.ticketWrites();
+
+    const second = await s.run();
+    expect(second.receipts.some((r) => r.actionId === "patch_002")).toBe(false);
+    expect(s.ticketWrites()).toBe(writes);
+    expect(s.world.tickets.get("5532")?.priority).toBe("urgent");
   });
 
   it("holds a refused undo once and never re-sends it", async () => {
@@ -567,23 +632,22 @@ describe("conditional compensation", () => {
         if (note?.kind === "zendesk.ticket.appendPrivateNote") note.args.template.version += 1;
       },
     ],
-  ])("holds, never adopts, a patch whose undo response was lost, under %s", async (_n, change) => {
+  ])("reads, never adopts, a patch whose undo response was lost, under %s", async (_n, change) => {
     const bundle = noteFails();
     const s = setup(bundle);
     replay(s, bundle, () => s.world.fault(TICKET, { kind: "drop_response_after_commit" }));
     await s.run();
     expect(s.world.tickets.get("5532")?.priority).toBe("normal");
+    const writes = s.ticketWrites();
 
     const rev2 = s.addRevision(change);
     await rev2.run();
     await rev2.run();
     const receipts = await patchReceipts(s, rev2.hash);
-    expect(receipts).toHaveLength(1);
-    expect(receipts[0]).toMatchObject({
-      outcome: "held",
-      holdReason: { kind: "unresolved_outcome" },
-      limitations: ["an undo of this patch has no settled outcome; not adopted"],
-    });
+    expect(receipts.map((r) => r.outcome)).toEqual(["compensated"]);
+    expect(receipts[0]?.limitations.at(-1)).toMatch(/found by reading the provider/);
+    expect(s.ticketWrites()).toBe(writes);
+    expect(s.world.tickets.get("5532")?.priority).toBe("normal");
   });
 
   it.each([

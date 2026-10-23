@@ -122,7 +122,8 @@ const UNDO_ROUNDS = 3;
  * Conditional compensation (T4). For each target patch: capture the ticket's stamp, re-read it,
  * and write back the before value only of fields that still hold ours, with a stamp-guarded patch
  * journaled before dispatch. A 409 re-reads and decides again, a bounded number of times. A
- * teammate's value is never overwritten; a lost undo response is held, never re-sent.
+ * teammate's value is never overwritten. A lost undo response is held; a later run reads the ticket
+ * and records it, or sends a fresh undo once a read shows it never landed.
  */
 export function createCompensator(deps: CompensatorDeps): Compensator {
   return async (ctx) => {
