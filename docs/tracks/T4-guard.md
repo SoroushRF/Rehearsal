@@ -32,7 +32,7 @@
 | T4.2 | Injection scripts: phantom charge, teammate field edit, Era faults, reset. Exposed as `pnpm demo:phantom` / `demo:conflict` / `demo:reset`. | M2 | Scripts run against local worlds | #26 | — |
 | T4.3 | Wire guards into T3's admission; hold reasons in receipts; dependents skipped | M2–M3 | `phantom` bundle passes on Era. **Done:** `evals/providers/test/phantom.test.ts` | #27 | T4.1, T4.2, T3.2, T1.3, T3.3, T1.9 |
 | T4.4 | Conditional compensation on owned fields: re-read, revert only if our value is still there, otherwise record a conflict | M3 | `teammate-conflict` bundle passes on Era. **Done:** `evals/providers/test/compensation.test.ts` | #28 | T4.3, T3.3 |
-| T4.5 | ML smoke test: Qwen3.5-0.8B LoRA on 32 cases, weights change, save and reload, peak memory measured (Python 3.12, CUDA 12.7-compatible wheels) | M1 | Smoke log + adapter hash in `ml/manifests/` | #29 | — |
+| T4.5 | ML smoke test: Qwen3.5-0.8B LoRA on 32 cases, weights change, save and reload, peak memory measured (Python 3.12, CUDA 12.7-compatible wheels) | M1 | Smoke log + adapter hash in `ml/manifests/`. **Done:** `ml/manifests/smoke-2026-10-23.{log,json}` | #29 | — |
 | T4.6 | ML pilot: labels from replay bundles plus perturbations; base vs. tuned vs. rules vs. Claude zero-shot; go/no-go | M2–M3 | Report in `evals/impact/`; decision recorded | #30 | T4.5 |
 | T4.7 | _If go:_ impact service behind `ImpactPort` (timeout → abstain), advisory only | M4 | Integration test: model absent or failing → same execution | #31 | T4.6 |
 
@@ -43,6 +43,23 @@
 ## Handoff log
 
 _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
+
+### 2026-10-23, T4.5 ML smoke test passed on the GPU
+
+- **The smoke test passed on the RTX 5080** (WSL2, driver 610.88, CUDA 13.3). Run it with `ml/.venv/bin/python -m train.smoke` from `ml/`. The log and the record are in `ml/manifests/smoke-2026-10-23.{log,json}`. Evidence: ran on the local GPU with 32 synthetic cases (`ml/data/smoke_cases.py`). It says nothing about model quality.
+  - The model is `Qwen/Qwen3.5-0.8B` at revision `2fc0636`, BF16, no fallback. `AutoModelForCausalLM` loads the text-only `Qwen3_5ForCausalLM` (752M parameters).
+  - LoRA r=16 on the full-attention, linear-attention and MLP projections gives 10.2M trainable parameters. It ran two AdamW steps over all 32 cases, with weight decay off so every change comes from a gradient.
+  - All 300 adapter tensors changed. The saved adapter reloaded onto a fresh base matched exactly: equal tensors and a logit difference of 0.
+  - The adapter is `adapter_model.safetensors`, sha256 `89643b43a1be832bfd81d14ffeebc0d643f292a8aca5d211e097b847900d6f23`. It stays local in `ml/adapters/` and is not committed.
+- **Peak memory: 13.1 GB allocated, 14.3 GB reserved**, with micro-batches of 8 and sequences of at most 182 tokens. The desktop already holds about 2.2 GB of the 16 GB.
+- **Versions:** Python 3.12.3, torch 2.10.0+cu128, transformers 5.20.2, peft 0.21.2, accelerate 1.15.0. Unsloth is not used.
+- **Gotchas.**
+  - "CUDA 12.7" in the brief was wrong. The driver reports 13.3, and only torch builds from cu128 up have kernels for sm_120.
+  - In a sandboxed shell, `nvidia-smi` says "GPU access blocked by the operating system". Run it unsandboxed.
+  - The linear-attention layers fall back to reference PyTorch kernels, because `flash-linear-attention` and `causal-conv1d` are not installed. That is the likely reason memory is so high.
+  - GPU backward kernels are not deterministic, so a rerun gives a different adapter hash (step 1 loss is stable at 0.5276).
+  - The step 2 loss went up (0.53 to 0.65). This is one Adam step over 32 cases and doesn't mean anything.
+- **Next.** T4.6 pilot (#30). Before scaling up, either install the fast linear-attention kernels or cut memory (smaller micro-batches, or computing logits only for the answer tokens). Otherwise the pilot is close to OOM on this card.
 
 ### 2026-10-22, T4.4 done on Era
 

@@ -1,0 +1,84 @@
+{
+  "task": "T4.5",
+  "started": "2026-10-23T00:26:21-04:00",
+  "passed": true,
+  "evidence": "ran on local GPU; synthetic cases, not a quality measurement",
+  "note": "GPU backward kernels are not deterministic, so the adapter hash identifies this run's artifact and is not reproducible bit for bit.",
+  "environment": {
+    "gpu": "NVIDIA GeForce RTX 5080",
+    "capability": "12.0",
+    "gpu_total_mib": 16302.6,
+    "driver": "610.88",
+    "platform": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+    "python": "3.12.3",
+    "torch": "2.10.0+cu128",
+    "torch_cuda": "12.8",
+    "transformers": "5.20.2",
+    "peft": "0.21.2"
+  },
+  "model": {
+    "id": "Qwen/Qwen3.5-0.8B",
+    "revision": "2fc06364715b967f1860aea9cf38778875588b17",
+    "class": "Qwen3_5ForCausalLM",
+    "fallback": false,
+    "dtype": "bfloat16"
+  },
+  "cases": {
+    "count": 32,
+    "sha256": "f5d514834f17b9c821a1b26cec1f64e947b77d2a7b9049406ef59352cefbeb63",
+    "labels": {
+      "likely_unaffected": 8,
+      "arguments_changed": 8,
+      "step_dropped": 8,
+      "new_step_needed": 8
+    },
+    "max_tokens": 182
+  },
+  "lora": {
+    "r": 16,
+    "lora_alpha": 32,
+    "lora_dropout": 0.0,
+    "target_modules": [
+      "q_proj",
+      "k_proj",
+      "v_proj",
+      "o_proj",
+      "in_proj_qkv",
+      "in_proj_z",
+      "out_proj",
+      "gate_proj",
+      "up_proj",
+      "down_proj"
+    ],
+    "trainable_params": 10223616,
+    "steps": 2,
+    "micro_batch": 8,
+    "lr": 0.0001,
+    "weight_decay": 0.0
+  },
+  "train": {
+    "losses": [
+      0.5276,
+      0.654
+    ],
+    "seconds": 3.8,
+    "peak_allocated_mib": 13109.4,
+    "peak_reserved_mib": 14280.0
+  },
+  "checks": {
+    "adapter_tensors": 300,
+    "unchanged_after_training": 0,
+    "max_abs_delta": 0.00020013577886857092,
+    "reloaded_tensors_equal": 300,
+    "reloaded_max_logit_diff": 0.0
+  },
+  "adapter": {
+    "files": {
+      "README.md": "0d65a27124582040993d718133492c4a10323b7f152c76e4d2999c97c335701e",
+      "adapter_config.json": "69e581c630efe4494218a615d0b1fe488b730cf1e70831527ff0b5e97fcb83bd",
+      "adapter_model.safetensors": "89643b43a1be832bfd81d14ffeebc0d643f292a8aca5d211e097b847900d6f23"
+    },
+    "bytes": 40941164
+  },
+  "peak_allocated_mib_train_and_reload": 13109.4
+}

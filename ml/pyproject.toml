@@ -2,4 +2,19 @@
 name = "rehearsal-ml"
 version = "0.0.0"
 requires-python = "==3.12.*"
-dependencies = []
+dependencies = [
+  "torch==2.10.0",
+  "transformers==5.20.2",
+  "peft==0.21.2",
+  "accelerate==1.15.0",
+  "safetensors==0.8.0",
+]
+
+# RTX 50-series (sm_120) kernels ship only in the CUDA 12.8+ torch builds.
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }

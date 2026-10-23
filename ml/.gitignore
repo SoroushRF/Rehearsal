@@ -1,0 +1,11 @@
+# Venv, package/model caches and adapters stay local. Only hashes and logs are committed.
+.venv/
+.cache/
+adapters/
+outputs/
+checkpoints/
+*.safetensors
+*.bin
+*.pt
+*.gguf
+__pycache__/
