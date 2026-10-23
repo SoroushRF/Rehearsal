@@ -12,6 +12,8 @@ import {
   schema,
   startQueue,
 } from "../src";
+import { insertRunEvent } from "../src/events";
+import { waitingOnRunLock } from "./events-helpers";
 
 // Needs a real Postgres: `pnpm infra:up` then `DB_TESTS=1 pnpm --filter @rehearsal/db test`.
 describe.skipIf(!process.env.DB_TESTS)("run commands: cancel and reaper (real Postgres)", () => {
@@ -72,6 +74,47 @@ describe.skipIf(!process.env.DB_TESTS)("run commands: cancel and reaper (real Po
       kind: "not_active",
       state: "completed",
     });
+  });
+
+  it("writes the reaper's events under the run's event lock (#106)", async () => {
+    const stuck = await run("applying", new Date(Date.now() - 3_600_000));
+    // Another writer of this run is mid-transaction, holding the run's event lock.
+    let release = () => {};
+    const held = new Promise<void>((r) => {
+      release = r;
+    });
+    let locked = () => {};
+    const isLocked = new Promise<void>((r) => {
+      locked = r;
+    });
+    const other = db.transaction(async (tx) => {
+      await insertRunEvent(tx as unknown as typeof db, {
+        orgId: stuck.orgId,
+        runId: stuck.id,
+        type: "b",
+        payload: {},
+      });
+      locked();
+      await held;
+    });
+    await isLocked;
+    let done = false;
+    const sweep = reapStuckRuns(db, boss, { now: new Date(), staleAfterMs: 10 * 60_000 }).then(
+      (ids) => {
+        done = true;
+        return ids;
+      },
+    );
+    // The sweep must queue behind that writer instead of taking a seq that commits out of order.
+    const deadline = Date.now() + 5_000;
+    while (!done && !(await waitingOnRunLock(db, stuck.orgId, stuck.id)) && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    const waited = !done;
+    release();
+    await other;
+    expect(waited).toBe(true);
+    expect(await sweep).toContain(stuck.id);
   });
 
   it("re-enqueues a stale run with no live job, and only that one", async () => {
