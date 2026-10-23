@@ -1,7 +1,17 @@
 import { randomUUID } from "node:crypto";
 import type { Attempt, Receipt } from "@rehearsal/contracts";
+import { and, asc, eq, gt } from "drizzle-orm";
 import { beforeAll, describe, expect, it } from "vitest";
-import { createDb, isLegalTransition, JournalConflictError, migrateDb, PgJournal } from "../src";
+import {
+  createDb,
+  type Db,
+  isLegalTransition,
+  JournalConflictError,
+  migrateDb,
+  PgJournal,
+  schema,
+} from "../src";
+import { insertRunEvent } from "../src/events";
 
 const HASH = "a".repeat(64);
 const BODY_HASH = "b".repeat(64);
@@ -200,4 +210,58 @@ describe.skipIf(!process.env.DB_TESTS)("PgJournal (real Postgres)", () => {
     const empty = await journal.appendEvent("run_1", "run.started", undefined);
     expect(empty.payload).toEqual({});
   });
+
+  it.each([
+    [
+      "a journal inside a settle transaction",
+      (tx: Db, orgId: string, runId: string) =>
+        new PgJournal(tx, orgId).appendEvent(runId, "a", {}),
+    ],
+    [
+      "the reaper's transaction",
+      (tx: Db, orgId: string, runId: string) =>
+        insertRunEvent(tx, { orgId, runId, type: "a", payload: {} }),
+    ],
+  ])(
+    "never lets a tailing reader skip an event that commits late, written by %s (#106)",
+    async (_n, writeA) => {
+      const orgId = `org_${randomUUID()}`;
+      const runId = `run_${randomUUID()}`;
+      /** A client tailing the run's feed: everything after its cursor, in seq order. */
+      const after = async (cursor: number) =>
+        (
+          await db
+            .select()
+            .from(schema.runEvents)
+            .where(and(eq(schema.runEvents.runId, runId), gt(schema.runEvents.seq, cursor)))
+            .orderBy(asc(schema.runEvents.seq))
+        ).map((e) => ({ seq: e.seq, type: e.type }));
+
+      // Writer A (one case lane, or the reaper) appends inside a transaction that stays open.
+      let commitA = () => {};
+      const aOpen = new Promise<void>((r) => {
+        commitA = r;
+      });
+      let aWrote = () => {};
+      const aInserted = new Promise<void>((r) => {
+        aWrote = r;
+      });
+      const a = db.transaction(async (tx) => {
+        await writeA(tx as unknown as Db, orgId, runId);
+        aWrote();
+        await aOpen;
+      });
+      await aInserted;
+      // Writer B (another lane) appends while A is still open.
+      const b = new PgJournal(db, orgId).appendEvent(runId, "b", {});
+      await new Promise((r) => setTimeout(r, 200));
+
+      const seen = await after(0);
+      const cursor = seen.at(-1)?.seq ?? 0;
+      commitA();
+      await Promise.all([a, b]);
+      const types = [...seen, ...(await after(cursor))].map((e) => e.type);
+      expect(types.sort()).toEqual(["a", "b"]);
+    },
+  );
 });
