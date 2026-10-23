@@ -1407,4 +1407,54 @@ describe("conditional compensation", () => {
     expect(s.world.tickets.get("5532")?.priority).toBe("normal");
     expect((await patchReceipts(s, s.hash)).at(-1)?.outcome).toBe("compensated");
   });
+
+  it("waits when a later send is still unknown under an earlier revision (#109)", async () => {
+    const bundle = stackedPriority(noteFails());
+    const later = bundle.manifest.actions.find((a) => a.id === "patch_002b");
+    if (later?.kind !== "zendesk.ticket.patchFields") throw new Error("no patch_002b");
+    later.compensation = "compensable_by_new_action";
+    const s = setup(bundle);
+    replay(s, bundle);
+    const dispatch = s.providers.zendesk.dispatch;
+    let dropped = false;
+    s.providers.zendesk.dispatch = async (request, ctx) => {
+      if (!dropped && request.body.includes('"urgent"')) {
+        dropped = true;
+        return { kind: "unknown", error: "response dropped before commit" };
+      }
+      return dispatch(request, ctx);
+    };
+    const first = await s.run();
+
+    expect(s.world.tickets.get("5532")?.priority).toBe("high");
+    expect(outcomes(first.receipts).patch_002).toBe("confirmed");
+    expect(outcomes(first.receipts).patch_002b).toBe("unknown_outcome");
+    expect(
+      (await s.journal.attemptsFor(s.hash, "patch_002b")).some(
+        (a) => a.state === "unknown_outcome",
+      ),
+    ).toBe(true);
+    const writes = s.ticketWrites();
+
+    const again = await s.run();
+    expect(outcomes(again.receipts).patch_002b).toBe("held");
+    expect((await patchReceipts(s, s.hash)).at(-1)?.outcome).toBe("confirmed");
+    expect(s.world.tickets.get("5532")?.priority).toBe("high");
+    expect(s.ticketWrites()).toBe(writes);
+
+    const rev = s.addRevision();
+    const second = await rev.run();
+    expect(outcomes(second.receipts).patch_002b).toBe("held");
+    expect(second.receipts.find((r) => r.actionId === "patch_002b")?.holdReason).toMatchObject({
+      kind: "unresolved_outcome",
+    });
+    expect(outcomes(second.receipts).patch_002).toBe("confirmed");
+    expect(s.world.tickets.get("5532")?.priority).toBe("high");
+    expect(s.ticketWrites()).toBe(writes);
+    expect(
+      (await s.journal.attemptsFor(s.hash, "patch_002b")).some(
+        (a) => a.state === "unknown_outcome",
+      ),
+    ).toBe(true);
+  });
 });

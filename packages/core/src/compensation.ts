@@ -8,7 +8,7 @@ import type {
 } from "@rehearsal/contracts";
 import { topoOrder } from "./dag";
 import type { CompensationContext, CompensationResult, Compensator } from "./executor";
-import { undoKey } from "./executor";
+import { operationKey, undoKey } from "./executor";
 import { sha256Hex } from "./hash";
 import type { Clock, DispatchResult, Preconditions, ProviderPort, WorldContext } from "./ports";
 import { operationMarker } from "./templates";
@@ -283,7 +283,7 @@ export function createCompensator(deps: CompensatorDeps): Compensator {
         );
         const [undos, forwards] = await Promise.all([
           ctx.journal.attemptsForKey(undoKey(ctx.orgId, ctx.manifest.planId, other)),
-          ctx.journal.attemptsFor(ctx.planHash, other.id),
+          ctx.journal.attemptsForKey(operationKey(ctx.orgId, ctx.manifest.planId, other)),
         ]);
         const sent = [...undos, ...forwards].some((item) => item.state !== "prepared");
         const restored = restoredByUndo(
