@@ -228,13 +228,60 @@ describe("conditional compensation", () => {
     });
     const writes = s.ticketWrites();
 
+    // Not re-sent, and not held again for the same attempt.
     const second = await s.run();
-    expect(second.receipts.at(-1)).toMatchObject({
+    expect(second.receipts.some((r) => r.actionId === "patch_002")).toBe(false);
+    expect(s.ticketWrites()).toBe(writes);
+  });
+
+  it("holds a refused undo once and never re-sends it", async () => {
+    const bundle = noteFails();
+    const s = setup(bundle);
+    replay(s, bundle, () =>
+      s.world.fault(TICKET, { kind: "reject", status: 422, retryable: false }),
+    );
+    const first = await s.run();
+    expect(first.receipts.at(-1)).toMatchObject({
       actionId: "patch_002",
       outcome: "held",
-      holdReason: { kind: "unresolved_outcome" },
+      holdReason: {
+        kind: "unsupported_protection",
+        detail: "undo refused with 422; nothing written",
+      },
     });
-    expect(s.ticketWrites()).toBe(writes);
+    const second = await s.run();
+    expect(second.receipts.some((r) => r.actionId === "patch_002")).toBe(false);
+    expect(s.world.tickets.get("5532")?.priority).toBe("high");
+  });
+
+  it("supersedes an undo that was prepared but never sent", async () => {
+    const bundle = noteFails();
+    const s = setup(bundle);
+    replay(s, bundle);
+    const transition = s.journal.transition.bind(s.journal);
+    let crashed = false;
+    s.journal.transition = async (id, from, to, patch) => {
+      if (
+        !crashed &&
+        from === "prepared" &&
+        (await s.journal.attemptsFor(s.hash, "patch_002")).length > 1
+      ) {
+        crashed = true;
+        throw new Error("crash before dispatch");
+      }
+      return transition(id, from, to, patch);
+    };
+    expect((await s.run()).error).toBe("compensation: crash before dispatch");
+    expect(s.world.tickets.get("5532")?.priority).toBe("high");
+
+    const second = await s.run();
+    expect(second.receipts.at(-1)).toMatchObject({ actionId: "patch_002", outcome: "compensated" });
+    expect((await s.journal.attemptsFor(s.hash, "patch_002")).map((a) => a.state)).toEqual([
+      "confirmed",
+      "prepared",
+      "confirmed",
+    ]);
+    expect(s.world.tickets.get("5532")?.priority).toBe("normal");
   });
 
   it("does not compensate twice across runs", async () => {
@@ -285,14 +332,19 @@ describe("conditional compensation", () => {
     expect(s.world.tickets.get("5532")?.priority).toBe("high");
   });
 
-  it("sends no undo once the grant is revoked", async () => {
+  it("sends no undo once the grant is revoked, and says so", async () => {
     const bundle = noteFails();
     const s = setup(bundle);
     replay(s, bundle, () =>
       s.store.grants.set(APPROVAL, { ...s.grant, revokedAt: "2026-10-21T12:00:00.000Z" }),
     );
     const result = await s.run();
-    expect(outcomes(result.receipts).patch_002).toBe("confirmed");
+    expect(result.receipts.at(-1)).toMatchObject({
+      actionId: "patch_002",
+      outcome: "held",
+      holdReason: { kind: "approval_invalid" },
+    });
     expect(s.world.tickets.get("5532")?.priority).toBe("high");
+    expect(s.ticketWrites()).toBe(1);
   });
 });

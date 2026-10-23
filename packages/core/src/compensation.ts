@@ -146,8 +146,40 @@ async function compensate(action: Patch, ctx: CompensationContext, deps: Compens
 
   const key = undoKey(ctx.orgId, action, ctx.manifest.planId);
   const earlier = (await ctx.journal.attemptsForKey(key)).at(-1);
-  if (earlier) {
-    // An undo was already sent (or prepared) without a settled receipt: never send it again.
+  // A prepared row was never sent, so it had no effect and a fresh attempt may supersede it.
+  if (earlier && earlier.state !== "prepared") {
+    const recorded = earlier.planHash === ctx.planHash;
+    if (earlier.state === "confirmed" || earlier.state === "rejected") {
+      // Settled with its receipt under this hash already; under another revision, say so here.
+      if (recorded) return;
+      const refused = earlier.state === "rejected";
+      return record({
+        outcome: !refused
+          ? "compensated"
+          : earlier.providerStatus === 409
+            ? "compensation_conflict"
+            : "held",
+        ...(refused &&
+          earlier.providerStatus !== 409 && {
+            holdReason: {
+              kind: "unsupported_protection",
+              detail: `undo refused with ${earlier.providerStatus}; nothing written`,
+            },
+          }),
+        providerRef: { vendor: "zendesk", kind: "ticket", id: action.args.ticketId },
+        limitations: [
+          `undo attempt ${earlier.id} under plan hash ${earlier.planHash}; not re-sent`,
+        ],
+      });
+    }
+    const alreadyHeld = ctx.receipts.some(
+      (r) =>
+        r.actionId === action.id &&
+        r.holdReason?.kind === "unresolved_outcome" &&
+        r.holdReason.attemptId === earlier.id,
+    );
+    if (alreadyHeld) return;
+    // Sent without a settled outcome: never send it again.
     return record({
       outcome: "held",
       holdReason: { kind: "unresolved_outcome", attemptId: earlier.id },
@@ -182,7 +214,18 @@ async function compensate(action: Patch, ctx: CompensationContext, deps: Compens
       limitations: [...describe(decision), "nothing written"],
     });
   }
-  if (!(await ctx.maySend())) return;
+  if (!(await ctx.maySend())) {
+    return record({
+      outcome: "held",
+      holdReason: {
+        kind: "approval_invalid",
+        detail: "run cancelled or approval no longer valid before the undo",
+      },
+      providerRef: ticket,
+      observedEffect: { priority: current.priority, status: current.status },
+      limitations: ["our value is still on the ticket; nothing written"],
+    });
+  }
 
   const inverse = inversePatch(action, decision.revert);
   const request = provider.prepare(inverse, new Map(), key, pre);
@@ -193,7 +236,7 @@ async function compensate(action: Patch, ctx: CompensationContext, deps: Compens
     actionId: action.id,
     planHash: ctx.planHash,
     operationKey: key,
-    attemptNo: 1,
+    attemptNo: (earlier?.attemptNo ?? 0) + 1,
     state: "prepared",
     request: {
       method: request.method,
