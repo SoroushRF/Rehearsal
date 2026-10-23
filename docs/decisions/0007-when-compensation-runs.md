@@ -1,4 +1,4 @@
-# 0006: When compensation runs (T4.4)
+# 0007: When compensation runs (T4.4)
 
 **Status:** proposed 2026-10-22 (T4). Please raise objections in team chat or on the PR.
 
