@@ -498,6 +498,10 @@ describe("failures inside the executor", () => {
     await executeRun({ ...s.job, runId: "run_2" }, s.deps);
     expect(await count("refund_001")).toBe(2);
     expect(await count("note_001")).toBe(2);
+
+    // run_2 now holds the latest receipts, so a retry of run_1 writes its own again.
+    await s.run();
+    expect(await count("note_001")).toBe(3);
   });
 
   it("a rejected request is not re-sent when the job runs again", async () => {

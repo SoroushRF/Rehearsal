@@ -455,14 +455,18 @@ async function applyLocked(
 
   const receipts: Receipt[] = [];
   /**
-   * What this run already recorded per action, on earlier deliveries that stopped on an error
-   * (since it last finished).
-   * A pass that settles a step the same way (outcome, hold reason, provider object) again adds
-   * no receipt; a new run of the hash still writes its own.
+   * The journal's latest receipt per action, when this run wrote it: on an earlier delivery that
+   * stopped on an error (since the run last finished), or earlier in this pass. A settle that
+   * would record the same thing again (outcome, hold reason, provider object) adds no receipt.
+   * Anchored to the journal, so a lost event or another run's newer receipt never hides a change;
+   * a new run of the hash still writes its own.
    */
-  const ownEarlier = new Map(
-    ((await journal.runReceipts?.(job.runId)) ?? []).map((r) => [r.actionId, r]),
-  );
+  const ownEarlier = new Map<string, Receipt>();
+  const ownIds = new Set(((await journal.runReceipts?.(job.runId)) ?? []).map((r) => r.id));
+  if (ownIds.size > 0) {
+    const latest = new Map((await journal.receiptsFor(job.planHash)).map((r) => [r.actionId, r]));
+    for (const [actionId, r] of latest) if (ownIds.has(r.id)) ownEarlier.set(actionId, r);
+  }
   const gist = (r: Receipt) =>
     fingerprint({ outcome: r.outcome, holdReason: r.holdReason, providerRef: r.providerRef });
   const settled = new Map<string, ReceiptOutcome>();
@@ -578,6 +582,7 @@ async function applyLocked(
       bindings: newBindings,
       receipt,
     });
+    ownEarlier.set(action.id, receipt);
     // The journal is the record: reflect it in memory before anything else can fail.
     for (const b of newBindings) bindings.set(bindingKey(b.ref), b.value);
     receipts.push(receipt);
