@@ -463,7 +463,7 @@ describe("conditional compensation", () => {
       expect(second.receipts.filter((r) => r.actionId === "refund_002")).toMatchObject([
         { outcome: "held", holdReason: { kind: "unresolved_outcome" } },
       ]);
-      // Another pass adds no duplicate hold and still sends nothing.
+      // Another pass of the same hash adds no duplicate hold and still sends nothing.
       const third = await next(s);
       expect(third.receipts.filter((r) => r.actionId === "refund_002")).toEqual([]);
       expect(refunds()).toBe(0);
