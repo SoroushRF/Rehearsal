@@ -340,17 +340,17 @@
     },
     "perturbations": [
       {
+        "kind": "fail_step",
+        "stepId": "note_002"
+      },
+      {
         "kind": "teammate_field_edit",
         "ticketId": "5532",
         "field": "priority",
         "value": "urgent",
         "at": {
-          "afterStep": "patch_002"
+          "afterStep": "note_002"
         }
-      },
-      {
-        "kind": "fail_step",
-        "stepId": "note_002"
       }
     ],
     "expected": [

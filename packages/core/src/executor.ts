@@ -83,6 +83,34 @@ export interface StepGuardContext {
  */
 export type StepGuard = (action: Action, ctx: StepGuardContext) => Promise<HoldReason | null>;
 
+/** One compensation receipt for an action, settled atomically with its attempt transition. */
+export interface CompensationResult
+  extends Partial<Pick<Receipt, "providerRef" | "observedEffect" | "holdReason" | "limitations">> {
+  outcome: ReceiptOutcome;
+  transition?: SettleTransition;
+}
+
+export interface CompensationContext {
+  orgId: string;
+  planHash: string;
+  manifest: PlanManifest;
+  /** This run's outcome per action; actions it never reached are absent. */
+  outcomes: ReadonlyMap<string, ReceiptOutcome>;
+  /** Every receipt for this plan hash so far, this run's included. */
+  receipts: readonly Receipt[];
+  journal: JournalPort;
+  newId: (prefix: string) => string;
+  /** False once the run is cancelled or its grant was revoked, changed or expired. */
+  maySend: () => Promise<boolean>;
+  record: (action: Action, result: CompensationResult) => Promise<void>;
+}
+
+/**
+ * Compensation hook (T4). Runs once after the steps, only if the run finished without a cancel or
+ * an unexpected error. It journals its own sends and records receipts through `record`.
+ */
+export type Compensator = (ctx: CompensationContext) => Promise<void>;
+
 export interface ExecutorDeps {
   store: ApplyStore;
   journal: JournalPort;
@@ -93,6 +121,7 @@ export interface ExecutorDeps {
   policies: readonly BillingPolicyV1[];
   newId: (prefix: string) => string;
   guard?: StepGuard;
+  compensate?: Compensator;
   /** Bounded in-run retries; see DEFAULT_RETRY. */
   retry?: Partial<RetryPolicy>;
   /** Injectable for tests; defaults to a real timer. */
@@ -165,6 +194,11 @@ export function operationKey(orgId: string, planId: string, action: Action): str
     obligationId: action.obligationId,
     target: t,
   }).slice(0, 32)}`;
+}
+
+/** The key of an action's compensating undo: its own operation, stable across revisions. */
+export function undoKey(orgId: string, planId: string, action: Action): string {
+  return `op_${fingerprint({ undo: operationKey(orgId, planId, action) })}`;
 }
 
 /** Allowlisted values a confirmed response yields for later steps, plus the created object. */
@@ -431,12 +465,35 @@ async function applyLocked(
     }
     return cancelled;
   };
+  const grantStillValid = async () => {
+    const current = await deps.store.loadGrant(job.orgId, grant.id);
+    return (
+      current !== null &&
+      fingerprint(current) === admittedGrantFingerprint &&
+      current.revokedAt === null &&
+      Date.parse(current.expiresAt) > clock.now().getTime()
+    );
+  };
   /** Latest confirmed receipt per action for this hash (earlier runs included), never duplicated. */
   const confirmedByAction = new Map<string, Receipt>();
   /** Attempts this hash already holds as unresolved; a reconcile-only pass doesn't re-hold them. */
   const heldUnresolved = new Set<string>();
+  /**
+   * The compensation result this hash already recorded per action: any receipt after the action's
+   * confirmed one, or one copied from an undo. Final for this hash; never settled again.
+   */
+  const compensationHere = new Map<string, Receipt>();
+  /** Actions whose outcome in this run comes from compensation or a copied undo. */
+  const compensated = new Set<string>();
   for (const r of await journal.receiptsFor(job.planHash)) {
     if (r.outcome === "confirmed") confirmedByAction.set(r.actionId, r);
+    else if (
+      confirmedByAction.has(r.actionId) ||
+      typeof r.observedEffect.undoAttemptId === "string"
+    ) {
+      compensationHere.set(r.actionId, r);
+      compensated.add(r.actionId);
+    }
     if (r.outcome === "held" && r.holdReason?.kind === "unresolved_outcome") {
       heldUnresolved.add(r.holdReason.attemptId);
     }
@@ -647,9 +704,71 @@ async function applyLocked(
     return "settled";
   }
 
+  /**
+   * The latest undo of this patch ever sent, under any revision, with the receipt compensation
+   * settled it with. A prepared row had no effect. Neither had a refused undo left without a
+   * receipt (a crash between 409 rounds): it counts as never sent, so compensation runs again.
+   */
+  const sentUndo = async (action: Action) => {
+    if (action.kind !== "zendesk.ticket.patchFields") return undefined;
+    const attempt = (await journal.attemptsForKey(undoKey(job.orgId, job.planId, action)))
+      .filter((a) => a.state !== "prepared")
+      .at(-1);
+    if (!attempt) return undefined;
+    const last =
+      attempt.state === "confirmed" || attempt.state === "rejected"
+        ? (await journal.receiptsFor(attempt.planHash))
+            .filter((r) => r.actionId === action.id)
+            .at(-1)
+        : undefined;
+    const receipt = last && last.outcome !== "confirmed" ? last : undefined;
+    if (attempt.state === "rejected" && !receipt) return undefined;
+    return { attempt, receipt };
+  };
+  /**
+   * Our write may no longer be on the ticket, so the forward patch is never adopted as confirmed.
+   * An unsettled undo holds the step; a settled one copies the receipt compensation wrote for it.
+   */
+  const settleFromUndo = async (
+    action: Action,
+    { attempt: undo, receipt: prior }: { attempt: Attempt; receipt: Receipt | undefined },
+  ) => {
+    compensated.add(action.id);
+    const pointer = { undoAttemptId: undo.id };
+    if (!prior) {
+      return settle(
+        action,
+        receiptFor(action, "held", {
+          holdReason: { kind: "unresolved_outcome", attemptId: undo.id },
+          observedEffect: pointer,
+          limitations: ["an undo of this patch has no settled outcome; not adopted"],
+        }),
+      );
+    }
+    return settle(
+      action,
+      receiptFor(action, prior.outcome, {
+        providerRef: prior.providerRef,
+        observedEffect: { ...prior.observedEffect, ...pointer },
+        holdReason: prior.holdReason,
+        limitations: [
+          `compensated under plan hash ${undo.planHash}; not re-sent`,
+          ...prior.limitations,
+        ],
+      }),
+    );
+  };
+
   async function step(action: Action): Promise<void> {
+    const compensation = compensationHere.get(action.id);
+    if (compensation) {
+      settled.set(action.id, compensation.outcome);
+      return;
+    }
     if (confirmedByAction.has(action.id)) {
       // Already confirmed (or adopted) for this hash in an earlier run; never settle it twice.
+      const undo = await sentUndo(action);
+      if (undo) return settleFromUndo(action, undo);
       settled.set(action.id, "confirmed");
       return;
     }
@@ -715,6 +834,8 @@ async function applyLocked(
       // This hash's own attempt was applied, yet this hash has no receipt for it (the
       // confirmedByAction check above would have returned): another revision's run reconciled it.
       // Read it back so this hash records its own receipt and bindings; never re-send.
+      const undo = await sentUndo(action);
+      if (undo) return settleFromUndo(action, undo);
       if (unresolved) {
         return hold(action, { kind: "predecessor_not_confirmed", stepId: unresolved.stepId });
       }
@@ -777,6 +898,8 @@ async function applyLocked(
       }
     }
     if (latest && latest.state !== "rejected") {
+      const undo = await sentUndo(action);
+      if (undo) return settleFromUndo(action, undo);
       // Confirmed under an earlier revision of this plan with the same content: adopt its results.
       const earlier = (await journal.bindings(latest.planHash)).filter(
         (b) => b.ref.stepId === latest.actionId,
@@ -873,13 +996,7 @@ async function applyLocked(
       }
       // Admission is not a lease to keep spending after revocation or expiry. Re-read the
       // same immutable grant before every send, including a retry after backoff.
-      const currentGrant = await deps.store.loadGrant(job.orgId, grant.id);
-      if (
-        !currentGrant ||
-        fingerprint(currentGrant) !== admittedGrantFingerprint ||
-        currentGrant.revokedAt !== null ||
-        Date.parse(currentGrant.expiresAt) <= clock.now().getTime()
-      ) {
+      if (!(await grantStillValid())) {
         const reason: HoldReason = {
           kind: "approval_invalid",
           detail: "approval changed, was revoked, or expired before dispatch",
@@ -1082,6 +1199,16 @@ async function applyLocked(
 
   let error: string | null = null;
 
+  /**
+   * Took effect, or may have, under any revision: `step()` confirms it, or reconciles a lost
+   * response by a read. A prepared or refused attempt wrote nothing, so it doesn't count.
+   */
+  const alreadySent = async (action: Action) =>
+    confirmedByAction.has(action.id) ||
+    (await journal.attemptsForKey(operationKey(job.orgId, job.planId, action))).some(
+      (a) => a.state !== "prepared" && a.state !== "rejected",
+    );
+
   /** One action, with the dependency, cancel and error handling every case shares. */
   async function runAction(action: Action): Promise<"next" | "stop"> {
     const blocked = action.dependsOn.find((d) => settled.get(d) !== "confirmed");
@@ -1092,7 +1219,11 @@ async function applyLocked(
         return "next";
       }
       if (await checkCancelled(`step ${action.id}`)) return "stop";
-      if (blocked) {
+      // An action already sent keeps its own record even if a predecessor was undone since.
+      const onlyUndone = action.dependsOn
+        .filter((d) => settled.get(d) !== "confirmed")
+        .every((d) => compensated.has(d));
+      if (blocked && !(onlyUndone && (await alreadySent(action)))) {
         await settle(
           action,
           receiptFor(action, "skipped_dependency", {
@@ -1138,6 +1269,26 @@ async function applyLocked(
     }
   };
   await Promise.all(Array.from({ length: limit }, lane));
+
+  if (deps.compensate && !reconcileOnly && !cancelled && error === null) {
+    try {
+      await deps.compensate({
+        orgId: job.orgId,
+        planHash: job.planHash,
+        manifest,
+        outcomes: settled,
+        receipts: await journal.receiptsFor(job.planHash),
+        journal,
+        newId: deps.newId,
+        maySend: async () => !(await checkCancelled("compensation")) && (await grantStillValid()),
+        record: (action, { outcome, transition, ...extra }) =>
+          settle(action, receiptFor(action, outcome, extra), { transition }),
+      });
+    } catch (err) {
+      error = `compensation: ${(err as Error).message}`;
+      await journal.appendEvent(job.runId, "step.error", { error }).catch(() => {});
+    }
+  }
 
   const outcomes = manifest.actions.map((a) => settled.get(a.id));
   const confirmed = outcomes.filter((o) => o === "confirmed").length;

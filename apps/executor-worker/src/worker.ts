@@ -3,6 +3,7 @@ import type { Vendor } from "@rehearsal/contracts";
 import {
   type BillingPolicyV1,
   type Clock,
+  createCompensator,
   createReadGuard,
   type ExecutorDeps,
   executeRun,
@@ -77,6 +78,11 @@ export async function handleApplyJob(
     policies: ctx.policies,
     newId: (prefix) => `${prefix}_${randomUUID()}`,
     guard: createReadGuard({ providers: ctx.providers, worlds: ctx.worlds, clock: ctx.clock }),
+    compensate: createCompensator({
+      providers: ctx.providers,
+      worlds: ctx.worlds,
+      clock: ctx.clock,
+    }),
     ...ctx.executor,
   });
 

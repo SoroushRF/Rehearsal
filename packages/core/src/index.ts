@@ -1,5 +1,6 @@
 export * from "./bindings";
 export * from "./canonical";
+export * from "./compensation";
 export * from "./dag";
 export * from "./effects";
 export * from "./executor";

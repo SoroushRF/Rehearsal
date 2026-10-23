@@ -260,15 +260,16 @@ export function teammateConflictBundle(): ReplayBundle {
     title: "Teammate edit survives compensation",
     evidence: "fixture",
     manifest,
+    // The edit lands after the note fails: an edit before it would hold the note on its re-read.
     perturbations: [
+      { kind: "fail_step", stepId: "note_002" },
       {
         kind: "teammate_field_edit",
         ticketId: "5532",
         field: "priority",
         value: "urgent",
-        at: { afterStep: "patch_002" },
+        at: { afterStep: "note_002" },
       },
-      { kind: "fail_step", stepId: "note_002" },
     ],
     expected: withOverrides(manifest, { patch_002: "compensation_conflict", note_002: "rejected" }),
   };
