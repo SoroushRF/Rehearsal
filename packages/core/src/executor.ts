@@ -103,6 +103,8 @@ export interface CompensationContext {
   /** False once the run is cancelled or its grant was revoked, changed or expired. */
   maySend: () => Promise<boolean>;
   record: (action: Action, result: CompensationResult) => Promise<void>;
+  /** How long a lost undo must age before a negative read may send a fresh one. */
+  reconcileAfterMs?: number;
 }
 
 /**
@@ -485,11 +487,6 @@ async function applyLocked(
   const compensationHere = new Map<string, Receipt>();
   /** Actions whose outcome in this run comes from compensation or a copied undo. */
   const compensated = new Set<string>();
-  /**
-   * Patches whose lost undo was shown not to have landed, marked confirmed only so compensation
-   * can send a fresh one. If that send does not finish, the patch must not stay confirmed.
-   */
-  const pendingUndoRetry = new Map<string, string>();
   for (const r of await journal.receiptsFor(job.planHash)) {
     if (r.outcome === "confirmed") confirmedByAction.set(r.actionId, r);
     else if (
@@ -749,7 +746,7 @@ async function applyLocked(
     action: Extract<Action, { kind: "zendesk.ticket.patchFields" }>,
     effect: Record<string, unknown>,
     sent: ReadonlySet<string>,
-  ): Pick<Receipt, "outcome" | "holdReason" | "limitations"> => {
+  ): Pick<Receipt, "outcome" | "holdReason" | "limitations"> & { retry?: boolean } => {
     const kept: string[] = [];
     const manual: string[] = [];
     for (const [field, written] of Object.entries(action.args.set)) {
@@ -757,6 +754,22 @@ async function applyLocked(
       if (effect[field] !== written) kept.push(`${field} = ${String(effect[field])}`);
       else if (typeof action.args.before[field as "priority" | "status"] !== "string")
         manual.push(field);
+    }
+    const again: string[] = [];
+    for (const [field, written] of Object.entries(action.args.set)) {
+      if (written === undefined || sent.has(field) || effect[field] !== written) continue;
+      if (typeof action.args.before[field as "priority" | "status"] === "string") again.push(field);
+    }
+    if (again.length > 0) {
+      return {
+        outcome: "held",
+        holdReason: {
+          kind: "unsupported_protection",
+          detail: `undo ${again.join(", ")} as well; it still holds our value`,
+        },
+        limitations: again.map((f) => `${f} still holds our value`),
+        retry: true,
+      };
     }
     if (manual.length > 0) {
       return {
@@ -868,61 +881,54 @@ async function applyLocked(
       read,
     }: { attempt: Attempt; receipt: Receipt | undefined; read: boolean },
   ) => {
+    // This hash already settled the undo. Copying the receipt again would duplicate it.
+    if (prior?.planHash === job.planHash) {
+      compensated.add(action.id);
+      settled.set(action.id, prior.outcome);
+      return;
+    }
     const pointer = { undoAttemptId: undo.id };
     if (read && action.kind === "zendesk.ticket.patchFields") {
       const result = await readUndo(action, undo);
       if (result.kind === "applied") {
-        compensated.add(action.id);
         const verdict = landedVerdict(action, result.effect, result.sent);
-        const transitions: SettleTransition[] = [];
-        if (undo.state === "dispatched") {
-          transitions.push({
-            attemptId: undo.id,
-            from: "dispatched",
-            to: "unknown_outcome",
-            patch: { error: "outcome unknown" },
-          });
+        // A field still holds our value: leave the undo open so compensation can revert it.
+        if (!verdict.retry) {
+          compensated.add(action.id);
+          const transitions: SettleTransition[] = [];
+          if (undo.state === "dispatched") {
+            transitions.push({
+              attemptId: undo.id,
+              from: "dispatched",
+              to: "unknown_outcome",
+              patch: { error: "outcome unknown" },
+            });
+          }
+          if (undo.state === "dispatched" || undo.state === "unknown_outcome") {
+            transitions.push({
+              attemptId: undo.id,
+              from: "unknown_outcome",
+              to: "reconciled",
+              patch: { settledAt: at() },
+            });
+          }
+          return settle(
+            action,
+            receiptFor(action, verdict.outcome, {
+              providerRef: result.providerRef,
+              observedEffect: { ...result.effect, ...pointer },
+              holdReason: verdict.holdReason,
+              limitations: [
+                ...verdict.limitations,
+                `outcome of undo attempt ${undo.id} found by reading the provider; not re-sent`,
+              ],
+            }),
+            { transitions },
+          );
         }
-        if (undo.state === "dispatched" || undo.state === "unknown_outcome") {
-          transitions.push({
-            attemptId: undo.id,
-            from: "unknown_outcome",
-            to: "reconciled",
-            patch: { settledAt: at() },
-          });
-        }
-        return settle(
-          action,
-          receiptFor(action, verdict.outcome, {
-            providerRef: result.providerRef,
-            observedEffect: { ...result.effect, ...pointer },
-            holdReason: verdict.holdReason,
-            limitations: [
-              ...verdict.limitations,
-              `outcome of undo attempt ${undo.id} found by reading the provider; not re-sent`,
-            ],
-          }),
-          { transitions },
-        );
       }
-      const sentAt = Date.parse(undo.dispatchedAt ?? undo.preparedAt);
-      const oldEnough = clock.now().getTime() - sentAt >= (deps.reconcileAfterMs ?? 60_000);
-      if (result.kind === "not_applied" && oldEnough && !reconcileOnly) {
-        // The read showed no effect, so this is not a blind re-send. Compensation sends it.
-        if (undo.state === "dispatched") {
-          await journal.transition(undo.id, "dispatched", "unknown_outcome", {
-            error: "outcome unknown",
-          });
-        }
-        await journal.transition(undo.id, "unknown_outcome", "rejected", {
-          providerStatus: null,
-          error: "undo not visible; a fresh undo is permitted",
-          settledAt: at(),
-        });
-        pendingUndoRetry.set(action.id, undo.id);
-        settled.set(action.id, "confirmed");
-        return;
-      }
+      // Not proved landed. Dependents may only recover an earlier send; the attempt stays open
+      // so a later read can still find it. Compensation sends a fresh undo once it is old enough.
       compensated.add(action.id);
       const alreadyHeld = (await journal.receiptsFor(job.planHash)).some(
         (r) =>
@@ -1518,23 +1524,12 @@ async function applyLocked(
         maySend: async () => !(await checkCancelled("compensation")) && (await grantStillValid()),
         record: (action, { outcome, transition, ...extra }) =>
           settle(action, receiptFor(action, outcome, extra), { transition }),
+        reconcileAfterMs: deps.reconcileAfterMs ?? 60_000,
       });
     } catch (err) {
       error = `compensation: ${(err as Error).message}`;
       await journal.appendEvent(job.runId, "step.error", { error }).catch(() => {});
     }
-  }
-  // A fresh undo that did not finish must not leave this run calling the patch confirmed.
-  for (const action of manifest.actions) {
-    const attemptId = pendingUndoRetry.get(action.id);
-    if (attemptId === undefined || settled.get(action.id) !== "confirmed") continue;
-    await settle(
-      action,
-      receiptFor(action, "held", {
-        holdReason: { kind: "unresolved_outcome", attemptId },
-        limitations: ["fresh undo did not finish; the patch is not confirmed"],
-      }),
-    );
   }
 
   const outcomes = manifest.actions.map((a) => settled.get(a.id));

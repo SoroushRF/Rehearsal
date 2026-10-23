@@ -218,6 +218,8 @@ const refundsOn = async (world: WorldConfig, chargeId: string) =>
  * T4.4 gate: compensation on real Era. c02's priority patch is applied, its note then fails, and
  * compensation re-reads the ticket. Untouched, our value is reverted with a stamp-guarded patch.
  * After a teammate's edit (through the ordinary vendor API, like `demo:conflict`), it is kept.
+ * The lost-undo read (marker present, stamp unchanged, fresh undo) is fixture evidence only.
+ * This gate does not drop an undo response, so it does not exercise that read.
  */
 describe.skipIf(!ENABLED)("conditional compensation on Era", () => {
   afterAll(resetScratchTenants);
