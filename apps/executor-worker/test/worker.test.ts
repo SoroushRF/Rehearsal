@@ -508,35 +508,24 @@ describe.skipIf(!process.env.DB_TESTS)(
       expect(await refundReceipt(r.orgId)).toEqual(["confirmed"]);
     });
 
-    it("on the last retry, a run whose executor returned an error ends failed (#104)", async () => {
+    it("past the last retry, a run whose executor returned an error stays applying for the reaper (#104)", async () => {
       const r = await approvedRun();
       const spy = failSettle("refund_001");
       try {
-        const result = await handleApplyJob(jobOf(r), contextFor(r.world), {
-          retryCount: 3,
-          retryLimit: 3,
-        });
-        expect(stateOf(result)).toBe("failed");
+        await expect(
+          handleApplyJob(jobOf(r), contextFor(r.world), { retryCount: 3, retryLimit: 3 }),
+        ).rejects.toBeInstanceOf(RetryLater);
       } finally {
         spy.mockRestore();
       }
-      expect(await runState(r.runId)).toBe("failed");
-      // A new apply resumes it from the journal: the refund is read back, not sent again.
-      const again = await requestApply(db, boss, {
-        orgId: r.orgId,
-        userId: "user_finance",
-        planId: r.planId,
-        revision: 1,
-        planHash: r.hash,
-        now: NOW,
-      });
-      if (again.kind !== "accepted") throw new Error(`apply refused: ${again.kind}`);
-      const resumed = await handleApplyJob(
-        { ...jobOf(r), runId: again.runId },
-        contextFor(r.world),
-      );
+      // Not failed: the refund has no receipt yet, so the reaper must still pick the run up
+      // (bounded by MAX_REAPS, then `run.needs_operator`).
+      expect(await runState(r.runId)).toBe("applying");
+      // The reaper's re-enqueued job resumes it from the journal: read back, not sent again.
+      const resumed = await handleApplyJob(jobOf(r), contextFor(r.world));
       expect(stateOf(resumed)).toBe("completed");
       expect(r.world.refunds.filter((x) => x.charge === "ch_fixture_001")).toHaveLength(1);
+      expect(await refundReceipt(r.orgId)).toEqual(["confirmed"]);
     });
 
     it("retries a cancelled run's read-only pass that returned an error, and it stays cancelled (#104)", async () => {

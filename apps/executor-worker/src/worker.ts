@@ -112,8 +112,8 @@ export async function handleApplyJob(
   try {
     outcome = await executeRun(job, deps());
   } catch (err) {
-    // Journal down or an adapter bug. pg-boss retries; the journal makes the re-run safe.
-    if (lastTry) await giveUp();
+    // Journal down or an adapter bug. pg-boss retries; the journal makes the re-run safe. Past
+    // the last try the run stays `applying` for the reaper (see the returned-error case below).
     throw err;
   }
 
@@ -131,11 +131,10 @@ export async function handleApplyJob(
   if (outcome.error !== null) {
     // The executor stopped on an unexpected error (a failed journal write, an adapter bug). An
     // effect may have landed without a receipt, so its state is not the run's truth: retry, and
-    // the next delivery reconciles through the journal and reads. The last try marks it failed.
-    if (lastTry) {
-      await giveUp();
-      return { kind: "ran", outcome: { ...outcome, state: "failed" } };
-    }
+    // the next delivery reconciles through the journal and reads. Past the last try the run
+    // stays `applying`: the reaper re-enqueues it a bounded number of times, then hands it to an
+    // operator (`run.needs_operator`) and marks it failed. Marking it failed here would leave a
+    // send with no receipt where nothing ever looks at it again.
     throw new RetryLater(outcome.error);
   }
   // This delivery held the lock and ran: its outcome is the truth, even over an overlapping
