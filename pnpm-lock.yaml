@@ -181,6 +181,24 @@ importers:
         specifier: workspace:*
         version: link:../../packages/testkit
 
+  evals/scorecard:
+    dependencies:
+      '@rehearsal/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@rehearsal/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@rehearsal/planner':
+        specifier: workspace:*
+        version: link:../../packages/planner
+      '@rehearsal/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
+      '@rehearsal/testkit':
+        specifier: workspace:*
+        version: link:../../packages/testkit
+
   packages/contracts:
     dependencies:
       zod:
