@@ -167,6 +167,37 @@ function noteFails(): ReplayBundle {
   return bundle;
 }
 
+/** A second patch on 5532, depending on `patch_002`: priority high → urgent. */
+function stackedPriority(bundle: ReplayBundle): ReplayBundle {
+  const actions = bundle.manifest.actions;
+  const patch = actions.find((a) => a.id === "patch_002");
+  if (patch?.kind !== "zendesk.ticket.patchFields") throw new Error("no patch_002");
+  actions.splice(actions.indexOf(patch) + 1, 0, {
+    ...structuredClone(patch),
+    id: "patch_002b",
+    dependsOn: ["patch_002"],
+    rationale: "Raise priority again while the remedy is in flight.",
+    args: {
+      ticketId: patch.args.ticketId,
+      set: { priority: "urgent" },
+      before: { priority: "high" },
+    },
+  });
+  return bundle;
+}
+
+/** The later stacked patch also sets status, so one undo can restore priority and keep status. */
+function mixedLater(bundle: ReplayBundle): ReplayBundle {
+  const later = bundle.manifest.actions.find((a) => a.id === "patch_002b");
+  if (later?.kind !== "zendesk.ticket.patchFields") throw new Error("no patch_002b");
+  later.args = {
+    ticketId: later.args.ticketId,
+    set: { priority: "urgent", status: "pending" },
+    before: { priority: "high", status: "open" },
+  };
+  return bundle;
+}
+
 /** `patch_002` also sets status, with the given before values. */
 function twoFields(bundle: ReplayBundle, before: { priority?: "normal"; status?: "open" }) {
   const patch = bundle.manifest.actions.find((a) => a.id === "patch_002");
@@ -1126,5 +1157,304 @@ describe("conditional compensation", () => {
     expect(receipts.some((r) => r.outcome === "compensation_conflict")).toBe(false);
     expect(receipts.at(-1)?.outcome).toBe("compensated");
     expect(s.world.tickets.get("5532")?.priority).toBe("normal");
+  });
+
+  it("keeps a teammate's field when a follow-up undo lands late (#103)", async () => {
+    const bundle = twoFields(noteFails(), { priority: "normal", status: "open" });
+    const s = setup(bundle);
+    replay(s, bundle, () => {
+      s.world.teammateEdit("5532", "status", "solved");
+      s.world.fault(TICKET, { kind: "drop_response_after_commit" });
+    });
+    await s.run();
+    expect(s.world.tickets.get("5532")).toMatchObject({ priority: "normal", status: "solved" });
+    // The follow-up only exists because status is back to the value we wrote.
+    s.world.teammateEdit("5532", "status", "pending");
+    const dispatch = s.providers.zendesk.dispatch;
+    s.providers.zendesk.dispatch = async (request, ctx) => {
+      if (request.body.includes('"status":"open"') && request.body.includes('"safe_update"')) {
+        s.world.teammateEdit("5532", "status", "solved");
+      }
+      return dispatch(request, ctx);
+    };
+    const writes = s.ticketWrites();
+
+    await s.run();
+    const receipt = (await patchReceipts(s, s.hash)).at(-1);
+    expect(receipt?.outcome).toBe("compensation_conflict");
+    expect(receipt?.limitations.join(" ")).toMatch(/kept status = solved/);
+    expect(s.world.tickets.get("5532")).toMatchObject({ priority: "normal", status: "solved" });
+    expect(s.ticketWrites()).toBe(writes);
+  });
+
+  it("unwinds two patches of one field back to the original value (#109)", async () => {
+    const bundle = stackedPriority(noteFails());
+    const s = setup(bundle);
+    replay(s, bundle);
+    const result = await s.run();
+
+    expect(result.error).toBeNull();
+    expect(outcomes(result.receipts)).toMatchObject({
+      patch_002: "compensated",
+      patch_002b: "compensated",
+      note_002: "rejected",
+    });
+    expect(result.receipts.some((r) => r.outcome === "compensation_conflict")).toBe(false);
+    expect(s.world.tickets.get("5532")?.priority).toBe("normal");
+    expect(s.ticketWrites()).toBe(4);
+  });
+
+  it("keeps a teammate's edit on a two-patch chain (#109)", async () => {
+    const bundle = stackedPriority(noteFails());
+    const s = setup(bundle);
+    replay(s, bundle, () => s.world.teammateEdit("5532", "priority", "low"));
+    const result = await s.run();
+
+    expect(outcomes(result.receipts)).toMatchObject({
+      patch_002: "compensation_conflict",
+      patch_002b: "compensation_conflict",
+    });
+    expect(s.world.tickets.get("5532")?.priority).toBe("low");
+    expect(s.ticketWrites()).toBe(2);
+  });
+
+  it("keeps a teammate value that equals an earlier patch's write (#109)", async () => {
+    const bundle = stackedPriority(noteFails());
+    const s = setup(bundle);
+    replay(s, bundle, () => s.world.teammateEdit("5532", "priority", "high"));
+    const result = await s.run();
+
+    expect(outcomes(result.receipts)).toMatchObject({
+      patch_002: "compensation_conflict",
+      patch_002b: "compensation_conflict",
+    });
+    expect(s.world.tickets.get("5532")?.priority).toBe("high");
+    expect(s.ticketWrites()).toBe(2);
+  });
+
+  it("waits to unwind an older patch when the latest undo never landed (#109)", async () => {
+    const bundle = stackedPriority(noteFails());
+    const s = setup(bundle);
+    replay(s, bundle, () => s.world.fault(TICKET, { kind: "server_error" }));
+    const first = await s.run();
+
+    expect(s.world.tickets.get("5532")?.priority).toBe("urgent");
+    expect(outcomes(first.receipts).patch_002b).toBe("held");
+    expect(outcomes(first.receipts).patch_002).toBe("confirmed");
+    expect(first.receipts.some((r) => r.outcome === "compensation_conflict")).toBe(false);
+
+    (s.deps.clock as FakeClock).advance(60_000);
+    const second = await s.run();
+    expect(second.error).toBeNull();
+    expect(outcomes(second.receipts)).toMatchObject({
+      patch_002: "compensated",
+      patch_002b: "compensated",
+    });
+    expect(s.world.tickets.get("5532")?.priority).toBe("normal");
+  });
+
+  it("settles a lost latest undo before undoing the older patch (#109)", async () => {
+    const bundle = stackedPriority(noteFails());
+    const s = setup(bundle);
+    replay(s, bundle, () => s.world.fault(TICKET, { kind: "drop_response_after_commit" }));
+    const first = await s.run();
+
+    expect(s.world.tickets.get("5532")?.priority).toBe("high");
+    expect(outcomes(first.receipts).patch_002b).toBe("held");
+    expect(outcomes(first.receipts).patch_002).toBe("confirmed");
+    const writes = s.ticketWrites();
+
+    const second = await s.run();
+    expect(outcomes(second.receipts)).toMatchObject({
+      patch_002: "compensated",
+      patch_002b: "compensated",
+    });
+    expect(s.world.tickets.get("5532")?.priority).toBe("normal");
+    expect(s.ticketWrites()).toBe(writes + 1);
+    expect(
+      (await s.journal.attemptsFor(s.hash, "patch_002b")).some(
+        (a) => a.state === "unknown_outcome",
+      ),
+    ).toBe(false);
+  });
+
+  it("does not blame a teammate when the latest undo stops after repeated 409s (#109)", async () => {
+    const bundle = stackedPriority(noteFails());
+    const s = setup(bundle);
+    replay(s, bundle, () =>
+      editAfterReread(s, () => s.world.teammateEdit("5532", "status", "pending")),
+    );
+    const first = await s.run();
+
+    expect(s.world.tickets.get("5532")?.priority).toBe("urgent");
+    expect(outcomes(first.receipts).patch_002b).toBe("held");
+    expect(outcomes(first.receipts).patch_002).toBe("confirmed");
+    expect(first.receipts.some((r) => r.outcome === "compensation_conflict")).toBe(false);
+
+    const second = await s.run();
+    expect(second.receipts.some((r) => r.outcome === "compensation_conflict")).toBe(false);
+    expect((await patchReceipts(s, s.hash)).at(-1)?.outcome).toBe("confirmed");
+    expect(s.world.tickets.get("5532")?.priority).toBe("urgent");
+  });
+
+  it("unwinds a restored field when a later patch conflicts on another (#109)", async () => {
+    const bundle = stackedPriority(noteFails());
+    const later = bundle.manifest.actions.find((a) => a.id === "patch_002b");
+    if (later?.kind !== "zendesk.ticket.patchFields") throw new Error("no patch_002b");
+    later.args = {
+      ticketId: later.args.ticketId,
+      set: { priority: "urgent", status: "pending" },
+      before: { priority: "high", status: "open" },
+    };
+    const s = setup(bundle);
+    replay(s, bundle, () => s.world.teammateEdit("5532", "status", "solved"));
+    const first = await s.run();
+
+    expect(outcomes(first.receipts)).toMatchObject({
+      patch_002: "compensated",
+      patch_002b: "compensation_conflict",
+    });
+    expect(
+      first.receipts
+        .filter((r) => r.actionId === "patch_002b")
+        .at(-1)
+        ?.limitations.join(" "),
+    ).toMatch(/restored priority/);
+    expect(s.world.tickets.get("5532")).toMatchObject({ priority: "normal", status: "solved" });
+    const writes = s.ticketWrites();
+
+    const second = await s.run();
+    expect(second.receipts.some((r) => r.actionId === "patch_002")).toBe(false);
+    expect(s.ticketWrites()).toBe(writes);
+    expect(s.world.tickets.get("5532")).toMatchObject({ priority: "normal", status: "solved" });
+  });
+
+  it("recovers a restored field after the mixed undo response is lost (#109)", async () => {
+    const bundle = mixedLater(stackedPriority(noteFails()));
+    const s = setup(bundle);
+    replay(s, bundle, () => {
+      s.world.teammateEdit("5532", "status", "solved");
+      s.world.fault(TICKET, { kind: "drop_response_after_commit" });
+    });
+    const first = await s.run();
+
+    expect(s.world.tickets.get("5532")).toMatchObject({ priority: "high", status: "solved" });
+    expect(outcomes(first.receipts).patch_002b).toBe("held");
+    expect(outcomes(first.receipts).patch_002).toBe("confirmed");
+
+    const second = await s.run();
+    expect(outcomes(second.receipts).patch_002).toBe("compensated");
+    expect(outcomes(second.receipts).patch_002b).toBe("compensation_conflict");
+    expect(
+      second.receipts
+        .filter((r) => r.actionId === "patch_002b")
+        .at(-1)
+        ?.limitations.join(" "),
+    ).toMatch(/restored priority/);
+    expect(s.world.tickets.get("5532")).toMatchObject({ priority: "normal", status: "solved" });
+    const writes = s.ticketWrites();
+
+    const third = await s.run();
+    expect(third.receipts.some((r) => r.actionId === "patch_002")).toBe(false);
+    expect(s.ticketWrites()).toBe(writes);
+    expect(s.world.tickets.get("5532")).toMatchObject({ priority: "normal", status: "solved" });
+  });
+
+  it("recovers that restored field under a newly approved revision (#109)", async () => {
+    const bundle = mixedLater(stackedPriority(noteFails()));
+    const s = setup(bundle);
+    replay(s, bundle, () => {
+      s.world.teammateEdit("5532", "status", "solved");
+      s.world.fault(TICKET, { kind: "drop_response_after_commit" });
+    });
+    await s.run();
+    expect(s.world.tickets.get("5532")?.priority).toBe("high");
+
+    const rev = s.addRevision();
+    const second = await rev.run();
+    expect(outcomes(second.receipts).patch_002).toBe("compensated");
+    expect(s.world.tickets.get("5532")).toMatchObject({ priority: "normal", status: "solved" });
+    const writes = s.ticketWrites();
+
+    const third = await rev.run();
+    expect(third.receipts.some((r) => r.actionId === "patch_002")).toBe(false);
+    expect(s.ticketWrites()).toBe(writes);
+  });
+
+  it("compensates an older patch when the later one never dispatched (#109)", async () => {
+    const bundle = stackedPriority(noteFails());
+    const s = setup(bundle);
+    const pre = s.providers.zendesk.preconditions;
+    if (!pre) throw new Error("no preconditions");
+    s.providers.zendesk.preconditions = async (action, ctx) => {
+      if (action.id === "patch_002b") throw new Error("stamp unavailable");
+      return pre(action, ctx);
+    };
+    replay(s, bundle);
+    const first = await s.run();
+
+    expect(outcomes(first.receipts).patch_002b).toBe("held");
+    expect(first.receipts.find((r) => r.actionId === "patch_002b")?.holdReason).toMatchObject({
+      kind: "unsupported_protection",
+    });
+    expect(await s.journal.attemptsFor(s.hash, "patch_002b")).toHaveLength(0);
+    expect(outcomes(first.receipts).patch_002).toBe("compensated");
+    expect(s.world.tickets.get("5532")?.priority).toBe("normal");
+    const writes = s.ticketWrites();
+
+    await s.run();
+    expect(s.ticketWrites()).toBe(writes);
+    expect(s.world.tickets.get("5532")?.priority).toBe("normal");
+    expect((await patchReceipts(s, s.hash)).at(-1)?.outcome).toBe("compensated");
+  });
+
+  it("waits when a later send is still unknown under an earlier revision (#109)", async () => {
+    const bundle = stackedPriority(noteFails());
+    const later = bundle.manifest.actions.find((a) => a.id === "patch_002b");
+    if (later?.kind !== "zendesk.ticket.patchFields") throw new Error("no patch_002b");
+    later.compensation = "compensable_by_new_action";
+    const s = setup(bundle);
+    replay(s, bundle);
+    const dispatch = s.providers.zendesk.dispatch;
+    let dropped = false;
+    s.providers.zendesk.dispatch = async (request, ctx) => {
+      if (!dropped && request.body.includes('"urgent"')) {
+        dropped = true;
+        return { kind: "unknown", error: "response dropped before commit" };
+      }
+      return dispatch(request, ctx);
+    };
+    const first = await s.run();
+
+    expect(s.world.tickets.get("5532")?.priority).toBe("high");
+    expect(outcomes(first.receipts).patch_002).toBe("confirmed");
+    expect(outcomes(first.receipts).patch_002b).toBe("unknown_outcome");
+    expect(
+      (await s.journal.attemptsFor(s.hash, "patch_002b")).some(
+        (a) => a.state === "unknown_outcome",
+      ),
+    ).toBe(true);
+    const writes = s.ticketWrites();
+
+    const again = await s.run();
+    expect(outcomes(again.receipts).patch_002b).toBe("held");
+    expect((await patchReceipts(s, s.hash)).at(-1)?.outcome).toBe("confirmed");
+    expect(s.world.tickets.get("5532")?.priority).toBe("high");
+    expect(s.ticketWrites()).toBe(writes);
+
+    const rev = s.addRevision();
+    const second = await rev.run();
+    expect(outcomes(second.receipts).patch_002b).toBe("held");
+    expect(second.receipts.find((r) => r.actionId === "patch_002b")?.holdReason).toMatchObject({
+      kind: "unresolved_outcome",
+    });
+    expect(outcomes(second.receipts).patch_002).toBe("confirmed");
+    expect(s.world.tickets.get("5532")?.priority).toBe("high");
+    expect(s.ticketWrites()).toBe(writes);
+    expect(
+      (await s.journal.attemptsFor(s.hash, "patch_002b")).some(
+        (a) => a.state === "unknown_outcome",
+      ),
+    ).toBe(true);
   });
 });

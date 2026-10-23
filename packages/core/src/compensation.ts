@@ -6,8 +6,9 @@ import type {
   Receipt,
   ReceiptOutcome,
 } from "@rehearsal/contracts";
+import { topoOrder } from "./dag";
 import type { CompensationContext, CompensationResult, Compensator } from "./executor";
-import { undoKey } from "./executor";
+import { operationKey, undoKey } from "./executor";
 import { sha256Hex } from "./hash";
 import type { Clock, DispatchResult, Preconditions, ProviderPort, WorldContext } from "./ports";
 import { operationMarker } from "./templates";
@@ -181,16 +182,126 @@ function heldUndoTargets(
   );
 }
 
+/**
+ * Later writes first. Undoing an earlier patch while a later one still holds the field makes that
+ * later value look like a teammate edit, so a chain (normal → high → urgent) would stop at high.
+ */
+function compensationOrder(manifest: PlanManifest, actions: readonly Patch[]): Patch[] {
+  const wanted = new Set(actions.map((a) => a.id));
+  return topoOrder(manifest.actions)
+    .filter((a): a is Patch => wanted.has(a.id))
+    .reverse();
+}
+
+function writtenFields(action: Patch): Field[] {
+  return (Object.entries(action.args.set) as [Field, string | undefined][])
+    .filter(([, value]) => value !== undefined)
+    .map(([field]) => field);
+}
+
+/** Later patches that wrote one of `action`'s fields on the same ticket, latest last. */
+function laterOverlapping(manifest: PlanManifest, action: Patch): Patch[] {
+  const order = topoOrder(manifest.actions);
+  const start = order.findIndex((item) => item.id === action.id);
+  const mine = new Set(writtenFields(action));
+  return order.slice(start + 1).filter((item): item is Patch => {
+    if (item.kind !== "zendesk.ticket.patchFields" || item.args.ticketId !== action.args.ticketId) {
+      return false;
+    }
+    return writtenFields(item).some((field) => mine.has(field));
+  });
+}
+
+/** Fields this undo request wrote back to the patch's before value. */
+function undoRestoredFields(attempt: Attempt, action: Patch): Set<Field> {
+  let ticket: Record<string, unknown>;
+  try {
+    ticket =
+      (JSON.parse(attempt.request.body) as { ticket?: Record<string, unknown> }).ticket ?? {};
+  } catch {
+    return new Set();
+  }
+  const restored = new Set<Field>();
+  for (const field of writtenFields(action)) {
+    const before = action.args.before[field];
+    if (typeof before === "string" && ticket[field] === before) restored.add(field);
+  }
+  return restored;
+}
+
+/** Restoration proof from an undo that has already settled, not from receipt prose. */
+function restoredByUndo(attempt: Attempt | undefined, action: Patch): Set<Field> {
+  if (!attempt || (attempt.state !== "confirmed" && attempt.state !== "reconciled"))
+    return new Set();
+  return undoRestoredFields(attempt, action);
+}
+
+/**
+ * One shared field of a later patch. `wait`: a sent undo has not settled. A hold with no
+ * dispatched attempt is not an undo. `keep`: this field was not restored, so a matching value is
+ * not our older write. `clear`: this field was restored, or the later patch never wrote.
+ */
+function fieldUndoGate(
+  receipt: Receipt | undefined,
+  field: Field,
+  restored: boolean,
+  sent: boolean,
+): "wait" | "keep" | "clear" {
+  if (receipt?.outcome === "unknown_outcome") return "wait";
+  if (receipt?.outcome === "held") return sent ? "wait" : "clear";
+  if (
+    !receipt ||
+    receipt.outcome === "rejected" ||
+    receipt.outcome === "skipped_dependency" ||
+    receipt.outcome === "compensated" ||
+    restored ||
+    receipt.limitations.some((line) => line.startsWith(`restored ${field} `))
+  ) {
+    return "clear";
+  }
+  // Confirmed: a later write we are not undoing. Conflict without a restored field: not ours.
+  return "keep";
+}
+
 export function createCompensator(deps: CompensatorDeps): Compensator {
   return async (ctx) => {
-    const seen = new Set<string>();
-    for (const action of [
+    const actions = compensationOrder(ctx.manifest, [
       ...compensationTargets(ctx.manifest, ctx.outcomes, ctx.receipts),
       ...heldUndoTargets(ctx.manifest, ctx.outcomes, ctx.receipts),
-    ]) {
-      if (seen.has(action.id)) continue;
-      seen.add(action.id);
-      await compensate(action, ctx, deps);
+    ]);
+    const latest = new Map<string, Receipt>();
+    for (const receipt of await ctx.journal.receiptsFor(ctx.planHash)) {
+      latest.set(receipt.actionId, receipt);
+    }
+    for (const action of actions) {
+      const blocked = new Set<Field>();
+      let wait = false;
+      for (const other of laterOverlapping(ctx.manifest, action)) {
+        const receipt = latest.get(other.id);
+        const shared = writtenFields(action).filter((field) =>
+          writtenFields(other).includes(field),
+        );
+        const [undos, forwards] = await Promise.all([
+          ctx.journal.attemptsForKey(undoKey(ctx.orgId, ctx.manifest.planId, other)),
+          ctx.journal.attemptsForKey(operationKey(ctx.orgId, ctx.manifest.planId, other)),
+        ]);
+        const sent = [...undos, ...forwards].some((item) => item.state !== "prepared");
+        const restored = restoredByUndo(
+          undos.filter((item) => item.state === "confirmed" || item.state === "reconciled").at(-1),
+          other,
+        );
+        for (const field of shared) {
+          const gate = fieldUndoGate(receipt, field, restored.has(field), sent);
+          if (gate === "wait") wait = true;
+          else if (gate === "keep") blocked.add(field);
+        }
+      }
+      if (wait) continue;
+      await compensate(action, ctx, deps, blocked);
+      const recorded = (await ctx.journal.receiptsFor(ctx.planHash))
+        .filter((receipt) => receipt.actionId === action.id)
+        .at(-1);
+      if (recorded) latest.set(action.id, recorded);
     }
   };
 }
@@ -242,7 +353,13 @@ async function undoRead(
   }
 }
 
-async function compensate(action: Patch, ctx: CompensationContext, deps: CompensatorDeps) {
+async function compensate(
+  action: Patch,
+  ctx: CompensationContext,
+  deps: CompensatorDeps,
+  /** Fields a later patch wrote and did not restore. Matching them is not proof they are still ours. */
+  blocked: ReadonlySet<Field> = new Set(),
+) {
   const provider = deps.providers.zendesk;
   const world = deps.worlds.zendesk;
   const record = (r: CompensationResult) => ctx.record(action, r);
@@ -302,9 +419,14 @@ async function compensate(action: Patch, ctx: CompensationContext, deps: Compens
             outcome: "compensation_conflict",
             providerRef: { vendor: "zendesk", kind: "ticket", id: action.args.ticketId },
             observedEffect: { priority: current.priority, status: current.status },
-            limitations: changed.map(
-              ([field]) => `kept ${field} = ${String(current[field])}: changed by someone else`,
-            ),
+            limitations: [
+              ...[...undoRestoredFields(earlier, action)].map(
+                (field) => `restored ${field} to ${String(action.args.before[field])}`,
+              ),
+              ...changed.map(
+                ([field]) => `kept ${field} = ${String(current[field])}: changed by someone else`,
+              ),
+            ],
             transition,
           });
         }
@@ -380,15 +502,25 @@ async function compensate(action: Patch, ctx: CompensationContext, deps: Compens
         }
       }
     }
+    for (const field of blocked) {
+      if (decision.revert[field] === undefined && !decision.unrevertable.includes(field)) continue;
+      decision.kept[field] = current[field];
+      delete decision.revert[field];
+      decision.unrevertable = decision.unrevertable.filter((item) => item !== field);
+    }
     if (Object.keys(decision.revert).length === 0) {
       // A late landing of our own undo restores the before value and then 409s the fresh send.
       // The marker says it was ours; a teammate restoring the same value leaves no marker.
+      // Fields that marker restored were taken out of `kept` above. A field it never restored
+      // is still a conflict or a manual hold, not proof the whole patch was undone.
       if (earlier && (await undoRead(provider, world, action, earlier)) === "landed") {
+        const settled = verdict(decision);
+        const late = "our earlier undo landed; nothing further written";
         return record({
-          outcome: "compensated",
+          ...settled,
           providerRef: ticket,
           observedEffect: { priority: current.priority, status: current.status },
-          limitations: ["our earlier undo landed; nothing further written"],
+          limitations: settled.outcome === "compensated" ? [late] : [...describe(decision), late],
         });
       }
       return record({

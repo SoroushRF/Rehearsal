@@ -814,10 +814,17 @@ async function applyLocked(
       };
     }
     if (kept.length > 0) {
+      const restored = [...sent]
+        .filter((field) => field === "priority" || field === "status")
+        .sort()
+        .flatMap((field) => {
+          const before = action.args.before[field as "priority" | "status"];
+          return typeof before === "string" ? [`restored ${field} to ${before}`] : [];
+        });
       return {
         outcome: "compensation_conflict",
         holdReason: null,
-        limitations: kept.map((k) => `kept ${k}: changed by someone else`),
+        limitations: [...restored, ...kept.map((k) => `kept ${k}: changed by someone else`)],
       };
     }
     return { outcome: "compensated", holdReason: null, limitations: [] };
