@@ -1,6 +1,6 @@
 import { ApprovalGrant } from "@rehearsal/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { z } from "zod";
 import {
   type ApiFetch,
@@ -14,9 +14,11 @@ import {
   StoredPlan,
 } from "../api";
 import { roleLabel, shortHash } from "../format";
+import { useTenantKey } from "../identity";
 import { droppedBy, requiredRoles } from "../plan";
 import { RunView } from "../runs";
 import { PlanReview } from "./PlanReview";
+import { RehearseBar } from "./Rehearse";
 import { RunTimeline } from "./RunTimeline";
 
 const PlanList = z.object({ plans: z.array(PlanSummary) });
@@ -27,20 +29,31 @@ const planPath = (planId: string) => `/api/plans/${encodeURIComponent(planId)}`;
 
 /** Plans stored for the reviewer's organization, reviewed and approved through the API. */
 export function LivePlans({ apiFetch }: { apiFetch: ApiFetch }) {
+  const key = useTenantKey();
   const plans = useQuery({
-    queryKey: ["plans"],
+    queryKey: key("plans"),
     queryFn: () => call(apiFetch, PlanList, "/api/plans"),
   });
   const [chosen, setChosen] = useState<string | null>(null);
   const planId = chosen ?? plans.data?.plans[0]?.planId ?? null;
+  // A freshly stored plan is the one to look at next.
+  const showStored = useCallback((id: string) => setChosen(id), []);
 
   if (plans.isPending) return <p className="mt-6 text-sm text-slate-500">Loading plans…</p>;
   if (plans.isError) return <Problem>{explain(plans.error)}</Problem>;
-  if (!planId) return <p className="mt-6 text-slate-600">No plans for this organization yet.</p>;
+  if (!planId) {
+    return (
+      <div className="mt-6">
+        <RehearseBar apiFetch={apiFetch} onStored={showStored} />
+        <p className="mt-4 text-slate-600">No plans for this organization yet.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="mt-6">
-      <nav aria-label="Plans" className="flex flex-wrap gap-2">
+      <RehearseBar apiFetch={apiFetch} onStored={showStored} />
+      <nav aria-label="Plans" className="mt-4 flex flex-wrap gap-2">
         {plans.data.plans.map((p) => (
           <button
             key={p.planId}
@@ -60,8 +73,9 @@ export function LivePlans({ apiFetch }: { apiFetch: ApiFetch }) {
 
 function LivePlan({ apiFetch, planId }: { apiFetch: ApiFetch; planId: string }) {
   const queryClient = useQueryClient();
+  const key = useTenantKey();
   const plan = useQuery({
-    queryKey: ["plan", planId],
+    queryKey: key("plan", planId),
     queryFn: () => call(apiFetch, StoredPlan, planPath(planId)),
   });
   const [unchecked, setUnchecked] = useState<ReadonlySet<string>>(new Set());
@@ -77,8 +91,8 @@ function LivePlan({ apiFetch, planId }: { apiFetch: ApiFetch; planId: string }) 
     onSuccess: (rev) => {
       setLastRevision(rev);
       setUnchecked(new Set());
-      queryClient.invalidateQueries({ queryKey: ["plan", planId] });
-      queryClient.invalidateQueries({ queryKey: ["plans"] });
+      queryClient.invalidateQueries({ queryKey: key("plan", planId) });
+      queryClient.invalidateQueries({ queryKey: key("plans") });
     },
   });
 
@@ -151,7 +165,7 @@ function LivePlan({ apiFetch, planId }: { apiFetch: ApiFetch; planId: string }) 
         apiFetch={apiFetch}
         plan={plan.data}
         editing={unchecked.size > 0}
-        onStale={() => queryClient.invalidateQueries({ queryKey: ["plan", planId] })}
+        onStale={() => queryClient.invalidateQueries({ queryKey: key("plan", planId) })}
       />
     </div>
   );
@@ -169,14 +183,15 @@ function ApprovalPanel({
   onStale: () => void;
 }) {
   const queryClient = useQueryClient();
+  const key = useTenantKey();
   const body = { revision: plan.revision, planHash: plan.planHash };
   const grants = useQuery({
-    queryKey: ["grants", plan.planId],
+    queryKey: key("grants", plan.planId),
     queryFn: () => call(apiFetch, GrantList, `${planPath(plan.planId)}/approvals`),
   });
   const approve = useMutation({
     mutationFn: () => call(apiFetch, Approved, `${planPath(plan.planId)}/approvals`, body),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["grants", plan.planId] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: key("grants", plan.planId) }),
     onError: (err) => {
       // The plan moved on under the reviewer: show them the current revision.
       if (
@@ -187,7 +202,7 @@ function ApprovalPanel({
     },
   });
   const runs = useQuery({
-    queryKey: ["runs", plan.planId],
+    queryKey: key("runs", plan.planId),
     queryFn: () => call(apiFetch, RunList, `${planPath(plan.planId)}/runs`),
   });
   const [shownRun, setShownRun] = useState<string | null>(null);
@@ -195,7 +210,7 @@ function ApprovalPanel({
     mutationFn: () => call(apiFetch, ApplyAccepted, `${planPath(plan.planId)}/apply`, body),
     onSuccess: (accepted) => {
       setShownRun(accepted.runId);
-      queryClient.invalidateQueries({ queryKey: ["runs", plan.planId] });
+      queryClient.invalidateQueries({ queryKey: key("runs", plan.planId) });
     },
   });
   const live = grants.data?.grants.find((g) => g.live && g.planHash === plan.planHash);

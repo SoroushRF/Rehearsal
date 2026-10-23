@@ -1,6 +1,7 @@
 import type { Attempt, AttemptState, ObjectBinding, Receipt, RunEvent } from "@rehearsal/contracts";
 import type { JournalPort, SettleStep } from "@rehearsal/core";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, gt } from "drizzle-orm";
+import { insertRunEvent } from "./events";
 import type { Db } from "./index";
 import { objectBindings, runEvents, stepAttempts, stepReceipts } from "./schema";
 
@@ -212,17 +213,37 @@ export class PgJournal implements JournalPort {
     }));
   }
 
+  async runReceipts(runId: string): Promise<Receipt[]> {
+    const own = and(eq(runEvents.orgId, this.orgId), eq(runEvents.runId, runId));
+    const [last] = await this.db
+      .select({ seq: runEvents.seq })
+      .from(runEvents)
+      .where(and(own, eq(runEvents.type, "run.finished")))
+      .orderBy(desc(runEvents.seq))
+      .limit(1);
+    const rows = await this.db
+      .select({ payload: runEvents.payload })
+      .from(runEvents)
+      .where(and(own, eq(runEvents.type, "step.receipt"), gt(runEvents.seq, last?.seq ?? 0)))
+      .orderBy(asc(runEvents.seq));
+    return rows.map((r) => r.payload as Receipt);
+  }
+
   /**
-   * `seq` is a global insertion order, not a commit order: with concurrent writers a reader that
-   * tails `seq > lastSeen` can miss a row. One executor writes per run, so per-run order holds.
-   * A missing payload is stored as `{}` (the column is NOT NULL); the stored value is returned.
+   * Per run, `seq` order is commit order (see `insertRunEvent`), so a reader tailing
+   * `seq > lastSeen` never misses a row. Inside an outer transaction the run's lock is held until
+   * that commits. A missing payload is stored as `{}` (the column is NOT NULL); the stored value
+   * is returned.
    */
   async appendEvent(runId: string, type: string, payload: unknown): Promise<RunEvent> {
-    const [row] = await this.db
-      .insert(runEvents)
-      .values({ orgId: this.orgId, runId, type, payload: payload ?? {} })
-      .returning();
-    if (!row) throw new Error("run event insert returned no row");
+    const row = await this.db.transaction((tx) =>
+      insertRunEvent(tx as unknown as Db, {
+        orgId: this.orgId,
+        runId,
+        type,
+        payload: payload ?? {},
+      }),
+    );
     return {
       seq: row.seq,
       runId: row.runId,

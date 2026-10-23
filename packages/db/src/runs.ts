@@ -1,5 +1,6 @@
 import { and, eq, inArray, lt, or, sql } from "drizzle-orm";
 import type { PgBoss } from "pg-boss";
+import { insertRunEvent } from "./events";
 import type { Db } from "./index";
 import { APPLY_QUEUE, enqueueApply } from "./queue";
 import { runEvents, runs, stepAttempts } from "./schema";
@@ -103,7 +104,7 @@ export async function reapStuckRuns(
         ),
       );
     for (const run of stuck) {
-      await tx.insert(runEvents).values({
+      await insertRunEvent(tx as unknown as Db, {
         orgId: run.orgId,
         runId: run.id,
         type: "run.reaped",
@@ -144,7 +145,7 @@ export async function reapStuckRuns(
                 and j.data->>'runId' = r.id)
     `);
     for (const row of exhausted.rows) {
-      await tx.insert(runEvents).values({
+      await insertRunEvent(tx as unknown as Db, {
         orgId: row.org_id,
         runId: row.id,
         type: "run.needs_operator",
