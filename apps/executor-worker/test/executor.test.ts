@@ -421,7 +421,8 @@ describe("failures inside the executor", () => {
     s.journal.failNextSettle = true;
     const first = await s.run();
     expect(first.error).toMatch(/journal unavailable/);
-    expect(s.journal.events.at(-1)?.type).toBe("run.finished");
+    // Not "finished": the worker retries a run that stopped on an error.
+    expect(s.journal.events.at(-1)?.type).toBe("run.stopped");
 
     // Restart: the refund was applied before the crash; a read finds it, nothing is re-sent.
     const second = await s.run();
@@ -452,6 +453,51 @@ describe("failures inside the executor", () => {
       note_001: "skipped_dependency",
     });
     expect(result.error).toBeNull();
+  });
+
+  /** Every refund is refused (402), and settling `patch_002` always fails: each pass errors. */
+  function erroringEveryPass() {
+    const s = setup(happyPathBundle());
+    const stripe = s.deps.providers.stripe;
+    s.deps.providers.stripe = {
+      ...stripe,
+      dispatch: async () => ({ kind: "rejected", status: 402, body: {}, retryable: false }),
+    };
+    const settle = s.journal.settle.bind(s.journal);
+    s.journal.settle = async (step) => {
+      if (step.receipt.actionId === "patch_002") throw new Error("settle failed (injected)");
+      return settle(step);
+    };
+    const count = async (actionId: string) =>
+      (await s.journal.receiptsFor(s.hash)).filter((r) => r.actionId === actionId).length;
+    return { s, count };
+  }
+
+  it("a retried run writes no duplicate receipt for a step that settled the same way", async () => {
+    const { s, count } = erroringEveryPass();
+    for (let i = 0; i < 3; i++) {
+      const result = await s.run();
+      expect(result.error).toMatch(/settle failed/);
+      expect(outcomes(result.receipts)).toMatchObject({
+        refund_001: "rejected",
+        note_001: "skipped_dependency",
+      });
+    }
+    expect(await count("refund_001")).toBe(1);
+    expect(await count("note_001")).toBe(1);
+    expect(await count("patch_001")).toBe(1);
+    const types = s.journal.events.map((e) => e.type);
+    expect(types.filter((t) => t === "run.stopped")).toHaveLength(3);
+    expect(types).not.toContain("run.finished");
+
+    // A new run of the same hash keeps its own record.
+    s.store.runs.set(
+      "run_2",
+      s.store.runs.get(RUN) as NonNullable<ReturnType<typeof s.store.runs.get>>,
+    );
+    await executeRun({ ...s.job, runId: "run_2" }, s.deps);
+    expect(await count("refund_001")).toBe(2);
+    expect(await count("note_001")).toBe(2);
   });
 
   it("a rejected request is not re-sent when the job runs again", async () => {

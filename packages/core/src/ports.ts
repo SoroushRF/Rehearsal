@@ -132,6 +132,12 @@ export interface JournalPort {
   bind(binding: ObjectBinding): Promise<void>;
   bindings(planHash: string): Promise<ObjectBinding[]>;
   appendEvent(runId: string, type: string, payload: unknown): Promise<RunEvent>;
+  /**
+   * Receipts this run recorded since it last finished (its `step.receipt` events after its last
+   * `run.finished`), oldest first: the passes that stopped on an error and are being retried. A
+   * retry uses it to skip a receipt it would only repeat. Optional: without it every pass writes.
+   */
+  runReceipts?(runId: string): Promise<Receipt[]>;
 }
 
 export interface PlannerInput {

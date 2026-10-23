@@ -126,6 +126,15 @@ export class MemoryJournal implements JournalPort {
     return [...this.#bindings.values()].filter((b) => b.planHash === planHash);
   }
 
+  async runReceipts(runId: string): Promise<Receipt[]> {
+    const own = this.events.filter((e) => e.runId === runId);
+    const lastFinished = own.findLastIndex((e) => e.type === "run.finished");
+    return own
+      .slice(lastFinished + 1)
+      .filter((e) => e.type === "step.receipt")
+      .map((e) => e.payload as Receipt);
+  }
+
   async appendEvent(runId: string, type: string, payload: unknown): Promise<RunEvent> {
     if (this.failNextEvent === type) {
       this.failNextEvent = null;

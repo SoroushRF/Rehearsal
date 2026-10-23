@@ -454,6 +454,17 @@ async function applyLocked(
   });
 
   const receipts: Receipt[] = [];
+  /**
+   * What this run already recorded per action, on earlier deliveries that stopped on an error
+   * (since it last finished).
+   * A pass that settles a step the same way (outcome, hold reason, provider object) again adds
+   * no receipt; a new run of the hash still writes its own.
+   */
+  const ownEarlier = new Map(
+    ((await journal.runReceipts?.(job.runId)) ?? []).map((r) => [r.actionId, r]),
+  );
+  const gist = (r: Receipt) =>
+    fingerprint({ outcome: r.outcome, holdReason: r.holdReason, providerRef: r.providerRef });
   const settled = new Map<string, ReceiptOutcome>();
   /** Set once a cancel is seen; no further action is admitted or sent. */
   let cancelled = false;
@@ -547,6 +558,20 @@ async function applyLocked(
         value,
       }),
     );
+    const earlier = ownEarlier.get(action.id);
+    if (
+      earlier &&
+      receipt.outcome !== "confirmed" &&
+      !opts.transitions?.length &&
+      !opts.transition &&
+      newBindings.length === 0 &&
+      gist(earlier) === gist(receipt)
+    ) {
+      // An earlier pass of this run already recorded this; repeating it adds nothing.
+      receipts.push(earlier);
+      settled.set(action.id, earlier.outcome);
+      return;
+    }
     await journal.settle({
       transitions: opts.transitions,
       transition: opts.transition,
@@ -1544,6 +1569,9 @@ async function applyLocked(
         : inFlightAttempts.size > 0 || outcomes.some((o) => o === "held" || o === "unknown_outcome")
           ? "held"
           : "failed";
-  await journal.appendEvent(job.runId, "run.finished", { state, error }).catch(() => {});
+  // A run that stopped on an error isn't finished: the worker retries it.
+  await journal
+    .appendEvent(job.runId, error === null ? "run.finished" : "run.stopped", { state, error })
+    .catch(() => {});
   return { state, receipts, refusal: null, error };
 }
