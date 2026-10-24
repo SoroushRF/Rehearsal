@@ -4,7 +4,20 @@ import type {
   Observation,
   PlanManifest,
   QueryObservation,
+  SlackMessagePostSummary,
+  ZendeskTicketAppendPublicReply,
 } from "@rehearsal/contracts";
+import type { z } from "zod";
+
+/**
+ * Every action the review UI can draw. A public reply and a Slack summary aren't in `Action` yet
+ * (T1.13 and T1.7 add them), so no stored plan carries one today; the rows are drawn ahead of that
+ * so the reviewer sees the exact text the day they land. Once they join `Action` this is `Action`.
+ */
+export type ReviewAction =
+  | Action
+  | z.infer<typeof ZendeskTicketAppendPublicReply>
+  | z.infer<typeof SlackMessagePostSummary>;
 
 /** One customer branch of the plan, as the reviewer sees it. */
 export interface CaseGroup {
@@ -58,7 +71,7 @@ export interface ActionEvidence {
   missing: string[];
 }
 
-export function evidenceFor(manifest: PlanManifest, action: Action): ActionEvidence {
+export function evidenceFor(manifest: PlanManifest, action: ReviewAction): ActionEvidence {
   const obs = new Map(manifest.observations.map((o) => [o.id, o]));
   const queries = new Map(manifest.queryObservations.map((q) => [q.id, q]));
   const missing: string[] = [];
@@ -79,7 +92,10 @@ export function evidenceFor(manifest: PlanManifest, action: Action): ActionEvide
  * The unchecked actions plus everything that depends on them, for previewing an exclusion before
  * it is sent. Mirrors `dependentsClosure` in `@rehearsal/core`; the server's revision is what counts.
  */
-export function droppedBy(actions: readonly Action[], unchecked: Iterable<string>): Set<string> {
+export function droppedBy(
+  actions: readonly ReviewAction[],
+  unchecked: Iterable<string>,
+): Set<string> {
   const dropped = new Set(unchecked);
   let grew = true;
   while (grew) {

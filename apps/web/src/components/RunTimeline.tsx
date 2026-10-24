@@ -216,7 +216,9 @@ export function RunReport({
                     </span>
                   )}
                 </div>
-                {r && <p className="mt-1 text-sm leading-5 text-muted">{explainReceipt(r)}</p>}
+                {r && (
+                  <p className="mt-1 text-sm leading-5 text-muted">{explainReceipt(r, a.kind)}</p>
+                )}
                 {r && r.limitations.length > 0 && (
                   <p className="mt-1 text-xs text-subtle">Limits: {r.limitations.join("; ")}</p>
                 )}

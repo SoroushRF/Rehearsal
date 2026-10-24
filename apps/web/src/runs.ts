@@ -77,8 +77,16 @@ export function explainHold(h: HoldReason): string {
   }
 }
 
-/** One line per receipt: what happened to this step and why. */
-export function explainReceipt(r: Receipt): string {
+/** What an unknown outcome means for a send other people read; those can't be taken back. */
+const UNKNOWN_SEND: Record<string, string> = {
+  "zendesk.ticket.appendPublicReply":
+    "The reply to the customer may or may not have gone out. The ticket's comments are read for this step's reference tag, and the reply is never sent a second time blindly.",
+  "slack.message.postSummary":
+    "The Slack post may or may not have gone out. The channel is read for this step's reference tag, and the summary is never posted a second time blindly.",
+};
+
+/** One line per receipt: what happened to this step and why. `kind` is the step's operation. */
+export function explainReceipt(r: Receipt, kind?: string): string {
   switch (r.outcome) {
     case "confirmed":
       return r.providerRef
@@ -91,7 +99,10 @@ export function explainReceipt(r: Receipt): string {
         ? explainHold(r.holdReason)
         : "Skipped because a step it depends on didn't complete.";
     case "unknown_outcome":
-      return "The provider's response was lost. The step is reconciled through reads and never re-sent blindly.";
+      return (
+        (kind && UNKNOWN_SEND[kind]) ||
+        "The provider's response was lost. The step is reconciled through reads and never re-sent blindly."
+      );
     case "rejected":
       return "The provider refused the write; nothing changed.";
     case "compensated":

@@ -94,6 +94,7 @@ const PATHS = {
     </>
   ),
   spark: <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z" />,
+  send: <path d="M21 3L10 14M21 3l-6.5 18-3.5-7.5L3.5 10 21 3z" />,
 } as const;
 
 export type IconName = keyof typeof PATHS;
