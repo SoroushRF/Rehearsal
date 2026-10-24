@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Vendor } from "@rehearsal/contracts";
 import {
-  type BillingPolicyV1,
+  type BillingPolicy,
   type Clock,
   createCompensator,
   createReadGuard,
@@ -20,7 +20,7 @@ export interface WorkerContext {
   providers: Partial<Record<Vendor, ProviderPort>>;
   worlds: Partial<Record<Vendor, WorldContext>>;
   clock: Clock;
-  policies: readonly BillingPolicyV1[];
+  policies: readonly BillingPolicy[];
   /** Overrides for tests (retry sleeps, the reconcile window). */
   executor?: Pick<ExecutorDeps, "retry" | "sleep" | "reconcileAfterMs" | "caseConcurrency">;
 }

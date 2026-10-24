@@ -1,6 +1,7 @@
-import type { BillingPolicyV1 } from "@rehearsal/core";
+import type { BillingPolicy } from "@rehearsal/core";
 import { createDb, type PgBoss, startQueue } from "@rehearsal/db";
-import policy from "../../../scenarios/billing/policy.v1.json" with { type: "json" };
+import policyV1 from "../../../scenarios/billing/policy.v1.json" with { type: "json" };
+import policyV2 from "../../../scenarios/billing/policy.v2.json" with { type: "json" };
 import { buildApp } from "./app";
 import type { ApplyDeps } from "./apply";
 import { bearerReviewer, clerkFromEnv, type ReviewerResolver } from "./auth";
@@ -26,7 +27,11 @@ const apply = await applyDeps();
 const boss: PgBoss | undefined = apply?.boss;
 const plans = apply && { db: apply.db, auth: reviewer };
 // The same policy file the executor loads, so approval refuses what admission would refuse.
-const approvals = apply && { db: apply.db, reviewer, policies: [policy as BillingPolicyV1] };
+const approvals = apply && {
+  db: apply.db,
+  reviewer,
+  policies: [policyV1, policyV2] as BillingPolicy[],
+};
 const runs = apply && { db: apply.db, auth: reviewer };
 const rehearse = apply && {
   db: apply.db,

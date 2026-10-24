@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { ApprovalGrant, ApproveRequest } from "@rehearsal/contracts";
-import { type BillingPolicyV1, evaluateBillingPolicy, validateGraph } from "@rehearsal/core";
+import { type BillingPolicy, evaluateBillingPolicy, validateGraph } from "@rehearsal/core";
 import { type Db, schema } from "@rehearsal/db";
 import { and, desc, eq, gt, isNull, lte } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
@@ -15,7 +15,7 @@ export const DEFAULT_APPROVAL_TTL_MS = 60 * 60 * 1000;
 export interface ApprovalDeps {
   db: Db;
   reviewer: ReviewerResolver;
-  policies: readonly BillingPolicyV1[];
+  policies: readonly BillingPolicy[];
   now?: () => Date;
   ttlMs?: number;
 }

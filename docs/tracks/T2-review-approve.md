@@ -44,7 +44,7 @@
 | T2.15 | _Full scope:_ review UI shows the Slack summary step and its exact text | full scope | Plan diff and run timeline render the step, its text and an unresolved post | #145 | T1.17 |
 | T2.16 | _Full scope:_ review UI shows the exact rendered public reply being approved | full scope | Excluding the customer drops the reply; uncertain sends shown honestly | #146 | T1.18 |
 | T2.17 | _Full scope:_ finance-only "Promote to precedent" route and UI; recalled precedents shown with trace | full scope | Role-checked route plus UI; promotion goes through T1.8's adapter | #147 | T1.8 |
-| T2.18 | _Full scope:_ policy chooses a refund or an invoice credit per obligation | full scope | New policy version; a completed remedy blocks a second; UI shows the remedy | #148 | T1.19 |
+| T2.18 | _Full scope:_ policy chooses a refund or an invoice credit per obligation | full scope | New policy version; a completed remedy blocks a second; UI shows the remedy. **Done:** policy v2 and rules R4/R5 ([0010](../decisions/0010-remedy-policy.md)); the UI part follows once #187 lands | #148 | T1.19 |
 
 ## Decisions
 
@@ -55,6 +55,8 @@ _(add dated entries)_
 ## Handoff log
 
 _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
+
+- **2026-10-24, Parsa (T2.18 policy).** Branch `t2/T2.18-remedy-policy`, off `main`. `policy.v2.json` and `BillingPolicy = V1 | V2` in `core/policy`: a credit is allowed only below `creditMaxMinor` (otherwise refund), a refund and a credit count as one remedy per obligation, and an optional `completedRemedies` map blocks a second remedy (R5). The API and executor worker load v1 and v2 (type-only widening of `policies` in `executor.ts`, `approvals.ts`, `worker.ts`: T3's admission path, please look). **Not done:** feeding `completedRemedies` from stored receipts (T4.10 / T3), and the review UI row for a credit. **Gotcha:** the credit op isn't in `Action` yet, so policy takes a minimal structural `PolicyAction`; decision 0010 is `proposed`, the 10000 limit is an authored demo number.
 
 - **2026-10-23, Parsa (T2.11).** Branch `t2/T2.11-saved-replay`, off `main`. `?replay=<id>` opens a saved run from `apps/web/public/replays/<id>.json`: public, read-only, no sign-in and no API call (Clerk isn't even loaded), with a "Saved replay, not live" banner, its evidence label and how it was made. `pnpm replay:build` writes `happy-path` and `phantom` by running the real executor engine on the fake provider (event times come from its test clock, so a rebuild is byte-identical); a test fails if the checked-in files drift. Both are `fixture` evidence. **Next:** an export of a real run (Postgres, after an Era run) into this format, so replays can become `era_integration`; the deployed URL (T2.5) serves these files from `dist/replays`. **Gotcha:** `scripts/replay/` and one line in the root `package.json` are new; no other track's code changed.
 

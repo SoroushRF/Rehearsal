@@ -19,7 +19,7 @@ import { bindingKey } from "./bindings";
 import { topoOrder, validateGraph } from "./dag";
 import { refundEffectMatches } from "./effects";
 import { planHash as computePlanHash, fingerprint, sha256Hex } from "./hash";
-import { type BillingPolicyV1, evaluateBillingPolicy } from "./policy";
+import { type BillingPolicy, evaluateBillingPolicy } from "./policy";
 import type {
   Clock,
   DispatchResult,
@@ -120,7 +120,7 @@ export interface ExecutorDeps {
   /** Operational world tenant per vendor. */
   worlds: Partial<Record<Vendor, WorldContext>>;
   clock: Clock;
-  policies: readonly BillingPolicyV1[];
+  policies: readonly BillingPolicy[];
   newId: (prefix: string) => string;
   guard?: StepGuard;
   compensate?: Compensator;
