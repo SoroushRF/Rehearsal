@@ -186,6 +186,12 @@ importers:
 
   evals/scorecard:
     dependencies:
+      '@anthropic-ai/sdk':
+        specifier: ^1.1.0
+        version: 1.1.0(zod@4.6.7)
+      '@google/genai':
+        specifier: 2.30.0
+        version: 2.30.0
       '@rehearsal/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
