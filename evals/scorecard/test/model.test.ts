@@ -283,6 +283,7 @@ describe("model planner", () => {
         "list_requester_tickets",
         "propose_duplicate_refund",
         "propose_refund_note",
+        "propose_run_summary",
         "propose_ticket_priority",
       ].sort(),
     );

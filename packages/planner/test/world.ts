@@ -7,7 +7,7 @@ import {
   zendeskTicketProjection,
 } from "@rehearsal/providers";
 import { FakeClock, INCIDENT, incidentRecords } from "@rehearsal/testkit";
-import { type PlanningReader, PlanningSession } from "../src";
+import { type PlanningReader, PlanningSession, type PlanningSessionOptions } from "../src";
 
 export const POLICY = {
   id: "billing-remedy",
@@ -18,7 +18,7 @@ export const POLICY = {
 export const CTX = { world: "planning", tenant: "t1-4" } as const;
 
 /** In-memory planning world over the seeded cohort, with the real read projections. */
-export function world() {
+export function world(opts: Pick<PlanningSessionOptions, "runSummary"> = {}) {
   const records = incidentRecords();
   const charges = new Map(records.stripe.charges.map((c) => [String(c.id), c]));
   const tickets = new Map(records.zendesk.tickets.map((t) => [String(t.id), t]));
@@ -96,6 +96,7 @@ export function world() {
     policy: POLICY,
     window: INCIDENT.window,
     clock: new FakeClock("2026-10-02T12:00:00.000Z"),
+    ...opts,
   });
   return { session, reads, records, charges, tickets };
 }

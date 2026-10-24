@@ -355,7 +355,9 @@ export function zendeskWriter(target: WriteTarget): ProviderWriter {
     },
     async reconcile(attempt: Attempt, action: Action, ctx: WorldContext): Promise<ReconcileResult> {
       assertTarget(target, ctx);
-      if (action.kind === "stripe.refund.create") throw new Error(`zendesk can't ${action.kind}`);
+      if (action.kind === "stripe.refund.create" || action.kind === "slack.message.postSummary") {
+        throw new Error(`zendesk can't ${action.kind}`);
+      }
       const ref = { vendor: "zendesk", kind: "ticket", id: action.args.ticketId } as const;
       if (action.kind === "zendesk.ticket.appendPrivateNote") {
         // The note carries its operation marker; look for it across every page of comments.
@@ -655,7 +657,7 @@ function unescapeSlack(text: string): string {
   return text.replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&");
 }
 
-/** The write side of `slack.message.postSummary` (T3.10); `executeRun` takes it once T1.7 adds the op. */
+/** The write side of `slack.message.postSummary` (T3.10). `slackProviderWriter` wraps it for `executeRun`. */
 export interface SlackWriter {
   vendor: "slack";
   prepare(action: SummaryAction, resolved: ResolvedBindings, operationKey: string): PreparedRequest;
@@ -756,6 +758,22 @@ export function slackWriter(target: WriteTarget): SlackWriter {
       }
       return { kind: "indeterminate", detail: `more than ${MAX_PAGES} pages of Slack history` };
     },
+  };
+}
+
+/** `slackWriter` as the executor's writer: it posts run summaries and refuses anything else. */
+export function slackProviderWriter(target: WriteTarget): ProviderWriter {
+  const slack = slackWriter(target);
+  const summary = (action: Action) => {
+    if (action.kind !== "slack.message.postSummary") throw new Error(`slack can't ${action.kind}`);
+    return action;
+  };
+  return {
+    vendor: "slack",
+    prepare: (action, resolved, operationKey) =>
+      slack.prepare(summary(action), resolved, operationKey),
+    dispatch: (req, ctx) => slack.dispatch(req, ctx),
+    reconcile: (attempt, action, ctx) => slack.reconcile(attempt, summary(action), ctx),
   };
 }
 

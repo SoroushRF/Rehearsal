@@ -165,8 +165,8 @@ export const SummaryBinding = z.union([z.string(), z.number(), OutcomeCount]);
  * doesn't deduplicate posts (not even on `client_msg_id`), so a post with an unknown outcome is
  * resolved by reading the channel for that marker and is never re-sent blindly.
  *
- * Not in `Action` yet, so no plan can carry one. T1.7 adds it once the write adapter (T3.10) and
- * the review UI (T2.15) handle it.
+ * It runs after every other step has settled, held or not, so it counts what really happened; a
+ * held or skipped step it counts doesn't skip it.
  */
 export const SlackMessagePostSummary = ActionBase.extend({
   kind: z.literal("slack.message.postSummary"),
@@ -190,6 +190,7 @@ export const Action = z.discriminatedUnion("kind", [
   StripeRefundCreate,
   ZendeskTicketPatchFields,
   ZendeskTicketAppendPrivateNote,
+  SlackMessagePostSummary,
 ]);
 export type Action = z.infer<typeof Action>;
 export type ActionKind = Action["kind"];

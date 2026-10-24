@@ -32,6 +32,7 @@ For each customer in the incident report:
    - propose_ticket_priority to "high", unless the ticket is already high or urgent;
    - propose_refund_note on that ticket, so the customer's ticket records the refund.
 4. Never propose steps for a customer who isn't in the report, and never propose a ticket step for a customer without a refund.
+5. Last, if you proposed any refund, call propose_run_summary once so the team's channel hears what the run did. If it refuses, leave it out.
 
 Rationales are shown to the reviewer verbatim. Keep each to one plain sentence that names the evidence (charge IDs, invoice, amounts in minor units with currency).
 

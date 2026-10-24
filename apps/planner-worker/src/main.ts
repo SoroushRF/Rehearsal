@@ -82,6 +82,8 @@ const ctx = {
   ctx: { world: "planning", tenant: worlds.stripe.tenant } as const,
   policy: policy as BillingPolicyV1,
   adapters: { stripe: STRIPE_CHARGE_PROJECTION, zendesk: ZENDESK_TICKET_PROJECTION },
+  // The run summary's channel (T1.7). The planner only names it; the executor posts.
+  summaryChannelId: process.env.RUN_SUMMARY_CHANNEL || undefined,
   log: (line: string) => console.log(line),
 };
 

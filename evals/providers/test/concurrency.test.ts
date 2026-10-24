@@ -64,7 +64,8 @@ describe.skipIf(!ENABLED)("independent cases applied concurrently on Era", () =>
           copy.obligationId = `obl_${k}`;
           copy.dependsOn = a.dependsOn.map((d) => `${d.replace("_001", "")}_${k}`);
           if (copy.kind === "stripe.refund.create") copy.args.chargeId = chargeOf(k);
-          else copy.args.ticketId = String(ticketOf(k));
+          else if (copy.kind !== "slack.message.postSummary")
+            copy.args.ticketId = String(ticketOf(k));
           if (copy.kind === "zendesk.ticket.appendPrivateNote") {
             copy.args.bindings.refundId = {
               $ref: "result",

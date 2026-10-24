@@ -35,6 +35,11 @@ export interface PlanningSessionOptions {
   policy: BillingPolicyV1;
   /** The incident predicate's window. Fixed by the incident, not chosen by the model. */
   window: { createdGte: string; createdLt: string };
+  /**
+   * Where the run summary goes (T1.7), chosen by the server; without it propose_run_summary
+   * refuses. The incident ID is the summary's only literal.
+   */
+  runSummary?: { channelId: string; incidentId: string };
   clock?: Clock;
 }
 
@@ -87,6 +92,11 @@ export const PLANNING_TOOLS = {
       "Propose a private note on the ticket confirming a proposed refund. The note is rendered from the approved refund-confirmed template after the refund succeeds; you don't write its text.",
     input: z.strictObject({ refundStepId: z.string().min(1), ticketId: TicketId }),
   },
+  propose_run_summary: {
+    description:
+      "Propose one Slack post to the team channel summarising the run: how many refunds went out and how many steps were held. Call it once, after every other step; it counts every step proposed so far, and no step can be proposed after it. The text is rendered from the approved run-summary template when the run finishes; you don't write it.",
+    input: z.strictObject({}),
+  },
 } as const;
 
 export type PlanningToolName = keyof typeof PLANNING_TOOLS;
@@ -110,6 +120,8 @@ export type ToolResult = { ok: true; result: unknown } | { ok: false; error: str
 class Refusal extends Error {}
 
 const NOTE_TEMPLATE = { id: "refund-confirmed", version: 1 } as const;
+const SUMMARY_TEMPLATE = { id: "run-summary", version: 1 } as const;
+const SUMMARY_ID = "run_summary";
 
 export class PlanningSession {
   readonly #opts: PlanningSessionOptions;
@@ -216,6 +228,8 @@ export class PlanningSession {
         const i = as(name);
         return this.#proposeNote(i.refundStepId, i.ticketId);
       }
+      case "propose_run_summary":
+        return this.#proposeSummary();
     }
   }
 
@@ -264,6 +278,9 @@ export class PlanningSession {
   #add(action: Action): Action {
     if (this.#actions.some((a) => a.id === action.id)) {
       throw new Refusal(`${action.id} is already proposed`);
+    }
+    if (this.#actions.some((a) => a.kind === "slack.message.postSummary")) {
+      throw new Refusal("the run summary is already proposed; it has to be the last step");
     }
     // Contracts v1 is the gate: an action that doesn't parse never enters the plan.
     const parsed = Action.parse(action);
@@ -440,6 +457,43 @@ export class PlanningSession {
         bindings: {
           refundId: { $ref: "result", stepId: refund.id, path: "refund.id" },
           amountMinor: refund.args.amount.amountMinor,
+        },
+      },
+    });
+    return summary(action);
+  }
+
+  #proposeSummary() {
+    const target = this.#opts.runSummary;
+    if (!target) throw new Refusal("no run summary channel is configured; skip the summary");
+    const steps = this.#actions.map((a) => a.id);
+    const refunds = this.#actions.filter((a) => a.kind === "stripe.refund.create").map((a) => a.id);
+    if (refunds.length === 0)
+      throw new Refusal("no refund is proposed, so there is nothing to sum up");
+    const action = this.#add({
+      id: SUMMARY_ID,
+      kind: "slack.message.postSummary",
+      caseId: "run",
+      obligationId: SUMMARY_ID,
+      // It counts every step, so it runs after all of them, held or not.
+      dependsOn: steps,
+      requiredRole: "support_lead",
+      evidence: [],
+      queryEvidence: [],
+      compensation: "irreversible",
+      protection: "no_atomic_guard",
+      rationale: `Tell ${target.channelId} how many refunds went out and how many steps were held.`,
+      args: {
+        channelId: target.channelId,
+        template: SUMMARY_TEMPLATE,
+        bindings: {
+          incidentId: target.incidentId,
+          refunded: { $count: "outcomes", stepIds: refunds, outcomes: ["confirmed"] },
+          held: {
+            $count: "outcomes",
+            stepIds: steps,
+            outcomes: ["held", "unknown_outcome", "rejected", "skipped_dependency"],
+          },
         },
       },
     });

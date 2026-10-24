@@ -23,7 +23,7 @@ export interface TenantTokenDeps {
   mint?: (world: WorldConfig, adminToken: string) => Promise<MintedToken>;
 }
 
-const MintRequest = z.object({ vendor: z.enum(["stripe", "zendesk"]) });
+const MintRequest = z.object({ vendor: z.enum(["stripe", "zendesk", "slack"]) });
 
 /** Minter config from the environment, or undefined when this API is not the operator. */
 export function tenantTokenDepsFromEnv(env = process.env): TenantTokenDeps | undefined {
@@ -62,8 +62,9 @@ export function registerTenantTokenRoute(app: FastifyInstance, deps: TenantToken
     if (!role) return reply.code(401).send({ error: "unauthorized" });
     const body = MintRequest.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: "invalid_request" });
-    const world = resolveWorld(body.data.vendor, WORKER_ROLES[role].world, deps.env);
     try {
+      // Slack is optional: an API without its URL refuses that mint like any other failure.
+      const world = resolveWorld(body.data.vendor, WORKER_ROLES[role].world, deps.env);
       return await mint(world, deps.adminToken);
     } catch (error) {
       req.log.error({ err: error, role, vendor: body.data.vendor }, "tenant token mint failed");

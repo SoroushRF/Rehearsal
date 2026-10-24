@@ -20,6 +20,8 @@ export interface PlanJobContext {
   ctx: WorldContext;
   policy: BillingPolicyV1;
   adapters: Record<string, string>;
+  /** Slack channel for the run summary (T1.7); without it the planner proposes none. */
+  summaryChannelId?: string;
   /** Hard wall-clock bound on one run, on top of the loop's turn and call limits. */
   timeoutMs?: number;
   log?: (line: string) => void;
@@ -55,6 +57,9 @@ export async function handlePlanJob(
     ctx: deps.ctx,
     policy: deps.policy,
     window: brief.window,
+    ...(deps.summaryChannelId && {
+      runSummary: { channelId: deps.summaryChannelId, incidentId: brief.incident },
+    }),
   });
   const timeoutMs = deps.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const signal = AbortSignal.timeout(timeoutMs);

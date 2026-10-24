@@ -24,6 +24,11 @@ const ENV_KEYS: Record<Vendor, Record<World, string>> = {
   slack: { planning: "ERA_SLACK_PLANNING_URL", operational: "ERA_SLACK_OPERATIONAL_URL" },
 };
 
+/** The environment variable that holds this vendor's URL in this world. */
+export function worldEnvKey(vendor: Vendor, world: World): string {
+  return ENV_KEYS[vendor][world];
+}
+
 export function resolveWorld(
   vendor: Vendor,
   world: World,

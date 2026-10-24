@@ -39,6 +39,7 @@ import type {
   SettleTransition,
   WorldContext,
 } from "./ports";
+import { summaryCountKey } from "./templates";
 
 /** What one `apply` job names. The executor trusts none of it until admission re-checks it. */
 export interface ApplyJobInput {
@@ -184,7 +185,15 @@ export interface RunOutcome {
 const RESULT_PATHS: ReadonlySet<string> = new Set(ResultPath.options);
 
 export function vendorOf(action: Action): Vendor {
-  return action.kind.startsWith("stripe.") ? "stripe" : "zendesk";
+  if (action.kind.startsWith("stripe.")) return "stripe";
+  return action.kind.startsWith("slack.") ? "slack" : "zendesk";
+}
+
+type SummaryStep = Extract<Action, { kind: "slack.message.postSummary" }>;
+
+/** A run summary: it runs after every other step has settled and counts their outcomes. */
+export function isSummary(action: Action): action is SummaryStep {
+  return action.kind === "slack.message.postSummary";
 }
 
 function targetOf(action: Action): EntityRef {
@@ -194,6 +203,8 @@ function targetOf(action: Action): EntityRef {
     case "zendesk.ticket.patchFields":
     case "zendesk.ticket.appendPrivateNote":
       return { vendor: "zendesk", kind: "ticket", id: action.args.ticketId };
+    case "slack.message.postSummary":
+      return { vendor: "slack", kind: "channel", id: action.args.channelId };
   }
 }
 
@@ -248,6 +259,15 @@ function resultsOf(
       providerRef: { vendor: "stripe", kind: "refund", id: b.id },
       results,
       observed,
+    };
+  }
+  if (isSummary(action)) {
+    const b = body as { ok?: unknown; ts?: unknown; channel?: unknown } | null;
+    if (b?.ok !== true || typeof b.ts !== "string") throw new Error("Slack response has no ts");
+    return {
+      providerRef: { vendor: "slack", kind: "message", id: b.ts },
+      results: {},
+      observed: { "message.ts": b.ts, channel: b.channel },
     };
   }
   const ticket = (body as { ticket?: Record<string, unknown> } | null)?.ticket;
@@ -388,6 +408,15 @@ async function admit(
         detail: `${vendor} is configured for the ${ctx.world} world, not operational`,
       };
     }
+  }
+
+  // Every vendor the plan writes to must be wired, or the run would stop halfway (say, a summary
+  // with no Slack provider after the refunds went out).
+  const unwired = [...new Set(manifest.actions.map(vendorOf))].filter(
+    (v) => !deps.providers[v] || !deps.worlds[v],
+  );
+  if (unwired.length > 0) {
+    return { ok: false, detail: `no operational provider for ${unwired.join(", ")}` };
   }
 
   if (readOnly) return { ok: true, manifest, grant };
@@ -1139,6 +1168,17 @@ async function applyLocked(
     }
   };
 
+  /** Each outcome count of a summary, from this run's settled outcomes of the steps it lists. */
+  const summaryCounts = (action: SummaryStep): [string, number][] =>
+    Object.entries(action.args.bindings).flatMap(([name, b]): [string, number][] => {
+      if (typeof b !== "object") return [];
+      const counted = b.stepIds.filter((id) => {
+        const outcome = settled.get(id);
+        return outcome !== undefined && b.outcomes.includes(outcome);
+      });
+      return [[summaryCountKey(name), counted.length]];
+    });
+
   /**
    * `recoveryFor` names an undone predecessor this action depends on: the action may only have its
    * earlier send recorded (confirmed by a read, or held), never a new one.
@@ -1164,9 +1204,13 @@ async function applyLocked(
 
     const refs = resultRefsOf(action);
     const unresolved = refs.find((r) => !bindings.has(bindingKey(r)));
-    const resolved: ResolvedBindings = new Map(
-      refs.map((r) => [bindingKey(r), bindings.get(bindingKey(r)) as string | number]),
-    );
+    const resolved: ResolvedBindings = new Map([
+      ...refs.map((r): [string, string | number] => [
+        bindingKey(r),
+        bindings.get(bindingKey(r)) as string | number,
+      ]),
+      ...(isSummary(action) ? summaryCounts(action) : []),
+    ]);
 
     /** The request this step would send, given these preconditions. */
     const prepareWith = (pre: Preconditions) => {
@@ -1178,6 +1222,9 @@ async function applyLocked(
      * Our own writes move values like Zendesk's updated_stamp, so a fresh read can't be compared.
      */
     const sameContent = (a: Attempt) => {
+      // Under one plan hash a summary's template and literals are fixed; only its counts can
+      // differ, and they are what that send counted then. It is the same post.
+      if (isSummary(action) && a.planHash === job.planHash) return true;
       try {
         const { req, sha } = prepareWith(provider.preconditionsOf?.(a.request) ?? {});
         return sameRequest(a, req, sha);
@@ -1673,7 +1720,10 @@ async function applyLocked(
 
   /** One action, with the dependency, cancel and error handling every case shares. */
   async function runAction(action: Action): Promise<"next" | "stop"> {
-    const blocked = action.dependsOn.find((d) => settled.get(d) !== "confirmed");
+    // A summary counts what happened to its steps, so any settled outcome lets it run.
+    const ready = (d: string) =>
+      isSummary(action) ? settled.has(d) : settled.get(d) === "confirmed";
+    const blocked = action.dependsOn.find((d) => !ready(d));
     try {
       if (reconcileOnly) {
         // Only steps with an earlier send in flight have anything to resolve.
@@ -1682,9 +1732,7 @@ async function applyLocked(
       }
       if (await checkCancelled(`step ${action.id}`)) return "stop";
       // An action already sent keeps its own record even if a predecessor was undone since.
-      const onlyUndone = action.dependsOn
-        .filter((d) => settled.get(d) !== "confirmed")
-        .every((d) => compensated.has(d));
+      const onlyUndone = action.dependsOn.filter((d) => !ready(d)).every((d) => compensated.has(d));
       const recovering = blocked !== undefined && onlyUndone && (await alreadySent(action));
       if (blocked && !recovering) {
         await settle(
@@ -1715,8 +1763,10 @@ async function applyLocked(
   // Each group runs its actions in order; up to `caseConcurrency` groups run at once.
   const requested = deps.caseConcurrency ?? 1;
   const width = Number.isFinite(requested) ? Math.floor(requested) : 1;
+  // Summaries run after the lanes and compensation, so they never join or hold up a case.
+  const steps = manifest.actions.filter((a) => !isSummary(a));
   // One at a time keeps the exact global topological order; otherwise independent groups.
-  const groups = width <= 1 ? [topoOrder(manifest.actions)] : caseGroups(manifest);
+  const groups = width <= 1 ? [topoOrder(steps)] : caseGroups({ ...manifest, actions: steps });
   const limit = Math.max(1, Math.min(width, groups.length));
   let nextGroup = 0;
   const lane = async () => {
@@ -1752,6 +1802,14 @@ async function applyLocked(
     } catch (err) {
       error = `compensation: ${(err as Error).message}`;
       await journal.appendEvent(job.runId, "step.error", { error }).catch(() => {});
+    }
+  }
+
+  // Last, once every step (and any undo) has settled: each summary reports what really happened.
+  // A cancelled or failed run posts none; a read-only pass only resolves an earlier post.
+  if (reconcileOnly || (!cancelled && !stopped && error === null)) {
+    for (const action of topoOrder(manifest.actions).filter(isSummary)) {
+      if ((await runAction(action)) === "stop") break;
     }
   }
 
