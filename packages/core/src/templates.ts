@@ -45,3 +45,48 @@ export function noteBodyFor(
   }
   return renderNote(action.args.template, values, operationKey);
 }
+
+/**
+ * Public customer replies (T3.11). The plan carries the rendered `body` with its template and
+ * values; it is rendered again here and must match byte for byte, so only approved template text
+ * reaches a customer, never model text. The operation marker follows the body.
+ */
+const REPLY_TEMPLATES: Record<string, (v: Readonly<Record<string, string | number>>) => string> = {
+  "refund-issued@1": (v) =>
+    `Hi ${v.customerName},\n\nWe've refunded ${formatCad(Number(v.amountMinor))} for the duplicate charge on your account. Sorry for the trouble.`,
+};
+
+/**
+ * What sending needs of a `zendesk.ticket.appendPublicReply` action (contracts'
+ * `ZendeskTicketAppendPublicReply`; not in `Action` until T1.13 adds it).
+ */
+export interface ReplyAction {
+  id: string;
+  kind: "zendesk.ticket.appendPublicReply";
+  args: {
+    ticketId: string;
+    public: true;
+    template: { id: string; version: number };
+    values: Record<string, string | number>;
+    body: string;
+  };
+}
+
+/** The approved reply text, after checking it is exactly what its template renders. */
+export function replyBodyFor(action: ReplyAction): string {
+  const key = `${action.args.template.id}@${action.args.template.version}`;
+  const render = REPLY_TEMPLATES[key];
+  if (!render) throw new Error(`unknown reply template ${key}`);
+  if (render(action.args.values) !== action.args.body) {
+    throw new Error(`reply body doesn't match its approved template ${key}`);
+  }
+  if (action.args.body.includes(OPERATION_MARKER_PREFIX)) {
+    throw new Error("reply body must not contain an operation marker");
+  }
+  return action.args.body;
+}
+
+/** The exact comment a public reply sends: the approved body, then the operation marker. */
+export function replyCommentFor(action: ReplyAction, operationKey: string): string {
+  return `${replyBodyFor(action)}\n\n${operationMarker(operationKey)}`;
+}
