@@ -9,16 +9,19 @@ import { Alert, Card } from "./components/ui";
 import { type FixtureBundle, fixtureBundles } from "./fixtures";
 import { humanize } from "./format";
 import { IdentityScope, identityOf } from "./identity";
+import { Landing } from "./landing/Landing";
 import { replayParam } from "./replay";
+import { routeFor } from "./route";
 
 /**
  * Review UI (T2). A signed-in reviewer with an organization reviews that org's stored plans
  * through the API; everyone else sees the shared fixture bundles, read-only.
  */
 export function App({ bundles = fixtureBundles }: { bundles?: FixtureBundle[] }) {
-  // `?replay=<id>` opens a saved run: public, read-only, no sign-in and no API.
-  const replay = replayParam(window.location.search);
-  if (replay !== null) return <ReplayPage id={replay} />;
+  // The landing page and saved runs are public and static: no sign-in and no API.
+  const route = routeFor(window.location.pathname, window.location.search);
+  if (route === "landing") return <Landing />;
+  if (route === "replay") return <ReplayPage id={replayParam(window.location.search) ?? ""} />;
   return (
     <AppShell account={<AccountBar />}>
       {clerkKey ? <SignedInOrFixtures bundles={bundles} /> : <FixturePlans bundles={bundles} />}

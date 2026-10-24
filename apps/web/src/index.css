@@ -200,6 +200,13 @@ body {
   animation: spin 0.9s linear infinite;
 }
 
+/* In-page links glide, unless the reader has asked for less motion. */
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .skeleton,
   .enter,
