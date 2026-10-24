@@ -19,7 +19,17 @@ export interface BillingPolicyV2 extends Omit<BillingPolicyV1, "version"> {
   creditMaxMinor: number;
 }
 
-export type BillingPolicy = BillingPolicyV1 | BillingPolicyV2;
+/**
+ * Adds two approvers for large amounts (decision 0011): a refund or credit at or above
+ * `dualApprovalMinor` needs live grants from two different users, one `support_lead` and one
+ * `finance_lead`.
+ */
+export interface BillingPolicyV3 extends Omit<BillingPolicyV2, "version"> {
+  version: 3;
+  dualApprovalMinor: number;
+}
+
+export type BillingPolicy = BillingPolicyV1 | BillingPolicyV2 | BillingPolicyV3;
 
 /**
  * A step policy can judge. The balance credit isn't in `Action` yet (T1.14 adds it once this policy
@@ -47,6 +57,8 @@ export interface PolicyViolation {
 export interface PolicyResult {
   violations: PolicyViolation[];
   requiredRoles: Set<Role>;
+  /** Steps that need two distinct approvers under this policy. Empty for v1 and v2. */
+  dualApproval: string[];
 }
 
 /** The money-back steps. Exactly one may settle an obligation. */
@@ -64,7 +76,9 @@ export function evaluateBillingPolicy(
   const violations: PolicyViolation[] = [];
   const requiredRoles = new Set<Role>();
   const remedyByObligation = new Map<string, string>();
-  const creditMax = policy.version === 2 ? policy.creditMaxMinor : null;
+  const dualApproval: string[] = [];
+  const creditMax = "creditMaxMinor" in policy ? policy.creditMaxMinor : null;
+  const dualMin = policy.version === 3 ? policy.dualApprovalMinor : null;
 
   for (const a of manifest.actions) {
     requiredRoles.add(a.requiredRole);
@@ -119,6 +133,8 @@ export function evaluateBillingPolicy(
       });
     }
 
+    if (dualMin !== null && amount.amountMinor >= dualMin) dualApproval.push(a.id);
+
     if (amount.amountMinor >= policy.financeThresholdMinor && a.requiredRole !== "finance_lead") {
       violations.push({
         rule: "R3.finance_threshold",
@@ -127,5 +143,5 @@ export function evaluateBillingPolicy(
       });
     }
   }
-  return { violations, requiredRoles };
+  return { violations, requiredRoles, dualApproval };
 }

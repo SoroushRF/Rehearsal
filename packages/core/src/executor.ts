@@ -15,6 +15,12 @@ import {
   ZendeskPriority,
   ZendeskStatus,
 } from "@rehearsal/contracts";
+import {
+  dualApprovalStatus,
+  explainShortfall,
+  liveGrantsFor,
+  requiresDualApproval,
+} from "./approvals";
 import { bindingKey } from "./bindings";
 import { topoOrder, validateGraph } from "./dag";
 import { refundEffectMatches } from "./effects";
@@ -59,6 +65,11 @@ export interface ApplyStore {
     revision: number,
   ): Promise<{ planHash: string; manifest: unknown } | null>;
   loadGrant(orgId: string, approvalId: string): Promise<ApprovalGrant | null>;
+  /**
+   * Every grant ever made for this plan hash, live or not; admission filters. Needed only for a
+   * plan that policy says needs two approvers. A store without it refuses such a plan.
+   */
+  loadGrantsForPlanHash?(orgId: string, planHash: string): Promise<ApprovalGrant[]>;
   /**
    * Exclusive apply lock for one plan (all its revisions). Returns a release function, or null if
    * another run of this plan holds it. Two revisions applying at once could both send one key.
@@ -388,10 +399,24 @@ async function admit(
   }
   if (grantedAt > now) return { ok: false, detail: "grant is dated in the future" };
   if (expiresAt <= now) return { ok: false, detail: "grant expired" };
-  const missing = [...new Set(manifest.actions.map((a) => a.requiredRole))].filter(
-    (r) => !grant.roles.includes(r),
-  );
-  if (missing.length > 0) return { ok: false, detail: `grant lacks roles: ${missing.join(", ")}` };
+  if (requiresDualApproval(manifest, deps.policies)) {
+    // Two live grants from two different users replace the single grant holding every role.
+    if (!deps.store.loadGrantsForPlanHash) {
+      return { ok: false, detail: "this plan needs two approvers and the store can't list grants" };
+    }
+    const all = await deps.store.loadGrantsForPlanHash(job.orgId, job.planHash);
+    const status = dualApprovalStatus(
+      liveGrantsFor(all, { ...manifest, planHash: job.planHash }, deps.clock.now()),
+    );
+    if (!status.satisfied) return { ok: false, detail: explainShortfall(status) };
+  } else {
+    const missing = [...new Set(manifest.actions.map((a) => a.requiredRole))].filter(
+      (r) => !grant.roles.includes(r),
+    );
+    if (missing.length > 0) {
+      return { ok: false, detail: `grant lacks roles: ${missing.join(", ")}` };
+    }
+  }
 
   const graph = validateGraph(manifest.actions);
   if (graph.length > 0) return { ok: false, detail: `invalid graph: ${graph[0]?.detail}` };

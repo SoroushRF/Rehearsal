@@ -167,6 +167,9 @@ export class MemoryApplyStore implements ApplyStore {
   async loadGrant(_orgId: string, approvalId: string) {
     return this.grants.get(approvalId) ?? null;
   }
+  async loadGrantsForPlanHash(_orgId: string, planHash: string) {
+    return [...this.grants.values()].filter((g) => g.planHash === planHash);
+  }
   /** Run IDs a test has cancelled. */
   readonly cancelled = new Set<string>();
   async runCancelled(_orgId: string, runId: string) {

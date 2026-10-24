@@ -1,3 +1,4 @@
+export * from "./approvals";
 export * from "./bindings";
 export * from "./canonical";
 export * from "./compensation";

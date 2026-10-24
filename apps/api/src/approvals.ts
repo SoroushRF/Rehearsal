@@ -1,11 +1,18 @@
 import { randomUUID } from "node:crypto";
 import { ApprovalGrant, ApproveRequest } from "@rehearsal/contracts";
-import { type BillingPolicy, evaluateBillingPolicy, validateGraph } from "@rehearsal/core";
-import { type Db, schema } from "@rehearsal/db";
+import {
+  type ApprovalStatus,
+  approvalStatus,
+  type BillingPolicy,
+  evaluateBillingPolicy,
+  requiresDualApproval,
+  validateGraph,
+} from "@rehearsal/core";
+import { type Db, schema, toApprovalGrant } from "@rehearsal/db";
 import { and, desc, eq, gt, isNull, lte } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import type { ReviewerResolver } from "./auth";
-import { loadPlan, type Outcome } from "./plans";
+import { loadPlan, type Outcome, type StoredPlan, type Tx } from "./plans";
 
 const { approvalGrants } = schema;
 
@@ -29,6 +36,25 @@ function toGrant(row: GrantRow): ApprovalGrant {
     expiresAt: row.expiresAt.toISOString(),
     revokedAt: row.revokedAt?.toISOString() ?? null,
   });
+}
+
+/** Who has signed which seat, and which is open, from the stored grants for this exact hash. */
+async function statusFor(
+  db: Db | Tx,
+  deps: ApprovalDeps,
+  plan: StoredPlan,
+  at: Date,
+): Promise<ApprovalStatus> {
+  const rows = await db
+    .select()
+    .from(approvalGrants)
+    .where(
+      and(
+        eq(approvalGrants.orgId, plan.manifest.orgId),
+        eq(approvalGrants.planHash, plan.planHash),
+      ),
+    );
+  return approvalStatus(plan.manifest, plan.planHash, deps.policies, rows.map(toApprovalGrant), at);
 }
 
 /**
@@ -79,10 +105,14 @@ export function registerApprovalRoutes(app: FastifyInstance, deps: ApprovalDeps)
         }
       }
 
-      const required = [...new Set(plan.manifest.actions.map((a) => a.requiredRole))];
-      const missing = required.filter((r) => !me.roles.includes(r));
-      if (missing.length > 0) {
-        return [403, { error: "missing_roles", missing, held: me.roles }];
+      // Where policy asks for two approvers (decision 0011) each signs for their own seat, so a
+      // member holding either role may sign; admission then needs two different people.
+      if (!requiresDualApproval(plan.manifest, deps.policies)) {
+        const required = [...new Set(plan.manifest.actions.map((a) => a.requiredRole))];
+        const missing = required.filter((r) => !me.roles.includes(r));
+        if (missing.length > 0) {
+          return [403, { error: "missing_roles", missing, held: me.roles }];
+        }
       }
 
       const at = now();
@@ -102,7 +132,10 @@ export function registerApprovalRoutes(app: FastifyInstance, deps: ApprovalDeps)
         )
         .orderBy(desc(approvalGrants.grantedAt))
         .limit(1);
-      if (live) return [200, { grant: toGrant(live), existing: true }];
+      if (live) {
+        const approval = await statusFor(tx, deps, plan, at);
+        return [200, { grant: toGrant(live), existing: true, approval }];
+      }
 
       const grant = ApprovalGrant.parse({
         id: `grant_${randomUUID()}`,
@@ -123,7 +156,8 @@ export function registerApprovalRoutes(app: FastifyInstance, deps: ApprovalDeps)
         expiresAt: new Date(grant.expiresAt),
         revokedAt: null,
       });
-      return [201, { grant, existing: false }];
+      const approval = await statusFor(tx, deps, plan, at);
+      return [201, { grant, existing: false, approval }];
     });
     return reply.code(out[0]).send(out[1]);
   });
@@ -137,11 +171,16 @@ export function registerApprovalRoutes(app: FastifyInstance, deps: ApprovalDeps)
       .where(and(eq(approvalGrants.orgId, me.orgId), eq(approvalGrants.planId, req.params.id)))
       .orderBy(desc(approvalGrants.grantedAt));
     const at = now().getTime();
+    // For the newest revision: is a second approver asked for, and who has signed which seat.
+    const loaded = await loadPlan(deps.db, me.orgId, req.params.id);
+    const approval =
+      loaded.kind === "found" ? await statusFor(deps.db, deps, loaded.plan, now()) : null;
     return {
       grants: rows.map((r) => ({
         ...toGrant(r),
         live: r.revokedAt === null && r.grantedAt.getTime() <= at && r.expiresAt.getTime() > at,
       })),
+      approval,
     };
   });
 
