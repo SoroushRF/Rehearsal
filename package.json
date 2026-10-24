@@ -30,6 +30,7 @@
     "smoke:era": "tsx --env-file-if-exists=.env scripts/smoke/era-meta.ts",
     "blockers": "node scripts/blockers/generate.ts",
     "smoke:apply": "tsx --env-file-if-exists=.env scripts/smoke/apply-e2e.ts",
+    "stripe:sandbox": "tsx scripts/stripe-sandbox/main.ts",
     "eval:scorecard": "tsx --env-file-if-exists=.env evals/scorecard/src/main.ts"
   },
   "devDependencies": {

@@ -26,6 +26,15 @@ export interface ReadTarget {
   maxPages?: number;
   /** Per-request timeout. Unset, a request waits as long as the world takes. */
   timeoutMs?: number;
+  /**
+   * `native` reads a real Stripe test-mode account (T1.24): plain HTTPS to `config.baseUrl`, with
+   * no Era tenant header. Default `era`. Only operator conformance checks use it.
+   */
+  transport?: "era" | "native";
+  /** Extra request headers, e.g. a pinned `Stripe-Version` for a native read. */
+  headers?: Record<string, string>;
+  /** The fetch a native read uses (tests stand in for Stripe). Defaults to the global one. */
+  fetch?: typeof fetch;
 }
 
 export const STRIPE_CHARGE_PROJECTION = "stripe.charge.v2";
@@ -90,10 +99,14 @@ function assertTarget(target: ReadTarget, ctx: WorldContext) {
 }
 
 async function getJson(target: ReadTarget, path: string): Promise<Record<string, unknown>> {
-  const res = await eraFetch(target.config, path, {
-    headers: { authorization: target.authorization },
+  const init: RequestInit = {
+    headers: { ...target.headers, authorization: target.authorization },
     ...(target.timeoutMs !== undefined && { signal: AbortSignal.timeout(target.timeoutMs) }),
-  });
+  };
+  const res =
+    target.transport === "native"
+      ? await (target.fetch ?? fetch)(`${target.config.baseUrl}${path}`, init)
+      : await eraFetch(target.config, path, init);
   if (!res.ok) throw new Error(`GET ${path} → ${res.status}`);
   return (await res.json()) as Record<string, unknown>;
 }
