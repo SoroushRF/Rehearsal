@@ -148,6 +148,76 @@ describe("stripeReader", () => {
     expect(q).toMatchObject({ complete: false, matchingIds: ["ch_a", "ch_b"] });
   });
 
+  it("lists negative adjustments as credits and keeps a named charge", async () => {
+    serve({
+      data: [
+        {
+          id: "cbtxn_1",
+          amount: -4210,
+          currency: "cad",
+          type: "adjustment",
+          metadata: { charge: CHARGE },
+        },
+        {
+          id: "cbtxn_fee",
+          amount: 100,
+          currency: "cad",
+          type: "adjustment",
+          metadata: null,
+        },
+      ],
+      has_more: false,
+    });
+    const obs = await stripeReader(target()).observe(
+      { vendor: "stripe", kind: "customer_balance_transactions", id: CUSTOMER },
+      ctx,
+    );
+    expect(obs.projection).toEqual({
+      complete: true,
+      credits: [{ id: "cbtxn_1", amountMinor: 4210, currency: "cad", chargeId: CHARGE }],
+    });
+  });
+
+  it("does not treat a non-integer credit amount as absent", async () => {
+    serve({
+      data: [
+        {
+          id: "cbtxn_1",
+          amount: -42.1,
+          currency: "cad",
+          type: "adjustment",
+          metadata: { charge: CHARGE },
+        },
+      ],
+      has_more: false,
+    });
+    const obs = await stripeReader(target()).observe(
+      { vendor: "stripe", kind: "customer_balance_transactions", id: CUSTOMER },
+      ctx,
+    );
+    expect(obs.projection).toMatchObject({ complete: false });
+  });
+
+  it("does not treat a truncated credit list as empty", async () => {
+    serve({
+      data: [
+        {
+          id: "cbtxn_1",
+          amount: -100,
+          currency: "cad",
+          type: "adjustment",
+          metadata: {},
+        },
+      ],
+      has_more: true,
+    });
+    const obs = await stripeReader(target({ maxPages: 1 })).observe(
+      { vendor: "stripe", kind: "customer_balance_transactions", id: CUSTOMER },
+      ctx,
+    );
+    expect(obs.projection).toMatchObject({ complete: false });
+  });
+
   it("refuses a context for another world or tenant", async () => {
     await expect(
       stripeReader(target()).observe(

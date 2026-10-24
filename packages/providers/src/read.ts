@@ -50,6 +50,18 @@ const TicketRecord = z.object({
   external_id: z.string().nullable(),
 });
 const ChargePage = z.object({ data: z.array(ChargeRecord), has_more: z.boolean() });
+const BalanceCreditPage = z.object({
+  data: z.array(
+    z.object({
+      id: z.string(),
+      amount: z.number(),
+      currency: z.string(),
+      type: z.string(),
+      metadata: z.record(z.string(), z.string()).nullable().optional(),
+    }),
+  ),
+  has_more: z.boolean(),
+});
 const TicketPage = z.object({
   tickets: z.array(TicketRecord),
   next_page: z.string().min(1).nullable(),
@@ -153,6 +165,10 @@ export function stripeReader(target: ReadTarget): ProviderReader {
     vendor: "stripe",
     async observe(entity, ctx) {
       assertTarget(target, ctx);
+      if (entity.vendor === "stripe" && entity.kind === "customer_balance_transactions") {
+        const listed = await listBalanceCredits(target, entity.id);
+        return observation(target, entity, "stripe.balance_credit.v1", listed);
+      }
       if (entity.vendor !== "stripe" || entity.kind !== "charge") {
         throw new Error(`stripe can't observe ${entity.vendor}.${entity.kind}`);
       }
@@ -224,6 +240,69 @@ export function stripeReader(target: ReadTarget): ProviderReader {
       );
     },
   };
+}
+
+/**
+ * Every negative adjustment on the customer's balance: an invoice credit. `complete` is false when
+ * a page is missing, repeated, or the page cap is hit. That is not proof that no credit exists.
+ * A credit names its charge only through `metadata.charge` or `metadata.charge_id`.
+ */
+async function listBalanceCredits(
+  target: ReadTarget,
+  customerId: string,
+): Promise<Record<string, unknown>> {
+  const credits: {
+    id: string;
+    amountMinor: number;
+    currency: string;
+    chargeId: string | null;
+  }[] = [];
+  let after: string | undefined;
+  const seen = new Set<string>();
+  for (let page = 0; page < (target.maxPages ?? 50); page++) {
+    const params = new URLSearchParams({ limit: String(target.pageSize ?? 100) });
+    if (after) params.set("starting_after", after);
+    let body: Record<string, unknown>;
+    try {
+      body = await getJson(
+        target,
+        `/v1/customers/${encodeURIComponent(customerId)}/balance_transactions?${params}`,
+      );
+    } catch {
+      return { complete: false, credits };
+    }
+    const parsed = BalanceCreditPage.safeParse(body);
+    if (!parsed.success) return { complete: false, credits };
+    const { data, has_more } = parsed.data;
+    if (
+      data.some((item) => seen.has(item.id)) ||
+      new Set(data.map((item) => item.id)).size !== data.length
+    ) {
+      return { complete: false, credits };
+    }
+    for (const item of data) {
+      seen.add(item.id);
+      if (item.type !== "adjustment") continue;
+      // A float, a blank id, or a currency we cannot match is not proof that no credit exists.
+      const currency = item.currency.toLowerCase();
+      if (item.id.length === 0 || !Number.isInteger(item.amount) || !/^[a-z]{3}$/.test(currency)) {
+        return { complete: false, credits };
+      }
+      if (item.amount >= 0) continue;
+      const named = item.metadata?.charge ?? item.metadata?.charge_id ?? "";
+      credits.push({
+        id: item.id,
+        amountMinor: -item.amount,
+        currency,
+        chargeId: named.length > 0 ? named : null,
+      });
+    }
+    if (!has_more) return { complete: true, credits };
+    const last = data.at(-1)?.id;
+    if (!last || last === after) return { complete: false, credits };
+    after = last;
+  }
+  return { complete: false, credits };
 }
 
 /**

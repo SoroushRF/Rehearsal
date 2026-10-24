@@ -35,7 +35,7 @@
 | T4.5 | ML smoke test: Qwen3.5-0.8B LoRA on 32 cases, weights change, save and reload, peak memory measured (Python 3.12, CUDA 12.7-compatible wheels) | M1 | Smoke log + adapter hash in `ml/manifests/` | #29 | — |
 | T4.6 | ML pilot: labels from replay bundles plus perturbations; base vs. tuned vs. rules vs. Claude zero-shot; go/no-go | M2–M3 | Report in `evals/impact/`; decision recorded | #30 | T4.5 |
 | T4.7 | _If go:_ impact service behind `ImpactPort` (timeout → abstain), advisory only | M4 | Integration test: model absent or failing → same execution | #31 | T4.6 |
-| T4.10 | _Full scope:_ guard: one remedy per obligation across refunds and credits | full scope | A second remedy for the same obligation is held, including a teammate's; distinct obligations pass; Era test | #152 | T1.19 |
+| T4.10 | _Full scope:_ guard: one remedy per obligation across refunds and credits | full scope | A second remedy for the same obligation is held, including a teammate's; distinct obligations pass. Fixture: `apps/executor-worker/test/one-remedy.test.ts`. Era test written, not run: `evals/providers/test/one-remedy.test.ts` | #152 | T1.19 |
 
 ## Decisions
 
@@ -44,6 +44,12 @@
 ## Handoff log
 
 _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
+
+### 2026-10-24, T4.10 one remedy per obligation
+
+- **A refund is held when that obligation already has a remedy.** The step guard lists the customer's balance credits after the usual re-read. A credit that names the charge, or an untagged credit of the same amount and currency, holds the refund as `R5.remedy_already_completed`. A credit for another charge does not. A second refund of an obligation this plan already confirmed is held the same way. A credit step is held when its charge already has a refund (`readRemedyHold`); the credit op is still not in `Action`, so that direction is not sent by `executeRun`.
+- **Evidence.** Fixture: `apps/executor-worker/test/one-remedy.test.ts`. Era: `evals/providers/test/one-remedy.test.ts`, gated on `ERA_CONFORMANCE=1`. The Era run was not executed in this session.
+- **Next.** T4.11 once T1.21's rehearsal contracts exist. Scenario files can be drafted before that.
 
 ### 2026-10-23, compensation follow-ups #103 and #109
 
