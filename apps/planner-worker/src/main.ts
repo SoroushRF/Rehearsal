@@ -84,6 +84,8 @@ const ctx = {
   adapters: { stripe: STRIPE_CHARGE_PROJECTION, zendesk: ZENDESK_TICKET_PROJECTION },
   // The run summary's channel (T1.7). The planner only names it; the executor posts.
   summaryChannelId: process.env.RUN_SUMMARY_CHANNEL || undefined,
+  // Public replies to customers (T1.13). Off unless CUSTOMER_REPLIES=1.
+  customerReplies: process.env.CUSTOMER_REPLIES === "1",
   log: (line: string) => console.log(line),
 };
 

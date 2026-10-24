@@ -294,9 +294,11 @@ function stampIn(body: string): Preconditions {
 /**
  * Zendesk ticket writes over REST. A field patch is guarded with `safe_update` + the
  * `updated_stamp` read just before (a native guard with a documented 1-second limit). A private
- * note always sends `public: false` explicitly, because REST defaults comments to public.
+ * note always sends `public: false` explicitly, because REST defaults comments to public. A public
+ * reply goes through `zendeskReplyWriter`.
  */
 export function zendeskWriter(target: WriteTarget): ProviderWriter {
+  const replies = zendeskReplyWriter(target);
   return {
     vendor: "zendesk",
     async preconditions(action: Action, ctx: WorldContext): Promise<Preconditions> {
@@ -347,6 +349,9 @@ export function zendeskWriter(target: WriteTarget): ProviderWriter {
           headers: {},
         };
       }
+      if (action.kind === "zendesk.ticket.appendPublicReply") {
+        return replies.prepare(action, operationKey);
+      }
       throw new Error(`zendesk can't ${action.kind}`);
     },
     async dispatch(req: PreparedRequest, ctx: WorldContext) {
@@ -357,6 +362,9 @@ export function zendeskWriter(target: WriteTarget): ProviderWriter {
       assertTarget(target, ctx);
       if (action.kind === "stripe.refund.create" || action.kind === "slack.message.postSummary") {
         throw new Error(`zendesk can't ${action.kind}`);
+      }
+      if (action.kind === "zendesk.ticket.appendPublicReply") {
+        return replies.reconcile(attempt, action, ctx);
       }
       const ref = { vendor: "zendesk", kind: "ticket", id: action.args.ticketId } as const;
       if (action.kind === "zendesk.ticket.appendPrivateNote") {
@@ -398,7 +406,7 @@ export function zendeskWriter(target: WriteTarget): ProviderWriter {
   };
 }
 
-/** The write side of `zendesk.ticket.appendPublicReply` (T3.11); `executeRun` takes it once T1.13 adds the op. */
+/** The write side of `zendesk.ticket.appendPublicReply` (T3.11); `zendeskWriter` routes replies here. */
 export interface ZendeskReplyWriter {
   vendor: "zendesk";
   prepare(action: ReplyAction, operationKey: string): PreparedRequest;

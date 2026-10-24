@@ -13,6 +13,7 @@ import {
   type Clock,
   fingerprint,
   type ProviderPort,
+  renderReply,
   type WorldContext,
 } from "@rehearsal/core";
 import { z } from "zod";
@@ -40,6 +41,12 @@ export interface PlanningSessionOptions {
    * refuses. The incident ID is the summary's only literal.
    */
   runSummary?: { channelId: string; incidentId: string };
+  /**
+   * Customers' names from the incident report, by Stripe customer ID, for public replies (T1.13).
+   * The server turns replies on by passing them; without a name propose_customer_reply refuses.
+   * The name is the reply's only text that isn't the template's, and it never comes from the model.
+   */
+  customerNames?: Readonly<Record<string, string>>;
   clock?: Clock;
 }
 
@@ -92,6 +99,11 @@ export const PLANNING_TOOLS = {
       "Propose a private note on the ticket confirming a proposed refund. The note is rendered from the approved refund-confirmed template after the refund succeeds; you don't write its text.",
     input: z.strictObject({ refundStepId: z.string().min(1), ticketId: TicketId }),
   },
+  propose_customer_reply: {
+    description:
+      "Propose a public reply on the customer's ticket telling them a proposed refund went out. The customer reads it. The text is the approved refund-issued template filled with their name from the incident report and the refund amount; you don't write it, and the reviewer approves the exact text. It's sent only after the refund succeeds.",
+    input: z.strictObject({ refundStepId: z.string().min(1), ticketId: TicketId }),
+  },
   propose_run_summary: {
     description:
       "Propose one Slack post to the team channel summarising the run: how many refunds went out and how many steps were held. Call it once, after every other step; it counts every step proposed so far, and no step can be proposed after it. The text is rendered from the approved run-summary template when the run finishes; you don't write it.",
@@ -120,6 +132,7 @@ export type ToolResult = { ok: true; result: unknown } | { ok: false; error: str
 class Refusal extends Error {}
 
 const NOTE_TEMPLATE = { id: "refund-confirmed", version: 1 } as const;
+const REPLY_TEMPLATE = { id: "refund-issued", version: 1 } as const;
 const SUMMARY_TEMPLATE = { id: "run-summary", version: 1 } as const;
 const SUMMARY_ID = "run_summary";
 
@@ -227,6 +240,10 @@ export class PlanningSession {
       case "propose_refund_note": {
         const i = as(name);
         return this.#proposeNote(i.refundStepId, i.ticketId);
+      }
+      case "propose_customer_reply": {
+        const i = as(name);
+        return this.#proposeReply(i.refundStepId, i.ticketId);
       }
       case "propose_run_summary":
         return this.#proposeSummary();
@@ -423,20 +440,8 @@ export class PlanningSession {
   }
 
   async #proposeNote(refundStepId: string, ticketId: string) {
-    const refund = this.#actions.find((a) => a.id === refundStepId);
-    if (refund?.kind !== "stripe.refund.create") {
-      throw new Refusal(`${refundStepId} is not a proposed refund`);
-    }
-    const charge = this.observations.find(
-      (o) =>
-        refund.evidence.includes(o.id) &&
-        o.entity.vendor === "stripe" &&
-        o.entity.id === refund.args.chargeId,
-    );
-    if (typeof charge?.projection.customer !== "string") {
-      throw new Refusal("refund customer evidence is missing");
-    }
-    const ticket = await this.#ticketForCustomer(ticketId, charge.projection.customer);
+    const { refund, customer } = this.#refundOf(refundStepId);
+    const ticket = await this.#ticketForCustomer(ticketId, customer);
     const action = this.#add({
       id: `note_${refundStepId}`,
       kind: "zendesk.ticket.appendPrivateNote",
@@ -461,6 +466,56 @@ export class PlanningSession {
       },
     });
     return summary(action);
+  }
+
+  async #proposeReply(refundStepId: string, ticketId: string) {
+    const { refund, customer } = this.#refundOf(refundStepId);
+    const name = this.#opts.customerNames?.[customer];
+    if (name === undefined) {
+      throw new Refusal(`customer replies aren't enabled for ${customer}; leave the reply out`);
+    }
+    const ticket = await this.#ticketForCustomer(ticketId, customer);
+    const values = { customerName: name, amountMinor: refund.args.amount.amountMinor };
+    let body: string;
+    try {
+      body = renderReply(REPLY_TEMPLATE, values);
+    } catch (err) {
+      throw new Refusal(`can't render the reply for ${customer}: ${(err as Error).message}`);
+    }
+    const action = this.#add({
+      id: `reply_${refundStepId}`,
+      kind: "zendesk.ticket.appendPublicReply",
+      caseId: refund.caseId,
+      obligationId: refund.obligationId,
+      // The reply tells the customer the refund went out, so it waits for that refund's receipt.
+      dependsOn: [refund.id],
+      requiredRole: "support_lead",
+      evidence: [ticket.id],
+      queryEvidence: [],
+      compensation: "irreversible",
+      protection: "no_atomic_guard",
+      rationale: `Tell the customer on ticket ${ticketId} that refund ${refund.id} went out.`,
+      args: { ticketId, public: true, template: REPLY_TEMPLATE, values, body },
+    });
+    return { ...summary(action), body };
+  }
+
+  /** A proposed refund and its customer, from the charge evidence the refund cites. */
+  #refundOf(refundStepId: string) {
+    const refund = this.#actions.find((a) => a.id === refundStepId);
+    if (refund?.kind !== "stripe.refund.create") {
+      throw new Refusal(`${refundStepId} is not a proposed refund`);
+    }
+    const charge = this.observations.find(
+      (o) =>
+        refund.evidence.includes(o.id) &&
+        o.entity.vendor === "stripe" &&
+        o.entity.id === refund.args.chargeId,
+    );
+    if (typeof charge?.projection.customer !== "string") {
+      throw new Refusal("refund customer evidence is missing");
+    }
+    return { refund, customer: charge.projection.customer };
   }
 
   #proposeSummary() {

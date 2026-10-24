@@ -17,6 +17,7 @@ import {
   type ProviderPort,
   type ReconcileResult,
   type ResolvedBindings,
+  replyCommentFor,
   summaryTextFor,
 } from "@rehearsal/core";
 
@@ -184,6 +185,16 @@ export class FakeWorld {
           headers: {},
         };
       }
+      case "zendesk.ticket.appendPublicReply":
+        return {
+          method: "PUT",
+          path: `/api/v2/tickets/${action.args.ticketId}.json`,
+          encoding: "json",
+          body: JSON.stringify({
+            ticket: { comment: { body: replyCommentFor(action, operationKey), public: true } },
+          }),
+          headers: {},
+        };
       case "slack.message.postSummary":
         return {
           method: "POST",
@@ -402,6 +413,25 @@ export class FakeWorld {
       return ticket.comments.some((c) => c.body.includes(marker))
         ? { kind: "applied", providerRef: ref, effect: {} }
         : { kind: "not_applied" };
+    }
+    if (action.kind === "zendesk.ticket.appendPublicReply") {
+      // Like the real writer: ours is the public comment with exactly the journaled text.
+      const sent = (JSON.parse(attempt.request.body) as { ticket: { comment: { body: string } } })
+        .ticket.comment.body;
+      const comment = ticket.comments.find((c) =>
+        c.body.includes(operationMarker(attempt.operationKey)),
+      );
+      if (!comment) return { kind: "not_applied" };
+      return comment.public && comment.body === sent
+        ? {
+            kind: "applied",
+            providerRef: ref,
+            effect: { "comment.id": String(comment.id), public: true },
+          }
+        : {
+            kind: "indeterminate",
+            detail: "a comment carries this reply's marker but isn't the public text that was sent",
+          };
     }
     // Patch: our values present → applied; untouched since our read (same stamp) → not applied;
     // anything else (someone else wrote it) can't be told apart → indeterminate.

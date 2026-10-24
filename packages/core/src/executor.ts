@@ -39,7 +39,7 @@ import type {
   SettleTransition,
   WorldContext,
 } from "./ports";
-import { summaryCountKey } from "./templates";
+import { replyBodyFor, summaryCountKey } from "./templates";
 
 /** What one `apply` job names. The executor trusts none of it until admission re-checks it. */
 export interface ApplyJobInput {
@@ -202,6 +202,7 @@ function targetOf(action: Action): EntityRef {
       return { vendor: "stripe", kind: "charge", id: action.args.chargeId };
     case "zendesk.ticket.patchFields":
     case "zendesk.ticket.appendPrivateNote":
+    case "zendesk.ticket.appendPublicReply":
       return { vendor: "zendesk", kind: "ticket", id: action.args.ticketId };
     case "slack.message.postSummary":
       return { vendor: "slack", kind: "channel", id: action.args.channelId };
@@ -417,6 +418,17 @@ async function admit(
   );
   if (unwired.length > 0) {
     return { ok: false, detail: `no operational provider for ${unwired.join(", ")}` };
+  }
+
+  // A public reply must be exactly what its template renders, checked before any step runs; at
+  // send time the refund it announces would already be out.
+  for (const action of manifest.actions) {
+    if (action.kind !== "zendesk.ticket.appendPublicReply") continue;
+    try {
+      replyBodyFor(action);
+    } catch (err) {
+      return { ok: false, detail: `${action.id}: ${(err as Error).message}` };
+    }
   }
 
   if (readOnly) return { ok: true, manifest, grant };
