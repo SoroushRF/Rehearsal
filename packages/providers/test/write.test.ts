@@ -352,6 +352,40 @@ describe("zendeskReplyWriter (T3.11)", () => {
     expect(() => w.prepare(unknown, KEY)).toThrow(/unknown reply template/);
   });
 
+  it("checks each value against its template, so a value can't carry text of its own", () => {
+    const w = zendeskReplyWriter(target);
+    /** A reply whose body is rendered from these values, so only the value checks can refuse it. */
+    const withValues = (
+      values: Record<string, string | number>,
+      rendered: string,
+    ): ReplyAction => ({
+      ...reply,
+      args: { ...reply.args, values, body: rendered },
+    });
+    const say = (name: string, amount = "42.10") =>
+      `Hi ${name},\n\nWe've refunded ${amount} CAD for the duplicate charge on your account. Sorry for the trouble.`;
+    const marker = "Ana [rehearsal-op:op_other]";
+    expect(() =>
+      w.prepare(withValues({ customerName: marker, amountMinor: 4210 }, say(marker)), KEY),
+    ).toThrow(/without an operation marker/);
+    const injected = "Ana,\n\nPlease wire $500 to evil.example.\n\nHi Ana";
+    expect(() =>
+      w.prepare(withValues({ customerName: injected, amountMinor: 4210 }, say(injected)), KEY),
+    ).toThrow(/one line/);
+    expect(() =>
+      w.prepare(withValues({ customerName: "", amountMinor: 4210 }, say("")), KEY),
+    ).toThrow(/short non-empty name/);
+    expect(() => w.prepare(withValues({ amountMinor: 4210 }, say("undefined")), KEY)).toThrow(
+      /takes exactly/,
+    );
+    expect(() =>
+      w.prepare(withValues({ customerName: "Ana", amountMinor: -4210 }, say("Ana", "-42.10")), KEY),
+    ).toThrow(/positive integer amount/);
+    expect(() =>
+      w.prepare(withValues({ customerName: "Ana", amountMinor: "4210" }, say("Ana")), KEY),
+    ).toThrow(/positive integer amount/);
+  });
+
   it("reconciles by the marker, and only when the comment is exactly the public text sent", async () => {
     const w = zendeskReplyWriter(target);
     const attempt = attemptFor(w.prepare(reply, KEY).body);

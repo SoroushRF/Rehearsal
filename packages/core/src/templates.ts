@@ -48,13 +48,53 @@ export function noteBodyFor(
 
 /**
  * Public customer replies (T3.11). The plan carries the rendered `body` with its template and
- * values; it is rendered again here and must match byte for byte, so only approved template text
- * reaches a customer, never model text. The operation marker follows the body.
+ * values; each value is checked against what the template declares, the body is rendered again
+ * and must match byte for byte, so only approved template text with checked values reaches a
+ * customer. The operation marker follows the body.
  */
-const REPLY_TEMPLATES: Record<string, (v: Readonly<Record<string, string | number>>) => string> = {
-  "refund-issued@1": (v) =>
-    `Hi ${v.customerName},\n\nWe've refunded ${formatCad(Number(v.amountMinor))} for the duplicate charge on your account. Sorry for the trouble.`,
+/** One reply template: the values it takes (each checked) and its text. */
+interface ReplyTemplate {
+  /** `name` → a short single-line text; `minor` → a positive integer amount in minor units. */
+  values: Readonly<Record<string, "name" | "minor">>;
+  render: (v: Readonly<Record<string, string | number>>) => string;
+}
+
+const REPLY_TEMPLATES: Record<string, ReplyTemplate> = {
+  "refund-issued@1": {
+    values: { customerName: "name", amountMinor: "minor" },
+    render: (v) =>
+      `Hi ${v.customerName},\n\nWe've refunded ${formatCad(Number(v.amountMinor))} for the duplicate charge on your account. Sorry for the trouble.`,
+  },
 };
+
+const MAX_NAME_CHARS = 80;
+
+/** Each value is exactly what its template declares, so a value can't add text of its own. */
+function checkReplyValues(
+  key: string,
+  template: ReplyTemplate,
+  values: Record<string, string | number>,
+) {
+  const expected = Object.keys(template.values).sort();
+  const given = Object.keys(values).sort();
+  if (expected.join("\0") !== given.join("\0")) {
+    throw new Error(`reply ${key} takes exactly ${expected.join(", ")}; got ${given.join(", ")}`);
+  }
+  for (const [name, type] of Object.entries(template.values)) {
+    const v = values[name];
+    if (type === "minor" && !(typeof v === "number" && Number.isInteger(v) && v > 0)) {
+      throw new TypeError(`reply value ${name} must be a positive integer amount`);
+    }
+    if (type === "name") {
+      if (typeof v !== "string" || v.trim().length === 0 || v.length > MAX_NAME_CHARS) {
+        throw new TypeError(`reply value ${name} must be a short non-empty name`);
+      }
+      if (/[\r\n]/.test(v) || v.includes(OPERATION_MARKER_PREFIX)) {
+        throw new TypeError(`reply value ${name} must be one line without an operation marker`);
+      }
+    }
+  }
+}
 
 /**
  * What sending needs of a `zendesk.ticket.appendPublicReply` action (contracts'
@@ -75,9 +115,10 @@ export interface ReplyAction {
 /** The approved reply text, after checking it is exactly what its template renders. */
 export function replyBodyFor(action: ReplyAction): string {
   const key = `${action.args.template.id}@${action.args.template.version}`;
-  const render = REPLY_TEMPLATES[key];
-  if (!render) throw new Error(`unknown reply template ${key}`);
-  if (render(action.args.values) !== action.args.body) {
+  const template = REPLY_TEMPLATES[key];
+  if (!template) throw new Error(`unknown reply template ${key}`);
+  checkReplyValues(key, template, action.args.values);
+  if (template.render(action.args.values) !== action.args.body) {
     throw new Error(`reply body doesn't match its approved template ${key}`);
   }
   if (action.args.body.includes(OPERATION_MARKER_PREFIX)) {
