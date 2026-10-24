@@ -1089,6 +1089,49 @@ async function applyLocked(
   };
 
   /**
+   * Read a just-confirmed write back from the provider (T3.8): the refund by its operation key,
+   * the note by its marker, the patch's fields. `read` matches the approved effect; `contradicted`
+   * means the provider's records don't show what it just confirmed; `inconclusive` means the read
+   * couldn't tell (it failed, or someone else wrote the field since), so the write response stands.
+   */
+  const readBack = async (
+    action: Action,
+    attemptId: string,
+    provider: ProviderPort,
+    world: WorldContext,
+    written: EntityRef,
+  ): Promise<
+    | { kind: "read"; effect: Record<string, unknown> }
+    | { kind: "contradicted"; detail: string; read: Record<string, unknown> }
+    | { kind: "inconclusive"; detail: string }
+  > => {
+    try {
+      const attempt = (
+        await journal.attemptsForKey(operationKey(job.orgId, job.planId, action))
+      ).find((a) => a.id === attemptId);
+      if (!attempt) return { kind: "inconclusive", detail: "attempt not found in the journal" };
+      const result = await provider.reconcile(attempt, action, world);
+      if (result.kind === "indeterminate") return { kind: "inconclusive", detail: result.detail };
+      if (result.kind === "not_applied") {
+        return { kind: "contradicted", detail: "a read-back doesn't find the effect", read: {} };
+      }
+      if (
+        action.kind === "stripe.refund.create" &&
+        (!refundEffectMatches(action, result.effect) || result.providerRef.id !== written.id)
+      ) {
+        return {
+          kind: "contradicted",
+          detail: "the refund read back doesn't match the approved refund",
+          read: result.effect,
+        };
+      }
+      return { kind: "read", effect: result.effect };
+    } catch (err) {
+      return { kind: "inconclusive", detail: `read failed: ${(err as Error).message}` };
+    }
+  };
+
+  /**
    * `recoveryFor` names an undone predecessor this action depends on: the action may only have its
    * earlier send recorded (confirmed by a read, or held), never a new one.
    */
@@ -1422,32 +1465,52 @@ async function applyLocked(
         }
         if (parsed && result.kind === "confirmed") {
           const { providerRef, results, observed } = parsed;
+          const transition: SettleTransition = {
+            attemptId: current,
+            from: "dispatched",
+            to: "confirmed",
+            patch: { providerStatus: result.status, settledAt: at() },
+          };
+          const replayed = unknownSends.map((id) => ({
+            attemptId: id,
+            from: "unknown_outcome" as const,
+            to: "reconciled" as const,
+            patch: { settledAt: at() },
+          }));
+          // Read the effect back before the receipt is final (T3.8).
+          const back = await readBack(action, current, provider, world, providerRef);
+          if (back.kind === "contradicted") {
+            // The provider said it worked, but its own records don't show it. Neither side is
+            // assumed: the step is held (dependents wait), nothing is bound, and a later run reads
+            // this confirmed attempt back again before it ever counts.
+            return settle(
+              action,
+              receiptFor(action, "held", {
+                providerRef,
+                observedEffect: { written: observed, read: back.read },
+                holdReason: { kind: "unresolved_outcome", attemptId: current },
+                limitations: [
+                  `the provider confirmed the write, but ${back.detail}`,
+                  ...retried(n),
+                ],
+              }),
+              { transitions: replayed, transition },
+            );
+          }
           return settle(
             action,
             receiptFor(action, "confirmed", {
               providerRef,
-              observedEffect: observed,
+              observedEffect: back.kind === "read" ? { ...observed, ...back.effect } : observed,
               limitations: [
-                "effect taken from the write response; no read-back yet",
+                back.kind === "read"
+                  ? "read back from the provider after the write"
+                  : `effect taken from the write response; read-back inconclusive: ${back.detail}`,
                 ...retried(n),
               ],
             }),
-            {
-              // The replay answered for the earlier unknown sends of the same bytes and key.
-              transitions: unknownSends.map((id) => ({
-                attemptId: id,
-                from: "unknown_outcome" as const,
-                to: "reconciled" as const,
-                patch: { settledAt: at() },
-              })),
-              transition: {
-                attemptId: current,
-                from: "dispatched",
-                to: "confirmed",
-                patch: { providerStatus: result.status, settledAt: at() },
-              },
-              results,
-            },
+            // The replay answered for the earlier unknown sends of the same bytes and key.
+            { transitions: replayed, transition, results },
           );
         }
       }

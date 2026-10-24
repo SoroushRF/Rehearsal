@@ -1737,6 +1737,100 @@ describe("read-only passes read only the operational world (#121)", () => {
   });
 });
 
+describe("read back each write before confirming it (T3.8)", () => {
+  /** Replace stripe's reconcile for the first refund read-back only. */
+  function stripeRead(s: ReturnType<typeof setup>, read: ProviderPort["reconcile"]) {
+    const stripe = s.deps.providers.stripe;
+    let first = true;
+    s.deps.providers.stripe = {
+      ...stripe,
+      reconcile: async (attempt, action, world) => {
+        if (first && action.id === "refund_001") {
+          first = false;
+          return read(attempt, action, world);
+        }
+        return stripe.reconcile(attempt, action, world);
+      },
+    };
+  }
+  const receiptOf = (r: { receipts: { actionId: string }[] }, id: string) =>
+    r.receipts.find((x) => x.actionId === id) as (typeof r.receipts)[number] & {
+      outcome: string;
+      limitations: string[];
+      observedEffect: Record<string, unknown>;
+      holdReason: unknown;
+    };
+
+  it("confirms each write only once a read finds it, and records what was read", async () => {
+    const s = setup(happyPathBundle());
+    const result = await s.run();
+    for (const id of ["refund_001", "patch_001", "note_001", "refund_002"]) {
+      expect(receiptOf(result, id)).toMatchObject({
+        outcome: "confirmed",
+        limitations: ["read back from the provider after the write"],
+      });
+    }
+    expect(receiptOf(result, "refund_001").observedEffect).toMatchObject({
+      "refund.status": "succeeded",
+      "refund.amount": 4210,
+      charge: "ch_fixture_001",
+    });
+    expect(receiptOf(result, "patch_001").observedEffect).toMatchObject({ priority: "high" });
+  });
+
+  it("holds a write the provider confirmed but a read-back can't find; a later run reads it again", async () => {
+    const s = setup(happyPathBundle());
+    stripeRead(s, async () => ({ kind: "not_applied" }));
+    const first = await s.run();
+    expect(receiptOf(first, "refund_001")).toMatchObject({
+      outcome: "held",
+      holdReason: { kind: "unresolved_outcome" },
+      limitations: [expect.stringMatching(/confirmed the write, but a read-back doesn't find/)],
+    });
+    expect(receiptOf(first, "note_001").outcome).toBe("skipped_dependency");
+    expect(first.state).toBe("partial");
+
+    const second = await s.run();
+    expect(outcomes(second.receipts)).toMatchObject({
+      refund_001: "confirmed",
+      note_001: "confirmed",
+    });
+    expect(s.world.refunds.filter((r) => r.charge === "ch_fixture_001")).toHaveLength(1);
+  });
+
+  it("holds a refund whose read-back doesn't match the approved refund", async () => {
+    const s = setup(happyPathBundle());
+    const stripe = s.deps.providers.stripe;
+    stripeRead(s, async (attempt, action, world) => {
+      const real = await stripe.reconcile(attempt, action, world);
+      return real.kind === "applied"
+        ? { ...real, effect: { ...real.effect, "refund.amount": 9999 } }
+        : real;
+    });
+    const result = await s.run();
+    expect(receiptOf(result, "refund_001")).toMatchObject({
+      outcome: "held",
+      observedEffect: { read: { "refund.amount": 9999 } },
+      limitations: [expect.stringMatching(/doesn't match the approved refund/)],
+    });
+  });
+
+  it("keeps the write response when the read-back fails, and says so", async () => {
+    const s = setup(happyPathBundle());
+    stripeRead(s, async () => {
+      throw new Error("stripe read unavailable (injected)");
+    });
+    const result = await s.run();
+    expect(receiptOf(result, "refund_001")).toMatchObject({
+      outcome: "confirmed",
+      limitations: [
+        "effect taken from the write response; read-back inconclusive: read failed: stripe read unavailable (injected)",
+      ],
+    });
+    expect(receiptOf(result, "note_001").outcome).toBe("confirmed");
+  });
+});
+
 describe("operation keys", () => {
   it("are stable across revisions, unique per action, and org-scoped", () => {
     const { manifest } = setup(happyPathBundle());
