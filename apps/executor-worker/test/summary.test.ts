@@ -179,6 +179,20 @@ describe("run summary (T1.7)", () => {
     expect(s.world.messages).toHaveLength(0);
   });
 
+  it("still reads back a lost refund when Slack is unwired later", async () => {
+    const s = setup();
+    s.deps.retry = { maxAttempts: 1 };
+    s.world.fault("/v1/refunds", { kind: "drop_response_after_commit" });
+    expect(outcomes((await s.run()).receipts).refund_001).toBe("unknown_outcome");
+
+    delete s.deps.providers.slack;
+    delete s.deps.worlds.slack;
+    const out = await s.run();
+    expect(out.refusal).toBe("no operational provider for slack");
+    expect(outcomes(out.receipts).refund_001).toBe("confirmed");
+    expect(s.world.refunds.filter((r) => r.charge === "ch_fixture_001")).toHaveLength(1);
+  });
+
   it("posts nothing when the run is cancelled", async () => {
     const s = setup();
     let cancelled = false;

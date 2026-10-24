@@ -410,6 +410,8 @@ async function admit(
     }
   }
 
+  // A read-only pass resolves what the wired vendors can read; it never needs the rest.
+  if (readOnly) return { ok: true, manifest, grant };
   // Every vendor the plan writes to must be wired, or the run would stop halfway (say, a summary
   // with no Slack provider after the refunds went out).
   const unwired = [...new Set(manifest.actions.map(vendorOf))].filter(
@@ -418,8 +420,6 @@ async function admit(
   if (unwired.length > 0) {
     return { ok: false, detail: `no operational provider for ${unwired.join(", ")}` };
   }
-
-  if (readOnly) return { ok: true, manifest, grant };
   if (grant.revokedAt !== null) return { ok: false, detail: "grant was revoked" };
   const grantedAt = Date.parse(grant.grantedAt);
   const expiresAt = Date.parse(grant.expiresAt);
@@ -1200,7 +1200,12 @@ async function applyLocked(
     const vendor = vendorOf(action);
     const provider = deps.providers[vendor];
     const world = deps.worlds[vendor];
-    if (!provider || !world) throw new Error(`no operational provider configured for ${vendor}`);
+    if (!provider || !world) {
+      // Only a read-only pass gets here (admission needs every vendor). A send to a vendor that is
+      // no longer wired can't be read back: it stays in flight, reported unresolved.
+      if (reconcileOnly) return;
+      throw new Error(`no operational provider configured for ${vendor}`);
+    }
 
     const refs = resultRefsOf(action);
     const unresolved = refs.find((r) => !bindings.has(bindingKey(r)));
