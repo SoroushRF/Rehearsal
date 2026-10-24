@@ -6,7 +6,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 
 ## Top blockers
 
-42 of 56 tasks done. These open tasks hold up the most other work:
+43 of 56 tasks done. These open tasks hold up the most other work:
 
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
@@ -58,7 +58,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T2.9** Decide currency: align policy.v1.json with the Era seed (USD vs CAD) [#40](https://github.com/SoroushRF/Rehearsal/issues/40) | ✅ done |  | T1.5 (T1) |
 | **T2.10** Rehearse button: start a plan from the review page and follow it [#116](https://github.com/SoroushRF/Rehearsal/issues/116) | ✅ done |  |  |
 | **T2.11** Saved run replay that opens without signing in [#118](https://github.com/SoroushRF/Rehearsal/issues/118) | ✅ done |  |  |
-| **T2.12** Receipt wording: don't say "read back" for write-response confirmations [#132](https://github.com/SoroushRF/Rehearsal/issues/132) | 🟨 ready | — |  |
+| **T2.12** Receipt wording: don't say "read back" for write-response confirmations [#132](https://github.com/SoroushRF/Rehearsal/issues/132) | ✅ done |  |  |
 | **T2.13** Two distinct approvers where policy requires (support + finance) [#135](https://github.com/SoroushRF/Rehearsal/issues/135) | 🟨 ready | — |  |
 | **T2.14** Historical audit view: the exact plan and policy as approved [#138](https://github.com/SoroushRF/Rehearsal/issues/138) | 🟨 ready | — |  |
 | **T2.15** Review UI: show the Slack summary step and its exact text [#145](https://github.com/SoroushRF/Rehearsal/issues/145) | 🟨 ready | — | T1.7 (T1) |
@@ -141,7 +141,7 @@ flowchart LR
     T2_9["T2.9 Decide currency: align policy.v1.json with "]:::done
     T2_10["T2.10 Rehearse button: start a plan from the rev"]:::done
     T2_11["T2.11 Saved run replay that opens without signin"]:::done
-    T2_12["T2.12 Receipt wording: don't say read back for w"]:::ready
+    T2_12["T2.12 Receipt wording: don't say read back for w"]:::done
     T2_13["T2.13 Two distinct approvers where policy requir"]:::ready
     T2_14["T2.14 Historical audit view: the exact plan and "]:::ready
     T2_15["T2.15 Review UI: show the Slack summary step and"]:::ready
