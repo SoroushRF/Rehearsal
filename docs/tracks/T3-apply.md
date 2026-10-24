@@ -39,6 +39,7 @@ These must pass on Era, not just on fixtures:
 | T3.5 | Unknown outcome: a test transport that forwards then drops the response, crash and restart, reconcile through reads | M3 | `unknown-outcome` bundle passes on Era | #22 | T3.4 |
 | T3.6 | ID divergence test, partial-completion run state, cancellation before the next admitted action | M3 | Tests green; UI shows partial honestly | #23 | T3.3 |
 | T3.7 | Bounded concurrency across independent cases. Only after everything above is green. | M4 | `caseConcurrency` groups and live Era test | #24 | T3.5, T3.6 |
+| T3.8 | _Full scope:_ read back each write before confirming its receipt | after M5 | Confirmed receipts carry the read effect; match, mismatch and read-failure tests; reviewer from another track | #134 | — |
 
 ## Decisions
 
