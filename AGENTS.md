@@ -28,7 +28,7 @@ These are the product. Breaking one is a bug even if tests pass.
 - **Approval is for an exact hash.** Apply takes a stored plan reference plus the expected revision and hash. Never accept action bodies from the browser. Any change that affects execution creates a new revision, and the new revision needs a new approval.
 - **Journal before dispatch.** Persist the exact request bytes and idempotency key before sending. An unknown outcome is reconciled through reads, never blindly re-sent. A refund or appended note is never "rolled back".
 - **Money** is an integer number of minor units plus a currency. No floats.
-- **Typed operations only:** `stripe.refund.create`, `zendesk.ticket.patchFields`, `zendesk.ticket.appendPrivateNote`, `zendesk.ticket.appendPublicReply` (exact approved template text), `slack.message.postSummary` (the run summary, always last). `stripe.customer.balanceCredit` is defined in contracts but can't be planned until T1.14 adds it to `Action`. No arbitrary URL, method or JSON-patch tools.
+- **Typed operations only:** `stripe.refund.create`, `zendesk.ticket.patchFields`, `zendesk.ticket.appendPrivateNote`, `zendesk.ticket.appendPublicReply` (exact approved template text), `slack.message.postSummary` (the run summary, always last), `stripe.customer.balanceCredit` (instead of a refund, under a policy with a credit limit). No arbitrary URL, method or JSON-patch tools.
 - **Append-only history.** Plans, approvals, attempts and receipts are never edited in place; corrections are new rows.
 - **Label your evidence.** Results are `fixture` until they have run against real Era images. Never claim something we didn't run.
 - **Never commit** `.env`, keys, tokens, model weights or downloaded image layers.

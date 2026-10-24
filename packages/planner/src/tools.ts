@@ -9,7 +9,7 @@ import {
   ZendeskStatus,
 } from "@rehearsal/contracts";
 import {
-  type BillingPolicyV1,
+  type BillingPolicy,
   type Clock,
   fingerprint,
   type ProviderPort,
@@ -33,7 +33,7 @@ export interface PlanningSessionOptions {
   readers: { stripe: PlanningReader; zendesk: PlanningReader };
   /** Must be the planning world. The server picks it; the model never sees it. */
   ctx: WorldContext;
-  policy: BillingPolicyV1;
+  policy: BillingPolicy;
   /** The incident predicate's window. Fixed by the incident, not chosen by the model. */
   window: { createdGte: string; createdLt: string };
   /**
@@ -47,6 +47,11 @@ export interface PlanningSessionOptions {
    * The name is the reply's only text that isn't the template's, and it never comes from the model.
    */
   customerNames?: Readonly<Record<string, string>>;
+  /**
+   * Invoice-balance credits as the remedy instead of a refund (T1.14). The server turns them on;
+   * propose_balance_credit still refuses unless the policy has a credit limit (v2 and later).
+   */
+  credits?: boolean;
   clock?: Clock;
 }
 
@@ -84,9 +89,18 @@ export const PLANNING_TOOLS = {
       rationale: Rationale,
     }),
   },
+  propose_balance_credit: {
+    description:
+      "Propose crediting the customer's invoice balance with the amount of `chargeId`, which duplicates `duplicateOfChargeId`, instead of refunding it. Only for a small amount the policy lets you settle as credit; the money stays on the customer's account. It settles the same obligation as a refund of that charge, so propose one or the other, never both. The tool checks the pair and the customer's currency against fresh reads.",
+    input: z.strictObject({
+      chargeId: ChargeId,
+      duplicateOfChargeId: ChargeId,
+      rationale: Rationale,
+    }),
+  },
   propose_ticket_priority: {
     description:
-      "Propose changing the priority of the customer's ticket. The customer must already have a proposed refund.",
+      "Propose changing the priority of the customer's ticket. The customer must already have a proposed refund or balance credit.",
     input: z.strictObject({
       customerId: CustomerId,
       ticketId: TicketId,
@@ -114,17 +128,24 @@ export const PLANNING_TOOLS = {
 export type PlanningToolName = keyof typeof PLANNING_TOOLS;
 export type ToolInput<N extends PlanningToolName> = z.infer<(typeof PLANNING_TOOLS)[N]["input"]>;
 
-/** Tool definitions in the Anthropic `tools` shape. */
-export function planningToolDefinitions() {
-  return Object.entries(PLANNING_TOOLS).map(([name, t]) => ({
-    name,
-    description: t.description,
-    input_schema: z.toJSONSchema(t.input),
-  }));
+/**
+ * Tool definitions in the Anthropic `tools` shape. The balance-credit tool is offered only to a
+ * session with credits on (T1.14), so a refund-only run sees the same tools as before it existed.
+ */
+export function planningToolDefinitions(opts: { credits?: boolean } = {}) {
+  return Object.entries(PLANNING_TOOLS)
+    .filter(([name]) => opts.credits || name !== "propose_balance_credit")
+    .map(([name, t]) => ({
+      name,
+      description: t.description,
+      input_schema: z.toJSONSchema(t.input),
+    }));
 }
 
 /** Recorded in every manifest, so a plan says exactly which tool surface produced it. */
 export const TOOL_SCHEMA_HASH = fingerprint(planningToolDefinitions());
+/** The same with propose_balance_credit offered. */
+export const CREDIT_TOOL_SCHEMA_HASH = fingerprint(planningToolDefinitions({ credits: true }));
 
 export type ToolResult = { ok: true; result: unknown } | { ok: false; error: string };
 
@@ -173,6 +194,11 @@ export class PlanningSession {
     return structuredClone(this.#actions);
   }
 
+  /** The tools this session offers the model. */
+  toolDefinitions() {
+    return planningToolDefinitions({ credits: this.#opts.credits });
+  }
+
   /** The recorded evidence and proposed actions as a revision-1 manifest. */
   manifest(meta: {
     orgId: string;
@@ -194,7 +220,7 @@ export class PlanningSession {
         planner: {
           model: meta.model,
           promptVersion: meta.promptVersion,
-          toolSchemaHash: TOOL_SCHEMA_HASH,
+          toolSchemaHash: this.#opts.credits ? CREDIT_TOOL_SCHEMA_HASH : TOOL_SCHEMA_HASH,
         },
         adapters: meta.adapters,
       },
@@ -232,6 +258,10 @@ export class PlanningSession {
       case "propose_duplicate_refund": {
         const i = as(name);
         return this.#proposeRefund(i.chargeId, i.duplicateOfChargeId, i.rationale);
+      }
+      case "propose_balance_credit": {
+        const i = as(name);
+        return this.#proposeCredit(i.chargeId, i.duplicateOfChargeId, i.rationale);
       }
       case "propose_ticket_priority": {
         const i = as(name);
@@ -305,7 +335,12 @@ export class PlanningSession {
     return parsed;
   }
 
-  async #proposeRefund(chargeId: string, duplicateOf: string, rationale: string) {
+  /**
+   * The checks every remedy of a duplicate shares: same customer, amount, currency and invoice, both
+   * inside the window, nothing refunded yet, the invoice's earliest charge kept, and no remedy of
+   * this obligation or charge proposed already.
+   */
+  async #duplicatePair(chargeId: string, duplicateOf: string) {
     if (chargeId === duplicateOf) throw new Refusal("a charge can't duplicate itself");
     const target = await this.#observe({ vendor: "stripe", kind: "charge", id: chargeId });
     const original = await this.#observe({ vendor: "stripe", kind: "charge", id: duplicateOf });
@@ -347,7 +382,7 @@ export class PlanningSession {
     const obligationId = `obl_duplicate_${[chargeId, duplicateOf].sort().join("_")}`;
     const prior = this.#actions.find(
       (a) =>
-        a.kind === "stripe.refund.create" &&
+        (a.kind === "stripe.refund.create" || a.kind === "stripe.customer.balanceCredit") &&
         (a.obligationId === obligationId || a.args.chargeId === chargeId),
     );
     if (prior) throw new Refusal(`already remedied by ${prior.id}`);
@@ -379,6 +414,12 @@ export class PlanningSession {
     }
     const requiredRole: Role =
       amountMinor >= policy.financeThresholdMinor ? "finance_lead" : "support_lead";
+    return { target, original, population, customer, amountMinor, obligationId, requiredRole };
+  }
+
+  async #proposeRefund(chargeId: string, duplicateOf: string, rationale: string) {
+    const { target, original, population, customer, amountMinor, obligationId, requiredRole } =
+      await this.#duplicatePair(chargeId, duplicateOf);
     const action = this.#add({
       id: `refund_${chargeId}`,
       kind: "stripe.refund.create",
@@ -393,8 +434,53 @@ export class PlanningSession {
       rationale,
       args: {
         chargeId,
-        amount: { amountMinor, currency: policy.currency },
+        amount: { amountMinor, currency: this.#opts.policy.currency },
         reason: "duplicate",
+      },
+    });
+    return summary(action);
+  }
+
+  async #proposeCredit(chargeId: string, duplicateOf: string, rationale: string) {
+    const { policy } = this.#opts;
+    if (!this.#opts.credits) throw new Refusal("balance credits are off; propose a refund");
+    if (!("creditMaxMinor" in policy)) {
+      throw new Refusal(
+        `policy ${policy.id}@${policy.version} has no invoice credit; use a refund`,
+      );
+    }
+    const { target, original, population, customer, amountMinor, obligationId, requiredRole } =
+      await this.#duplicatePair(chargeId, duplicateOf);
+    if (amountMinor >= policy.creditMaxMinor) {
+      throw new Refusal(
+        `a credit must be below ${policy.creditMaxMinor} ${policy.currency}; refund ${chargeId} instead`,
+      );
+    }
+    // Era takes a credit in any currency; Stripe keeps a customer's balance in one (surprise 14).
+    const account = await this.#observe({ vendor: "stripe", kind: "customer", id: customer });
+    const currency = account.projection.currency;
+    if (currency !== null && currency !== policy.currency) {
+      throw new Refusal(
+        `customer ${customer} is billed in ${String(currency)}, so a ${policy.currency} credit can't go on their balance; refund ${chargeId} instead`,
+      );
+    }
+    const action = this.#add({
+      id: `credit_${chargeId}`,
+      kind: "stripe.customer.balanceCredit",
+      caseId: `case_${customer}`,
+      obligationId,
+      dependsOn: [],
+      requiredRole,
+      evidence: [target.id, original.id, account.id],
+      queryEvidence: [population.id],
+      // A credit can't be deleted; only a new, separately approved debit offsets it.
+      compensation: "compensable_by_new_action",
+      protection: "native_guard_with_documented_limits",
+      rationale,
+      args: {
+        customerId: customer,
+        chargeId,
+        amount: { amountMinor, currency: policy.currency },
       },
     });
     return summary(action);
@@ -408,9 +494,11 @@ export class PlanningSession {
   ) {
     const caseId = `case_${customerId}`;
     const refund = this.#actions.find(
-      (a) => a.caseId === caseId && a.kind === "stripe.refund.create",
+      (a) =>
+        a.caseId === caseId &&
+        (a.kind === "stripe.refund.create" || a.kind === "stripe.customer.balanceCredit"),
     );
-    if (!refund) throw new Refusal(`propose a refund for ${customerId} first`);
+    if (!refund) throw new Refusal(`propose a refund or credit for ${customerId} first`);
     const ticket = await this.#ticketForCustomer(ticketId, customerId);
     const current = ZendeskPriority.nullable().safeParse(ticket.projection.priority ?? null);
     if (!current.success) {

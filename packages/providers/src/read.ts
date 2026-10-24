@@ -30,6 +30,8 @@ export interface ReadTarget {
 
 export const STRIPE_CHARGE_PROJECTION = "stripe.charge.v2";
 export const ZENDESK_TICKET_PROJECTION = "zendesk.ticket.v2";
+/** A customer's billing currency, for a balance credit (T1.14). Null until Stripe sets one. */
+export const STRIPE_CUSTOMER_PROJECTION = "stripe.customer.v1";
 
 const ChargeRecord = z.object({
   id: z.string().min(1),
@@ -48,6 +50,14 @@ const TicketRecord = z.object({
   status: z.enum(["new", "open", "pending", "hold", "solved", "closed"]),
   requester_id: TicketId.nullable(),
   external_id: z.string().nullable(),
+});
+const CustomerRecord = z.object({
+  id: z.string().min(1),
+  currency: z
+    .string()
+    .regex(/^[a-z]{3}$/)
+    .nullable()
+    .optional(),
 });
 const ChargePage = z.object({ data: z.array(ChargeRecord), has_more: z.boolean() });
 const BalanceCreditPage = z.object({
@@ -156,7 +166,7 @@ function queryObservation(
 const toUnix = (iso: string) => Math.floor(Date.parse(iso) / 1000);
 
 /**
- * Stripe reads: one charge, and every charge of a customer created in [createdGte, createdLt).
+ * Stripe reads: one charge, one customer's currency, and every charge of a customer created in [createdGte, createdLt).
  * `complete` is true only if paging ended with `has_more: false`. A failed page, a cursor that
  * stops moving, or the page cap all leave it false: never proof of absence.
  */
@@ -168,6 +178,19 @@ export function stripeReader(target: ReadTarget): ProviderReader {
       if (entity.vendor === "stripe" && entity.kind === "customer_balance_transactions") {
         const listed = await listBalanceCredits(target, entity.id);
         return observation(target, entity, "stripe.balance_credit.v1", listed);
+      }
+      if (entity.vendor === "stripe" && entity.kind === "customer") {
+        const customer = CustomerRecord.parse(
+          await getJson(target, `/v1/customers/${encodeURIComponent(entity.id)}`),
+        );
+        if (customer.id !== entity.id) {
+          throw new Error(`asked for customer ${entity.id}, got ${customer.id}`);
+        }
+        // Only the currency: the balance moves with every credit, and a plan doesn't depend on it.
+        return observation(target, entity, STRIPE_CUSTOMER_PROJECTION, {
+          id: customer.id,
+          currency: customer.currency ?? null,
+        });
       }
       if (entity.vendor !== "stripe" || entity.kind !== "charge") {
         throw new Error(`stripe can't observe ${entity.vendor}.${entity.kind}`);

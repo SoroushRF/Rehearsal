@@ -52,10 +52,8 @@ export const StripeRefundCreate = ActionBase.extend({
  * A credit to the customer's Stripe balance, applied to their next invoice, as the remedy for a
  * duplicate charge instead of a refund. Sent as a negative customer balance transaction, so
  * `amount` is the credit and is always positive. The customer's own currency must match: Era
- * accepts any currency here, but Stripe doesn't (docs/capability-matrix.md).
- *
- * Not in `Action` yet, so no plan can carry one. T1.14 adds it once the write adapter (T3.12),
- * the one-remedy guard (T4.10) and the policy (T2.18) handle it.
+ * accepts any currency here, but Stripe doesn't (docs/capability-matrix.md). Plannable since
+ * T1.14, under a policy that allows credits (v2's `creditMaxMinor`).
  */
 export const StripeCustomerBalanceCredit = ActionBase.extend({
   kind: z.literal("stripe.customer.balanceCredit"),
@@ -185,6 +183,7 @@ export const SlackMessagePostSummary = ActionBase.extend({
 
 export const Action = z.discriminatedUnion("kind", [
   StripeRefundCreate,
+  StripeCustomerBalanceCredit,
   ZendeskTicketPatchFields,
   ZendeskTicketAppendPrivateNote,
   ZendeskTicketAppendPublicReply,

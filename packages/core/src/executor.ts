@@ -24,7 +24,7 @@ import {
 } from "./approvals";
 import { bindingKey } from "./bindings";
 import { topoOrder, validateGraph } from "./dag";
-import { refundEffectMatches } from "./effects";
+import { creditEffectMatches, refundEffectMatches } from "./effects";
 import { planHash as computePlanHash, fingerprint, sha256Hex } from "./hash";
 import { type BillingPolicy, evaluateBillingPolicy } from "./policy";
 import type {
@@ -221,10 +221,22 @@ export function isSummary(action: Action): action is SummaryStep {
   return action.kind === "slack.message.postSummary";
 }
 
+/**
+ * A money step's read effect is the exact approved one: the refund of that charge, or the credit
+ * to that customer naming that charge, for that amount and currency. Other steps aren't checked.
+ */
+function effectMatches(action: Action, effect: Record<string, unknown>): boolean {
+  if (action.kind === "stripe.refund.create") return refundEffectMatches(action, effect);
+  if (action.kind === "stripe.customer.balanceCredit") return creditEffectMatches(action, effect);
+  return true;
+}
+
 function targetOf(action: Action): EntityRef {
   switch (action.kind) {
     case "stripe.refund.create":
       return { vendor: "stripe", kind: "charge", id: action.args.chargeId };
+    case "stripe.customer.balanceCredit":
+      return { vendor: "stripe", kind: "customer", id: action.args.customerId };
     case "zendesk.ticket.patchFields":
     case "zendesk.ticket.appendPrivateNote":
     case "zendesk.ticket.appendPublicReply":
@@ -284,6 +296,34 @@ function resultsOf(
     return {
       providerRef: { vendor: "stripe", kind: "refund", id: b.id },
       results,
+      observed,
+    };
+  }
+  if (action.kind === "stripe.customer.balanceCredit") {
+    const b = body as {
+      id?: unknown;
+      amount?: unknown;
+      currency?: unknown;
+      customer?: unknown;
+      type?: unknown;
+      metadata?: { charge?: unknown } | null;
+    } | null;
+    if (typeof b?.id !== "string" || typeof b.amount !== "number") {
+      throw new Error("balance transaction response is missing id or amount");
+    }
+    const observed = {
+      "credit.id": b.id,
+      "credit.amount": b.amount,
+      "credit.type": b.type,
+      "credit.charge": b.metadata?.charge ?? "",
+      customer: b.customer,
+      currency: b.currency,
+    };
+    if (!creditEffectMatches(action, observed))
+      throw new Error("balance credit does not match the approved effect");
+    return {
+      providerRef: { vendor: "stripe", kind: "customer_balance_transaction", id: b.id },
+      results: {},
       observed,
     };
   }
@@ -773,12 +813,7 @@ async function applyLocked(
     let result: ReconcileResult;
     try {
       result = await provider.reconcile(newest, action, world);
-      if (
-        sameAsNewest &&
-        action.kind === "stripe.refund.create" &&
-        result.kind === "applied" &&
-        !refundEffectMatches(action, result.effect)
-      ) {
+      if (sameAsNewest && result.kind === "applied" && !effectMatches(action, result.effect)) {
         result = {
           kind: "indeterminate",
           detail: "refund read does not match the approved successful effect",
@@ -1208,8 +1243,9 @@ async function applyLocked(
         return { kind: "contradicted", detail: "a read-back doesn't find the effect", read: {} };
       }
       if (
-        action.kind === "stripe.refund.create" &&
-        (!refundEffectMatches(action, result.effect) || result.providerRef.id !== written.id)
+        (action.kind === "stripe.refund.create" ||
+          action.kind === "stripe.customer.balanceCredit") &&
+        (!effectMatches(action, result.effect) || result.providerRef.id !== written.id)
       ) {
         return {
           kind: "contradicted",
@@ -1357,10 +1393,7 @@ async function applyLocked(
       } catch (err) {
         back = { kind: "indeterminate", detail: (err as Error).message };
       }
-      if (
-        back.kind !== "applied" ||
-        (action.kind === "stripe.refund.create" && !refundEffectMatches(action, back.effect))
-      ) {
+      if (back.kind !== "applied" || !effectMatches(action, back.effect)) {
         return hold(action, { kind: "unresolved_outcome", attemptId: latest.id });
       }
       return settle(
@@ -1422,10 +1455,7 @@ async function applyLocked(
         } catch (err) {
           back = { kind: "indeterminate", detail: (err as Error).message };
         }
-        if (
-          back.kind !== "applied" ||
-          (action.kind === "stripe.refund.create" && !refundEffectMatches(action, back.effect))
-        ) {
+        if (back.kind !== "applied" || !effectMatches(action, back.effect)) {
           return hold(action, { kind: "unresolved_outcome", attemptId: latest.id });
         }
         return settle(
@@ -1520,10 +1550,7 @@ async function applyLocked(
       } catch (err) {
         read = { kind: "indeterminate", detail: (err as Error).message };
       }
-      if (
-        read.kind === "applied" &&
-        (step.kind !== "stripe.refund.create" || refundEffectMatches(step, read.effect))
-      ) {
+      if (read.kind === "applied" && effectMatches(step, read.effect)) {
         return null;
       }
       return deps.guard ? deps.guard(step, await guardContext(step)) : null;

@@ -22,12 +22,21 @@ export interface RemedyStep {
 }
 
 /**
- * The remedy an action is, or null. Every action kind is listed, so a new kind (the balance credit
- * of T1.14) can't reach the guard as "not a remedy" without someone deciding that here.
+ * The remedy an action is, or null. Every action kind is listed, so a new kind can't reach the
+ * guard as "not a remedy" without someone deciding that here.
  */
 export function remedyOf(action: Action): RemedyStep | null {
   switch (action.kind) {
     case "stripe.refund.create":
+      return {
+        id: action.id,
+        obligationId: action.obligationId,
+        kind: action.kind,
+        chargeId: action.args.chargeId,
+        amountMinor: action.args.amount.amountMinor,
+        currency: action.args.amount.currency,
+      };
+    case "stripe.customer.balanceCredit":
       return {
         id: action.id,
         obligationId: action.obligationId,

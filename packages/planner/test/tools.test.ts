@@ -12,12 +12,13 @@ import { STRIPE_CHARGE_PROJECTION, ZENDESK_TICKET_PROJECTION } from "@rehearsal/
 import { INCIDENT, incidentRecords } from "@rehearsal/testkit";
 import { describe, expect, it } from "vitest";
 import {
+  CREDIT_TOOL_SCHEMA_HASH,
   type PlanningReader,
   PlanningSession,
   planningToolDefinitions,
   TOOL_SCHEMA_HASH,
 } from "../src";
-import { POLICY, world } from "./world";
+import { POLICY, POLICY_V2, world } from "./world";
 
 const META = {
   orgId: "org_demo",
@@ -184,12 +185,13 @@ describe("planning tools", () => {
     expect(evaluateBillingPolicy(session.manifest(META), POLICY).violations).toEqual([]);
   });
   it("exposes only typed inputs: no URL, tenant, method or free-form body", () => {
-    const defs = planningToolDefinitions();
+    const defs = planningToolDefinitions({ credits: true });
     expect(defs.map((d) => d.name).sort()).toEqual([
       "get_charge",
       "get_ticket",
       "list_customer_charges",
       "list_requester_tickets",
+      "propose_balance_credit",
       "propose_customer_reply",
       "propose_duplicate_refund",
       "propose_refund_note",
@@ -200,7 +202,11 @@ describe("planning tools", () => {
     for (const word of ["url", "tenant", "method", "header", "world", "evidence"]) {
       expect(text).not.toContain(`"${word}`);
     }
-    expect(TOOL_SCHEMA_HASH).toBe(fingerprint(defs));
+    expect(CREDIT_TOOL_SCHEMA_HASH).toBe(fingerprint(defs));
+    // Without credits the surface is exactly what it was before T1.14.
+    const refundOnly = defs.filter((d) => d.name !== "propose_balance_credit");
+    expect(planningToolDefinitions()).toEqual(refundOnly);
+    expect(TOOL_SCHEMA_HASH).toBe(fingerprint(refundOnly));
   });
 
   it("rejects extra fields and malformed IDs before any read", async () => {
@@ -521,5 +527,122 @@ describe("propose_customer_reply (T1.13)", () => {
         ticketId: String(c.ticketId),
       }),
     ).toMatchObject({ ok: false, error: expect.stringContaining("can't render") });
+  });
+});
+
+describe("balance credits (T1.14)", () => {
+  const credit = (session: PlanningSession, key: string) => {
+    const c = caseOf(key);
+    return session.call("propose_balance_credit", {
+      chargeId: c.chargeIds[1],
+      duplicateOfChargeId: c.chargeIds[0],
+      rationale: "Small duplicate; credit the invoice balance.",
+    });
+  };
+
+  it("credits a small duplicate under policy v2, citing the customer's currency", async () => {
+    const { session, customerCurrencies } = world({ credits: true, policy: POLICY_V2 });
+    const c = caseOf("c01");
+    customerCurrencies.set(c.customerId, "cad");
+    expect((await credit(session, "c01")).ok).toBe(true);
+    const [action] = session.actions;
+    expect(action).toMatchObject({
+      id: `credit_${c.chargeIds[1]}`,
+      kind: "stripe.customer.balanceCredit",
+      obligationId: `obl_duplicate_${[...c.chargeIds].sort().join("_")}`,
+      requiredRole: "support_lead",
+      compensation: "compensable_by_new_action",
+      evidence: [
+        `obs_charge_${c.chargeIds[1]}`,
+        `obs_charge_${c.chargeIds[0]}`,
+        `obs_customer_${c.customerId}`,
+      ],
+      args: {
+        customerId: c.customerId,
+        chargeId: c.chargeIds[1],
+        amount: { amountMinor: c.amountMinor, currency: "cad" },
+      },
+    });
+    const manifest = PlanManifest.parse(session.manifest(META));
+    expect(manifest.policies).toEqual([{ id: "billing-remedy", version: 2 }]);
+    expect(manifest.versions.planner.toolSchemaHash).toBe(CREDIT_TOOL_SCHEMA_HASH);
+    expect(session.toolDefinitions().map((d) => d.name)).toContain("propose_balance_credit");
+    expect(evaluateBillingPolicy(manifest, POLICY_V2).violations).toEqual([]);
+    expect(validateGraph(manifest.actions)).toEqual([]);
+  });
+
+  it("credits a customer Stripe hasn't given a currency yet", async () => {
+    const { session } = world({ credits: true, policy: POLICY_V2 });
+    expect((await credit(session, "c01")).ok).toBe(true);
+  });
+
+  it("refuses unless the server turned credits on and the policy has a credit limit", async () => {
+    expect(await credit(world({ policy: POLICY_V2 }).session, "c01")).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("balance credits are off"),
+    });
+    expect(await credit(world({ credits: true }).session, "c01")).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("billing-remedy@1 has no invoice credit"),
+    });
+  });
+
+  it("refuses a credit at or above the policy limit", async () => {
+    const { session } = world({ credits: true, policy: POLICY_V2 });
+    expect(caseOf("c02").amountMinor).toBeGreaterThanOrEqual(POLICY_V2.creditMaxMinor);
+    expect(await credit(session, "c02")).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("a credit must be below 10000 cad"),
+    });
+    expect(session.actions).toEqual([]);
+  });
+
+  it("refuses a credit in a currency other than the customer's (Era wouldn't)", async () => {
+    const { session, customerCurrencies } = world({ credits: true, policy: POLICY_V2 });
+    customerCurrencies.set(caseOf("c01").customerId, "usd");
+    expect(await credit(session, "c01")).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("is billed in usd"),
+    });
+    expect(session.actions).toEqual([]);
+  });
+
+  it("proposes one remedy per obligation: a credit or a refund, never both", async () => {
+    const c = caseOf("c01");
+    const refund = (session: PlanningSession, chargeId: string, duplicateOf: string) =>
+      session.call("propose_duplicate_refund", {
+        chargeId,
+        duplicateOfChargeId: duplicateOf,
+        rationale: "x",
+      });
+
+    const first = world({ credits: true, policy: POLICY_V2 }).session;
+    expect((await credit(first, "c01")).ok).toBe(true);
+    expect(await refund(first, c.chargeIds[1], c.chargeIds[0])).toMatchObject({
+      ok: false,
+      error: expect.stringContaining(`already remedied by credit_${c.chargeIds[1]}`),
+    });
+
+    const second = world({ credits: true, policy: POLICY_V2 }).session;
+    expect((await refund(second, c.chargeIds[1], c.chargeIds[0])).ok).toBe(true);
+    expect(await credit(second, "c01")).toMatchObject({
+      ok: false,
+      error: expect.stringContaining(`already remedied by refund_${c.chargeIds[1]}`),
+    });
+    expect(second.actions).toHaveLength(1);
+  });
+
+  it("lets the ticket priority follow a credit", async () => {
+    const { session } = world({ credits: true, policy: POLICY_V2 });
+    const c = caseOf("c01");
+    expect((await credit(session, "c01")).ok).toBe(true);
+    const r = await session.call("propose_ticket_priority", {
+      customerId: c.customerId,
+      ticketId: String(c.ticketId),
+      priority: "urgent",
+      rationale: "x",
+    });
+    expect(r).toMatchObject({ ok: true });
+    expect(session.actions.at(-1)?.obligationId).toBe(session.actions[0]?.obligationId);
   });
 });

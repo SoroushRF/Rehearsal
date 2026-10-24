@@ -28,7 +28,7 @@ describe("stripe.customer.balanceCredit (T1.19)", () => {
     expect(StripeCustomerBalanceCredit.safeParse(zero).success).toBe(false);
   });
 
-  it("is not a plannable action until T1.14 wires it in", () => {
-    expect(Action.safeParse(credit).success).toBe(false);
+  it("is a plannable action (T1.14)", () => {
+    expect(Action.safeParse(credit).success).toBe(true);
   });
 });

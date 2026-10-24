@@ -82,7 +82,7 @@ describe.skipIf(!ENABLED)("plan-time and applied IDs diverge", () => {
         .map((a) => {
           const copy = structuredClone(a);
           if (copy.kind === "stripe.refund.create") copy.args.chargeId = CHARGE_ID;
-          else if (copy.kind !== "slack.message.postSummary") copy.args.ticketId = String(TICKET);
+          else if ("ticketId" in copy.args) copy.args.ticketId = String(TICKET);
           return copy;
         }),
     };

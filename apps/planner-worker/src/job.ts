@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { BillingPolicyV1, WorldContext } from "@rehearsal/core";
+import type { BillingPolicy, WorldContext } from "@rehearsal/core";
 import {
   incidentBrief,
   type MessagesClient,
@@ -18,12 +18,14 @@ export interface PlanJobContext {
   model: string;
   readers: { stripe: PlanningReader; zendesk: PlanningReader };
   ctx: WorldContext;
-  policy: BillingPolicyV1;
+  policy: BillingPolicy;
   adapters: Record<string, string>;
   /** Slack channel for the run summary (T1.7); without it the planner proposes none. */
   summaryChannelId?: string;
   /** Public replies to customers (T1.13), named from the incident report; off unless set. */
   customerReplies?: boolean;
+  /** Invoice-balance credits instead of small refunds (T1.14); needs a policy with a credit limit. */
+  balanceCredits?: boolean;
   /** Hard wall-clock bound on one run, on top of the loop's turn and call limits. */
   timeoutMs?: number;
   log?: (line: string) => void;
@@ -62,6 +64,7 @@ export async function handlePlanJob(
     ...(deps.summaryChannelId && {
       runSummary: { channelId: deps.summaryChannelId, incidentId: brief.incident },
     }),
+    ...(deps.balanceCredits && { credits: true }),
     ...(deps.customerReplies && {
       customerNames: Object.fromEntries(brief.customers.map((c) => [c.customerId, c.name])),
     }),
