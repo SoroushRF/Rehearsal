@@ -6,7 +6,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 
 ## Top blockers
 
-36 of 56 tasks done. These open tasks hold up the most other work:
+37 of 56 tasks done. These open tasks hold up the most other work:
 
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
@@ -14,8 +14,8 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T2.16** Review UI: show the exact rendered public reply being approved [#146](https://github.com/SoroushRF/Rehearsal/issues/146) | @parsaabbasian | 🟨 ready | 1 |
 | **T2.18** Policy: choose a refund or an invoice credit per obligation [#148](https://github.com/SoroushRF/Rehearsal/issues/148) | @parsaabbasian | 🟨 ready | 1 |
 | **T3.10** Slack write adapter and uncertain-post reconciliation [#149](https://github.com/SoroushRF/Rehearsal/issues/149) | @ArtinMe | 👀 in review | 1 |
-| **T3.11** Zendesk public reply write adapter and reconciliation [#150](https://github.com/SoroushRF/Rehearsal/issues/150) | @ArtinMe | 👀 in review | 1 |
 | **T3.12** Stripe balance credit write adapter and reconciliation [#151](https://github.com/SoroushRF/Rehearsal/issues/151) | @ArtinMe | 👀 in review | 1 |
+| **T3.8** Read back each write before confirming its receipt [#134](https://github.com/SoroushRF/Rehearsal/issues/134) | @ArtinMe | 👀 in review | 1 |
 
 ## T1 Rehearse
 
@@ -35,7 +35,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T1.10** Bind duplicate refunds to invoice identity and retain a paid anchor [#61](https://github.com/SoroushRF/Rehearsal/issues/61) | ✅ done |  |  |
 | **T1.11** Verify customer ownership before proposing ticket changes [#63](https://github.com/SoroushRF/Rehearsal/issues/63) | ✅ done |  |  |
 | **T1.12** Preserve the evidence snapshot used to construct each action [#73](https://github.com/SoroushRF/Rehearsal/issues/73) | ✅ done |  |  |
-| **T1.13** Public customer reply from an exact approved template [#136](https://github.com/SoroushRF/Rehearsal/issues/136) | 🟥 blocked | T2.16 (T2, ready)<br>T3.11 (T3, in review) |  |
+| **T1.13** Public customer reply from an exact approved template [#136](https://github.com/SoroushRF/Rehearsal/issues/136) | 🟥 blocked | T2.16 (T2, ready) |  |
 | **T1.14** Invoice-balance credit as an alternative remedy to a refund [#137](https://github.com/SoroushRF/Rehearsal/issues/137) | 🟥 blocked | T2.18 (T2, ready)<br>T3.12 (T3, in review)<br>T4.10 (T4, ready)<br>T3.8 (T3, in review) |  |
 | **T1.15** Scorecard rows from a real model planner (T1.6 follow-up) [#140](https://github.com/SoroushRF/Rehearsal/issues/140) | ✅ done |  |  |
 | **T1.16** Full-scope decision record: reopen the trimmed scope [#141](https://github.com/SoroushRF/Rehearsal/issues/141) | ✅ done |  | T1.8, T1.17, T1.18, T1.19 |
@@ -83,7 +83,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T3.7** Bounded concurrency across independent cases [#24](https://github.com/SoroushRF/Rehearsal/issues/24) | ✅ done |  |  |
 | **T3.8** Read back each write before confirming its receipt [#134](https://github.com/SoroushRF/Rehearsal/issues/134) | 👀 in review [PR #194](https://github.com/SoroushRF/Rehearsal/pull/194) | — | T1.14 (T1) |
 | **T3.10** Slack write adapter and uncertain-post reconciliation [#149](https://github.com/SoroushRF/Rehearsal/issues/149) | 👀 in review [PR #195](https://github.com/SoroushRF/Rehearsal/pull/195) | — | T1.7 (T1) |
-| **T3.11** Zendesk public reply write adapter and reconciliation [#150](https://github.com/SoroushRF/Rehearsal/issues/150) | 👀 in review [PR #196](https://github.com/SoroushRF/Rehearsal/pull/196) | — | T1.13 (T1) |
+| **T3.11** Zendesk public reply write adapter and reconciliation [#150](https://github.com/SoroushRF/Rehearsal/issues/150) | ✅ done |  | T1.13 (T1) |
 | **T3.12** Stripe balance credit write adapter and reconciliation [#151](https://github.com/SoroushRF/Rehearsal/issues/151) | 👀 in review [PR #197](https://github.com/SoroushRF/Rehearsal/pull/197) | — | T1.14 (T1) |
 
 ## T4 Guard
@@ -161,7 +161,7 @@ flowchart LR
     T3_7["T3.7 Bounded concurrency across independent case"]:::done
     T3_8["T3.8 Read back each write before confirming its "]:::review
     T3_10["T3.10 Slack write adapter and uncertain-post rec"]:::review
-    T3_11["T3.11 Zendesk public reply write adapter and rec"]:::review
+    T3_11["T3.11 Zendesk public reply write adapter and rec"]:::done
     T3_12["T3.12 Stripe balance credit write adapter and re"]:::review
   end
   subgraph T4[T4 Guard]
