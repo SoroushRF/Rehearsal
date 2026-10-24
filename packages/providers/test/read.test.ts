@@ -198,6 +198,65 @@ describe("stripeReader", () => {
     expect(obs.projection).toMatchObject({ complete: false });
   });
 
+  it("lists credit notes, and reads the charge from metadata.charge_id too", async () => {
+    serve({
+      data: [
+        {
+          id: "cbtxn_note",
+          amount: -2000,
+          currency: "CAD",
+          type: "credit_note",
+          metadata: { charge_id: CHARGE },
+        },
+        { id: "cbtxn_inv", amount: -500, currency: "cad", type: "invoice", metadata: null },
+      ],
+      has_more: false,
+    });
+    const obs = await stripeReader(target()).observe(
+      { vendor: "stripe", kind: "customer_balance_transactions", id: CUSTOMER },
+      ctx,
+    );
+    expect(obs.projection).toEqual({
+      complete: true,
+      credits: [{ id: "cbtxn_note", amountMinor: 2000, currency: "cad", chargeId: CHARGE }],
+    });
+  });
+
+  it.each([
+    [
+      "a page repeats an id",
+      [
+        {
+          data: [
+            { id: "cbtxn_1", amount: -1, currency: "cad", type: "adjustment" },
+            { id: "cbtxn_1", amount: -1, currency: "cad", type: "adjustment" },
+          ],
+          has_more: false,
+        },
+      ],
+    ],
+    [
+      "a later page repeats an earlier one",
+      [
+        {
+          data: [{ id: "cbtxn_1", amount: -1, currency: "cad", type: "adjustment" }],
+          has_more: true,
+        },
+        {
+          data: [{ id: "cbtxn_1", amount: -1, currency: "cad", type: "adjustment" }],
+          has_more: false,
+        },
+      ],
+    ],
+  ])("does not claim a complete credit list when %s", async (_label, bodies) => {
+    serve(...bodies);
+    const obs = await stripeReader(target({ pageSize: 1 })).observe(
+      { vendor: "stripe", kind: "customer_balance_transactions", id: CUSTOMER },
+      ctx,
+    );
+    expect(obs.projection).toMatchObject({ complete: false });
+  });
+
   it("does not treat a truncated credit list as empty", async () => {
     serve({
       data: [

@@ -35,7 +35,7 @@
 | T4.5 | ML smoke test: Qwen3.5-0.8B LoRA on 32 cases, weights change, save and reload, peak memory measured (Python 3.12, CUDA 12.7-compatible wheels) | M1 | Smoke log + adapter hash in `ml/manifests/` | #29 | — |
 | T4.6 | ML pilot: labels from replay bundles plus perturbations; base vs. tuned vs. rules vs. Claude zero-shot; go/no-go | M2–M3 | Report in `evals/impact/`; decision recorded | #30 | T4.5 |
 | T4.7 | _If go:_ impact service behind `ImpactPort` (timeout → abstain), advisory only | M4 | Integration test: model absent or failing → same execution | #31 | T4.6 |
-| T4.10 | _Full scope:_ guard: one remedy per obligation across refunds and credits | full scope | A second remedy for the same obligation is held, including a teammate's; distinct obligations pass. Fixture: `apps/executor-worker/test/one-remedy.test.ts`. Era test written, not run: `evals/providers/test/one-remedy.test.ts` | #152 | T1.19 |
+| T4.10 | _Full scope:_ guard: one remedy per obligation across refunds and credits | Done | A second remedy for the same obligation is held, including a teammate's and one sent under another plan or revision; distinct obligations pass. Fixture: `apps/executor-worker/test/one-remedy.test.ts`. Era: `evals/providers/test/one-remedy.test.ts` passes | #152 | T1.19 |
 
 ### Beyond and benchmark backlog (Oct 24)
 
@@ -57,6 +57,15 @@ See [beyond.md](../beyond.md) for scope, parallel work, external gates and the r
 - **2026-10-24 (Codex, backlog planning):** Filed 4 owned M5 issues (T4.11 #169, T4.12 #173, T4.13 #175, T4.14 #179) with scope/track labels, acceptance criteria and linked blockers. Added the cross-track dependency map in [beyond.md](../beyond.md); native GitHub dependencies mirror these rows. No feature implementation or live validation is claimed. Next: finish the full prerequisites, then follow the graph; optional killer work stays off the main release path.
 
 _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
+
+### 2026-10-24, T4.10 review fixes (PR #199 by @skhdemo, merged with fixes)
+
+- **Replay after an unknown send is re-checked.** The in-run idempotent replay used to skip the step guard. It now reads whether the earlier send landed; if it can't show that, the guard runs, and a hold settles the step `unknown_outcome` without re-sending.
+- **Across plans and revisions.** `ApplyStore.remedyStepsFor` lists every refund or credit step for the obligation in the org's stored plans. The executor passes their attempts to the guard as `priorRemedies`; a dispatched, unknown, confirmed or reconciled one holds. A store without the method holds every remedy.
+- **Credits.** `remedyOf` switches over every action kind, so T1.14's credit has to be added there. A confirmed credit settles its obligation. An untagged credit in the same currency that is no larger than the step holds it (a partial credit). Credit notes are listed too.
+- **Refund check.** A charge's refunded amount only holds when it is more than the approved evidence plus this plan's own refunds of that charge.
+- **Not closed: two plans racing.** Both can read "no remedy" before either sends. See decision 0010.
+- **Next.** @ArtinMe tags our own credits with `metadata[charge]` in T3. T1.14 adds the credit case to `remedyOf` and the executor.
 
 ### 2026-10-24, T4.10 one remedy per obligation
 

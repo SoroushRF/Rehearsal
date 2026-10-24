@@ -8,7 +8,7 @@ import type {
   Vendor,
 } from "@rehearsal/contracts";
 import { canonicalize } from "./canonical";
-import type { StepGuard } from "./executor";
+import type { StepGuard, StepGuardContext } from "./executor";
 import {
   advanceOverlay,
   emptyOverlay,
@@ -17,7 +17,7 @@ import {
   type OwnWriteOverlay,
 } from "./guards";
 import type { Clock, ProviderPort, WorldContext } from "./ports";
-import { oneRemedyHold, type RemedyStep, type SeenCredit } from "./remedy";
+import { oneRemedyHold, type RemedyStep, remedyOf, type SeenCredit } from "./remedy";
 
 export interface ReadGuardDeps {
   providers: Partial<Record<Vendor, ProviderPort>>;
@@ -67,7 +67,8 @@ export function overlayFromReceipts(
  * hold on any drift. A reader that is missing or fails holds; it never counts as "nothing changed".
  */
 export function createReadGuard(deps: ReadGuardDeps): StepGuard {
-  return async (action: Action, { manifest, confirmedReceipts }) => {
+  return async (action: Action, context) => {
+    const { manifest, confirmedReceipts } = context;
     // One re-read per record and per query, even when several planned observations cite it.
     const currentObservations: Observation[] = [];
     const readEntities = new Set<string>();
@@ -106,20 +107,8 @@ export function createReadGuard(deps: ReadGuardDeps): StepGuard {
       overlay: overlayFromReceipts(manifest, confirmedReceipts),
     });
     if (verdict.decision === "hold") return verdict.reason;
-    if (action.kind !== "stripe.refund.create") return null;
-    return readRemedyHold(
-      deps,
-      {
-        id: action.id,
-        obligationId: action.obligationId,
-        kind: action.kind,
-        chargeId: action.args.chargeId,
-        amountMinor: action.args.amount.amountMinor,
-        currency: action.args.amount.currency,
-      },
-      manifest,
-      confirmedReceipts,
-    );
+    const remedy = remedyOf(action);
+    return remedy ? readRemedyHold(deps, remedy, context) : null;
   };
 }
 
@@ -134,9 +123,42 @@ function settledRemedies(
   for (const receipt of receipts) {
     if (receipt.outcome !== "confirmed") continue;
     const prior = manifest.actions.find((item) => item.id === receipt.actionId);
-    if (prior?.kind === "stripe.refund.create") settled.set(prior.obligationId, prior.id);
+    const remedy = prior && remedyOf(prior);
+    if (remedy) settled.set(remedy.obligationId, remedy.id);
   }
   return settled;
+}
+
+/**
+ * How much of this charge the approved evidence already showed refunded, plus this plan's own
+ * confirmed refunds of it. A fresh read above that is a refund nobody here accounts for.
+ */
+function explainedRefunded(
+  step: RemedyStep,
+  manifest: PlanManifest,
+  receipts: readonly Receipt[],
+): number {
+  const evidenced = manifest.observations
+    .filter(
+      (o) =>
+        o.entity.vendor === "stripe" && o.entity.kind === "charge" && o.entity.id === step.chargeId,
+    )
+    .map((o) => o.projection.amount_refunded)
+    .filter((v): v is number => typeof v === "number" && Number.isInteger(v));
+  let explained = evidenced.length > 0 ? Math.max(...evidenced) : 0;
+  for (const receipt of receipts) {
+    if (receipt.outcome !== "confirmed") continue;
+    const prior = manifest.actions.find((item) => item.id === receipt.actionId);
+    const own = prior && remedyOf(prior);
+    if (
+      own?.kind === "stripe.refund.create" &&
+      own.chargeId === step.chargeId &&
+      own.id !== step.id
+    ) {
+      explained += own.amountMinor;
+    }
+  }
+  return explained;
 }
 
 function creditsFrom(projection: Record<string, unknown>): SeenCredit[] | null {
@@ -166,20 +188,35 @@ function creditsFrom(projection: Record<string, unknown>): SeenCredit[] | null {
 
 /**
  * Re-read the charge and the customer's balance credits, then hold when this obligation already
- * has a remedy. A missing or incomplete credit list is not proof that no credit exists.
+ * has a remedy. A missing or incomplete credit list is not proof that no credit exists, and a store
+ * that can't list other plans' remedies is not proof that none was sent.
  */
 export async function readRemedyHold(
   deps: ReadGuardDeps,
   step: RemedyStep,
-  manifest: PlanManifest,
-  confirmedReceipts: readonly Receipt[],
+  context: StepGuardContext,
 ): Promise<HoldReason | null> {
+  const { manifest, confirmedReceipts, priorRemedies } = context;
+  if (!priorRemedies) {
+    return {
+      kind: "evidence_unavailable",
+      evidenceId: step.id,
+      detail: "other plans' remedies for this obligation could not be listed",
+    };
+  }
   const read = await reread(deps, "stripe", step.id, (provider, world) =>
     provider.observe({ vendor: "stripe", kind: "charge", id: step.chargeId }, world),
   );
   if (!read.ok) return read.reason;
   const currentRefunded = read.value.projection.amount_refunded;
-  const refunded = typeof currentRefunded === "number" && currentRefunded > 0;
+  if (typeof currentRefunded !== "number" || !Number.isInteger(currentRefunded)) {
+    return {
+      kind: "evidence_unavailable",
+      evidenceId: step.id,
+      detail: "charge re-read has no refunded amount",
+    };
+  }
+  const refunded = currentRefunded > explainedRefunded(step, manifest, confirmedReceipts);
   const customer = read.value.projection.customer;
   if (typeof customer !== "string" || customer.length === 0) {
     return {
@@ -210,6 +247,7 @@ export async function readRemedyHold(
   return oneRemedyHold({
     step,
     settledBy: settledRemedies(manifest, confirmedReceipts),
+    priorRemedies,
     refundedChargeIds: refunded ? new Set([step.chargeId]) : new Set(),
     credits,
   });

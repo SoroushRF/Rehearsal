@@ -219,8 +219,7 @@ describe.skipIf(!ENABLED)("one remedy per obligation on Era", () => {
         amountMinor: CASES["001"].amountMinor,
         currency: "cad",
       },
-      manifest,
-      [],
+      { manifest, confirmedReceipts: [], priorRemedies: [] },
     );
     expect(held).toMatchObject({
       kind: "policy_violation",

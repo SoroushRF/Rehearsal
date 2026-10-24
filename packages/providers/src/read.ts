@@ -282,7 +282,8 @@ async function listBalanceCredits(
     }
     for (const item of data) {
       seen.add(item.id);
-      if (item.type !== "adjustment") continue;
+      // A manual adjustment or a credit note applied to the balance: either credits the customer.
+      if (item.type !== "adjustment" && item.type !== "credit_note") continue;
       // A float, a blank id, or a currency we cannot match is not proof that no credit exists.
       const currency = item.currency.toLowerCase();
       if (item.id.length === 0 || !Number.isInteger(item.amount) || !/^[a-z]{3}$/.test(currency)) {
