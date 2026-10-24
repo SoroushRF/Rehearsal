@@ -1,4 +1,4 @@
-import type { Currency, PlanManifest, Role } from "@rehearsal/contracts";
+import type { Action, Currency, Money, Role } from "@rehearsal/contracts";
 
 /** Authored demo policy for the fictional company — not a financial/regulatory requirement. */
 export interface BillingPolicyV1 {
@@ -7,6 +7,45 @@ export interface BillingPolicyV1 {
   currency: Currency;
   /** Refunds at or above this need the finance role. */
   financeThresholdMinor: number;
+}
+
+/**
+ * Adds the invoice-balance credit as a second remedy (decision 0010). Money still goes back by
+ * refund; a credit stays on the customer's account, so only a small amount may be settled that way.
+ */
+export interface BillingPolicyV2 extends Omit<BillingPolicyV1, "version"> {
+  version: 2;
+  /** A credit below this is allowed; at or above it the obligation must be refunded. */
+  creditMaxMinor: number;
+}
+
+/**
+ * Adds two approvers for large amounts (decision 0011): a refund or credit at or above
+ * `dualApprovalMinor` needs live grants from two different users, one `support_lead` and one
+ * `finance_lead`.
+ */
+export interface BillingPolicyV3 extends Omit<BillingPolicyV2, "version"> {
+  version: 3;
+  dualApprovalMinor: number;
+}
+
+export type BillingPolicy = BillingPolicyV1 | BillingPolicyV2 | BillingPolicyV3;
+
+/**
+ * A step policy can judge. The balance credit isn't in `Action` yet (T1.14 adds it once this policy
+ * handles it), so a plan can't carry one today; policy reads only the fields below, so it is ready
+ * for the day it can. Every `StripeCustomerBalanceCredit` fits.
+ */
+export type PolicyAction =
+  | Action
+  | (Pick<Action, "id" | "obligationId" | "requiredRole"> & {
+      kind: "stripe.customer.balanceCredit";
+      args: { amount: Money };
+    });
+
+/** Remedies that already took effect, by obligation, from earlier runs. Supplied by the caller. */
+export interface PolicyContext {
+  completedRemedies?: ReadonlyMap<string, { actionId: string }>;
 }
 
 export interface PolicyViolation {
@@ -18,29 +57,62 @@ export interface PolicyViolation {
 export interface PolicyResult {
   violations: PolicyViolation[];
   requiredRoles: Set<Role>;
+  /** Steps that need two distinct approvers under this policy. Empty for v1 and v2. */
+  dualApproval: string[];
+}
+
+/** The money-back steps. Exactly one may settle an obligation. */
+function remedyAmount(a: PolicyAction): Money | null {
+  return a.kind === "stripe.refund.create" || a.kind === "stripe.customer.balanceCredit"
+    ? a.args.amount
+    : null;
 }
 
 export function evaluateBillingPolicy(
-  manifest: PlanManifest,
-  policy: BillingPolicyV1,
+  manifest: { actions: readonly PolicyAction[] },
+  policy: BillingPolicy,
+  context: PolicyContext = {},
 ): PolicyResult {
   const violations: PolicyViolation[] = [];
   const requiredRoles = new Set<Role>();
-  const refundsByObligation = new Map<string, string>();
+  const remedyByObligation = new Map<string, string>();
+  const dualApproval: string[] = [];
+  const creditMax = "creditMaxMinor" in policy ? policy.creditMaxMinor : null;
+  const dualMin = policy.version === 3 ? policy.dualApprovalMinor : null;
 
   for (const a of manifest.actions) {
     requiredRoles.add(a.requiredRole);
-    if (a.kind !== "stripe.refund.create") continue;
+    const amount = remedyAmount(a);
+    if (!amount) continue;
+    const isCredit = a.kind === "stripe.customer.balanceCredit";
+    const noun = isCredit ? "credit" : "refund";
 
-    if (a.args.amount.currency !== policy.currency) {
+    // R4: which remedies this policy version knows about, and how large a credit may be.
+    if (isCredit) {
+      if (creditMax === null) {
+        violations.push({
+          rule: "R4.remedy_not_allowed",
+          actionId: a.id,
+          detail: `policy ${policy.id}@${policy.version} has no invoice credit; use a refund`,
+        });
+      } else if (amount.amountMinor >= creditMax) {
+        violations.push({
+          rule: "R4.credit_over_limit",
+          actionId: a.id,
+          detail: `credit of ${amount.amountMinor} is not below ${creditMax}; refund it instead`,
+        });
+      }
+    }
+
+    if (amount.currency !== policy.currency) {
       violations.push({
         rule: "R1.currency",
         actionId: a.id,
-        detail: `refund in ${a.args.amount.currency}, policy allows ${policy.currency}`,
+        detail: `${noun} in ${amount.currency}, policy allows ${policy.currency}`,
       });
     }
 
-    const prior = refundsByObligation.get(a.obligationId);
+    const prior = remedyByObligation.get(a.obligationId);
     if (prior) {
       violations.push({
         rule: "R2.single_remedy",
@@ -48,19 +120,28 @@ export function evaluateBillingPolicy(
         detail: `obligation ${a.obligationId} already remedied by ${prior}`,
       });
     } else {
-      refundsByObligation.set(a.obligationId, a.id);
+      remedyByObligation.set(a.obligationId, a.id);
     }
 
-    if (
-      a.args.amount.amountMinor >= policy.financeThresholdMinor &&
-      a.requiredRole !== "finance_lead"
-    ) {
+    // R5: a remedy that already took effect, in an earlier run, settles the obligation for good.
+    const done = context.completedRemedies?.get(a.obligationId);
+    if (done) {
+      violations.push({
+        rule: "R5.remedy_already_completed",
+        actionId: a.id,
+        detail: `obligation ${a.obligationId} was already remedied by ${done.actionId}`,
+      });
+    }
+
+    if (dualMin !== null && amount.amountMinor >= dualMin) dualApproval.push(a.id);
+
+    if (amount.amountMinor >= policy.financeThresholdMinor && a.requiredRole !== "finance_lead") {
       violations.push({
         rule: "R3.finance_threshold",
         actionId: a.id,
-        detail: `refund of ${a.args.amount.amountMinor} needs finance_lead`,
+        detail: `${noun} of ${amount.amountMinor} needs finance_lead`,
       });
     }
   }
-  return { violations, requiredRoles };
+  return { violations, requiredRoles, dualApproval };
 }
