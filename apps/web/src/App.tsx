@@ -1,12 +1,13 @@
 import { useAuth } from "@clerk/react";
-import { HealthResponse } from "@rehearsal/contracts";
-import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { AccountBar, clerkKey, useApiFetch } from "./auth";
+import { AppShell, Segmented } from "./components/AppShell";
 import { LivePlans } from "./components/LivePlans";
 import { PlanReview } from "./components/PlanReview";
 import { ReplayPage } from "./components/ReplayPage";
+import { Alert, Card } from "./components/ui";
 import { type FixtureBundle, fixtureBundles } from "./fixtures";
+import { humanize } from "./format";
 import { IdentityScope, identityOf } from "./identity";
 import { replayParam } from "./replay";
 
@@ -19,21 +20,9 @@ export function App({ bundles = fixtureBundles }: { bundles?: FixtureBundle[] })
   const replay = replayParam(window.location.search);
   if (replay !== null) return <ReplayPage id={replay} />;
   return (
-    <main className="mx-auto max-w-4xl p-6 font-sans text-slate-900">
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">Rehearsal</h1>
-          <p className="mt-1 text-slate-600">
-            Rehearse the plan. Approve its effects. Apply with evidence.
-          </p>
-        </div>
-        <AccountBar />
-      </header>
-
+    <AppShell account={<AccountBar />}>
       {clerkKey ? <SignedInOrFixtures bundles={bundles} /> : <FixturePlans bundles={bundles} />}
-
-      <ApiStatus />
-    </main>
+    </AppShell>
   );
 }
 
@@ -45,13 +34,13 @@ function SignedInOrFixtures({ bundles }: { bundles: FixtureBundle[] }) {
     <IdentityScope
       identity={identity}
       fallback={
-        <>
-          <p className="mt-6 text-sm text-slate-600">
-            Sign in and choose an organization to review live plans. Until then, these are the
-            shared fixtures.
-          </p>
+        <div className="flex flex-col gap-6">
+          <Alert tone="info" title="Sign in to review live plans">
+            Sign in and choose an organization to rehearse incidents and approve plans. Until then,
+            these are example plans, read-only.
+          </Alert>
           <FixturePlans bundles={bundles} />
-        </>
+        </div>
       }
     >
       <LivePlans apiFetch={apiFetch} />
@@ -70,36 +59,37 @@ function FixturePlans({ bundles }: { bundles: FixtureBundle[] }) {
     window.history.replaceState(null, "", url);
   };
 
+  if (!current) {
+    return (
+      <Card className="border-dashed bg-transparent px-6 py-14 text-center shadow-none">
+        <p className="text-base font-semibold text-ink">No plans to review.</p>
+      </Card>
+    );
+  }
   return (
-    <>
-      <nav aria-label="Fixture plans" className="mt-6 flex flex-wrap gap-2">
-        {bundles.map(({ bundle }) => (
-          <button
-            key={bundle.id}
-            type="button"
-            title={bundle.title}
-            aria-current={bundle.id === current?.bundle.id ? "page" : undefined}
-            onClick={() => choose(bundle.id)}
-            className="rounded-full border border-slate-300 px-3 py-1 text-sm aria-[current=page]:border-slate-900 aria-[current=page]:bg-slate-900 aria-[current=page]:text-white"
-          >
-            {bundle.id}
-          </button>
-        ))}
-      </nav>
-
-      {current ? (
-        <div className="mt-4">
-          <p className="mb-3 text-sm text-slate-600">{current.bundle.title}</p>
-          <PlanReview
-            manifest={current.bundle.manifest}
-            planHash={current.planHash}
-            evidence={current.bundle.evidence}
-          />
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold tracking-wider text-subtle uppercase">Example plan</p>
+          <p className="text-sm text-muted">{current.bundle.title}</p>
         </div>
-      ) : (
-        <p className="mt-6 text-slate-600">No plans to review.</p>
-      )}
-    </>
+        <Segmented
+          label="Fixture plans"
+          value={current.bundle.id}
+          onChange={choose}
+          options={bundles.map(({ bundle }) => ({
+            id: bundle.id,
+            text: humanize(bundle.id),
+            title: bundle.title,
+          }))}
+        />
+      </div>
+      <PlanReview
+        manifest={current.bundle.manifest}
+        planHash={current.planHash}
+        evidence={current.bundle.evidence}
+      />
+    </div>
   );
 }
 
@@ -109,21 +99,4 @@ function initialBundle(bundles: FixtureBundle[]): string | undefined {
       ? null
       : new URLSearchParams(window.location.search).get("bundle");
   return bundles.find((b) => b.bundle.id === requested)?.bundle.id ?? bundles[0]?.bundle.id;
-}
-
-function ApiStatus() {
-  const health = useQuery({
-    queryKey: ["health"],
-    queryFn: async () => HealthResponse.parse(await (await fetch("/api/health")).json()),
-  });
-  return (
-    <p className="mt-8 text-xs text-slate-500">
-      API:{" "}
-      {health.isPending
-        ? "checking…"
-        : health.isError
-          ? "unreachable"
-          : `ok (${health.data.mode} mode, contracts v${health.data.contractsVersion})`}
-    </p>
-  );
 }
