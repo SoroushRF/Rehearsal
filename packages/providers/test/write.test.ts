@@ -1,11 +1,18 @@
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { type Action, Attempt } from "@rehearsal/contracts";
-import { type CreditAction, creditEffectMatches, type ReplyAction } from "@rehearsal/core";
+import {
+  type CreditAction,
+  creditEffectMatches,
+  type ReplyAction,
+  type SummaryAction,
+  summaryCountKey,
+} from "@rehearsal/core";
 import { happyPathBundle } from "@rehearsal/testkit";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   classifyResponse,
+  slackWriter,
   stripeCreditWriter,
   stripeWriter,
   type WriteTarget,
@@ -549,6 +556,7 @@ describe("stripeCreditWriter (T3.12)", () => {
     expect(await w.reconcile(attempt, credit, CTX)).toMatchObject({
       kind: "indeterminate",
       detail: "credit read contradicts the journaled operation",
+      contradicts: true,
     });
     reply = page([]);
     expect(await w.reconcile(attempt, credit, CTX)).toEqual({ kind: "not_applied" });
@@ -579,5 +587,304 @@ describe("stripeCreditWriter (T3.12)", () => {
     });
     reply = page([other, other], true);
     expect(await w.reconcile(attempt, credit, CTX)).toMatchObject({ kind: "indeterminate" });
+  });
+});
+
+describe("slackWriter (T3.10)", () => {
+  const summary: SummaryAction = {
+    id: "summary_001",
+    kind: "slack.message.postSummary",
+    args: {
+      channelId: "chan-ops",
+      template: { id: "run-summary", version: 1 },
+      bindings: {
+        incidentId: "INC-BILL-0927",
+        refunded: {
+          $count: "outcomes",
+          stepIds: ["refund_001", "refund_002"],
+          outcomes: ["confirmed"],
+        },
+        held: { $count: "outcomes", stepIds: ["refund_001", "refund_002"], outcomes: ["held"] },
+      },
+    },
+  };
+  const counts = new Map([
+    [summaryCountKey("refunded"), 1],
+    [summaryCountKey("held"), 1],
+  ]);
+  const KEY = "op_summary_key";
+  const attemptFor = (body: string) =>
+    Attempt.parse({
+      id: "att_s",
+      actionId: "summary_001",
+      planHash: "a".repeat(64),
+      operationKey: KEY,
+      attemptNo: 1,
+      state: "unknown_outcome",
+      request: {
+        method: "POST",
+        path: "/api/chat.postMessage",
+        encoding: "json",
+        body,
+        bodySha256: "b".repeat(64),
+      },
+      providerStatus: null,
+      error: null,
+      preparedAt: "2026-10-21T12:00:00.000Z",
+      dispatchedAt: "2026-10-21T12:00:00.000Z",
+      settledAt: null,
+    });
+
+  it("renders the approved template with literals, outcome counts and the marker", () => {
+    const req = slackWriter(target).prepare(summary, counts, KEY);
+    expect(req).toMatchObject({ method: "POST", path: "/api/chat.postMessage", encoding: "json" });
+    expect(JSON.parse(req.body)).toEqual({
+      channel: "chan-ops",
+      text: "Billing remediation INC-BILL-0927: 1 refund(s) issued, 1 step(s) held for review.\n\n[rehearsal-op:op_summary_key]",
+    });
+  });
+
+  it("refuses to render without every outcome count, or with an unknown template", () => {
+    const w = slackWriter(target);
+    expect(() => w.prepare(summary, new Map(), KEY)).toThrow(/unresolved summary count/);
+    expect(() =>
+      w.prepare(
+        { ...summary, args: { ...summary.args, template: { id: "nope", version: 1 } } },
+        counts,
+        KEY,
+      ),
+    ).toThrow(/unknown summary template/);
+  });
+
+  it("maps Slack's 200 ok:false to a refusal, ratelimited to a retryable one", async () => {
+    const w = slackWriter(target);
+    const req = w.prepare(summary, counts, KEY);
+    reply = { status: 200, body: JSON.stringify({ ok: false, error: "channel_not_found" }) };
+    expect(await w.dispatch(req, CTX)).toMatchObject({ kind: "rejected", retryable: false });
+    reply = { status: 200, body: JSON.stringify({ ok: false, error: "ratelimited" }) };
+    expect(await w.dispatch(req, CTX)).toMatchObject({
+      kind: "rejected",
+      status: 429,
+      retryable: true,
+    });
+    reply = { status: 200, body: JSON.stringify({ ok: true, ts: "1.2", channel: "chan-ops" }) };
+    expect(await w.dispatch(req, CTX)).toMatchObject({ kind: "confirmed" });
+    reply = { status: 200, body: JSON.stringify({ ok: true }) };
+    expect(await w.dispatch(req, CTX)).toMatchObject({ kind: "unknown" });
+    reply = { status: 503, body: "{}" };
+    expect(await w.dispatch(req, CTX)).toMatchObject({ kind: "unknown" });
+  });
+
+  it("finds a post by its marker on a later history page", async () => {
+    const w = slackWriter(target);
+    const req = w.prepare(summary, counts, KEY);
+    const page = (messages: { ts: string; text: string; bot_id?: string }[], next?: string) => ({
+      status: 200,
+      body: JSON.stringify({
+        ok: true,
+        messages,
+        has_more: next !== undefined,
+        response_metadata: { next_cursor: next ?? "" },
+      }),
+    });
+    queue = [
+      page([{ ts: "3", text: "someone else" }], "c1"),
+      page([{ ts: "2", text: JSON.parse(req.body).text, bot_id: "B1" }]),
+    ];
+    expect(await w.reconcile(attemptFor(req.body), summary, CTX)).toEqual({
+      kind: "applied",
+      providerRef: { vendor: "slack", kind: "message", id: "2" },
+      effect: { "message.ts": "2", channel: "chan-ops" },
+    });
+    expect(seen[1]?.url).toContain("cursor=c1");
+  });
+
+  it("treats errors that may have posted as unknown, never as a refusal", async () => {
+    const w = slackWriter(target);
+    const req = w.prepare(summary, counts, KEY);
+    for (const error of [
+      "internal_error",
+      "fatal_error",
+      "service_unavailable",
+      "brand_new_code",
+    ]) {
+      reply = { status: 200, body: JSON.stringify({ ok: false, error }) };
+      expect(await w.dispatch(req, CTX)).toMatchObject({ kind: "unknown" });
+    }
+  });
+
+  it("doesn't take a person quoting the summary for the post", async () => {
+    const w = slackWriter(target);
+    const req = w.prepare(summary, counts, KEY);
+    reply = {
+      status: 200,
+      body: JSON.stringify({
+        ok: true,
+        messages: [{ ts: "5", text: `> ${JSON.parse(req.body).text}` }],
+        has_more: false,
+      }),
+    };
+    expect((await w.reconcile(attemptFor(req.body), summary, CTX)).kind).toBe("indeterminate");
+  });
+
+  it("keeps paging past a quote of the summary to find the real post (review)", async () => {
+    const w = slackWriter(target);
+    const req = w.prepare(summary, counts, KEY);
+    const text = JSON.parse(req.body).text as string;
+    const page = (messages: object[], next?: string) => ({
+      status: 200,
+      body: JSON.stringify({
+        ok: true,
+        messages,
+        has_more: next !== undefined,
+        response_metadata: { next_cursor: next ?? "" },
+      }),
+    });
+    queue = [page([{ ts: "9", text: `> ${text}` }], "c1"), page([{ ts: "2", text, bot_id: "B1" }])];
+    expect(await w.reconcile(attemptFor(req.body), summary, CTX)).toMatchObject({
+      kind: "applied",
+      providerRef: { id: "2" },
+    });
+  });
+
+  it("takes only a bot message with exactly the journaled text as the post (review)", async () => {
+    const w = slackWriter(target);
+    const req = w.prepare(summary, counts, KEY);
+    const text = JSON.parse(req.body).text as string;
+    const altered = text.replace("1 refund(s)", "999 refund(s)");
+    reply = {
+      status: 200,
+      body: JSON.stringify({
+        ok: true,
+        messages: [{ ts: "7", text: altered, bot_id: "B2" }],
+        has_more: false,
+      }),
+    };
+    expect(await w.reconcile(attemptFor(req.body), summary, CTX)).toMatchObject({
+      kind: "indeterminate",
+      detail: "only messages that aren't this exact post carry its marker",
+    });
+    // Slack returns &, < and > escaped; the journaled text is compared unescaped.
+    const amp = {
+      ...summary,
+      args: { ...summary.args, bindings: { ...summary.args.bindings, incidentId: "INC <a&b>" } },
+    };
+    const ampReq = w.prepare(amp, counts, KEY);
+    const escaped = (JSON.parse(ampReq.body).text as string)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;");
+    reply = {
+      status: 200,
+      body: JSON.stringify({
+        ok: true,
+        messages: [{ ts: "8", text: escaped, bot_id: "B1" }],
+        has_more: false,
+      }),
+    };
+    expect((await w.reconcile(attemptFor(ampReq.body), amp, CTX)).kind).toBe("applied");
+  });
+
+  it("can't tell when Slack says there is more history but gives no cursor", async () => {
+    const w = slackWriter(target);
+    reply = {
+      status: 200,
+      body: JSON.stringify({
+        ok: true,
+        messages: [],
+        has_more: true,
+        response_metadata: { next_cursor: "" },
+      }),
+    };
+    expect(
+      await w.reconcile(attemptFor(w.prepare(summary, counts, KEY).body), summary, CTX),
+    ).toMatchObject({
+      kind: "indeterminate",
+      detail: "more Slack history but no cursor",
+    });
+  });
+
+  it("renders only the template's own bindings: literals short and single-line, counts as counts", () => {
+    const w = slackWriter(target);
+    const withBindings = (bindings: SummaryAction["args"]["bindings"]): SummaryAction => ({
+      ...summary,
+      args: { ...summary.args, bindings },
+    });
+    const bound = summary.args.bindings;
+    const incidentId = bound.incidentId as string;
+    const refunded = bound.refunded as NonNullable<typeof bound.refunded>;
+    const held = bound.held as NonNullable<typeof bound.held>;
+    expect(() => w.prepare(withBindings({ incidentId, refunded }), counts, KEY)).toThrow(
+      /takes exactly/,
+    );
+    expect(() =>
+      w.prepare(withBindings({ incidentId, refunded, held, extra: "x" }), counts, KEY),
+    ).toThrow(/takes exactly/);
+    expect(() => w.prepare(withBindings({ incidentId, refunded: 7, held }), counts, KEY)).toThrow(
+      /must be a count of approved steps' outcomes/,
+    );
+    expect(() =>
+      w.prepare(
+        withBindings({ incidentId: "INC [rehearsal-op:op_other]", refunded, held }),
+        counts,
+        KEY,
+      ),
+    ).toThrow(/without an operation marker/);
+    expect(() =>
+      w.prepare(withBindings({ incidentId: "INC\nline two", refunded, held }), counts, KEY),
+    ).toThrow(/one line/);
+    expect(() =>
+      w.prepare(withBindings({ incidentId: "x".repeat(201), refunded, held }), counts, KEY),
+    ).toThrow(/short non-empty/);
+    expect(() =>
+      w.prepare(
+        summary,
+        new Map([
+          [summaryCountKey("refunded"), -1],
+          [summaryCountKey("held"), 0],
+        ]),
+        KEY,
+      ),
+    ).toThrow(/non-negative integer/);
+  });
+
+  it("reads not_applied only after the last page; an unreadable page can't tell", async () => {
+    const w = slackWriter(target);
+    const attempt = attemptFor(w.prepare(summary, counts, KEY).body);
+    reply = { status: 200, body: JSON.stringify({ ok: true, messages: [], has_more: false }) };
+    expect(await w.reconcile(attempt, summary, CTX)).toEqual({ kind: "not_applied" });
+    reply = { status: 200, body: JSON.stringify({ ok: false, error: "channel_not_found" }) };
+    expect((await w.reconcile(attempt, summary, CTX)).kind).toBe("indeterminate");
+    queue = [
+      {
+        status: 200,
+        body: JSON.stringify({
+          ok: true,
+          messages: [],
+          has_more: true,
+          response_metadata: { next_cursor: "x" },
+        }),
+      },
+      {
+        status: 200,
+        body: JSON.stringify({
+          ok: true,
+          messages: [],
+          has_more: true,
+          response_metadata: { next_cursor: "x" },
+        }),
+      },
+    ];
+    expect(await w.reconcile(attempt, summary, CTX)).toMatchObject({
+      kind: "indeterminate",
+      detail: "repeated Slack cursor",
+    });
+  });
+
+  it("writes only to the world it is bound to", async () => {
+    const w = slackWriter(target);
+    await expect(
+      w.dispatch(w.prepare(summary, counts, KEY), { world: "planning", tenant: "t1" }),
+    ).rejects.toThrow(/bound to operational/);
   });
 });
