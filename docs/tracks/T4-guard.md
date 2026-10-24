@@ -32,9 +32,9 @@
 | T4.2 | Injection scripts: phantom charge, teammate field edit, Era faults, reset. Exposed as `pnpm demo:phantom` / `demo:conflict` / `demo:reset`. | M2 | Scripts run against local worlds | #26 | — |
 | T4.3 | Wire guards into T3's admission; hold reasons in receipts; dependents skipped | M2–M3 | `phantom` bundle passes on Era. **Done:** `evals/providers/test/phantom.test.ts` | #27 | T4.1, T4.2, T3.2, T1.3, T3.3, T1.9 |
 | T4.4 | Conditional compensation on owned fields: re-read, revert only if our value is still there, otherwise record a conflict | M3 | `teammate-conflict` bundle passes on Era. **Done:** `evals/providers/test/compensation.test.ts` | #28 | T4.3, T3.3 |
-| T4.5 | ML smoke test: Qwen3.5-0.8B LoRA on 32 cases, weights change, save and reload, peak memory measured (Python 3.12, CUDA 12.7-compatible wheels) | M1 | Smoke log + adapter hash in `ml/manifests/` | #29 | — |
-| T4.6 | ML pilot: labels from replay bundles plus perturbations; base vs. tuned vs. rules vs. Claude zero-shot; go/no-go | M2–M3 | Report in `evals/impact/`; decision recorded | #30 | T4.5 |
-| T4.7 | _If go:_ impact service behind `ImpactPort` (timeout → abstain), advisory only | M4 | Integration test: model absent or failing → same execution | #31 | T4.6 |
+| T4.5 | _Stretch:_ ML smoke test: Qwen3.5-0.8B LoRA on 32 cases. Deferred past the hackathon ([0008](../decisions/0008-ml-out-of-hackathon-scope.md)) | — | Smoke log + adapter hash in `ml/manifests/` | #29 | — |
+| T4.6 | _Stretch:_ ML pilot: base vs. tuned vs. rules vs. zero-shot, then go/no-go. Deferred past the hackathon ([0008](../decisions/0008-ml-out-of-hackathon-scope.md)) | — | Report in `evals/impact/`; decision recorded | #30 | — |
+| T4.7 | _Stretch:_ impact service behind `ImpactPort`, advisory only. Deferred past the hackathon ([0008](../decisions/0008-ml-out-of-hackathon-scope.md)) | — | Integration test: model absent or failing → same execution | #31 | — |
 | T4.10 | _Full scope:_ guard: one remedy per obligation across refunds and credits | full scope | A second remedy for the same obligation is held, including a teammate's; distinct obligations pass; Era test | #152 | T1.19 |
 
 ## Decisions
@@ -45,11 +45,17 @@
 
 _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
 
+### 2026-10-24, ML deferred
+
+- **T4.5–T4.7 are out of the hackathon** ([0008](../decisions/0008-ml-out-of-hackathon-scope.md)). The issues are closed as not planned. They block nothing. `ImpactPort` stays `alwaysAbstain`.
+- **PR #102 is closed unmerged.** No weights or smoke logs land on `main`.
+- **Next.** The full-scope guard, T4.10 (#152), then the beyond rehearsal tasks.
+
 ### 2026-10-23, compensation follow-ups #103 and #109
 
 - **A late undo no longer hides a leftover conflict (#103).** If an earlier undo restored only some fields, and a follow-up 409 leaves another field with a teammate's value, the receipt is `compensation_conflict`. It is `compensated` only when nothing genuine remains. Fixture evidence: `apps/executor-worker/test/compensation.test.ts`.
 - **Stacked patches on one field are undone latest first (#109).** A chain normal → high → urgent returns to normal. An older patch waits, with no receipt, while the later undo is unresolved or has given up (a 500 that never landed, a lost response, or repeated 409s). A field the later undo restored is still unwound when another field on that patch conflicts, including when that undo's response was lost and a later run (or a new revision) reads it back. The proof is the journaled undo request, not only the receipt text. A later patch that was held before it ever dispatched does not block the older undo. A later send that is still unknown under an earlier revision does, including when a new revision is the one looking it up. A teammate edit is kept, including one equal to an earlier patch's own write. The current planner still emits one patch per ticket.
-- **Next.** ML tasks T4.5–T4.7 stay on hold.
+- **Next.** Superseded 2026-10-24: T4.5–T4.7 are deferred ([0008](../decisions/0008-ml-out-of-hackathon-scope.md)).
 
 ### 2026-10-22, T4.4 done on Era
 
