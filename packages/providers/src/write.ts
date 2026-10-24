@@ -13,6 +13,8 @@ import {
   type ResolvedBindings,
   refundEffectMatches,
   replyCommentFor,
+  type SummaryAction,
+  summaryTextFor,
   type WorldContext,
 } from "@rehearsal/core";
 import { z } from "zod";
@@ -257,6 +259,7 @@ export function stripeWriter(target: WriteTarget): ProviderWriter {
             return {
               kind: "indeterminate",
               detail: "refund read contradicts the journaled operation",
+              contradicts: true,
             };
           }
           return {
@@ -519,9 +522,15 @@ export function stripeCreditWriter(target: WriteTarget): StripeCreditWriter {
       ) {
         throw new Error("a balance credit must be a positive integer amount");
       }
+      // An empty value would unset the tag and bring back an untagged credit.
+      if (action.args.chargeId.trim().length === 0) {
+        throw new Error("a balance credit must name the charge it remedies");
+      }
       const body = new URLSearchParams([
         ["amount", String(-action.args.amount.amountMinor)],
         ["currency", action.args.amount.currency],
+        // The charge this credit remedies, so a refund of it counts as the same remedy (T4.10).
+        ["metadata[charge]", action.args.chargeId],
         ["metadata[rehearsal_op]", operationKey],
       ]).toString();
       return {
@@ -564,6 +573,7 @@ export function stripeCreditWriter(target: WriteTarget): StripeCreditWriter {
             "credit.id": tx.id,
             "credit.amount": tx.amount,
             "credit.type": tx.type,
+            "credit.charge": tx.metadata?.charge ?? "",
             customer: tx.customer,
             currency: tx.currency,
           };
@@ -573,6 +583,7 @@ export function stripeCreditWriter(target: WriteTarget): StripeCreditWriter {
             ...action,
             args: {
               ...action.args,
+              chargeId: sent.get("metadata[charge]") ?? "",
               amount: {
                 amountMinor: -Number(sent.get("amount")),
                 currency: sent.get("currency") ?? "",
@@ -583,6 +594,7 @@ export function stripeCreditWriter(target: WriteTarget): StripeCreditWriter {
             return {
               kind: "indeterminate",
               detail: "credit read contradicts the journaled operation",
+              contradicts: true,
             };
           }
           return {
@@ -601,6 +613,148 @@ export function stripeCreditWriter(target: WriteTarget): StripeCreditWriter {
         kind: "indeterminate",
         detail: `more than ${MAX_PAGES} pages of balance transactions`,
       };
+    },
+  };
+}
+
+/** `chat.postMessage` errors Slack documents as a refusal with nothing posted. */
+const SLACK_REFUSALS = new Set([
+  "channel_not_found",
+  "not_in_channel",
+  "is_archived",
+  "msg_too_long",
+  "no_text",
+  "too_many_attachments",
+  "restricted_action",
+  "invalid_auth",
+  "not_authed",
+  "account_inactive",
+  "token_revoked",
+  "token_expired",
+  "missing_scope",
+  "invalid_arguments",
+  "invalid_arg_name",
+  "invalid_charset",
+  "invalid_form_data",
+  "invalid_post_type",
+  "missing_post_type",
+]);
+
+const SlackHistory = z.object({
+  ok: z.boolean(),
+  error: z.string().optional(),
+  messages: z
+    .array(z.object({ ts: z.string(), text: z.string().optional(), bot_id: z.string().optional() }))
+    .optional(),
+  has_more: z.boolean().optional(),
+  response_metadata: z.object({ next_cursor: z.string().optional() }).optional(),
+});
+
+/** Slack's text escaping: `&`, `<` and `>` come back as entities. */
+function unescapeSlack(text: string): string {
+  return text.replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&");
+}
+
+/** The write side of `slack.message.postSummary` (T3.10); `executeRun` takes it once T1.7 adds the op. */
+export interface SlackWriter {
+  vendor: "slack";
+  prepare(action: SummaryAction, resolved: ResolvedBindings, operationKey: string): PreparedRequest;
+  dispatch(req: PreparedRequest, ctx: WorldContext): Promise<DispatchResult>;
+  reconcile(attempt: Attempt, action: SummaryAction, ctx: WorldContext): Promise<ReconcileResult>;
+}
+
+/**
+ * Slack summary posts over the Web API (`chat.postMessage`). Slack doesn't deduplicate posts (not
+ * even on `client_msg_id`), so there is no idempotent re-send: a post whose outcome is unknown is
+ * resolved by reading `conversations.history` for its operation marker, and the executor never
+ * re-sends it on a negative read. Slack answers a refusal with HTTP 200 and `ok: false`.
+ */
+export function slackWriter(target: WriteTarget): SlackWriter {
+  return {
+    vendor: "slack",
+    prepare(action, resolved, operationKey) {
+      return {
+        method: "POST",
+        path: "/api/chat.postMessage",
+        encoding: "json",
+        body: JSON.stringify({
+          channel: action.args.channelId,
+          text: summaryTextFor(action, resolved, operationKey),
+        }),
+        headers: {},
+      };
+    },
+    async dispatch(req, ctx) {
+      assertTarget(target, ctx);
+      const result = await send(target, req);
+      if (result.kind !== "confirmed") return result;
+      const body = result.body as { ok?: unknown; error?: unknown; ts?: unknown };
+      if (body?.ok === true && typeof body.ts === "string") return result;
+      if (body?.ok === false && body.error === "ratelimited") {
+        return { kind: "rejected", status: 429, body, retryable: true };
+      }
+      if (body?.ok === false && typeof body.error === "string" && SLACK_REFUSALS.has(body.error)) {
+        // A definite refusal: Slack documents these as nothing posted.
+        return { kind: "rejected", status: 400, body, retryable: false };
+      }
+      // Anything else (internal_error, fatal_error, an unknown code, no ok/ts) may have posted:
+      // reconcile by reading, never treat it as refused.
+      return {
+        kind: "unknown",
+        error: `Slack answered ${body?.ok === false ? String(body.error) : "2xx without ok/ts"}; post unknown`,
+      };
+    },
+    async reconcile(attempt, action, ctx) {
+      assertTarget(target, ctx);
+      const marker = operationMarker(attempt.operationKey);
+      let sent: string;
+      try {
+        sent = String((JSON.parse(attempt.request.body) as { text?: unknown }).text);
+      } catch {
+        return { kind: "indeterminate", detail: "journaled Slack request is unreadable" };
+      }
+      // No `oldest` window: message timestamps come from the provider's clock (Era's is simulated),
+      // so a window from ours could hide the very post we look for. Page the whole history.
+      const base = `/api/conversations.history?channel=${encodeURIComponent(action.args.channelId)}&limit=200`;
+      let path = base;
+      const cursors = new Set<string>();
+      /** A message carrying the marker that isn't our exact post (a quote, a forward, an edit). */
+      let lookalike = false;
+      for (let page = 0; page < MAX_PAGES; page++) {
+        const parsed = SlackHistory.safeParse(await readJson<unknown>(target, path));
+        if (!parsed.success) return { kind: "indeterminate", detail: "invalid Slack history page" };
+        const history = parsed.data;
+        if (!history.ok) {
+          return { kind: "indeterminate", detail: `Slack history: ${history.error ?? "not ok"}` };
+        }
+        for (const m of history.messages ?? []) {
+          if (!m.text?.includes(marker)) continue;
+          // Ours is a bot post with exactly the journaled text (Slack escapes &, < and >).
+          if (m.bot_id !== undefined && unescapeSlack(m.text) === sent) {
+            return {
+              kind: "applied",
+              providerRef: { vendor: "slack", kind: "message", id: m.ts },
+              effect: { "message.ts": m.ts, channel: action.args.channelId },
+            };
+          }
+          lookalike = true;
+        }
+        const next = history.response_metadata?.next_cursor;
+        if (!history.has_more) {
+          // Something carries our marker but isn't our post: whether ours exists can't be told.
+          return lookalike
+            ? {
+                kind: "indeterminate",
+                detail: "only messages that aren't this exact post carry its marker",
+              }
+            : { kind: "not_applied" };
+        }
+        if (!next) return { kind: "indeterminate", detail: "more Slack history but no cursor" };
+        if (cursors.has(next)) return { kind: "indeterminate", detail: "repeated Slack cursor" };
+        cursors.add(next);
+        path = `${base}&cursor=${encodeURIComponent(next)}`;
+      }
+      return { kind: "indeterminate", detail: `more than ${MAX_PAGES} pages of Slack history` };
     },
   };
 }

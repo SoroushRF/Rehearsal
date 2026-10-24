@@ -85,13 +85,29 @@ const UNKNOWN_SEND: Record<string, string> = {
     "The Slack post may or may not have gone out. The channel is read for this step's reference tag, and the summary is never posted a second time blindly.",
 };
 
+/**
+ * The executor's limitation lines for a confirmed receipt whose effect this run read from the
+ * provider: after the write, while reconciling, or for another revision's attempt. An effect
+ * adopted from an earlier revision, or taken from the write response, has none of them.
+ */
+const READ_BACK = [
+  "read back from the provider",
+  "found by reading the provider",
+  "read back, not re-sent",
+];
+
 /** One line per receipt: what happened to this step and why. `kind` is the step's operation. */
 export function explainReceipt(r: Receipt, kind?: string): string {
   switch (r.outcome) {
-    case "confirmed":
-      return r.providerRef
-        ? `Applied and read back (${r.providerRef.kind} ${r.providerRef.id}).`
-        : "Applied and read back.";
+    // Say "read back" only when the receipt's own limitations show a read happened.
+    case "confirmed": {
+      if (r.limitations.some((l) => l.includes("read-back inconclusive"))) {
+        return "Applied: the provider confirmed the write, but reading it back was inconclusive.";
+      }
+      const read = r.limitations.some((l) => READ_BACK.some((p) => l.includes(p)));
+      const ref = r.providerRef ? ` (${r.providerRef.kind} ${r.providerRef.id})` : "";
+      return `${read ? "Applied and read back" : "Applied"}${ref}.`;
+    }
     case "held":
       return r.holdReason ? explainHold(r.holdReason) : "Held before sending.";
     case "skipped_dependency":

@@ -63,6 +63,7 @@ pnpm fixtures:write                        # regenerate scenarios/billing/cases 
 pnpm infra:up / infra:down                 # Postgres + 4 Era worlds (needs Docker Desktop)
 pnpm smoke:era                             # all worlds reachable + writable
 pnpm dev                                   # API :3000 + web :5173
+pnpm rehearsal up | start | test --all    # one command: worlds, all processes with their own env files, every test
 ```
 
 ## Tracks
@@ -85,6 +86,8 @@ Work is split into **feature tracks**, not frontend/backend. Each track owns one
 | T3 Apply | @ArtinMe | 2026-10-21 |
 | T4 Guard | @skhdemo | 2026-10-21 |
 | Integrator of the day | _rotates daily_ | |
+
+**Benchmark tasks** (issues labelled `benchmark`, in any track) are owned by @SoroushRF, whoever owns the track. Their rows stay in their track file under their task ID.
 
 **ML runs on the GPU machine** (RTX 5080, 16 GB). Whoever has that machine runs training, whatever their track.
 
