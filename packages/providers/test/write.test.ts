@@ -446,7 +446,7 @@ describe("stripeCreditWriter (T3.12)", () => {
     currency: "cad",
     customer: "cus_1",
     type: "adjustment",
-    metadata: { rehearsal_op: KEY },
+    metadata: { charge: "ch_1", rehearsal_op: KEY },
     ...over,
   });
   const page = (data: unknown[], hasMore = false) => ({
@@ -478,6 +478,7 @@ describe("stripeCreditWriter (T3.12)", () => {
     "credit.id": t.id,
     "credit.amount": t.amount,
     "credit.type": t.type,
+    "credit.charge": (t.metadata as { charge?: string }).charge ?? "",
     customer: t.customer,
     currency: t.currency,
   });
@@ -488,9 +489,14 @@ describe("stripeCreditWriter (T3.12)", () => {
       method: "POST",
       path: "/v1/customers/cus_1/balance_transactions",
       encoding: "form",
-      body: "amount=-1500&currency=cad&metadata%5Brehearsal_op%5D=op_credit_key",
+      body: "amount=-1500&currency=cad&metadata%5Bcharge%5D=ch_1&metadata%5Brehearsal_op%5D=op_credit_key",
       headers: { "idempotency-key": KEY },
     });
+  });
+
+  it("refuses a credit that doesn't name its charge", () => {
+    const unnamed = { ...credit, args: { ...credit.args, chargeId: " " } };
+    expect(() => stripeCreditWriter(target).prepare(unnamed, KEY)).toThrow(/name the charge/);
   });
 
   it("refuses a zero, negative or fractional credit", () => {
@@ -530,6 +536,8 @@ describe("stripeCreditWriter (T3.12)", () => {
       { id: "" },
       { type: "invoice_balance" },
       { customer: "cus_other" },
+      { metadata: { charge: "ch_other", rehearsal_op: KEY } },
+      { metadata: { rehearsal_op: KEY } },
       { amount: -1600 },
       { amount: 1500 },
       { currency: "usd" },

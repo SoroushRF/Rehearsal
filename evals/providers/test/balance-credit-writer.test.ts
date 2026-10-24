@@ -104,7 +104,12 @@ describe.skipIf(!ENABLED)("Stripe balance credit writer on Era", () => {
     const sent = await w.dispatch(req, ctx());
     expect(sent).toMatchObject({
       kind: "confirmed",
-      body: { amount: -1500, currency: "cad", type: "adjustment" },
+      body: {
+        amount: -1500,
+        currency: "cad",
+        type: "adjustment",
+        metadata: { charge: "ch_rehearsal_dup" },
+      },
     });
     const id = (sent as { body: { id: string } }).body.id;
     expect(await w.reconcile(attemptOf(key, req.body, customer.id), action, ctx())).toEqual({
@@ -114,6 +119,7 @@ describe.skipIf(!ENABLED)("Stripe balance credit writer on Era", () => {
         "credit.id": id,
         "credit.amount": -1500,
         "credit.type": "adjustment",
+        "credit.charge": "ch_rehearsal_dup",
         customer: customer.id,
         currency: "cad",
       },

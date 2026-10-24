@@ -37,11 +37,24 @@
 | T4.7 | _If go:_ impact service behind `ImpactPort` (timeout → abstain), advisory only | M4 | Integration test: model absent or failing → same execution | #31 | T4.6 |
 | T4.10 | _Full scope:_ guard: one remedy per obligation across refunds and credits | full scope | A second remedy for the same obligation is held, including a teammate's; distinct obligations pass; Era test | #152 | T1.19 |
 
+### Beyond and benchmark backlog (Oct 24)
+
+See [beyond.md](../beyond.md) for scope, parallel work, external gates and the release cut line. Blockers are completion prerequisites; fixture/contract work may start earlier. Killer rows are optional.
+
+| ID | Task | Milestone | Done when | Issue | Blocked by |
+|---|---|---|---|---|---|
+| T4.11 | _Beyond:_ Allowlisted rehearsal challenges and controls | M5 | Versioned scoped phantom/conflict/lost-response challenges include benign controls | [#169](https://github.com/SoroushRF/Rehearsal/issues/169) | [T1.21](https://github.com/SoroushRF/Rehearsal/issues/163), [T4.2](https://github.com/SoroushRF/Rehearsal/issues/26), [T4.4](https://github.com/SoroushRF/Rehearsal/issues/28) |
+| T4.12 | _Beyond:_ Independent verifier for observed rehearsal effects | M5 | Provider reads verify full-operation effects independently of receipt labels | [#173](https://github.com/SoroushRF/Rehearsal/issues/173) | [T3.15](https://github.com/SoroushRF/Rehearsal/issues/168), [T4.11](https://github.com/SoroushRF/Rehearsal/issues/169) |
+| T4.13 | _Beyond:_ Integrated isolation and recovery acceptance gate | M5 | Real end-to-end isolation/recovery gate passes with full precedent integration | [#175](https://github.com/SoroushRF/Rehearsal/issues/175) | [T3.16](https://github.com/SoroushRF/Rehearsal/issues/170), [T2.20](https://github.com/SoroushRF/Rehearsal/issues/172), [T2.21](https://github.com/SoroushRF/Rehearsal/issues/174), [T4.12](https://github.com/SoroushRF/Rehearsal/issues/173), [T1.8](https://github.com/SoroushRF/Rehearsal/issues/9), [T2.17](https://github.com/SoroushRF/Rehearsal/issues/147) |
+| T4.14 | _Stretch:_ _Killer:_ Held-out incident datasets and independent gold | M5 | Three disjoint incident sets have independently authored hidden gold | [#179](https://github.com/SoroushRF/Rehearsal/issues/179) | [T1.2](https://github.com/SoroushRF/Rehearsal/issues/3), [T1.19](https://github.com/SoroushRF/Rehearsal/issues/144) |
+
 ## Decisions
 
 - **2026-10-21.** A missing, incomplete, or mismatched re-check holds the step as `evidence_unavailable`. It is never treated as proof that the approved rows and query membership are unchanged.
 
 ## Handoff log
+
+- **2026-10-24 (Codex, backlog planning):** Filed 4 owned M5 issues (T4.11 #169, T4.12 #173, T4.13 #175, T4.14 #179) with scope/track labels, acceptance criteria and linked blockers. Added the cross-track dependency map in [beyond.md](../beyond.md); native GitHub dependencies mirror these rows. No feature implementation or live validation is claimed. Next: finish the full prerequisites, then follow the graph; optional killer work stays off the main release path.
 
 _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
 
