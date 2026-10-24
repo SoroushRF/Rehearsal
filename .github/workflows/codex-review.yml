@@ -1,0 +1,69 @@
+name: requested-codex-review
+
+# Run trusted default-branch code only. Never check out or execute the PR here.
+on:
+  pull_request_target:
+    types: [review_requested]
+
+permissions: {}
+
+jobs:
+  request-review:
+    if: >-
+      github.event.requested_reviewer.login == 'SoroushRF' &&
+      github.event.pull_request.state == 'open'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: requested-codex-review-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+    steps:
+      - name: Check review token is configured
+        env:
+          REVIEW_TOKEN: ${{ secrets.CODEX_REVIEW_GITHUB_TOKEN }}
+        run: |
+          if [ -z "$REVIEW_TOKEN" ]; then
+            echo "::error::Add CODEX_REVIEW_GITHUB_TOKEN: a SoroushRF fine-grained GitHub token for Rehearsal with Pull requests read/write. See docs/codex-review.md."
+            exit 1
+          fi
+      - name: Request Codex review as SoroushRF
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          github-token: ${{ secrets.CODEX_REVIEW_GITHUB_TOKEN }}
+          script: |
+            const expectedLogin = 'SoroushRF';
+            const { data: user } = await github.rest.users.getAuthenticated();
+            if (user.login.toLowerCase() !== expectedLogin.toLowerCase()) {
+              throw new Error('CODEX_REVIEW_GITHUB_TOKEN must belong to SoroushRF.');
+            }
+
+            const { owner, repo } = context.repo;
+            const pull_number = context.payload.pull_request.number;
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number });
+            if (pr.state !== 'open' || !pr.requested_reviewers.some(
+              reviewer => reviewer.login.toLowerCase() === expectedLogin.toLowerCase()
+            )) {
+              core.info('The PR is closed or SoroushRF is no longer requested; skipping.');
+              return;
+            }
+
+            // runId survives job retries; a new review request gets a new runId.
+            const marker = `<!-- codex-review-request:${context.runId} -->`;
+            for await (const page of github.paginate.iterator(
+              github.rest.issues.listComments,
+              { owner, repo, issue_number: pull_number, per_page: 100 }
+            )) {
+              if (page.data.some(comment =>
+                comment.user?.login.toLowerCase() === expectedLogin.toLowerCase() &&
+                comment.body?.includes(marker)
+              )) {
+                core.info('This review request already has a Codex comment; skipping.');
+                return;
+              }
+            }
+
+            const { data: comment } = await github.rest.issues.createComment({
+              owner, repo, issue_number: pull_number,
+              body: `@codex review\n\n${marker}`
+            });
+            core.info(`Requested Codex review: ${comment.html_url}`);
