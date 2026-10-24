@@ -152,7 +152,21 @@ const VARIANT = {
   success:
     "bg-ok text-surface border border-transparent shadow-card hover:brightness-110 active:translate-y-px",
 } as const;
-const SIZE = { sm: "h-8 px-3 text-[13px] gap-1.5", md: "h-10 px-4 text-sm gap-2" } as const;
+const SIZE = {
+  sm: "h-8 px-3 text-[13px] gap-1.5",
+  md: "h-10 px-4 text-sm gap-2",
+  lg: "h-12 px-6 text-base gap-2.5",
+} as const;
+
+const BUTTON_BASE =
+  "inline-flex shrink-0 select-none items-center justify-center rounded-lg font-medium whitespace-nowrap transition-[background-color,box-shadow,transform,filter] duration-150 disabled:pointer-events-none disabled:opacity-50";
+
+/** Class names for anything that should look like a button, such as a link. */
+export const buttonClasses = (
+  variant: keyof typeof VARIANT = "secondary",
+  size: keyof typeof SIZE = "md",
+  extra = "",
+) => `${BUTTON_BASE} ${SIZE[size]} ${VARIANT[variant]} ${extra}`;
 
 export function Button({
   variant = "secondary",
@@ -174,12 +188,36 @@ export function Button({
       type="button"
       disabled={disabled || loading}
       aria-busy={loading || undefined}
-      className={`inline-flex shrink-0 select-none items-center justify-center rounded-lg font-medium whitespace-nowrap transition-[background-color,box-shadow,transform,filter] duration-150 disabled:pointer-events-none disabled:opacity-50 ${SIZE[size]} ${VARIANT[variant]} ${className}`}
+      className={buttonClasses(variant, size, className)}
       {...rest}
     >
       {loading ? <Spinner /> : icon ? <Icon name={icon} /> : null}
       {children}
     </button>
+  );
+}
+
+/** A real link (it navigates) styled as a button. */
+export function LinkButton({
+  variant = "secondary",
+  size = "md",
+  icon,
+  trailingIcon,
+  className = "",
+  children,
+  ...rest
+}: {
+  variant?: keyof typeof VARIANT;
+  size?: keyof typeof SIZE;
+  icon?: IconName;
+  trailingIcon?: IconName;
+} & ComponentProps<"a">) {
+  return (
+    <a className={buttonClasses(variant, size, className)} {...rest}>
+      {icon && <Icon name={icon} />}
+      {children}
+      {trailingIcon && <Icon name={trailingIcon} />}
+    </a>
   );
 }
 

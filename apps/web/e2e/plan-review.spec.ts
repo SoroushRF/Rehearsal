@@ -22,7 +22,7 @@ for (const [id, label] of BUNDLES) {
 }
 
 test("evidence drawer opens for an action and closes with Escape", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/app");
   const refund = page.locator('[data-action-id="refund_002"]');
   await expect(refund).toContainText("$125.00 CAD");
   await expect(refund).toContainText("Finance lead");
@@ -37,7 +37,7 @@ test("evidence drawer opens for an action and closes with Escape", async ({ page
 });
 
 test("switching plans updates the URL", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/app");
   await page.getByRole("button", { name: "Phantom" }).click();
   await expect(page).toHaveURL(/bundle=phantom/);
   await expect(page.getByText("New matching charge appears after approval")).toBeVisible();

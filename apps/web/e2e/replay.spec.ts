@@ -55,7 +55,7 @@ test("replays can be switched, and an unknown one says so", async ({ page }) => 
 });
 
 test("the live page is untouched without ?replay", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/app");
   await expect(page.getByRole("button", { name: "Happy path" })).toBeVisible();
   await expect(page.getByTestId("replay-banner")).toHaveCount(0);
 });
