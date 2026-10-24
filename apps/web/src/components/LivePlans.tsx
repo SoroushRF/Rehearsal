@@ -6,6 +6,7 @@ import {
   type ApiFetch,
   ApplyAccepted,
   call,
+  ApprovalStatus,
   explain,
   Grant,
   NewRevision,
@@ -25,7 +26,10 @@ import { RunTimeline } from "./RunTimeline";
 import { Alert, Button, Card, Chip, Icon, Skeleton, Spinner } from "./ui";
 
 const PlanList = z.object({ plans: z.array(PlanSummary) });
-const GrantList = z.object({ grants: z.array(Grant) });
+const GrantList = z.object({
+  grants: z.array(Grant),
+  approval: ApprovalStatus.nullish(),
+});
 const Approved = z.object({ grant: ApprovalGrant, existing: z.boolean() });
 const RunList = z.object({ runs: z.array(RunView) });
 const planPath = (planId: string) => `/api/plans/${encodeURIComponent(planId)}`;
@@ -245,7 +249,11 @@ function ApprovalPanel({
       queryClient.invalidateQueries({ queryKey: key("runs", plan.planId) });
     },
   });
-  const live = grants.data?.grants.find((g) => g.live && g.planHash === plan.planHash);
+  // Where two different approvers are needed, one person's grant isn't "approved" yet.
+  const seats = grants.data?.approval?.dualRequired ? grants.data.approval : null;
+  const live = grants.data?.grants.find(
+    (g) => g.live && g.planHash === plan.planHash && (!seats || seats.satisfied),
+  );
   const needs = requiredRoles(plan.manifest)
     .map((r) => roleLabel[r])
     .join(" + ");
@@ -266,11 +274,19 @@ function ApprovalPanel({
         )}
       </div>
 
+      {seats && <Seats status={seats} />}
+
       {live ? (
         <>
           <p data-testid="live-grant" className="mt-3 text-sm leading-5 text-muted">
-            Approved by <span className="font-medium text-ink">{live.actorUserId}</span> as{" "}
-            {live.roles.map((r) => roleLabel[r]).join(", ")} until{" "}
+            {seats ? (
+              <>Approved by {seats.signed.map((s) => s.actorUserId).join(" and ")}, until </>
+            ) : (
+              <>
+                Approved by <span className="font-medium text-ink">{live.actorUserId}</span> as{" "}
+                {live.roles.map((r) => roleLabel[r]).join(", ")} until{" "}
+              </>
+            )}
             {new Date(live.expiresAt).toLocaleTimeString()}.
           </p>
           <Button
@@ -292,8 +308,17 @@ function ApprovalPanel({
       ) : (
         <>
           <p className="mt-3 text-sm leading-5 text-muted">
-            Needs <span className="font-medium text-ink">{needs}</span> to approve revision{" "}
-            {plan.revision}.
+            {seats ? (
+              <>
+                Needs <span className="font-medium text-ink">two different people</span>: a support
+                lead and a finance lead. One person can't fill both seats.
+              </>
+            ) : (
+              <>
+                Needs <span className="font-medium text-ink">{needs}</span> to approve revision{" "}
+                {plan.revision}.
+              </>
+            )}
           </p>
           <Button
             variant="primary"
@@ -304,7 +329,8 @@ function ApprovalPanel({
             title={editing ? "Create the revision first, then approve it" : undefined}
             onClick={() => approve.mutate()}
           >
-            Approve revision {plan.revision}
+            {seats && seats.signed.length > 0 ? "Add my approval" : "Approve"} revision{" "}
+            {plan.revision}
           </Button>
           {editing && (
             <p className="mt-2 text-xs leading-4 text-subtle">
@@ -323,6 +349,42 @@ function ApprovalPanel({
         </Alert>
       )}
     </Card>
+  );
+}
+
+/** The two seats a large refund needs filled by different people, and who holds each. */
+export function Seats({ status }: { status: ApprovalStatus }) {
+  const seat = (role: "support_lead" | "finance_lead") => {
+    const signer = status.signed.find((s) => s.role === role);
+    return (
+      <li
+        key={role}
+        data-testid="approval-seat"
+        data-seat={role}
+        data-signed={signer ? "true" : "false"}
+        className="flex items-center justify-between gap-3 text-sm"
+      >
+        <span className="text-muted">{roleLabel[role]}</span>
+        {signer ? (
+          <Chip tone="good" icon="check">
+            {signer.actorUserId}
+          </Chip>
+        ) : (
+          <Chip tone="warn" icon="clock">
+            Waiting
+          </Chip>
+        )}
+      </li>
+    );
+  };
+  return (
+    <ul
+      aria-label="Approvers"
+      className="mt-3 space-y-2 rounded-lg border border-line bg-sunken/60 p-3"
+    >
+      {seat("support_lead")}
+      {seat("finance_lead")}
+    </ul>
   );
 }
 

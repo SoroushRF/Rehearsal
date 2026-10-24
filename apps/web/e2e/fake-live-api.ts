@@ -67,7 +67,7 @@ const json = (route: Route, status: number, body: unknown) =>
   route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 
 /** A stand-in for the API with just enough state for one review: revise, refuse, approve, apply. */
-export function fakeApi() {
+export function fakeApi({ dual = false }: { dual?: boolean } = {}) {
   let current = { revision: 1, ...V1 };
   const grants: object[] = [];
   let approvals = 0;
@@ -120,8 +120,45 @@ export function fakeApi() {
         dropped: current.manifest.excluded,
       });
     }
+    // Decision 0011: with `dual`, a support lead and then a different finance lead each sign a seat.
+    const seats = () => {
+      const signed = grants.map((g: any) => ({
+        role: g.roles[0],
+        grantId: g.id,
+        actorUserId: g.actorUserId,
+      }));
+      return {
+        dualRequired: true,
+        satisfied: signed.length === 2,
+        signed,
+        needed:
+          signed.length === 0
+            ? ["support_lead", "finance_lead"]
+            : signed.length === 1
+              ? ["finance_lead"]
+              : [],
+      };
+    };
     if (path === "/api/plans/plan_happy/approvals" && req.method() === "GET")
-      return json(route, 200, { grants });
+      return json(route, 200, { grants, ...(dual && { approval: seats() }) });
+    if (dual && path === "/api/plans/plan_happy/approvals") {
+      const second = grants.length === 1;
+      const grant = {
+        id: `grant_${grants.length + 1}`,
+        orgId: "org_demo",
+        planId: "plan_happy",
+        revision: current.revision,
+        planHash: current.planHash,
+        actorUserId: second ? "user_finance" : "user_support",
+        actorSessionId: "sess_1",
+        roles: [second ? "finance_lead" : "support_lead"],
+        grantedAt: "2026-10-22T12:00:00.000Z",
+        expiresAt: "2099-01-01T00:00:00.000Z",
+        revokedAt: null,
+      };
+      grants.push({ ...grant, live: true });
+      return json(route, 201, { grant, existing: false, approval: seats() });
+    }
     if (path === "/api/plans/plan_happy/approvals") {
       // First as a support lead (refused), then as a finance lead.
       if (++approvals === 1)
