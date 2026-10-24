@@ -9,6 +9,7 @@ Where the PDF brief and the build plan disagree. Settle these in the first team 
    - `HoldReason` in contracts v1 has only hard kinds. Add `soft_signal` once this is decided.
 2. **Slack summary in the trimmed release?** The brief keeps one Slack post as the visible irreversible action; the plan cuts it.
    - **Proposal:** add `slack.message.postSummary` as the final step once the core passes. Never blindly retry an uncertain post.
+   - **Settled 2026-10-24:** in, as proposed ([0009](0009-reopen-full-scope.md)).
 3. **Closing line.** "Eon recovers it" implies a recovery feature we aren't building.
    - **Proposal:** "Rehearse the plan. Approve its effects. Apply with evidence."
 4. **Pivot clause.** The brief says switch to Discharge Diff if the day-one Era gate fails; the plan says narrow scope and stay.
