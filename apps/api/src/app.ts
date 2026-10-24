@@ -9,6 +9,7 @@ import { registerAuditRoute } from "./audit";
 import { type ReviewerResolver, registerMeRoute } from "./auth";
 import { registerCancelRoute } from "./cancel";
 import { type PlanDeps, registerPlanRoutes } from "./plans";
+import { type RehearsalTokenDeps, registerRehearsalTokenRoute } from "./rehearsal-tokens";
 import { type RehearseDeps, registerRehearseRoutes } from "./rehearse";
 import { type RunDeps, registerRunRoutes } from "./runs";
 import { registerTenantTokenRoute, type TenantTokenDeps } from "./tenant-tokens";
@@ -29,6 +30,8 @@ export function buildApp(
     /** Clerk-backed in production; without it nobody is signed in. */
     reviewer?: ReviewerResolver;
     tenantTokens?: TenantTokenDeps;
+    /** T1.23: the rehearsal worker's minter, once rehearsals are provisioned here (T3.13). */
+    rehearsalTokens?: RehearsalTokenDeps;
     webRoot?: string | null;
   } = {},
 ) {
@@ -84,6 +87,7 @@ export function buildApp(
 
   // Only an API that holds ERA_ADMIN_TOKEN mints tenant tokens for the workers.
   if (deps.tenantTokens) registerTenantTokenRoute(app, deps.tenantTokens);
+  if (deps.rehearsalTokens) registerRehearsalTokenRoute(app, deps.rehearsalTokens);
 
   // Serve the built web app from the same origin in production.
   const root = deps.webRoot === undefined ? webDist : deps.webRoot;

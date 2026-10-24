@@ -1,4 +1,5 @@
-import type { Vendor, World } from "@rehearsal/contracts";
+import { ExecutionRehearsalId, type Vendor, type World } from "@rehearsal/contracts";
+import { rehearsalTenant } from "@rehearsal/core";
 import type { TokenSource } from "./tenant-tokens";
 
 /**
@@ -33,4 +34,50 @@ export function resolveWorld(
   const baseUrl = env[key];
   if (!baseUrl) throw new Error(`${key} is not set`);
   return { baseUrl: baseUrl.replace(/\/$/, ""), tenant: env.ERA_TENANT ?? "rehearsal-demo" };
+}
+
+/**
+ * Execution rehearsal worlds (decision 0013): their own containers, never a planning or
+ * operational one. Not a `World`, so nothing that takes a `World` can be pointed at them.
+ */
+export const REHEARSAL_URL_KEYS: Record<Vendor, string> = {
+  stripe: "ERA_STRIPE_REHEARSAL_URL",
+  zendesk: "ERA_ZENDESK_REHEARSAL_URL",
+  slack: "ERA_SLACK_REHEARSAL_URL",
+};
+
+/** Every planning and operational URL variable. */
+export const SHARED_URL_KEYS: string[] = Object.values(ENV_KEYS).flatMap((w) => Object.values(w));
+
+/** Host and port, with loopback spellings folded together. */
+export function worldEndpoint(url: string): string {
+  const u = new URL(url);
+  const host = ["localhost", "[::1]"].includes(u.hostname) ? "127.0.0.1" : u.hostname;
+  return `${host}:${u.port || (u.protocol === "https:" ? "443" : "80")}`;
+}
+
+/**
+ * One rehearsal's tenant in the rehearsal container for a vendor. The tenant is derived from a
+ * validated ID, never taken from a caller. A URL that a planning or operational world in the same
+ * environment also uses is refused: Era serves a token minted by another container as that
+ * container's `default` tenant instead of rejecting it, so the tenant can't keep a misrouted
+ * request out of a shared world (docs/capability-matrix.md, surprise 16).
+ */
+export function resolveRehearsalWorld(
+  vendor: Vendor,
+  rehearsalId: string,
+  env: NodeJS.ProcessEnv = process.env,
+): WorldConfig {
+  const id = ExecutionRehearsalId.parse(rehearsalId);
+  const key = REHEARSAL_URL_KEYS[vendor];
+  const raw = env[key];
+  if (!raw) throw new Error(`${key} is not set (pnpm infra:up:rehearsal)`);
+  const baseUrl = raw.replace(/\/$/, "");
+  for (const shared of SHARED_URL_KEYS) {
+    const other = env[shared];
+    if (other && worldEndpoint(other) === worldEndpoint(baseUrl)) {
+      throw new Error(`${key} is ${shared}'s world: a rehearsal never runs in a shared world`);
+    }
+  }
+  return { baseUrl, tenant: rehearsalTenant(id) };
 }
