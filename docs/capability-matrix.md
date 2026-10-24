@@ -42,6 +42,9 @@ Every world runs with `SIMCORE_SEED=42`, `SIMCORE_TODAY=2026-10-01`, `SIMCORE_ST
 | 3 | Fixture templates match live GETs; a charge and a ticket derived from them inject and read back | **PASS** | `fixtures.test.ts`, `scenarios/billing/fixtures/` |
 | T3.3 | The executor applies refund → guarded patch → private note to an operational world through the Era write adapters, one confirmed receipt per step; the note carries the operational refund ID | **PASS** (2026-10-22, macOS arm64, Docker 29.9.1; the whole suite passes there too) | `write-adapters.test.ts` |
 | T3.5 | Lost responses after Era applied each write, across executor restarts: the refund is found by `metadata.rehearsal_op`, the patch by its fields, the note by its operation marker; one effect each | **PASS** (2026-10-22, macOS arm64) | `reconcile.test.ts` |
+| T1.19 | Customer balance credit (`stripe.customer.balanceCredit`): a negative balance transaction under an Idempotency-Key moves `customer.balance` and reads back by ID; the same key and bytes replay with no second credit; different bytes give `400 idempotency_error`; a lost credit is found by `metadata.rehearsal_op` in the customer's list | **PASS**, with two fidelity gaps (surprise 14) (2026-10-24, Windows 11 amd64) | `stripe-balance-credit.test.ts` |
+| T1.17 | Slack summary post (`slack.message.postSummary`): `chat.postMessage` doesn't deduplicate on `client_msg_id`, so an unknown post is resolved by finding its operation marker in `conversations.history` | **NOT RUN.** The contract only; the Slack worlds (`--profile full`) haven't run here yet. No-dedupe comes from inspecting the shipped source ([build-plan](source/build-plan.md)). T3.10 runs it on Era | — |
+| T1.18 | Public reply (`zendesk.ticket.appendPublicReply`): `public:true` comment reads back byte for byte; the operation marker in the body finds exactly that reply; the same send again appends a second copy (no dedupe) | **PASS**, with two fidelity gaps (surprise 15) (2026-10-24, Windows 11 amd64) | `zendesk-public-reply.test.ts` |
 
 Not covered by this gate: Era fault injection (`/_admin/faults`), Slack, pagination-boundary phantoms, and executor gates 5–7 (journal, crash recovery, ID remapping).
 
@@ -127,3 +130,21 @@ Every seeded charge is **USD**, but `scenarios/billing/policy.v1.json` allows on
 
 - **Postgres:** `pnpm infra:up` exits 1 when host port 5432 is already in use (here by `wslrelay`, a WSL-side Postgres). The four simulators still start. The gate doesn't need Postgres.
 - **Smoke script:** `pnpm smoke:era` printed all four OKs, then crashed on exit on Windows with a libuv assertion (0xC0000409) from calling `process.exit()` while fetch sockets were closing. Fixed by setting `process.exitCode` instead.
+
+### 14. Customer balance credits don't check currency or amount
+
+`POST /v1/customers/{id}/balance_transactions` takes any currency, whatever the customer's own currency is. `ending_balance` then sums the amounts across currencies into one number: a USD customer credited 100 EUR and then 100 USD shows `-200`. Stripe keeps a customer's balance in that customer's currency and refuses others. Era also accepts `amount=0`.
+
+- **The incident cohort's customers are USD in Era, but their charges are CAD.** A CAD credit to one of them would pass on Era and fail on Stripe. Before T1.14 plans credits, each credited customer's currency has to match the credit: either seed CAD customers for the cohort, or have policy (T2.18) refuse a credit when the observed customer currency differs. Never rely on Era to refuse it.
+- `StripeCustomerBalanceCredit` takes `PositiveMoney`, so a zero credit can't be planned.
+- Like refunds, twin tenants mint the same transaction ID (`cbtxn_…`, surprise 5). Reconcile by `metadata.rehearsal_op`, never by ID alone.
+- A credit can't be deleted. It is offset only by a new, separately approved debit, so its compensation class is `compensable_by_new_action`.
+
+### 15. Public replies: the marker has to be in the text
+
+A public comment keeps its `body` exactly: newlines, double spaces and non-ASCII characters all survive. Nothing deduplicates a repeated send; the same PUT twice appends two identical comments. Era also differs from Zendesk in two ways that decide where the correlation marker goes:
+
+- Custom audit metadata (`ticket.metadata`) is accepted and dropped: the comment's `metadata.custom` stays `{}`.
+- A comment sent with `html_body` alone is appended with an empty `body`.
+
+So the marker is appended to the plain `body`, after the approved text, the same way as private notes. The customer can see it. The approved text itself (`args.body`) can't contain `[rehearsal-op:`, so a forged marker can't confuse reconciliation.

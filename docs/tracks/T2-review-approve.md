@@ -38,6 +38,13 @@
 | T2.9 | Decide currency: align `policy.v1.json` with the Era seed (USD vs CAD) and record it in `docs/decisions/` | M2 | Decision merged; policy and seed agree | #40 | — |
 | T2.10 | Rehearse button: start a plan from the review page, follow the planner, show the stored plan | M3 | Planner states and failures in plain words; stored plan selected on arrival | #116 | T1.5 |
 | T2.11 | Saved run replay that opens without signing in (part of the T2.5 acceptance) | M4 | `?replay=phantom` is public, read-only and labelled saved; drift test | #118 | — |
+| T2.12 | Receipt wording: a confirmed receipt says "Applied", not "read back"; the limitations line says how it was confirmed | M5 | No "read back" claim on write-response confirmations; runs test updated. In review: #133 | #132 | — |
+| T2.13 | _Full scope:_ two distinct approvers (support + finance) where policy requires | full scope | Admission refuses until both grants are live and from distinct actors; refusal matrix extended; needs a decision record | #135 | — |
+| T2.14 | _Full scope:_ historical audit view: the exact plan, policy, evidence and grants as approved | full scope | An old run opens with its own plan and policy after the policy changed; test | #138 | — |
+| T2.15 | _Full scope:_ review UI shows the Slack summary step and its exact text | full scope | Plan diff and run timeline render the step, its text and an unresolved post | #145 | T1.17 |
+| T2.16 | _Full scope:_ review UI shows the exact rendered public reply being approved | full scope | Excluding the customer drops the reply; uncertain sends shown honestly | #146 | T1.18 |
+| T2.17 | _Full scope:_ finance-only "Promote to precedent" route and UI; recalled precedents shown with trace | full scope | Role-checked route plus UI; promotion goes through T1.8's adapter | #147 | T1.8 |
+| T2.18 | _Full scope:_ policy chooses a refund or an invoice credit per obligation | full scope | New policy version; a completed remedy blocks a second; UI shows the remedy | #148 | T1.19 |
 
 ## Decisions
 
