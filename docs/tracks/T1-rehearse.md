@@ -32,7 +32,7 @@
 | T1.2 | Seed the incident: 5–10 overcharged customers, plus benign controls, injected identically into both worlds; `pnpm demo:reset` | M1 | Reset → identical worlds every time; fixtures copied from real GET responses. **Done:** #52 | #3 | T1.1, T1.9 |
 | T1.3 | Read adapters: get charge, get ticket, and the two query predicates, with full pagination and `complete` set honestly | M1 | Unit tests against recorded responses, plus one live test. **Done:** #49 (`stripeReader`/`zendeskReader` in `packages/providers/src/read.ts`) | #4 | T1.1 |
 | T1.4 | Typed planning tools that record evidence and add dependency edges themselves (the model can't define its own evidence) | M2 | A tool call produces observations and actions matching contracts v1. **Done:** `PlanningSession` in `packages/planner/src/tools.ts` | #5 | T1.3 |
-| T1.5 | Bounded Claude tool loop: pinned model, versioned prompt, step limit, no shell, browser or raw HTTP; planner worker consumes `plan` jobs | M2 | Real plan for the seeded cohort is stored and viewable in T2's UI. **Done (code):** `runPlanningLoop`, `POST /api/incidents/:id/rehearse`, planner worker; jobs through the API ([0006](../decisions/0006-planner-jobs-through-api.md)). Live run with a real model key still to do | #6 | T1.2, T1.4, T1.9, T2.9 |
+| T1.5 | Bounded Claude tool loop: pinned model, versioned prompt, step limit, no shell, browser or raw HTTP; planner worker consumes `plan` jobs | M2 | Real plan for the seeded cohort is stored and viewable in T2's UI. **Done (code):** `runPlanningLoop`, `POST /api/incidents/:id/rehearse`, planner worker; jobs through the API ([0006](../decisions/0006-planner-jobs-through-api.md)). **Live run done 2026-10-24** (Gemini on Vertex via #131: plan stored, approved in the UI, applied 24/24) | #6 | T1.2, T1.4, T1.9, T2.9 |
 | T1.6 | ~20 benign and trap tasks, plus baselines (no review; per-call approval counts) for the scorecard | M3–M4 | `pnpm eval:scorecard` prints the comparison table. **Done:** 20 tasks × direct / per-call / Rehearsal on Era with a scripted planner; table in [`evals/scorecard/results/latest.txt`](../../evals/scorecard/results/latest.txt). Claude-planner rows not run yet (no model key) | #7 | T1.5, T4.2 |
 | T1.7 | _Stretch:_ Slack summary step (`slack.message.postSummary`) | after M3 | Behind the trim decision | #8 | T1.5 |
 | T1.8 | _Stretch:_ SurrealDB precedents (explicit promotion, recall with trace) | after M3 | Behind the trim decision | #9 | T1.5 |
@@ -40,6 +40,8 @@
 | T1.10 | Invoice-bound duplicate refunds with a retained paid original | M3 | **Done:** equal distinct invoices and refund cycles refused; excess charges use one original | #61 | — |
 | T1.11 | Verify ticket ownership in planning evidence | M3 | **Done:** ticket tools refuse wrong or missing customer links | #63 | — |
 | T1.12 | Preserve immutable planning evidence snapshots | M3 | **Done:** changed reads create new snapshots; existing action references retain their assumptions | #73 | — |
+| T1.13 | _Full scope:_ public customer reply from an exact approved template (typed op, hashed text) | after M5 | Uncertain send reconciled by reading comments, never re-sent blindly; contracts change reviewed by another track | #136 | — |
+| T1.14 | _Full scope:_ invoice-balance credit as an alternative remedy to a refund | after M5 | Era semantics check written up; one remedy per obligation; write, read-back and reconcile on Era | #137 | — |
 
 ## Decisions
 
