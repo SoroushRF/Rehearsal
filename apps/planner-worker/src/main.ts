@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenAI } from "@google/genai";
 import type { BillingPolicyV1 } from "@rehearsal/core";
 import { DEFAULT_PLANNER_MODEL, PROMPT_VERSION } from "@rehearsal/planner";
 import {
@@ -12,6 +13,7 @@ import {
 } from "@rehearsal/providers";
 import policy from "../../../scenarios/billing/policy.v1.json" with { type: "json" };
 import { plannerCredentialViolations } from "./credentials";
+import { geminiMessagesClient } from "./gemini";
 import { handlePlanJob } from "./job";
 
 /**
@@ -26,9 +28,13 @@ if (forbidden.length > 0) {
 }
 const secret = process.env.PLANNER_WORKER_SECRET;
 const apiUrl = process.env.REHEARSAL_API_URL;
-if (!secret || !apiUrl || !process.env.ANTHROPIC_API_KEY) {
+const model = process.env.PLANNER_MODEL || DEFAULT_PLANNER_MODEL;
+// A Gemini model runs on Vertex AI with the worker's Google credentials (ADC); Claude needs a key.
+const gemini = model.startsWith("gemini-");
+const project = process.env.GOOGLE_CLOUD_PROJECT;
+if (!secret || !apiUrl || (gemini ? !project : !process.env.ANTHROPIC_API_KEY)) {
   console.error(
-    "planner-worker needs REHEARSAL_API_URL, PLANNER_WORKER_SECRET and ANTHROPIC_API_KEY",
+    `planner-worker needs REHEARSAL_API_URL, PLANNER_WORKER_SECRET and ${gemini ? "GOOGLE_CLOUD_PROJECT" : "ANTHROPIC_API_KEY"}`,
   );
   process.exit(1);
 }
@@ -58,12 +64,19 @@ const readers = {
     timeoutMs: READ_TIMEOUT_MS,
   }),
 };
-const model = process.env.PLANNER_MODEL || DEFAULT_PLANNER_MODEL;
-const anthropic = new Anthropic();
+const client = gemini
+  ? geminiMessagesClient(
+      new GoogleGenAI({
+        vertexai: true,
+        project,
+        location: process.env.GOOGLE_CLOUD_LOCATION || "global",
+      }).models,
+    )
+  : new Anthropic().messages;
 const jobs = plannerJobsClient(apiUrl, secret);
 const ctx = {
   jobs,
-  client: anthropic.messages,
+  client,
   model,
   readers,
   ctx: { world: "planning", tenant: worlds.stripe.tenant } as const,

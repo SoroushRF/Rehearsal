@@ -28,7 +28,7 @@ These are the product. Breaking one is a bug even if tests pass.
 - **Approval is for an exact hash.** Apply takes a stored plan reference plus the expected revision and hash. Never accept action bodies from the browser. Any change that affects execution creates a new revision, and the new revision needs a new approval.
 - **Journal before dispatch.** Persist the exact request bytes and idempotency key before sending. An unknown outcome is reconciled through reads, never blindly re-sent. A refund or appended note is never "rolled back".
 - **Money** is an integer number of minor units plus a currency. No floats.
-- **Typed operations only:** `stripe.refund.create`, `zendesk.ticket.patchFields`, `zendesk.ticket.appendPrivateNote`. No arbitrary URL, method or JSON-patch tools.
+- **Typed operations only:** `stripe.refund.create`, `zendesk.ticket.patchFields`, `zendesk.ticket.appendPrivateNote`. `stripe.customer.balanceCredit`, `slack.message.postSummary` and `zendesk.ticket.appendPublicReply` are defined in contracts but can't be planned until T1.14, T1.7 and T1.13 add them to `Action`. No arbitrary URL, method or JSON-patch tools.
 - **Append-only history.** Plans, approvals, attempts and receipts are never edited in place; corrections are new rows.
 - **Label your evidence.** Results are `fixture` until they have run against real Era images. Never claim something we didn't run.
 - **Never commit** `.env`, keys, tokens, model weights or downloaded image layers.
@@ -45,6 +45,7 @@ packages/core         hash, DAG, policy, ports; executor engine + guards (T3/T4)
 packages/providers    Era client; read side (T1), write side (T3)
 packages/db           Drizzle schema, migrations, journal (T3)
 packages/planner      Claude tool loop + planning tools (T1)
+packages/memory       precedents on SurrealDB Agent Memory + citation check (T1)
 packages/testkit      fake clock, fake provider, fixture bundles (all)
 scenarios/billing     policy + generated bundles + Era fixtures (T1/T4)
 infra/                compose for Postgres + Era worlds (T1)
