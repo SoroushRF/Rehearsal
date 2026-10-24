@@ -6,7 +6,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 
 ## Top blockers
 
-29 of 37 tasks done. These open tasks hold up the most other work:
+29 of 40 tasks done. These open tasks hold up the most other work:
 
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
@@ -31,6 +31,8 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T1.10** Bind duplicate refunds to invoice identity and retain a paid anchor [#61](https://github.com/SoroushRF/Rehearsal/issues/61) | ✅ done |  |  |
 | **T1.11** Verify customer ownership before proposing ticket changes [#63](https://github.com/SoroushRF/Rehearsal/issues/63) | ✅ done |  |  |
 | **T1.12** Preserve the evidence snapshot used to construct each action [#73](https://github.com/SoroushRF/Rehearsal/issues/73) | ✅ done |  |  |
+| **T1.13** Public customer reply from an exact approved template [#136](https://github.com/SoroushRF/Rehearsal/issues/136) | 🟨 ready | — |  |
+| **T1.14** Invoice-balance credit as an alternative remedy to a refund [#137](https://github.com/SoroushRF/Rehearsal/issues/137) | 🟨 ready | — |  |
 
 ## T2 Review & Approve
 
@@ -63,6 +65,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T3.5** Unknown outcome: lost response, restart, reconcile through reads [#22](https://github.com/SoroushRF/Rehearsal/issues/22) | ✅ done |  | T3.7 |
 | **T3.6** ID divergence test, partial-completion state, cancellation [#23](https://github.com/SoroushRF/Rehearsal/issues/23) | ✅ done |  | T3.7 |
 | **T3.7** Bounded concurrency across independent cases [#24](https://github.com/SoroushRF/Rehearsal/issues/24) | ✅ done |  |  |
+| **T3.8** Read back each write before confirming its receipt [#134](https://github.com/SoroushRF/Rehearsal/issues/134) | 🟨 ready | — |  |
 
 ## T4 Guard
 
@@ -100,6 +103,8 @@ flowchart LR
     T1_10["T1.10 Bind duplicate refunds to invoice identity"]:::done
     T1_11["T1.11 Verify customer ownership before proposing"]:::done
     T1_12["T1.12 Preserve the evidence snapshot used to con"]:::done
+    T1_13["T1.13 Public customer reply from an exact approv"]:::ready
+    T1_14["T1.14 Invoice-balance credit as an alternative r"]:::ready
   end
   subgraph T2[T2 Review & Approve]
     T2_1["T2.1 Plan diff view from fixture bundles"]:::done
@@ -121,6 +126,7 @@ flowchart LR
     T3_5["T3.5 Unknown outcome: lost response, restart, re"]:::done
     T3_6["T3.6 ID divergence test, partial-completion stat"]:::done
     T3_7["T3.7 Bounded concurrency across independent case"]:::done
+    T3_8["T3.8 Read back each write before confirming its "]:::ready
   end
   subgraph T4[T4 Guard]
     T4_1["T4.1 Pure guards: observation compare, query-mem"]:::done
