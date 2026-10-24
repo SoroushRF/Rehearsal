@@ -1,4 +1,4 @@
-import { type Action, OPERATION_MARKER_PREFIX } from "@rehearsal/contracts";
+import { type Action, OPERATION_MARKER_PREFIX, type OutcomeCount } from "@rehearsal/contracts";
 import { bindingKey } from "./bindings";
 import type { ResolvedBindings } from "./ports";
 
@@ -130,4 +130,97 @@ export function replyBodyFor(action: ReplyAction): string {
 /** The exact comment a public reply sends: the approved body, then the operation marker. */
 export function replyCommentFor(action: ReplyAction, operationKey: string): string {
   return `${replyBodyFor(action)}\n\n${operationMarker(operationKey)}`;
+}
+
+/**
+ * Run-summary templates for `slack.message.postSummary` (T3.10). Like notes: an approved template
+ * plus literals and counts of approved steps' outcomes, never model text, and the operation marker
+ * so an uncertain post is found by reading the channel.
+ */
+/**
+ * What rendering and posting need of a `slack.message.postSummary` action (contracts'
+ * `SlackMessagePostSummary`; not in `Action` until T1.7 adds it).
+ */
+export interface SummaryAction {
+  id: string;
+  kind: "slack.message.postSummary";
+  args: {
+    channelId: string;
+    template: { id: string; version: number };
+    bindings: Record<string, string | number | OutcomeCount>;
+  };
+}
+
+/** One summary template: which bindings it takes, which must be outcome counts, and its text. */
+interface SummaryTemplate {
+  /** Literal bindings: short single-line plan text, never a count. */
+  literals: readonly string[];
+  /** Bindings that must be counts of approved steps' outcomes (never a literal number). */
+  counts: readonly string[];
+  render: (v: Readonly<Record<string, string | number>>) => string;
+}
+
+const SUMMARY_TEMPLATES: Record<string, SummaryTemplate> = {
+  "run-summary@1": {
+    literals: ["incidentId"],
+    counts: ["refunded", "held"],
+    render: (v) =>
+      `Billing remediation ${v.incidentId}: ${v.refunded} refund(s) issued, ${v.held} step(s) held for review.`,
+  },
+};
+
+/** Slack stores at most 40,000 characters of `text`; the marker comes last, so stay under it. */
+export const MAX_SUMMARY_CHARS = 39_000;
+const MAX_LITERAL_CHARS = 200;
+
+/** Where the executor puts an outcome count's value among the resolved bindings. */
+export function summaryCountKey(name: string): string {
+  return `summary-count:${name}`;
+}
+
+/**
+ * The exact Slack text for a postSummary action. Literal bindings are used as approved; each
+ * outcome count must already be resolved (by the executor, from settled receipts) under
+ * {@link summaryCountKey}.
+ */
+export function summaryTextFor(
+  action: SummaryAction,
+  resolved: ResolvedBindings,
+  operationKey: string,
+): string {
+  const key = `${action.args.template.id}@${action.args.template.version}`;
+  const template = SUMMARY_TEMPLATES[key];
+  if (!template) throw new Error(`unknown summary template ${key}`);
+  const expected = [...template.literals, ...template.counts].sort();
+  const given = Object.keys(action.args.bindings).sort();
+  if (expected.join("\0") !== given.join("\0")) {
+    throw new Error(`summary ${key} takes exactly ${expected.join(", ")}; got ${given.join(", ")}`);
+  }
+  const values: Record<string, string | number> = {};
+  for (const name of template.literals) {
+    const b = action.args.bindings[name];
+    if (typeof b !== "string" || b.trim().length === 0 || b.length > MAX_LITERAL_CHARS) {
+      throw new TypeError(`summary literal ${name} must be a short non-empty string`);
+    }
+    if (/[\r\n]/.test(b) || b.includes(OPERATION_MARKER_PREFIX)) {
+      throw new TypeError(`summary literal ${name} must be one line without an operation marker`);
+    }
+    values[name] = b;
+  }
+  for (const name of template.counts) {
+    if (typeof action.args.bindings[name] !== "object") {
+      throw new TypeError(`summary ${name} must be a count of approved steps' outcomes`);
+    }
+    const value = resolved.get(summaryCountKey(name));
+    if (value === undefined) throw new Error(`unresolved summary count ${name}`);
+    if (!(typeof value === "number" && Number.isInteger(value) && value >= 0)) {
+      throw new TypeError(`summary count ${name} must be a non-negative integer, got ${value}`);
+    }
+    values[name] = value;
+  }
+  const text = `${template.render(values)}\n\n${operationMarker(operationKey)}`;
+  if (text.length > MAX_SUMMARY_CHARS) {
+    throw new Error(`summary is ${text.length} characters; Slack would cut the marker off`);
+  }
+  return text;
 }
