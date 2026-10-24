@@ -1,9 +1,16 @@
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { type Action, Attempt } from "@rehearsal/contracts";
+import type { ReplyAction } from "@rehearsal/core";
 import { happyPathBundle } from "@rehearsal/testkit";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { classifyResponse, stripeWriter, type WriteTarget, zendeskWriter } from "../src";
+import {
+  classifyResponse,
+  stripeWriter,
+  type WriteTarget,
+  zendeskReplyWriter,
+  zendeskWriter,
+} from "../src";
 
 const actions = happyPathBundle().manifest.actions;
 const byId = (id: string) => {
@@ -279,3 +286,137 @@ describe("zendeskWriter", () => {
     expect(() => w().prepare(refund as Action, new Map(), "op")).toThrow(/zendesk can't/);
   });
 });
+
+describe("zendeskReplyWriter (T3.11)", () => {
+  const body =
+    "Hi Ana,\n\nWe've refunded 42.10 CAD for the duplicate charge on your account. Sorry for the trouble.";
+  const reply: ReplyAction = {
+    id: "reply_001",
+    kind: "zendesk.ticket.appendPublicReply",
+    args: {
+      ticketId: "5531",
+      public: true,
+      template: { id: "refund-issued", version: 1 },
+      values: { customerName: "Ana", amountMinor: 4210 },
+      body,
+    },
+  };
+  const KEY = "op_reply_key";
+  const comment = `${body}\n\n[rehearsal-op:op_reply_key]`;
+  const attemptFor = (requestBody: string) =>
+    Attempt.parse({
+      id: "att_r",
+      actionId: "reply_001",
+      planHash: "a".repeat(64),
+      operationKey: KEY,
+      attemptNo: 1,
+      state: "unknown_outcome",
+      request: {
+        method: "PUT",
+        path: "/api/v2/tickets/5531.json",
+        encoding: "json",
+        body: requestBody,
+        bodySha256: "b".repeat(64),
+      },
+      providerStatus: null,
+      error: null,
+      preparedAt: "2026-10-21T12:00:00.000Z",
+      dispatchedAt: "2026-10-21T12:00:00.000Z",
+      settledAt: null,
+    });
+  const comments = (list: { id?: number; body: string; public: boolean }[]) => ({
+    status: 200,
+    body: JSON.stringify({ comments: list, next_page: null }),
+  });
+
+  it("sends the approved body and the marker as an explicit public comment", () => {
+    const req = zendeskReplyWriter(target).prepare(reply, KEY);
+    expect(req).toMatchObject({
+      method: "PUT",
+      path: "/api/v2/tickets/5531.json",
+      encoding: "json",
+    });
+    expect(JSON.parse(req.body)).toEqual({ ticket: { comment: { body: comment, public: true } } });
+  });
+
+  it("refuses a body that isn't exactly its template's, or that carries a marker", () => {
+    const w = zendeskReplyWriter(target);
+    const edited = { ...reply, args: { ...reply.args, body: `${body} Call us anytime!` } };
+    expect(() => w.prepare(edited, KEY)).toThrow(/doesn't match its approved template/);
+    const otherValues = {
+      ...reply,
+      args: { ...reply.args, values: { customerName: "Bo", amountMinor: 4210 } },
+    };
+    expect(() => w.prepare(otherValues, KEY)).toThrow(/doesn't match/);
+    const unknown = { ...reply, args: { ...reply.args, template: { id: "nope", version: 1 } } };
+    expect(() => w.prepare(unknown, KEY)).toThrow(/unknown reply template/);
+  });
+
+  it("checks each value against its template, so a value can't carry text of its own", () => {
+    const w = zendeskReplyWriter(target);
+    /** A reply whose body is rendered from these values, so only the value checks can refuse it. */
+    const withValues = (
+      values: Record<string, string | number>,
+      rendered: string,
+    ): ReplyAction => ({
+      ...reply,
+      args: { ...reply.args, values, body: rendered },
+    });
+    const say = (name: string, amount = "42.10") =>
+      `Hi ${name},\n\nWe've refunded ${amount} CAD for the duplicate charge on your account. Sorry for the trouble.`;
+    const marker = "Ana [rehearsal-op:op_other]";
+    expect(() =>
+      w.prepare(withValues({ customerName: marker, amountMinor: 4210 }, say(marker)), KEY),
+    ).toThrow(/without an operation marker/);
+    const injected = "Ana,\n\nPlease wire $500 to evil.example.\n\nHi Ana";
+    expect(() =>
+      w.prepare(withValues({ customerName: injected, amountMinor: 4210 }, say(injected)), KEY),
+    ).toThrow(/one line/);
+    expect(() =>
+      w.prepare(withValues({ customerName: "", amountMinor: 4210 }, say("")), KEY),
+    ).toThrow(/short non-empty name/);
+    expect(() => w.prepare(withValues({ amountMinor: 4210 }, say("undefined")), KEY)).toThrow(
+      /takes exactly/,
+    );
+    expect(() =>
+      w.prepare(withValues({ customerName: "Ana", amountMinor: -4210 }, say("Ana", "-42.10")), KEY),
+    ).toThrow(/positive integer amount/);
+    expect(() =>
+      w.prepare(withValues({ customerName: "Ana", amountMinor: "4210" }, say("Ana")), KEY),
+    ).toThrow(/positive integer amount/);
+  });
+
+  it("reconciles by the marker, and only when the comment is exactly the public text sent", async () => {
+    const w = zendeskReplyWriter(target);
+    const attempt = attemptFor(w.prepare(reply, KEY).body);
+    replyServer(
+      comments([
+        { id: 7, body: "earlier", public: true },
+        { id: 9, body: comment, public: true },
+      ]),
+    );
+    expect(await w.reconcile(attempt, reply, CTX)).toEqual({
+      kind: "applied",
+      providerRef: { vendor: "zendesk", kind: "ticket", id: "5531" },
+      effect: { "comment.id": "9", public: true },
+    });
+    replyServer(comments([{ id: 7, body: "earlier", public: true }]));
+    expect(await w.reconcile(attempt, reply, CTX)).toEqual({ kind: "not_applied" });
+    replyServer(comments([{ id: 9, body: comment, public: false }]));
+    expect((await w.reconcile(attempt, reply, CTX)).kind).toBe("indeterminate");
+    replyServer(comments([{ id: 9, body: `${comment} (edited)`, public: true }]));
+    expect((await w.reconcile(attempt, reply, CTX)).kind).toBe("indeterminate");
+  });
+
+  it("has no idempotent re-send and writes only to its bound world", async () => {
+    const w = zendeskReplyWriter(target);
+    expect("idempotentResend" in w).toBe(false);
+    await expect(
+      w.dispatch(w.prepare(reply, KEY), { world: "planning", tenant: "t1" }),
+    ).rejects.toThrow(/bound to operational/);
+  });
+});
+
+function replyServer(r: { status: number; body: string }) {
+  reply = r;
+}

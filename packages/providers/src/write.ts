@@ -9,8 +9,10 @@ import {
   type PreparedRequest,
   type ProviderPort,
   type ReconcileResult,
+  type ReplyAction,
   type ResolvedBindings,
   refundEffectMatches,
+  replyCommentFor,
   type WorldContext,
 } from "@rehearsal/core";
 import { z } from "zod";
@@ -136,9 +138,49 @@ const RefundPage = z.object({
   has_more: z.boolean(),
 });
 const CommentPage = z.object({
-  comments: z.array(z.object({ body: z.string(), public: z.boolean() })),
+  comments: z.array(
+    z.object({
+      id: z.union([z.number(), z.string()]).optional(),
+      body: z.string(),
+      public: z.boolean(),
+    }),
+  ),
   next_page: z.string().min(1).nullable(),
 });
+type Comment = z.infer<typeof CommentPage>["comments"][number];
+
+/** Find the comment carrying `marker` across every page of a ticket's comments. */
+async function findMarkedComment(
+  target: WriteTarget,
+  ticketId: string,
+  marker: string,
+): Promise<
+  { kind: "found"; comment: Comment } | { kind: "absent" } | { kind: "unknown"; detail: string }
+> {
+  let path = `/api/v2/tickets/${encodeURIComponent(ticketId)}/comments.json`;
+  const seen = new Set<string>();
+  for (let page = 0; page < MAX_PAGES; page++) {
+    if (seen.has(path)) return { kind: "unknown", detail: "repeated comment cursor" };
+    seen.add(path);
+    const parsed = CommentPage.safeParse(await readJson<unknown>(target, path));
+    if (!parsed.success) return { kind: "unknown", detail: "invalid comment page" };
+    const body = parsed.data;
+    const comment = body.comments.find((c) => c.body.includes(marker));
+    if (comment) return { kind: "found", comment };
+    if (body.next_page === null) return { kind: "absent" };
+    let next: URL;
+    try {
+      next = new URL(body.next_page, target.config.baseUrl);
+    } catch {
+      return { kind: "unknown", detail: "invalid comment cursor" };
+    }
+    if (next.origin !== new URL(target.config.baseUrl).origin || body.comments.length === 0) {
+      return { kind: "unknown", detail: "untrusted or empty comment page" };
+    }
+    path = `${next.pathname}${next.search}`;
+  }
+  return { kind: "unknown", detail: `more than ${MAX_PAGES} pages of comments` };
+}
 
 /**
  * Stripe refunds. Form-encoded in a fixed field order (the simulator fingerprints path + raw body
@@ -314,31 +356,14 @@ export function zendeskWriter(target: WriteTarget): ProviderWriter {
       const ref = { vendor: "zendesk", kind: "ticket", id: action.args.ticketId } as const;
       if (action.kind === "zendesk.ticket.appendPrivateNote") {
         // The note carries its operation marker; look for it across every page of comments.
-        const marker = operationMarker(attempt.operationKey);
-        let path = `/api/v2/tickets/${encodeURIComponent(action.args.ticketId)}/comments.json`;
-        const seen = new Set<string>();
-        for (let page = 0; page < MAX_PAGES; page++) {
-          if (seen.has(path)) return { kind: "indeterminate", detail: "repeated comment cursor" };
-          seen.add(path);
-          const parsed = CommentPage.safeParse(await readJson<unknown>(target, path));
-          if (!parsed.success) return { kind: "indeterminate", detail: "invalid comment page" };
-          const body = parsed.data;
-          if (body.comments.some((c) => c.body.includes(marker))) {
-            return { kind: "applied", providerRef: ref, effect: {} };
-          }
-          if (body.next_page === null) return { kind: "not_applied" };
-          let next: URL;
-          try {
-            next = new URL(body.next_page, target.config.baseUrl);
-          } catch {
-            return { kind: "indeterminate", detail: "invalid comment cursor" };
-          }
-          if (next.origin !== new URL(target.config.baseUrl).origin || body.comments.length === 0) {
-            return { kind: "indeterminate", detail: "untrusted or empty comment page" };
-          }
-          path = `${next.pathname}${next.search}`;
-        }
-        return { kind: "indeterminate", detail: `more than ${MAX_PAGES} pages of comments` };
+        const found = await findMarkedComment(
+          target,
+          action.args.ticketId,
+          operationMarker(attempt.operationKey),
+        );
+        if (found.kind === "found") return { kind: "applied", providerRef: ref, effect: {} };
+        if (found.kind === "absent") return { kind: "not_applied" };
+        return { kind: "indeterminate", detail: found.detail };
       }
       if (action.kind === "zendesk.ticket.patchFields") {
         const { ticket } = await readJson<{ ticket: Record<string, unknown> }>(
@@ -364,6 +389,73 @@ export function zendeskWriter(target: WriteTarget): ProviderWriter {
         };
       }
       return { kind: "indeterminate", detail: "unsupported zendesk action" };
+    },
+  };
+}
+
+/** The write side of `zendesk.ticket.appendPublicReply` (T3.11); `executeRun` takes it once T1.13 adds the op. */
+export interface ZendeskReplyWriter {
+  vendor: "zendesk";
+  prepare(action: ReplyAction, operationKey: string): PreparedRequest;
+  dispatch(req: PreparedRequest, ctx: WorldContext): Promise<DispatchResult>;
+  reconcile(attempt: Attempt, action: ReplyAction, ctx: WorldContext): Promise<ReconcileResult>;
+}
+
+/**
+ * Public customer replies. The comment is the approved body (re-rendered from its template and
+ * checked byte for byte) plus the operation marker, sent with explicit `public: true`. Zendesk has
+ * no exactly-once append, so there is no idempotent re-send: an unknown outcome is resolved by
+ * reading the ticket's comments for the marker, and the found comment must be exactly what was
+ * sent and public.
+ */
+export function zendeskReplyWriter(target: WriteTarget): ZendeskReplyWriter {
+  return {
+    vendor: "zendesk",
+    prepare(action, operationKey) {
+      return {
+        method: "PUT",
+        path: ticketPath(action.args.ticketId),
+        encoding: "json",
+        body: JSON.stringify({
+          ticket: { comment: { body: replyCommentFor(action, operationKey), public: true } },
+        }),
+        headers: {},
+      };
+    },
+    async dispatch(req, ctx) {
+      assertTarget(target, ctx);
+      return send(target, req);
+    },
+    async reconcile(attempt, action, ctx) {
+      assertTarget(target, ctx);
+      const found = await findMarkedComment(
+        target,
+        action.args.ticketId,
+        operationMarker(attempt.operationKey),
+      );
+      if (found.kind === "absent") return { kind: "not_applied" };
+      if (found.kind === "unknown") return { kind: "indeterminate", detail: found.detail };
+      let sent: unknown;
+      try {
+        sent = (JSON.parse(attempt.request.body) as { ticket?: { comment?: { body?: unknown } } })
+          .ticket?.comment?.body;
+      } catch {
+        return { kind: "indeterminate", detail: "journaled reply request is unreadable" };
+      }
+      if (found.comment.body !== sent || !found.comment.public) {
+        return {
+          kind: "indeterminate",
+          detail: "a comment carries this reply's marker but isn't the public text that was sent",
+        };
+      }
+      return {
+        kind: "applied",
+        providerRef: { vendor: "zendesk", kind: "ticket", id: action.args.ticketId },
+        effect: {
+          ...(found.comment.id !== undefined && { "comment.id": String(found.comment.id) }),
+          public: true,
+        },
+      };
     },
   };
 }
