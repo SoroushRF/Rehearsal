@@ -5,46 +5,56 @@ import type {
   PlanManifest,
   QueryObservation,
   SlackMessagePostSummary,
+  StripeCustomerBalanceCredit,
   ZendeskTicketAppendPublicReply,
 } from "@rehearsal/contracts";
 import type { z } from "zod";
 
 /**
- * Every action the review UI can draw. A public reply and a Slack summary aren't in `Action` yet
- * (T1.13 and T1.7 add them), so no stored plan carries one today; the rows are drawn ahead of that
- * so the reviewer sees the exact text the day they land. Once they join `Action` this is `Action`.
+ * Every action the review UI can draw. A public reply, a Slack summary and a balance credit aren't
+ * in `Action` yet (T1.13, T1.7 and T1.14 add them), so no stored plan carries one today; the rows
+ * are drawn ahead of that so the reviewer sees the exact effect the day they land. Once they join
+ * `Action` this is `Action`.
  */
 export type ReviewAction =
   | Action
   | z.infer<typeof ZendeskTicketAppendPublicReply>
-  | z.infer<typeof SlackMessagePostSummary>;
+  | z.infer<typeof SlackMessagePostSummary>
+  | z.infer<typeof StripeCustomerBalanceCredit>;
+
+/** A manifest as the UI reads it: the same, with the wider set of actions. */
+export type ReviewManifest = Omit<PlanManifest, "actions"> & { actions: ReviewAction[] };
 
 /** One customer branch of the plan, as the reviewer sees it. */
 export interface CaseGroup {
   caseId: string;
   /** Stripe customer the case is about, read from its evidence; null if none was observed. */
   customerId: string | null;
-  actions: Action[];
+  actions: ReviewAction[];
+  /** Money going back to the customer's card. */
   refunds: Money[];
+  /** Money kept on the customer's account as a credit against their next invoice. */
+  credits: Money[];
 }
 
 /** Groups actions by case, keeping manifest order inside each case and between cases. */
-export function groupByCase(manifest: PlanManifest): CaseGroup[] {
+export function groupByCase(manifest: ReviewManifest): CaseGroup[] {
   const groups = new Map<string, CaseGroup>();
   for (const a of manifest.actions) {
     let g = groups.get(a.caseId);
     if (!g) {
-      g = { caseId: a.caseId, customerId: null, actions: [], refunds: [] };
+      g = { caseId: a.caseId, customerId: null, actions: [], refunds: [], credits: [] };
       groups.set(a.caseId, g);
     }
     g.actions.push(a);
     if (a.kind === "stripe.refund.create") g.refunds.push(a.args.amount);
+    if (a.kind === "stripe.customer.balanceCredit") g.credits.push(a.args.amount);
   }
   for (const g of groups.values()) g.customerId = customerOf(manifest, g.actions);
   return [...groups.values()];
 }
 
-function customerOf(manifest: PlanManifest, actions: readonly Action[]): string | null {
+function customerOf(manifest: ReviewManifest, actions: readonly ReviewAction[]): string | null {
   const queryIds = new Set(actions.flatMap((a) => a.queryEvidence));
   for (const q of manifest.queryObservations) {
     if (queryIds.has(q.id) && q.predicate.kind === "stripe.charges.byCustomerInWindow") {
@@ -71,7 +81,7 @@ export interface ActionEvidence {
   missing: string[];
 }
 
-export function evidenceFor(manifest: PlanManifest, action: ReviewAction): ActionEvidence {
+export function evidenceFor(manifest: ReviewManifest, action: ReviewAction): ActionEvidence {
   const obs = new Map(manifest.observations.map((o) => [o.id, o]));
   const queries = new Map(manifest.queryObservations.map((q) => [q.id, q]));
   const missing: string[] = [];
@@ -111,7 +121,7 @@ export function droppedBy(
 }
 
 /** Which roles have to sign this plan, strongest first. */
-export function requiredRoles(manifest: PlanManifest): Action["requiredRole"][] {
+export function requiredRoles(manifest: ReviewManifest): Action["requiredRole"][] {
   const roles = new Set(manifest.actions.map((a) => a.requiredRole));
   return (["finance_lead", "support_lead"] as const).filter((r) => roles.has(r));
 }

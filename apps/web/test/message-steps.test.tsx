@@ -1,13 +1,15 @@
 import {
   type Receipt,
   SlackMessagePostSummary,
+  StripeCustomerBalanceCredit,
   ZendeskTicketAppendPublicReply,
 } from "@rehearsal/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { ActionRow } from "../src/components/ActionRow";
-import type { ReviewAction } from "../src/plan";
-import { droppedBy } from "../src/plan";
+import { PlanReview } from "../src/components/PlanReview";
+import { fixtureBundles } from "../src/fixtures";
+import { droppedBy, groupByCase, type ReviewAction, type ReviewManifest } from "../src/plan";
 import { explainReceipt } from "../src/runs";
 
 const base = {
@@ -166,5 +168,57 @@ describe("receipts for sends other people read", () => {
   it("keeps the generic wording for other steps", () => {
     expect(explainReceipt(unknown, "stripe.refund.create")).toContain("never re-sent blindly");
     expect(explainReceipt(unknown)).toContain("never re-sent blindly");
+  });
+});
+
+describe("invoice credit (T2.18)", () => {
+  const manifest = fixtureBundles[0]?.bundle.manifest ?? expect.unreachable();
+  const credit = StripeCustomerBalanceCredit.parse({
+    ...base,
+    id: "credit_001",
+    caseId: "case_001",
+    obligationId: "obl_credit",
+    dependsOn: [],
+    kind: "stripe.customer.balanceCredit",
+    compensation: "compensable_by_new_action",
+    protection: "native_guard_with_documented_limits",
+    args: {
+      customerId: "cus_fixture_001",
+      chargeId: "ch_fixture_001",
+      amount: { amountMinor: 4210, currency: "cad" },
+    },
+  });
+  // Swap case_001's refund for the credit: one remedy per obligation.
+  const withCredit: ReviewManifest = {
+    ...manifest,
+    actions: [
+      credit,
+      ...manifest.actions.filter(
+        (a) => a.caseId !== "case_001" || a.kind !== "stripe.refund.create",
+      ),
+    ],
+  };
+
+  it("says in words that it is a credit, not money back", () => {
+    const text = words(row(credit));
+    expect(text).toContain("Credit the customer's next invoice");
+    expect(text).toContain("$42.10 CAD");
+    expect(text).toContain("not paid back to the card");
+  });
+
+  it("is counted apart from refunds, per customer and in total", () => {
+    const [first] = groupByCase(withCredit);
+    expect(first?.credits).toEqual([{ amountMinor: 4210, currency: "cad" }]);
+    expect(first?.refunds).toEqual([]);
+    const text = words(
+      renderToStaticMarkup(
+        <PlanReview manifest={withCredit} planHash={"a".repeat(64)} evidence="fixture" />,
+      ),
+    );
+    expect(text).toContain("as invoice credit");
+    expect(text).toContain("$42.10 CAD credited to next invoices");
+    // The other customer's refund is still a refund.
+    expect(text).toContain("$125.00 CAD");
+    expect(text).toContain("to refund");
   });
 });
