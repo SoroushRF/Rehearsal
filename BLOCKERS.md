@@ -6,16 +6,16 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 
 ## Top blockers
 
-30 of 56 tasks done. These open tasks hold up the most other work:
+31 of 56 tasks done. These open tasks hold up the most other work:
 
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
-| **T1.19** Contracts: typed op stripe.customer.balanceCredit (after an Era semantics check) [#144](https://github.com/SoroushRF/Rehearsal/issues/144) | @SoroushRF | 🟨 ready | 4 |
 | **T1.17** Contracts: typed op slack.message.postSummary [#142](https://github.com/SoroushRF/Rehearsal/issues/142) | @SoroushRF | 🟨 ready | 3 |
 | **T1.18** Contracts: typed op zendesk.ticket.appendPublicReply [#143](https://github.com/SoroushRF/Rehearsal/issues/143) | @SoroushRF | 🟨 ready | 3 |
 | **T4.5** ML smoke test: Qwen3.5-0.8B LoRA on 32 cases [#29](https://github.com/SoroushRF/Rehearsal/issues/29) | @skhdemo | 👀 in review | 2 |
 | **T2.15** Review UI: show the Slack summary step and its exact text [#145](https://github.com/SoroushRF/Rehearsal/issues/145) | @parsaabbasian | 🟥 blocked | 1 |
 | **T2.16** Review UI: show the exact rendered public reply being approved [#146](https://github.com/SoroushRF/Rehearsal/issues/146) | @parsaabbasian | 🟥 blocked | 1 |
+| **T2.18** Policy: choose a refund or an invoice credit per obligation [#148](https://github.com/SoroushRF/Rehearsal/issues/148) | @parsaabbasian | 🟨 ready | 1 |
 
 ## T1 Rehearse
 
@@ -36,12 +36,12 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T1.11** Verify customer ownership before proposing ticket changes [#63](https://github.com/SoroushRF/Rehearsal/issues/63) | ✅ done |  |  |
 | **T1.12** Preserve the evidence snapshot used to construct each action [#73](https://github.com/SoroushRF/Rehearsal/issues/73) | ✅ done |  |  |
 | **T1.13** Public customer reply from an exact approved template [#136](https://github.com/SoroushRF/Rehearsal/issues/136) | 🟥 blocked | T1.18 (T1, ready)<br>T2.16 (T2, blocked)<br>T3.11 (T3, blocked) |  |
-| **T1.14** Invoice-balance credit as an alternative remedy to a refund [#137](https://github.com/SoroushRF/Rehearsal/issues/137) | 🟥 blocked | T1.19 (T1, ready)<br>T2.18 (T2, blocked)<br>T3.12 (T3, blocked)<br>T4.10 (T4, blocked)<br>T3.8 (T3, ready) |  |
+| **T1.14** Invoice-balance credit as an alternative remedy to a refund [#137](https://github.com/SoroushRF/Rehearsal/issues/137) | 🟥 blocked | T2.18 (T2, ready)<br>T3.12 (T3, ready)<br>T4.10 (T4, ready)<br>T3.8 (T3, ready) |  |
 | **T1.15** Scorecard rows from a real model planner (T1.6 follow-up) [#140](https://github.com/SoroushRF/Rehearsal/issues/140) | 🟨 ready | — |  |
 | **T1.16** Full-scope decision record: reopen the trimmed scope [#141](https://github.com/SoroushRF/Rehearsal/issues/141) | ✅ done |  | T1.8, T1.17, T1.18, T1.19 |
 | **T1.17** Contracts: typed op slack.message.postSummary [#142](https://github.com/SoroushRF/Rehearsal/issues/142) | 🟨 ready | — | T1.7, T2.15 (T2), T3.10 (T3) |
 | **T1.18** Contracts: typed op zendesk.ticket.appendPublicReply [#143](https://github.com/SoroushRF/Rehearsal/issues/143) | 🟨 ready | — | T1.13, T2.16 (T2), T3.11 (T3) |
-| **T1.19** Contracts: typed op stripe.customer.balanceCredit (after an Era semantics check) [#144](https://github.com/SoroushRF/Rehearsal/issues/144) | 🟨 ready | — | T1.14, T2.18 (T2), T3.12 (T3), T4.10 (T4) |
+| **T1.19** Contracts: typed op stripe.customer.balanceCredit (after an Era semantics check) [#144](https://github.com/SoroushRF/Rehearsal/issues/144) | ✅ done |  | T1.14, T2.18 (T2), T3.12 (T3), T4.10 (T4) |
 
 ## T2 Review & Approve
 
@@ -66,7 +66,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T2.15** Review UI: show the Slack summary step and its exact text [#145](https://github.com/SoroushRF/Rehearsal/issues/145) | 🟥 blocked | T1.17 (T1, ready) | T1.7 (T1) |
 | **T2.16** Review UI: show the exact rendered public reply being approved [#146](https://github.com/SoroushRF/Rehearsal/issues/146) | 🟥 blocked | T1.18 (T1, ready) | T1.13 (T1) |
 | **T2.17** Precedent promotion: finance-only route and UI [#147](https://github.com/SoroushRF/Rehearsal/issues/147) | 🟥 blocked | T1.8 (T1, ready) |  |
-| **T2.18** Policy: choose a refund or an invoice credit per obligation [#148](https://github.com/SoroushRF/Rehearsal/issues/148) | 🟥 blocked | T1.19 (T1, ready) | T1.14 (T1) |
+| **T2.18** Policy: choose a refund or an invoice credit per obligation [#148](https://github.com/SoroushRF/Rehearsal/issues/148) | 🟨 ready | — | T1.14 (T1) |
 
 ## T3 Apply
 
@@ -84,7 +84,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T3.8** Read back each write before confirming its receipt [#134](https://github.com/SoroushRF/Rehearsal/issues/134) | 🟨 ready | — | T1.14 (T1) |
 | **T3.10** Slack write adapter and uncertain-post reconciliation [#149](https://github.com/SoroushRF/Rehearsal/issues/149) | 🟥 blocked | T1.17 (T1, ready) | T1.7 (T1) |
 | **T3.11** Zendesk public reply write adapter and reconciliation [#150](https://github.com/SoroushRF/Rehearsal/issues/150) | 🟥 blocked | T1.18 (T1, ready) | T1.13 (T1) |
-| **T3.12** Stripe balance credit write adapter and reconciliation [#151](https://github.com/SoroushRF/Rehearsal/issues/151) | 🟥 blocked | T1.19 (T1, ready) | T1.14 (T1) |
+| **T3.12** Stripe balance credit write adapter and reconciliation [#151](https://github.com/SoroushRF/Rehearsal/issues/151) | 🟨 ready | — | T1.14 (T1) |
 
 ## T4 Guard
 
@@ -99,7 +99,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T4.5** ML smoke test: Qwen3.5-0.8B LoRA on 32 cases [#29](https://github.com/SoroushRF/Rehearsal/issues/29) | 👀 in review [PR #102](https://github.com/SoroushRF/Rehearsal/pull/102) | — | T4.6 |
 | **T4.6** ML pilot and go/no-go [#30](https://github.com/SoroushRF/Rehearsal/issues/30) | 🟥 blocked | T4.5 (T4, in review) | T4.7 |
 | **T4.7** Impact service behind ImpactPort (if ML go) [#31](https://github.com/SoroushRF/Rehearsal/issues/31) | 🟥 blocked | T4.6 (T4, blocked) |  |
-| **T4.10** Guard: one remedy per obligation across refunds and credits [#152](https://github.com/SoroushRF/Rehearsal/issues/152) | 🟥 blocked | T1.19 (T1, ready) | T1.14 (T1) |
+| **T4.10** Guard: one remedy per obligation across refunds and credits [#152](https://github.com/SoroushRF/Rehearsal/issues/152) | 🟨 ready | — | T1.14 (T1) |
 
 ## Task graph
 
@@ -129,7 +129,7 @@ flowchart LR
     T1_16["T1.16 Full-scope decision record: reopen the tri"]:::done
     T1_17["T1.17 Contracts: typed op slack.message.postSumm"]:::ready
     T1_18["T1.18 Contracts: typed op zendesk.ticket.appendP"]:::ready
-    T1_19["T1.19 Contracts: typed op stripe.customer.balanc"]:::ready
+    T1_19["T1.19 Contracts: typed op stripe.customer.balanc"]:::done
   end
   subgraph T2[T2 Review & Approve]
     T2_1["T2.1 Plan diff view from fixture bundles"]:::done
@@ -148,7 +148,7 @@ flowchart LR
     T2_15["T2.15 Review UI: show the Slack summary step and"]:::blocked
     T2_16["T2.16 Review UI: show the exact rendered public "]:::blocked
     T2_17["T2.17 Precedent promotion: finance-only route an"]:::blocked
-    T2_18["T2.18 Policy: choose a refund or an invoice cred"]:::blocked
+    T2_18["T2.18 Policy: choose a refund or an invoice cred"]:::ready
   end
   subgraph T3[T3 Apply]
     T3_1["T3.1 Drizzle migrations, Postgres journal, pg-bo"]:::done
@@ -161,7 +161,7 @@ flowchart LR
     T3_8["T3.8 Read back each write before confirming its "]:::ready
     T3_10["T3.10 Slack write adapter and uncertain-post rec"]:::blocked
     T3_11["T3.11 Zendesk public reply write adapter and rec"]:::blocked
-    T3_12["T3.12 Stripe balance credit write adapter and re"]:::blocked
+    T3_12["T3.12 Stripe balance credit write adapter and re"]:::ready
   end
   subgraph T4[T4 Guard]
     T4_1["T4.1 Pure guards: observation compare, query-mem"]:::done
@@ -171,7 +171,7 @@ flowchart LR
     T4_5["T4.5 ML smoke test: Qwen3.5-0.8B LoRA on 32 case"]:::review
     T4_6["T4.6 ML pilot and go/no-go"]:::blocked
     T4_7["T4.7 Impact service behind ImpactPort (if ML go)"]:::blocked
-    T4_10["T4.10 Guard: one remedy per obligation across re"]:::blocked
+    T4_10["T4.10 Guard: one remedy per obligation across re"]:::ready
   end
   T1_1 --> T1_2
   T1_9 --> T1_2
