@@ -1135,6 +1135,10 @@ async function applyLocked(
       // Nothing of this step's own is in flight, but an undo of it may be: say a newer revision
       // that never applied this patch itself, refused or cancelled after an older revision's undo
       // lost its response. Read that undo back too. `settleFromUndo` only reads, records or holds.
+      // Only an undo of this same content: one of a patch a revision changed was never this
+      // action's write, so judging it by this action's fields would record something false.
+      const sent = prior.filter((a) => a.state !== "prepared").at(-1);
+      if (!sent || !sameContent(sent)) return;
       const undo = await sentUndo(action);
       if (undo?.read) return settleFromUndo(action, undo);
       return;

@@ -661,6 +661,42 @@ describe("conditional compensation", () => {
       expectNoWrites(s, writes);
     });
 
+    it("leaves an undo of different content to the hand-off: a revision changed the patch", async () => {
+      const { s, writes } = await lostUndo(true);
+      const rev2 = s.addRevision((m) => {
+        const patch = m.actions.find((a) => a.id === "patch_002");
+        if (patch?.kind === "zendesk.ticket.patchFields") patch.args.set = { priority: "urgent" };
+      });
+      const result = await rev2.run();
+      expect(result.refusal).toBe("grant expired");
+      expect(result.unresolved).toBe(true);
+      expect(await patchReceipts(s, rev2.hash)).toEqual([]);
+      expectNoWrites(s, writes);
+    });
+
+    it("copies nothing under a newer revision once the undo is already settled", async () => {
+      const { s, writes } = await lostUndo(true);
+      await s.run(); // this hash reads it back: compensated, the undo attempt reconciled
+      const rev2 = s.addRevision();
+      // Something else of the plan is in flight, so the refused rev2 does run its read-only pass.
+      const refund = [...s.journal.attempts.values()].find((a) => a.actionId === "refund_001");
+      if (!refund) throw new Error("no refund attempt");
+      const stray = {
+        ...refund,
+        id: "att_stray",
+        attemptNo: refund.attemptNo + 1,
+        state: "prepared" as const,
+      };
+      await s.journal.prepareAttempt(stray);
+      await s.journal.transition(stray.id, "prepared", "dispatched", {
+        dispatchedAt: refund.preparedAt,
+      });
+      const result = await rev2.run();
+      expect(result.refusal).toBe("grant expired");
+      expect(await patchReceipts(s, rev2.hash)).toEqual([]);
+      expectNoWrites(s, writes);
+    });
+
     it("a cancelled newer revision also reads back the older revision's landed undo", async () => {
       const { s, writes } = await lostUndo(true);
       const rev2 = s.addRevision();
