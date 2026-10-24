@@ -3,4 +3,6 @@ packages:
   - packages/*
   - evals/*
 allowBuilds:
+  '@google/genai': false
   esbuild: true
+  protobufjs: false
