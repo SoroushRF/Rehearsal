@@ -41,10 +41,10 @@
 | T2.12 | Receipt wording: a confirmed receipt says "Applied", not "read back"; the limitations line says how it was confirmed | M5 | No "read back" claim on write-response confirmations; runs test updated. In review: #133 | #132 | — |
 | T2.13 | _Full scope:_ two distinct approvers (support + finance) where policy requires | full scope | Admission refuses until both grants are live and from distinct actors; refusal matrix extended; needs a decision record. **Done:** [0011](../decisions/0011-two-distinct-approvers.md), policy v3, admission, approval and apply routes; the web seats follow | #135 | — |
 | T2.14 | _Full scope:_ historical audit view: the exact plan, policy, evidence and grants as approved | full scope | An old run opens with its own plan and policy after the policy changed; test. **Done:** API (`GET /api/runs/:id/audit`, policy snapshot on the grant); the web view follows | #138 | — |
-| T2.15 | _Full scope:_ review UI shows the Slack summary step and its exact text | full scope | Plan diff and run timeline render the step, its text and an unresolved post | #145 | T1.17 |
-| T2.16 | _Full scope:_ review UI shows the exact rendered public reply being approved | full scope | Excluding the customer drops the reply; uncertain sends shown honestly | #146 | T1.18 |
+| T2.15 | _Full scope:_ review UI shows the Slack summary step and its exact text | full scope | Plan diff and run timeline render the step, its text and an unresolved post. **Done:** #187 | #145 | T1.17 |
+| T2.16 | _Full scope:_ review UI shows the exact rendered public reply being approved | full scope | Excluding the customer drops the reply; uncertain sends shown honestly. **Done:** #187 | #146 | T1.18 |
 | T2.17 | _Full scope:_ finance-only "Promote to precedent" route and UI; recalled precedents shown with trace | full scope | Role-checked route plus UI; promotion goes through T1.8's adapter | #147 | T1.8 |
-| T2.18 | _Full scope:_ policy chooses a refund or an invoice credit per obligation | full scope | New policy version; a completed remedy blocks a second; UI shows the remedy. **Done:** policy v2 and rules R4/R5 ([0010](../decisions/0010-remedy-policy.md)); the UI part follows once #187 lands | #148 | T1.19 |
+| T2.18 | _Full scope:_ policy chooses a refund or an invoice credit per obligation | full scope | New policy version; a completed remedy blocks a second; UI shows the remedy. **Done:** policy v2 and rules R4/R5 ([0010](../decisions/0010-remedy-policy.md)); the credit row in the review UI in #189 | #148 | T1.19 |
 
 ### Beyond and benchmark backlog (Oct 24)
 
