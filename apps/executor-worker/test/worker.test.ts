@@ -673,6 +673,115 @@ describe.skipIf(!process.env.DB_TESTS)(
       clock: new FakeClock(new Date(NOW.getTime() + 2 * 3_600_000).toISOString()),
     });
 
+    /**
+     * Revision 1 compensates case 2 (its note is refused), but the undo's response is lost: the
+     * undo reaches the ticket only if `lands`. Revision 2, identical, is then approved; the test
+     * runs it after its approval expired.
+     */
+    async function lostUndoThenRevision(lands: boolean) {
+      const r = await approvedRun();
+      const ctx = contextFor(r.world);
+      const zendesk = ctx.providers.zendesk;
+      if (!zendesk) throw new Error("no zendesk provider");
+      let undoLost = false;
+      const losing: WorkerContext = {
+        ...ctx,
+        providers: {
+          ...ctx.providers,
+          zendesk: {
+            ...zendesk,
+            dispatch: async (req, c) => {
+              const onTicket = req.path === "/api/v2/tickets/5532.json";
+              const comment = req.body.includes('"comment"');
+              if (onTicket && comment && req.body.includes("safe_update") && !undoLost) {
+                undoLost = true; // the undo: a guarded patch carrying its operation marker
+                if (lands) await zendesk.dispatch(req, c);
+                return { kind: "unknown" as const, error: "undo unanswered (injected)" };
+              }
+              if (onTicket && comment) {
+                return { kind: "rejected" as const, status: 422, body: {}, retryable: false };
+              }
+              return zendesk.dispatch(req, c);
+            },
+          },
+        },
+      };
+      await handleApplyJob(jobOf(r), losing);
+      expect(undoLost).toBe(true);
+      expect(r.world.tickets.get("5532")?.priority).toBe(lands ? "normal" : "high");
+
+      const manifest2 = { ...r.manifest, revision: 2, parentRevision: 1 };
+      const hash2 = planHash(manifest2);
+      await db.insert(schema.planVersions).values({
+        orgId: r.orgId,
+        planId: r.planId,
+        revision: 2,
+        planHash: hash2,
+        manifest: manifest2,
+      });
+      await db.insert(schema.approvalGrants).values({
+        id: `grant_${randomUUID()}`,
+        orgId: r.orgId,
+        planId: r.planId,
+        revision: 2,
+        planHash: hash2,
+        actorUserId: "user_finance",
+        actorSessionId: "sess",
+        roles: ["support_lead", "finance_lead"],
+        grantedAt: new Date(NOW.getTime() - 3_600_000),
+        expiresAt: new Date(NOW.getTime() + 3_600_000),
+      });
+      const rev2 = await requestApply(db, boss, {
+        orgId: r.orgId,
+        userId: "user_finance",
+        planId: r.planId,
+        revision: 2,
+        planHash: hash2,
+        now: NOW,
+      });
+      if (rev2.kind !== "accepted") throw new Error(`apply refused: ${rev2.kind}`);
+      const job2 = { ...jobOf(r), runId: rev2.runId, revision: 2, planHash: hash2 };
+      const undoAttempts = async () =>
+        (await db.select().from(schema.stepAttempts))
+          .filter((a) => a.orgId === r.orgId && a.actionId === "patch_002")
+          .filter((a) => a.request && JSON.stringify(a.request).includes("comment"))
+          .map((a) => a.state);
+      const patchReceipts2 = async () =>
+        (await db.select().from(schema.stepReceipts))
+          .filter((x) => x.orgId === r.orgId && x.planHash === hash2 && x.actionId === "patch_002")
+          .map((x) => (x.receipt as { outcome: string }).outcome);
+      return { r, job2, undoAttempts, patchReceipts2, writes: r.world.effects.length };
+    }
+
+    it("a refused newer revision records an older revision's landed undo, with no hand-off (#124)", async () => {
+      const { r, job2, undoAttempts, patchReceipts2, writes } = await lostUndoThenRevision(true);
+      expect(await undoAttempts()).toEqual(["unknown_outcome"]);
+
+      const result = await handleApplyJob(job2, expired(r.world), {
+        retryCount: 0,
+        retryLimit: 50,
+      });
+      expect(result).toMatchObject({ kind: "ran", outcome: { refusal: "grant expired" } });
+      expect(stateOf(result)).toBe("failed"); // final: nothing left for the reaper or an operator
+      expect(await runState(job2.runId)).toBe("failed");
+      expect(await patchReceipts2()).toEqual(["compensated"]);
+      expect(await undoAttempts()).toEqual(["reconciled"]);
+      expect(r.world.tickets.get("5532")?.priority).toBe("normal");
+      expect(r.world.effects.length).toBe(writes); // no fresh undo, no replay, no forward patch
+    });
+
+    it("a refused newer revision keeps an older revision's absent undo unresolved and retryable (#124)", async () => {
+      const { r, job2, undoAttempts, patchReceipts2, writes } = await lostUndoThenRevision(false);
+      await expect(
+        handleApplyJob(job2, expired(r.world), { retryCount: 50, retryLimit: 50 }),
+      ).rejects.toBeInstanceOf(RetryLater);
+      expect(await runState(job2.runId)).toBe("applying");
+      expect(await patchReceipts2()).toEqual(["held"]);
+      expect(await undoAttempts()).toEqual(["unknown_outcome"]);
+      expect(r.world.tickets.get("5532")?.priority).toBe("high");
+      expect(r.world.effects.length).toBe(writes);
+    });
+
     it("an expired grant still reads back an unreceipted refund, and sends nothing new (#121)", async () => {
       const r = await approvedRun();
       const spy = failSettle("refund_001");

@@ -609,19 +609,22 @@ describe("conditional compensation", () => {
 
   describe("a lost undo on a run whose admission is refused", () => {
     /** Run 1 compensates case 2, but the undo's response is lost (it lands only if `lands`). */
-    async function lostUndo(lands: boolean) {
-      const bundle = noteFails();
+    async function lostUndo(
+      lands: boolean,
+      { expire = true, bundle = noteFails(), beforeUndo = (_s: Setup) => {} } = {},
+    ) {
       const s = setup(bundle);
-      replay(s, bundle, () =>
-        s.world.fault(TICKET, { kind: lands ? "drop_response_after_commit" : "server_error" }),
-      );
+      replay(s, bundle, () => {
+        beforeUndo(s);
+        s.world.fault(TICKET, { kind: lands ? "drop_response_after_commit" : "server_error" });
+      });
       const first = await s.run();
       expect(first.receipts.at(-1)).toMatchObject({
         actionId: "patch_002",
         holdReason: { kind: "unresolved_outcome" },
       });
       // The approval expires before anything reads the undo back.
-      (s.deps.clock as FakeClock).advance(2 * 3_600_000);
+      if (expire) (s.deps.clock as FakeClock).advance(2 * 3_600_000);
       return { s, writes: s.ticketWrites() };
     }
     const expectNoWrites = (s: Setup, writes: number) => expect(s.ticketWrites()).toBe(writes);
@@ -658,6 +661,40 @@ describe("conditional compensation", () => {
         holdReason: { kind: "unresolved_outcome" },
       });
       expect(s.world.tickets.get("5532")?.priority).toBe("high");
+      expectNoWrites(s, writes);
+    });
+
+    it("reads back the landed undo when the newer revision's approval was revoked (#124)", async () => {
+      const { s, writes } = await lostUndo(true, { expire: false });
+      const rev2 = s.addRevision();
+      const grant2 = s.store.grants.get("grant_2");
+      if (!grant2) throw new Error("no grant_2");
+      s.store.grants.set("grant_2", { ...grant2, revokedAt: "2026-10-21T12:30:00.000Z" });
+      const result = await rev2.run();
+      expect(result.refusal).toBe("grant was revoked");
+      expect(result.unresolved).toBeUndefined();
+      expect((await patchReceipts(s, rev2.hash)).at(-1)).toMatchObject({ outcome: "compensated" });
+      expectNoWrites(s, writes);
+    });
+
+    it("keeps a teammate's field when a landed undo restored only ours (#124)", async () => {
+      // Both fields are ours; a teammate sets status before compensation re-reads, so the undo
+      // restores priority only and keeps their status. Its response is lost.
+      const { s, writes } = await lostUndo(true, {
+        bundle: twoFields(noteFails(), { priority: "normal", status: "open" }),
+        beforeUndo: (s) => s.world.teammateEdit("5532", "status", "solved"),
+      });
+      const rev2 = s.addRevision();
+      const result = await rev2.run();
+      expect(result.unresolved).toBeUndefined();
+      expect((await patchReceipts(s, rev2.hash)).at(-1)).toMatchObject({
+        outcome: "compensation_conflict",
+        limitations: expect.arrayContaining([
+          "restored priority to normal",
+          "kept status = solved: changed by someone else",
+        ]),
+      });
+      expect(s.world.tickets.get("5532")).toMatchObject({ priority: "normal", status: "solved" });
       expectNoWrites(s, writes);
     });
 
