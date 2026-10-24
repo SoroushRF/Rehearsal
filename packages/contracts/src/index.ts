@@ -5,4 +5,5 @@ export * from "./execution";
 export * from "./impact";
 export * from "./observations";
 export * from "./plan";
+export * from "./rehearsal";
 export * from "./replay";
