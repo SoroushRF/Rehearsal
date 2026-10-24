@@ -11,8 +11,8 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
 | **T4.5** ML smoke test: Qwen3.5-0.8B LoRA on 32 cases [#29](https://github.com/SoroushRF/Rehearsal/issues/29) | @skhdemo | 👀 in review | 2 |
-| **T2.15** Review UI: show the Slack summary step and its exact text [#145](https://github.com/SoroushRF/Rehearsal/issues/145) | @parsaabbasian | 👀 in review | 1 |
-| **T2.16** Review UI: show the exact rendered public reply being approved [#146](https://github.com/SoroushRF/Rehearsal/issues/146) | @parsaabbasian | 👀 in review | 1 |
+| **T2.15** Review UI: show the Slack summary step and its exact text [#145](https://github.com/SoroushRF/Rehearsal/issues/145) | @parsaabbasian | 🟨 ready | 1 |
+| **T2.16** Review UI: show the exact rendered public reply being approved [#146](https://github.com/SoroushRF/Rehearsal/issues/146) | @parsaabbasian | 🟨 ready | 1 |
 | **T2.18** Policy: choose a refund or an invoice credit per obligation [#148](https://github.com/SoroushRF/Rehearsal/issues/148) | @parsaabbasian | 👀 in review | 1 |
 | **T3.10** Slack write adapter and uncertain-post reconciliation [#149](https://github.com/SoroushRF/Rehearsal/issues/149) | @ArtinMe | 🟨 ready | 1 |
 | **T3.11** Zendesk public reply write adapter and reconciliation [#150](https://github.com/SoroushRF/Rehearsal/issues/150) | @ArtinMe | 🟨 ready | 1 |
@@ -29,13 +29,13 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T1.4** Typed planning tools that record evidence and dependency edges [#5](https://github.com/SoroushRF/Rehearsal/issues/5) | ✅ done |  | T1.5 |
 | **T1.5** Bounded Claude tool loop and planner-worker plan jobs [#6](https://github.com/SoroushRF/Rehearsal/issues/6) | ✅ done |  | T1.6, T1.7, T1.8, T1.15, T2.5 (T2), T2.10 (T2) |
 | **T1.6** ~20 benign and trap tasks plus baselines for the scorecard [#7](https://github.com/SoroushRF/Rehearsal/issues/7) | ✅ done |  |  |
-| **T1.7** Slack summary step (slack.message.postSummary) _(stretch)_ [#8](https://github.com/SoroushRF/Rehearsal/issues/8) | 🟥 blocked | T2.15 (T2, in review)<br>T3.10 (T3, ready) |  |
+| **T1.7** Slack summary step (slack.message.postSummary) _(stretch)_ [#8](https://github.com/SoroushRF/Rehearsal/issues/8) | 🟥 blocked | T2.15 (T2, ready)<br>T3.10 (T3, ready) |  |
 | **T1.8** SurrealDB precedents (explicit promotion, recall with trace) [#9](https://github.com/SoroushRF/Rehearsal/issues/9) | ✅ done |  | T2.17 (T2) |
 | **T1.9** Signed Era tenant tokens in both workers [#39](https://github.com/SoroushRF/Rehearsal/issues/39) | ✅ done |  | T1.2, T1.5, T3.3 (T3), T4.3 (T4) |
 | **T1.10** Bind duplicate refunds to invoice identity and retain a paid anchor [#61](https://github.com/SoroushRF/Rehearsal/issues/61) | ✅ done |  |  |
 | **T1.11** Verify customer ownership before proposing ticket changes [#63](https://github.com/SoroushRF/Rehearsal/issues/63) | ✅ done |  |  |
 | **T1.12** Preserve the evidence snapshot used to construct each action [#73](https://github.com/SoroushRF/Rehearsal/issues/73) | ✅ done |  |  |
-| **T1.13** Public customer reply from an exact approved template [#136](https://github.com/SoroushRF/Rehearsal/issues/136) | 🟥 blocked | T2.16 (T2, in review)<br>T3.11 (T3, ready) |  |
+| **T1.13** Public customer reply from an exact approved template [#136](https://github.com/SoroushRF/Rehearsal/issues/136) | 🟥 blocked | T2.16 (T2, ready)<br>T3.11 (T3, ready) |  |
 | **T1.14** Invoice-balance credit as an alternative remedy to a refund [#137](https://github.com/SoroushRF/Rehearsal/issues/137) | 🟥 blocked | T2.18 (T2, in review)<br>T3.12 (T3, ready)<br>T4.10 (T4, ready)<br>T3.8 (T3, ready) |  |
 | **T1.15** Scorecard rows from a real model planner (T1.6 follow-up) [#140](https://github.com/SoroushRF/Rehearsal/issues/140) | ✅ done |  |  |
 | **T1.16** Full-scope decision record: reopen the trimmed scope [#141](https://github.com/SoroushRF/Rehearsal/issues/141) | ✅ done |  | T1.8, T1.17, T1.18, T1.19 |
@@ -63,8 +63,8 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T2.12** Receipt wording: don't say "read back" for write-response confirmations [#132](https://github.com/SoroushRF/Rehearsal/issues/132) | 🟨 ready | — |  |
 | **T2.13** Two distinct approvers where policy requires (support + finance) [#135](https://github.com/SoroushRF/Rehearsal/issues/135) | 👀 in review [PR #193](https://github.com/SoroushRF/Rehearsal/pull/193) | — |  |
 | **T2.14** Historical audit view: the exact plan and policy as approved [#138](https://github.com/SoroushRF/Rehearsal/issues/138) | 👀 in review [PR #191](https://github.com/SoroushRF/Rehearsal/pull/191) | — |  |
-| **T2.15** Review UI: show the Slack summary step and its exact text [#145](https://github.com/SoroushRF/Rehearsal/issues/145) | 👀 in review [PR #187](https://github.com/SoroushRF/Rehearsal/pull/187) | — | T1.7 (T1) |
-| **T2.16** Review UI: show the exact rendered public reply being approved [#146](https://github.com/SoroushRF/Rehearsal/issues/146) | 👀 in review [PR #187](https://github.com/SoroushRF/Rehearsal/pull/187) | — | T1.13 (T1) |
+| **T2.15** Review UI: show the Slack summary step and its exact text [#145](https://github.com/SoroushRF/Rehearsal/issues/145) | 🟨 ready | — | T1.7 (T1) |
+| **T2.16** Review UI: show the exact rendered public reply being approved [#146](https://github.com/SoroushRF/Rehearsal/issues/146) | 🟨 ready | — | T1.13 (T1) |
 | **T2.17** Precedent promotion: finance-only route and UI [#147](https://github.com/SoroushRF/Rehearsal/issues/147) | 🟨 ready | — |  |
 | **T2.18** Policy: choose a refund or an invoice credit per obligation [#148](https://github.com/SoroushRF/Rehearsal/issues/148) | 👀 in review [PR #189](https://github.com/SoroushRF/Rehearsal/pull/189) | — | T1.14 (T1) |
 
@@ -146,8 +146,8 @@ flowchart LR
     T2_12["T2.12 Receipt wording: don't say read back for w"]:::ready
     T2_13["T2.13 Two distinct approvers where policy requir"]:::review
     T2_14["T2.14 Historical audit view: the exact plan and "]:::review
-    T2_15["T2.15 Review UI: show the Slack summary step and"]:::review
-    T2_16["T2.16 Review UI: show the exact rendered public "]:::review
+    T2_15["T2.15 Review UI: show the Slack summary step and"]:::ready
+    T2_16["T2.16 Review UI: show the exact rendered public "]:::ready
     T2_17["T2.17 Precedent promotion: finance-only route an"]:::ready
     T2_18["T2.18 Policy: choose a refund or an invoice cred"]:::review
   end
