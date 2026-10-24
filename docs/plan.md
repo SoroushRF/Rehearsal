@@ -43,6 +43,16 @@ T4 inject scripts──► T1 scorecard traps, T2 demo
 
 Until a dependency lands, build against `@rehearsal/testkit` fixtures and the ports in `packages/core/src/ports.ts`.
 
+## Oct 24 extension plan
+
+After full acceptance, benchmarking, UI and beyond implementation proceed together through the shared contracts. The [beyond delivery map](beyond.md) contains the agreed 25 tasks, owner counts, cross-track handoffs and cut line. The task tables remain the canonical dependency graph.
+
+- **15 beyond:** exact stored-plan execution in disposable worlds, independent reports, review UI and operator task testing.
+- **8 killer:** optional native Stripe sandbox proof, stronger benchmark/precedent evidence and fresh Clerk verification. They do not block the main beyond engineering gate.
+- **2 additional benchmark:** extend the full-operation scorecard and publish an early full baseline plus frozen-head comparisons. Three killer tasks also carry the benchmark label; they are counted within the eight.
+
+T4.13 is the integrated beyond acceptance gate. T1.28 captures the full baseline early, then finishes after that gate; T2.7 now waits for deployment and T1.28 before final recording/submission. Operator recruitment, native sandbox access and real Clerk verification remain separately labelled external gates. No ML training/serving is added.
+
 ## Daily rhythm
 
 - **Morning, 10 minutes:** each owner says yesterday / today / blocked. Pick the integrator of the day.
