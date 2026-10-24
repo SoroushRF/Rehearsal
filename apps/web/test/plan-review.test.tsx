@@ -85,8 +85,14 @@ describe("happy-path review", () => {
     expect(html).toContain("Irreversible");
     expect(html).toContain("Reversible if unchanged");
     expect(html).toContain("No atomic guard");
-    expect(html).toContain("priority: normal → high");
-    expect(html).toContain("result of refund_001 (refund.id)");
+    // Plain words, no field paths or template syntax.
+    const words = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+    expect(words).toContain("Priority normal high");
+    expect(words).toContain("cites the result of refund_001");
+    expect(words).not.toContain("refund.id");
+    expect(words).not.toContain("amountMinor");
+    // A dependent step says what it waits for.
+    expect(words).toContain("After refund_001");
     expect(requiredRoles(manifest)).toEqual(["finance_lead", "support_lead"]);
   });
 
