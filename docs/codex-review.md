@@ -13,8 +13,9 @@ Re-request review or remove/re-add the readiness label to queue a new request.
   separate hourly limit. Overrides also count against subsequent normal starts.
 - A **60-minute per-PR cooldown** applies to normal requests.
 - A commit already dispatched by this workflow is not automatically reviewed again.
-- CI completion and an approximately 10-minute scheduled sweep drain deferred work.
-  GitHub schedules can be delayed. Oldest PRs are considered first.
+- An approximately 10-minute scheduled sweep drains deferred work after CI is green.
+  CI completion does not launch a token-bearing sweep. GitHub schedules can be
+  delayed. Oldest PRs are considered first.
 - Queue comments are display only; changing or deleting them grants no permission.
 - The queue comment and workflow summary say **not reviewed** while deferred.
   Dispatch only requests a review; it is not an approval or a completed review.

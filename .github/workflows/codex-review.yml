@@ -5,9 +5,6 @@ on:
     types: [review_requested, labeled, ready_for_review]
   issue_comment:
     types: [created]
-  workflow_run:
-    workflows: [ci]
-    types: [completed]
   schedule:
     - cron: "7,17,27,37,47,57 * * * *"
   workflow_dispatch:
@@ -28,10 +25,7 @@ jobs:
          github.event.action == 'ready_for_review')) ||
       (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
         github.event.comment.user.id == 98989697 && github.event.comment.body == '/codex-review-now') ||
-      (github.event_name == 'workflow_run' &&
-        github.event.workflow_run.event == 'pull_request' &&
-        github.event.workflow_run.head_repository.full_name == github.repository &&
-        github.event.workflow_run.conclusion == 'success') || github.event_name == 'schedule' ||
+      github.event_name == 'schedule' ||
       (github.event_name == 'workflow_dispatch' && github.actor_id == '98989697')
     runs-on: ubuntu-latest
     timeout-minutes: 10
