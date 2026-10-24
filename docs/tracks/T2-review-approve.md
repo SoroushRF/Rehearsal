@@ -39,6 +39,8 @@
 | T2.10 | Rehearse button: start a plan from the review page, follow the planner, show the stored plan | M3 | Planner states and failures in plain words; stored plan selected on arrival | #116 | T1.5 |
 | T2.11 | Saved run replay that opens without signing in (part of the T2.5 acceptance) | M4 | `?replay=phantom` is public, read-only and labelled saved; drift test | #118 | — |
 | T2.12 | Receipt wording: a confirmed receipt says "Applied", not "read back"; the limitations line says how it was confirmed | M5 | No "read back" claim on write-response confirmations; runs test updated. **Done** on `fix/132-receipt-wording` | #132 | — |
+| T2.13 | _Full scope:_ two distinct approvers (support + finance) where policy requires | after M5 | Admission refuses until both grants are live and from distinct actors; refusal matrix extended; needs a decision record | #135 | — |
+| T2.14 | _Full scope:_ historical audit view: the exact plan, policy, evidence and grants as approved | after M5 | An old run opens with its own plan and policy after the policy changed; test | #138 | — |
 
 ## Decisions
 
