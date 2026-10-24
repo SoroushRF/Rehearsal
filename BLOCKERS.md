@@ -6,7 +6,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 
 ## Top blockers
 
-38 of 56 tasks done. These open tasks hold up the most other work:
+40 of 56 tasks done. These open tasks hold up the most other work:
 
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
@@ -97,8 +97,8 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T4.3** Wire guards into executor admission [#27](https://github.com/SoroushRF/Rehearsal/issues/27) | ✅ done |  | T4.4 |
 | **T4.4** Conditional compensation on owned fields [#28](https://github.com/SoroushRF/Rehearsal/issues/28) | ✅ done |  |  |
 | **T4.5** ML smoke test: Qwen3.5-0.8B LoRA on 32 cases [#29](https://github.com/SoroushRF/Rehearsal/issues/29) | ✅ done |  | T4.6 |
-| **T4.6** ML pilot and go/no-go [#30](https://github.com/SoroushRF/Rehearsal/issues/30) | 🟨 ready | — | T4.7 |
-| **T4.7** Impact service behind ImpactPort (if ML go) [#31](https://github.com/SoroushRF/Rehearsal/issues/31) | 🟥 blocked | T4.6 (T4, ready) |  |
+| **T4.6** ML pilot and go/no-go [#30](https://github.com/SoroushRF/Rehearsal/issues/30) | ✅ done |  | T4.7 |
+| **T4.7** Impact service behind ImpactPort (if ML go) [#31](https://github.com/SoroushRF/Rehearsal/issues/31) | ✅ done |  |  |
 | **T4.10** Guard: one remedy per obligation across refunds and credits [#152](https://github.com/SoroushRF/Rehearsal/issues/152) | 🟨 ready | — | T1.14 (T1) |
 
 ## Task graph
@@ -170,8 +170,8 @@ flowchart LR
     T4_3["T4.3 Wire guards into executor admission"]:::done
     T4_4["T4.4 Conditional compensation on owned fields"]:::done
     T4_5["T4.5 ML smoke test: Qwen3.5-0.8B LoRA on 32 case"]:::done
-    T4_6["T4.6 ML pilot and go/no-go"]:::ready
-    T4_7["T4.7 Impact service behind ImpactPort (if ML go)"]:::blocked
+    T4_6["T4.6 ML pilot and go/no-go"]:::done
+    T4_7["T4.7 Impact service behind ImpactPort (if ML go)"]:::done
     T4_10["T4.10 Guard: one remedy per obligation across re"]:::ready
   end
   T1_1 --> T1_2
