@@ -1,0 +1,7 @@
+{
+  "id": "billing-remedy",
+  "version": 2,
+  "currency": "cad",
+  "financeThresholdMinor": 10000,
+  "creditMaxMinor": 10000
+}
