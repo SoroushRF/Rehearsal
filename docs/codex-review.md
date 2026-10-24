@@ -36,7 +36,13 @@ Other users' commands and quoted/edited commands cannot grant an override.
 ## Setup and safety
 
 1. Keep automatic reviews off in [Codex review settings](https://chatgpt.com/settings/code-review).
-2. Store a fine-grained SoroushRF token as `CODEX_REVIEW_GITHUB_TOKEN`, restricted to
+2. Create the `codex-review` Environment (Settings → Environments) with deployment
+   branches limited to `main`, and store the token there, not as a repository secret.
+   A repository secret is readable by any write collaborator's `push` or same-repo
+   `pull_request` workflow; an environment limited to `main` is not. The job runs with
+   `environment: codex-review`, and its triggers all run in the default-branch context.
+   Delete any repository-level `CODEX_REVIEW_GITHUB_TOKEN`.
+   The token is a fine-grained SoroushRF token named `CODEX_REVIEW_GITHUB_TOKEN`, restricted to
    Rehearsal, with **Pull requests: Read and write** and **Commit statuses: Read and
    write** (plus implicit Metadata read). The status permission is new: the old
    pull-request-only token is insufficient. No Contents, Variables or Administration
@@ -60,7 +66,11 @@ GraphQL `lastEditedAt` reject edited commands, including same-second edits.
 The authoritative ledger is the full history of owner-created commit statuses on
 the repository's root commit (`LEDGER_SHA` in `scripts/ci/codex-review.ts`). These
 records are append-only: another writer can append a status under their own identity,
-but cannot edit/delete an existing status or impersonate its creator. We enumerate
+but cannot edit/delete an existing status. Only the token's holder can create one as
+SoroushRF, so the ledger is as safe as the token. Anyone who can merge to `main` can
+change this workflow and read the token, and `main` requires only the `check` status,
+so they are trusted with this budget. A forged status is permanent until
+`LEDGER_CONTEXT` or `LEDGER_SHA` changes. We enumerate
 all historical statuses, not the combined/latest context result. A daily context
 avoids accumulating GitHub's 1,000-status-per-SHA/context cap over the project lifetime.
 The status's `success` means **reservation recorded**, never review completed/approved.

@@ -159,7 +159,9 @@ verification gaps. A clean review is not proof that unexecuted integrations work
 - Override starts count toward the next rolling window. Manual `@codex review`
   comments bypass admission, so use the workflow/owner command for controlled usage.
   Admission is reserved in append-only owner-created commit statuses before the
-  trigger is posted. Editing/deleting comments cannot erase spend or reuse commands.
+  trigger is posted. Editing/deleting comments cannot erase spend or reuse commands;
+  the token sits in the `main`-only `codex-review` environment, and anyone who can merge
+  to `main` is trusted with the budget.
   An uncertain/absent trigger after reservation needs inspection and a fresh owner
   command; it is never automatically re-posted. Check the completed review's commit
   against the current PR head; an earlier clean review does not cover later changes.
