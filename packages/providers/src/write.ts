@@ -9,6 +9,8 @@ import {
   type ReconcileResult,
   type ResolvedBindings,
   refundEffectMatches,
+  type SummaryAction,
+  summaryTextFor,
   type WorldContext,
 } from "@rehearsal/core";
 import { z } from "zod";
@@ -362,6 +364,94 @@ export function zendeskWriter(target: WriteTarget): ProviderWriter {
         };
       }
       return { kind: "indeterminate", detail: "unsupported zendesk action" };
+    },
+  };
+}
+
+const SlackHistory = z.object({
+  ok: z.boolean(),
+  error: z.string().optional(),
+  messages: z.array(z.object({ ts: z.string(), text: z.string().optional() })).optional(),
+  has_more: z.boolean().optional(),
+  response_metadata: z.object({ next_cursor: z.string().optional() }).optional(),
+});
+
+/** The write side of `slack.message.postSummary` (T3.10); `executeRun` takes it once T1.7 adds the op. */
+export interface SlackWriter {
+  vendor: "slack";
+  prepare(action: SummaryAction, resolved: ResolvedBindings, operationKey: string): PreparedRequest;
+  dispatch(req: PreparedRequest, ctx: WorldContext): Promise<DispatchResult>;
+  reconcile(attempt: Attempt, action: SummaryAction, ctx: WorldContext): Promise<ReconcileResult>;
+}
+
+/**
+ * Slack summary posts over the Web API (`chat.postMessage`). Slack doesn't deduplicate posts (not
+ * even on `client_msg_id`), so there is no idempotent re-send: a post whose outcome is unknown is
+ * resolved by reading `conversations.history` for its operation marker, and the executor never
+ * re-sends it on a negative read. Slack answers a refusal with HTTP 200 and `ok: false`.
+ */
+export function slackWriter(target: WriteTarget): SlackWriter {
+  return {
+    vendor: "slack",
+    prepare(action, resolved, operationKey) {
+      return {
+        method: "POST",
+        path: "/api/chat.postMessage",
+        encoding: "json",
+        body: JSON.stringify({
+          channel: action.args.channelId,
+          text: summaryTextFor(action, resolved, operationKey),
+        }),
+        headers: {},
+      };
+    },
+    async dispatch(req, ctx) {
+      assertTarget(target, ctx);
+      const result = await send(target, req);
+      if (result.kind !== "confirmed") return result;
+      const body = result.body as { ok?: unknown; error?: unknown; ts?: unknown };
+      if (body?.ok === true && typeof body.ts === "string") return result;
+      if (body?.ok === false && typeof body.error === "string") {
+        // A definite refusal: nothing was posted. Slack's own rate limit is retryable.
+        return {
+          kind: "rejected",
+          status: body.error === "ratelimited" ? 429 : 400,
+          body,
+          retryable: body.error === "ratelimited",
+        };
+      }
+      return { kind: "unknown", error: "Slack answered 2xx without ok/ts; post unknown" };
+    },
+    async reconcile(attempt, action, ctx) {
+      assertTarget(target, ctx);
+      const marker = operationMarker(attempt.operationKey);
+      // No `oldest` window: message timestamps come from the provider's clock (Era's is simulated),
+      // so a window from ours could hide the very post we look for. Page the whole history.
+      const base = `/api/conversations.history?channel=${encodeURIComponent(action.args.channelId)}&limit=200`;
+      let path = base;
+      const cursors = new Set<string>();
+      for (let page = 0; page < MAX_PAGES; page++) {
+        const parsed = SlackHistory.safeParse(await readJson<unknown>(target, path));
+        if (!parsed.success) return { kind: "indeterminate", detail: "invalid Slack history page" };
+        const history = parsed.data;
+        if (!history.ok) {
+          return { kind: "indeterminate", detail: `Slack history: ${history.error ?? "not ok"}` };
+        }
+        const found = (history.messages ?? []).find((m) => m.text?.includes(marker));
+        if (found) {
+          return {
+            kind: "applied",
+            providerRef: { vendor: "slack", kind: "message", id: found.ts },
+            effect: { "message.ts": found.ts, channel: action.args.channelId },
+          };
+        }
+        const next = history.response_metadata?.next_cursor;
+        if (!history.has_more || !next) return { kind: "not_applied" };
+        if (cursors.has(next)) return { kind: "indeterminate", detail: "repeated Slack cursor" };
+        cursors.add(next);
+        path = `${base}&cursor=${encodeURIComponent(next)}`;
+      }
+      return { kind: "indeterminate", detail: `more than ${MAX_PAGES} pages of Slack history` };
     },
   };
 }

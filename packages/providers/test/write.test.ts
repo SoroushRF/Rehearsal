@@ -1,9 +1,16 @@
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { type Action, Attempt } from "@rehearsal/contracts";
+import { type SummaryAction, summaryCountKey } from "@rehearsal/core";
 import { happyPathBundle } from "@rehearsal/testkit";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { classifyResponse, stripeWriter, type WriteTarget, zendeskWriter } from "../src";
+import {
+  classifyResponse,
+  slackWriter,
+  stripeWriter,
+  type WriteTarget,
+  zendeskWriter,
+} from "../src";
 
 const actions = happyPathBundle().manifest.actions;
 const byId = (id: string) => {
@@ -29,6 +36,8 @@ let reply: { status: number; body: string; headers?: Record<string, string>; del
   status: 200,
   body: "{}",
 };
+/** Replies served in order before falling back to `reply`. */
+let queue: (typeof reply)[] = [];
 let target: WriteTarget;
 
 beforeAll(async () => {
@@ -39,10 +48,11 @@ beforeAll(async () => {
     });
     req.on("end", () => {
       seen.push({ method: req.method, url: req.url, headers: req.headers, body });
+      const r = queue.shift() ?? reply;
       setTimeout(() => {
-        res.writeHead(reply.status, { "content-type": "application/json", ...reply.headers });
-        res.end(reply.body);
-      }, reply.delayMs ?? 0);
+        res.writeHead(r.status, { "content-type": "application/json", ...r.headers });
+        res.end(r.body);
+      }, r.delayMs ?? 0);
     });
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
@@ -57,6 +67,7 @@ beforeAll(async () => {
 afterAll(() => new Promise<void>((r) => server.close(() => r())));
 beforeEach(() => {
   seen = [];
+  queue = [];
   reply = { status: 200, body: "{}" };
 });
 
@@ -277,5 +288,155 @@ describe("zendeskWriter", () => {
 
   it("refuses actions it doesn't own", () => {
     expect(() => w().prepare(refund as Action, new Map(), "op")).toThrow(/zendesk can't/);
+  });
+});
+
+describe("slackWriter (T3.10)", () => {
+  const summary: SummaryAction = {
+    id: "summary_001",
+    kind: "slack.message.postSummary",
+    args: {
+      channelId: "chan-ops",
+      template: { id: "run-summary", version: 1 },
+      bindings: {
+        incidentId: "INC-BILL-0927",
+        refunded: {
+          $count: "outcomes",
+          stepIds: ["refund_001", "refund_002"],
+          outcomes: ["confirmed"],
+        },
+        held: { $count: "outcomes", stepIds: ["refund_001", "refund_002"], outcomes: ["held"] },
+      },
+    },
+  };
+  const counts = new Map([
+    [summaryCountKey("refunded"), 1],
+    [summaryCountKey("held"), 1],
+  ]);
+  const KEY = "op_summary_key";
+  const attemptFor = (body: string) =>
+    Attempt.parse({
+      id: "att_s",
+      actionId: "summary_001",
+      planHash: "a".repeat(64),
+      operationKey: KEY,
+      attemptNo: 1,
+      state: "unknown_outcome",
+      request: {
+        method: "POST",
+        path: "/api/chat.postMessage",
+        encoding: "json",
+        body,
+        bodySha256: "b".repeat(64),
+      },
+      providerStatus: null,
+      error: null,
+      preparedAt: "2026-10-21T12:00:00.000Z",
+      dispatchedAt: "2026-10-21T12:00:00.000Z",
+      settledAt: null,
+    });
+
+  it("renders the approved template with literals, outcome counts and the marker", () => {
+    const req = slackWriter(target).prepare(summary, counts, KEY);
+    expect(req).toMatchObject({ method: "POST", path: "/api/chat.postMessage", encoding: "json" });
+    expect(JSON.parse(req.body)).toEqual({
+      channel: "chan-ops",
+      text: "Billing remediation INC-BILL-0927: 1 refund(s) issued, 1 step(s) held for review.\n\n[rehearsal-op:op_summary_key]",
+    });
+  });
+
+  it("refuses to render without every outcome count, or with an unknown template", () => {
+    const w = slackWriter(target);
+    expect(() => w.prepare(summary, new Map(), KEY)).toThrow(/unresolved summary count/);
+    expect(() =>
+      w.prepare(
+        { ...summary, args: { ...summary.args, template: { id: "nope", version: 1 } } },
+        counts,
+        KEY,
+      ),
+    ).toThrow(/unknown summary template/);
+  });
+
+  it("maps Slack's 200 ok:false to a refusal, ratelimited to a retryable one", async () => {
+    const w = slackWriter(target);
+    const req = w.prepare(summary, counts, KEY);
+    reply = { status: 200, body: JSON.stringify({ ok: false, error: "channel_not_found" }) };
+    expect(await w.dispatch(req, CTX)).toMatchObject({ kind: "rejected", retryable: false });
+    reply = { status: 200, body: JSON.stringify({ ok: false, error: "ratelimited" }) };
+    expect(await w.dispatch(req, CTX)).toMatchObject({
+      kind: "rejected",
+      status: 429,
+      retryable: true,
+    });
+    reply = { status: 200, body: JSON.stringify({ ok: true, ts: "1.2", channel: "chan-ops" }) };
+    expect(await w.dispatch(req, CTX)).toMatchObject({ kind: "confirmed" });
+    reply = { status: 200, body: JSON.stringify({ ok: true }) };
+    expect(await w.dispatch(req, CTX)).toMatchObject({ kind: "unknown" });
+    reply = { status: 503, body: "{}" };
+    expect(await w.dispatch(req, CTX)).toMatchObject({ kind: "unknown" });
+  });
+
+  it("finds a post by its marker on a later history page", async () => {
+    const w = slackWriter(target);
+    const req = w.prepare(summary, counts, KEY);
+    const page = (messages: { ts: string; text: string }[], next?: string) => ({
+      status: 200,
+      body: JSON.stringify({
+        ok: true,
+        messages,
+        has_more: next !== undefined,
+        response_metadata: { next_cursor: next ?? "" },
+      }),
+    });
+    queue = [
+      page([{ ts: "3", text: "someone else" }], "c1"),
+      page([{ ts: "2", text: JSON.parse(req.body).text }]),
+    ];
+    expect(await w.reconcile(attemptFor(req.body), summary, CTX)).toEqual({
+      kind: "applied",
+      providerRef: { vendor: "slack", kind: "message", id: "2" },
+      effect: { "message.ts": "2", channel: "chan-ops" },
+    });
+    expect(seen[1]?.url).toContain("cursor=c1");
+  });
+
+  it("reads not_applied only after the last page; an unreadable page can't tell", async () => {
+    const w = slackWriter(target);
+    const attempt = attemptFor(w.prepare(summary, counts, KEY).body);
+    reply = { status: 200, body: JSON.stringify({ ok: true, messages: [], has_more: false }) };
+    expect(await w.reconcile(attempt, summary, CTX)).toEqual({ kind: "not_applied" });
+    reply = { status: 200, body: JSON.stringify({ ok: false, error: "channel_not_found" }) };
+    expect((await w.reconcile(attempt, summary, CTX)).kind).toBe("indeterminate");
+    queue = [
+      {
+        status: 200,
+        body: JSON.stringify({
+          ok: true,
+          messages: [],
+          has_more: true,
+          response_metadata: { next_cursor: "x" },
+        }),
+      },
+      {
+        status: 200,
+        body: JSON.stringify({
+          ok: true,
+          messages: [],
+          has_more: true,
+          response_metadata: { next_cursor: "x" },
+        }),
+      },
+    ];
+    expect(await w.reconcile(attempt, summary, CTX)).toMatchObject({
+      kind: "indeterminate",
+      detail: "repeated Slack cursor",
+    });
+  });
+
+  it("writes only to the world it is bound to", async () => {
+    const w = slackWriter(target);
+    await expect(
+      w.dispatch(w.prepare(summary, counts, KEY), { world: "planning", tenant: "t1" }),
+    ).rejects.toThrow(/bound to operational/);
   });
 });
