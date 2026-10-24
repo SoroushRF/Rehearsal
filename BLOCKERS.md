@@ -45,7 +45,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T1.20** Decision record: executable rehearsal and its trust boundaries [#162](https://github.com/SoroushRF/Rehearsal/issues/162) | 👀 in review [PR #209](https://github.com/SoroushRF/Rehearsal/pull/209) | — | T1.21, T1.23, T1.24, T3.14 (T3) |
 | **T1.21** Contracts: rehearsal jobs, scenario references, and reports [#163](https://github.com/SoroushRF/Rehearsal/issues/163) | 👀 in review [PR #212](https://github.com/SoroushRF/Rehearsal/pull/212) | T1.20 (T1, in review) | T1.22, T1.23, T2.19 (T2), T3.13 (T3), T3.14 (T3), T4.11 (T4) |
 | **T1.22** Seed disposable Era worlds from a supported incident snapshot [#166](https://github.com/SoroushRF/Rehearsal/issues/166) | 👀 in review [PR #213](https://github.com/SoroushRF/Rehearsal/pull/213) | T1.21 (T1, in review)<br>T1.7 (T1, in review)<br>T1.13 (T1, in review)<br>T1.14 (T1, in review) | T3.15 (T3) |
-| **T1.23** Scoped rehearsal credentials and world routing [#167](https://github.com/SoroushRF/Rehearsal/issues/167) | 🟥 blocked | T1.20 (T1, in review)<br>T1.21 (T1, in review) | T3.15 (T3) |
+| **T1.23** Scoped rehearsal credentials and world routing [#167](https://github.com/SoroushRF/Rehearsal/issues/167) | 👀 in review [PR #214](https://github.com/SoroushRF/Rehearsal/pull/214) | T1.20 (T1, in review)<br>T1.21 (T1, in review) | T3.15 (T3) |
 | **T1.24** Native Stripe sandbox setup and read conformance _(stretch)_ [#178](https://github.com/SoroushRF/Rehearsal/issues/178) | 🟥 blocked | T1.20 (T1, in review) | T3.17 (T3) |
 | **T1.25** Competent scripted benchmark baseline _(stretch)_ [#180](https://github.com/SoroushRF/Rehearsal/issues/180) | 🟥 blocked | T1.27 (T1, blocked)<br>T4.14 (T4, ready) |  |
 | **T1.26** Precedent reuse across different incidents _(stretch)_ [#181](https://github.com/SoroushRF/Rehearsal/issues/181) | 🟥 blocked | T2.17 (T2, ready)<br>T4.14 (T4, ready) |  |
@@ -102,7 +102,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T3.12** Stripe balance credit write adapter and reconciliation [#151](https://github.com/SoroushRF/Rehearsal/issues/151) | ✅ done |  | T1.14 (T1) |
 | **T3.13** Separate rehearsal persistence and durable jobs [#164](https://github.com/SoroushRF/Rehearsal/issues/164) | 🟥 blocked | T1.21 (T1, in review) | T2.19 (T2), T3.15 |
 | **T3.14** Share deterministic execution mechanics while preserving admission boundaries [#165](https://github.com/SoroushRF/Rehearsal/issues/165) | 🟥 blocked | T1.20 (T1, in review)<br>T1.21 (T1, in review)<br>T1.7 (T1, in review)<br>T1.13 (T1, in review)<br>T1.14 (T1, in review)<br>T2.13 (T2, ready) | T3.15 |
-| **T3.15** Execute a stored plan against disposable worlds [#168](https://github.com/SoroushRF/Rehearsal/issues/168) | 🟥 blocked | T3.13 (T3, blocked)<br>T3.14 (T3, blocked)<br>T1.22 (T1, in review)<br>T1.23 (T1, blocked) | T3.16, T4.12 (T4) |
+| **T3.15** Execute a stored plan against disposable worlds [#168](https://github.com/SoroushRF/Rehearsal/issues/168) | 🟥 blocked | T3.13 (T3, blocked)<br>T3.14 (T3, blocked)<br>T1.22 (T1, in review)<br>T1.23 (T1, in review) | T3.16, T4.12 (T4) |
 | **T3.16** Rehearsal worker: restart, cancellation, and cleanup [#170](https://github.com/SoroushRF/Rehearsal/issues/170) | 🟥 blocked | T3.15 (T3, blocked)<br>T4.11 (T4, blocked) | T4.13 (T4) |
 | **T3.17** Native Stripe sandbox refund writer _(stretch)_ [#184](https://github.com/SoroushRF/Rehearsal/issues/184) | 🟥 blocked | T1.24 (T1, blocked) | T3.18 |
 | **T3.18** Native Stripe executor recovery gate _(stretch)_ [#185](https://github.com/SoroushRF/Rehearsal/issues/185) | 🟥 blocked | T3.17 (T3, blocked) |  |
@@ -159,7 +159,7 @@ flowchart LR
     T1_20["T1.20 Decision record: executable rehearsal and "]:::review
     T1_21["T1.21 Contracts: rehearsal jobs, scenario refere"]:::review
     T1_22["T1.22 Seed disposable Era worlds from a supporte"]:::review
-    T1_23["T1.23 Scoped rehearsal credentials and world rou"]:::blocked
+    T1_23["T1.23 Scoped rehearsal credentials and world rou"]:::review
     T1_27["T1.27 Extend the scorecard to the full operation"]:::blocked
     T1_28["T1.28 Run and publish versioned benchmark compar"]:::blocked
   end
