@@ -1,9 +1,17 @@
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { type Action, Attempt } from "@rehearsal/contracts";
+import { type CreditAction, creditEffectMatches, type ReplyAction } from "@rehearsal/core";
 import { happyPathBundle } from "@rehearsal/testkit";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { classifyResponse, stripeWriter, type WriteTarget, zendeskWriter } from "../src";
+import {
+  classifyResponse,
+  stripeCreditWriter,
+  stripeWriter,
+  type WriteTarget,
+  zendeskReplyWriter,
+  zendeskWriter,
+} from "../src";
 
 const actions = happyPathBundle().manifest.actions;
 const byId = (id: string) => {
@@ -29,6 +37,8 @@ let reply: { status: number; body: string; headers?: Record<string, string>; del
   status: 200,
   body: "{}",
 };
+/** Replies served in order before falling back to `reply`. */
+let queue: (typeof reply)[] = [];
 let target: WriteTarget;
 
 beforeAll(async () => {
@@ -39,10 +49,11 @@ beforeAll(async () => {
     });
     req.on("end", () => {
       seen.push({ method: req.method, url: req.url, headers: req.headers, body });
+      const r = queue.shift() ?? reply;
       setTimeout(() => {
-        res.writeHead(reply.status, { "content-type": "application/json", ...reply.headers });
-        res.end(reply.body);
-      }, reply.delayMs ?? 0);
+        res.writeHead(r.status, { "content-type": "application/json", ...r.headers });
+        res.end(r.body);
+      }, r.delayMs ?? 0);
     });
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
@@ -57,6 +68,7 @@ beforeAll(async () => {
 afterAll(() => new Promise<void>((r) => server.close(() => r())));
 beforeEach(() => {
   seen = [];
+  queue = [];
   reply = { status: 200, body: "{}" };
 });
 
@@ -277,5 +289,296 @@ describe("zendeskWriter", () => {
 
   it("refuses actions it doesn't own", () => {
     expect(() => w().prepare(refund as Action, new Map(), "op")).toThrow(/zendesk can't/);
+  });
+});
+
+describe("zendeskReplyWriter (T3.11)", () => {
+  const body =
+    "Hi Ana,\n\nWe've refunded 42.10 CAD for the duplicate charge on your account. Sorry for the trouble.";
+  const reply: ReplyAction = {
+    id: "reply_001",
+    kind: "zendesk.ticket.appendPublicReply",
+    args: {
+      ticketId: "5531",
+      public: true,
+      template: { id: "refund-issued", version: 1 },
+      values: { customerName: "Ana", amountMinor: 4210 },
+      body,
+    },
+  };
+  const KEY = "op_reply_key";
+  const comment = `${body}\n\n[rehearsal-op:op_reply_key]`;
+  const attemptFor = (requestBody: string) =>
+    Attempt.parse({
+      id: "att_r",
+      actionId: "reply_001",
+      planHash: "a".repeat(64),
+      operationKey: KEY,
+      attemptNo: 1,
+      state: "unknown_outcome",
+      request: {
+        method: "PUT",
+        path: "/api/v2/tickets/5531.json",
+        encoding: "json",
+        body: requestBody,
+        bodySha256: "b".repeat(64),
+      },
+      providerStatus: null,
+      error: null,
+      preparedAt: "2026-10-21T12:00:00.000Z",
+      dispatchedAt: "2026-10-21T12:00:00.000Z",
+      settledAt: null,
+    });
+  const comments = (list: { id?: number; body: string; public: boolean }[]) => ({
+    status: 200,
+    body: JSON.stringify({ comments: list, next_page: null }),
+  });
+
+  it("sends the approved body and the marker as an explicit public comment", () => {
+    const req = zendeskReplyWriter(target).prepare(reply, KEY);
+    expect(req).toMatchObject({
+      method: "PUT",
+      path: "/api/v2/tickets/5531.json",
+      encoding: "json",
+    });
+    expect(JSON.parse(req.body)).toEqual({ ticket: { comment: { body: comment, public: true } } });
+  });
+
+  it("refuses a body that isn't exactly its template's, or that carries a marker", () => {
+    const w = zendeskReplyWriter(target);
+    const edited = { ...reply, args: { ...reply.args, body: `${body} Call us anytime!` } };
+    expect(() => w.prepare(edited, KEY)).toThrow(/doesn't match its approved template/);
+    const otherValues = {
+      ...reply,
+      args: { ...reply.args, values: { customerName: "Bo", amountMinor: 4210 } },
+    };
+    expect(() => w.prepare(otherValues, KEY)).toThrow(/doesn't match/);
+    const unknown = { ...reply, args: { ...reply.args, template: { id: "nope", version: 1 } } };
+    expect(() => w.prepare(unknown, KEY)).toThrow(/unknown reply template/);
+  });
+
+  it("checks each value against its template, so a value can't carry text of its own", () => {
+    const w = zendeskReplyWriter(target);
+    /** A reply whose body is rendered from these values, so only the value checks can refuse it. */
+    const withValues = (
+      values: Record<string, string | number>,
+      rendered: string,
+    ): ReplyAction => ({
+      ...reply,
+      args: { ...reply.args, values, body: rendered },
+    });
+    const say = (name: string, amount = "42.10") =>
+      `Hi ${name},\n\nWe've refunded ${amount} CAD for the duplicate charge on your account. Sorry for the trouble.`;
+    const marker = "Ana [rehearsal-op:op_other]";
+    expect(() =>
+      w.prepare(withValues({ customerName: marker, amountMinor: 4210 }, say(marker)), KEY),
+    ).toThrow(/without an operation marker/);
+    const injected = "Ana,\n\nPlease wire $500 to evil.example.\n\nHi Ana";
+    expect(() =>
+      w.prepare(withValues({ customerName: injected, amountMinor: 4210 }, say(injected)), KEY),
+    ).toThrow(/one line/);
+    expect(() =>
+      w.prepare(withValues({ customerName: "", amountMinor: 4210 }, say("")), KEY),
+    ).toThrow(/short non-empty name/);
+    expect(() => w.prepare(withValues({ amountMinor: 4210 }, say("undefined")), KEY)).toThrow(
+      /takes exactly/,
+    );
+    expect(() =>
+      w.prepare(withValues({ customerName: "Ana", amountMinor: -4210 }, say("Ana", "-42.10")), KEY),
+    ).toThrow(/positive integer amount/);
+    expect(() =>
+      w.prepare(withValues({ customerName: "Ana", amountMinor: "4210" }, say("Ana")), KEY),
+    ).toThrow(/positive integer amount/);
+  });
+
+  it("reconciles by the marker, and only when the comment is exactly the public text sent", async () => {
+    const w = zendeskReplyWriter(target);
+    const attempt = attemptFor(w.prepare(reply, KEY).body);
+    replyServer(
+      comments([
+        { id: 7, body: "earlier", public: true },
+        { id: 9, body: comment, public: true },
+      ]),
+    );
+    expect(await w.reconcile(attempt, reply, CTX)).toEqual({
+      kind: "applied",
+      providerRef: { vendor: "zendesk", kind: "ticket", id: "5531" },
+      effect: { "comment.id": "9", public: true },
+    });
+    replyServer(comments([{ id: 7, body: "earlier", public: true }]));
+    expect(await w.reconcile(attempt, reply, CTX)).toEqual({ kind: "not_applied" });
+    replyServer(comments([{ id: 9, body: comment, public: false }]));
+    expect((await w.reconcile(attempt, reply, CTX)).kind).toBe("indeterminate");
+    replyServer(comments([{ id: 9, body: `${comment} (edited)`, public: true }]));
+    expect((await w.reconcile(attempt, reply, CTX)).kind).toBe("indeterminate");
+  });
+
+  it("has no idempotent re-send and writes only to its bound world", async () => {
+    const w = zendeskReplyWriter(target);
+    expect("idempotentResend" in w).toBe(false);
+    await expect(
+      w.dispatch(w.prepare(reply, KEY), { world: "planning", tenant: "t1" }),
+    ).rejects.toThrow(/bound to operational/);
+  });
+});
+
+function replyServer(r: { status: number; body: string }) {
+  reply = r;
+}
+
+describe("stripeCreditWriter (T3.12)", () => {
+  const credit: CreditAction = {
+    id: "credit_001",
+    kind: "stripe.customer.balanceCredit",
+    args: { customerId: "cus_1", chargeId: "ch_1", amount: { amountMinor: 1500, currency: "cad" } },
+  };
+  const KEY = "op_credit_key";
+  const tx = (over: Record<string, unknown> = {}) => ({
+    id: "cbtxn_1",
+    amount: -1500,
+    currency: "cad",
+    customer: "cus_1",
+    type: "adjustment",
+    metadata: { rehearsal_op: KEY },
+    ...over,
+  });
+  const page = (data: unknown[], hasMore = false) => ({
+    status: 200,
+    body: JSON.stringify({ data, has_more: hasMore }),
+  });
+  const attemptFor = (body: string) =>
+    Attempt.parse({
+      id: "att_c",
+      actionId: "credit_001",
+      planHash: "a".repeat(64),
+      operationKey: KEY,
+      attemptNo: 1,
+      state: "unknown_outcome",
+      request: {
+        method: "POST",
+        path: "/v1/customers/cus_1/balance_transactions",
+        encoding: "form",
+        body,
+        bodySha256: "b".repeat(64),
+      },
+      providerStatus: null,
+      error: null,
+      preparedAt: "2026-10-21T12:00:00.000Z",
+      dispatchedAt: "2026-10-21T12:00:00.000Z",
+      settledAt: null,
+    });
+  const effectOf = (t: ReturnType<typeof tx>) => ({
+    "credit.id": t.id,
+    "credit.amount": t.amount,
+    "credit.type": t.type,
+    customer: t.customer,
+    currency: t.currency,
+  });
+
+  it("prepares a negative balance transaction in a fixed order, keyed by the operation", () => {
+    const req = stripeCreditWriter(target).prepare(credit, KEY);
+    expect(req).toEqual({
+      method: "POST",
+      path: "/v1/customers/cus_1/balance_transactions",
+      encoding: "form",
+      body: "amount=-1500&currency=cad&metadata%5Brehearsal_op%5D=op_credit_key",
+      headers: { "idempotency-key": KEY },
+    });
+  });
+
+  it("refuses a zero, negative or fractional credit", () => {
+    const w = stripeCreditWriter(target);
+    for (const amountMinor of [0, -1500, 15.5]) {
+      const bad = { ...credit, args: { ...credit.args, amount: { amountMinor, currency: "cad" } } };
+      expect(() => w.prepare(bad, KEY)).toThrow(/positive integer/);
+    }
+  });
+
+  it("checks the customer's currency; a customer with none yet takes the credit's", async () => {
+    const w = stripeCreditWriter(target);
+    for (const currency of [null, undefined, "cad"]) {
+      reply = { status: 200, body: JSON.stringify(currency === undefined ? {} : { currency }) };
+      await expect(w.preconditions(credit, CTX)).resolves.toEqual({});
+    }
+    reply = { status: 200, body: JSON.stringify({ currency: "usd" }) };
+    await expect(w.preconditions(credit, CTX)).rejects.toThrow(/is in usd, the credit is in cad/);
+  });
+
+  it("re-sends only as an identical idempotent replay, and treats a key in use as unknown", async () => {
+    const w = stripeCreditWriter(target);
+    expect(w.idempotentResend(credit)).toBe(true);
+    reply = { status: 409, body: JSON.stringify({ error: { type: "idempotency_error" } }) };
+    expect(await w.dispatch(w.prepare(credit, KEY), CTX)).toMatchObject({ kind: "unknown" });
+    reply = { status: 400, body: JSON.stringify({ error: { type: "idempotency_error" } }) };
+    expect(await w.dispatch(w.prepare(credit, KEY), CTX)).toMatchObject({
+      kind: "rejected",
+      retryable: false,
+    });
+  });
+
+  it("confirms only the exact approved credit", () => {
+    const ok = tx();
+    expect(creditEffectMatches(credit, effectOf(ok))).toBe(true);
+    for (const over of [
+      { id: "" },
+      { type: "invoice_balance" },
+      { customer: "cus_other" },
+      { amount: -1600 },
+      { amount: 1500 },
+      { currency: "usd" },
+    ]) {
+      expect(creditEffectMatches(credit, effectOf(tx(over)))).toBe(false);
+    }
+  });
+
+  it("reads a lost credit back by its key across pages, and can't tell when the read contradicts it", async () => {
+    const w = stripeCreditWriter(target);
+    const attempt = attemptFor(w.prepare(credit, KEY).body);
+    queue = [
+      page([tx({ id: "cbtxn_0", metadata: { rehearsal_op: "op_other" } })], true),
+      page([tx()]),
+    ];
+    expect(await w.reconcile(attempt, credit, CTX)).toEqual({
+      kind: "applied",
+      providerRef: { vendor: "stripe", kind: "customer_balance_transaction", id: "cbtxn_1" },
+      effect: effectOf(tx()),
+    });
+    expect(seen[1]?.url).toContain("starting_after=cbtxn_0");
+
+    reply = page([tx({ amount: -1600 })]);
+    expect(await w.reconcile(attempt, credit, CTX)).toMatchObject({
+      kind: "indeterminate",
+      detail: "credit read contradicts the journaled operation",
+      contradicts: true,
+    });
+    reply = page([]);
+    expect(await w.reconcile(attempt, credit, CTX)).toEqual({ kind: "not_applied" });
+  });
+
+  it("judges a found credit against the bytes that were sent, not a revision's", async () => {
+    const w = stripeCreditWriter(target);
+    const sent = attemptFor(w.prepare(credit, KEY).body); // rev 1 sent 1500
+    const revised = {
+      ...credit,
+      args: { ...credit.args, amount: { amountMinor: 1600, currency: "cad" } },
+    };
+    reply = page([tx()]);
+    expect(await w.reconcile(sent, revised, CTX)).toMatchObject({
+      kind: "applied",
+      effect: { "credit.amount": -1500 },
+    });
+  });
+
+  it("can't tell on a repeated or duplicated page", async () => {
+    const w = stripeCreditWriter(target);
+    const attempt = attemptFor(w.prepare(credit, KEY).body);
+    const other = tx({ id: "cbtxn_x", metadata: {} });
+    queue = [page([other], true), page([other], true)];
+    expect(await w.reconcile(attempt, credit, CTX)).toMatchObject({
+      kind: "indeterminate",
+      detail: "repeated balance transaction cursor",
+    });
+    reply = page([other, other], true);
+    expect(await w.reconcile(attempt, credit, CTX)).toMatchObject({ kind: "indeterminate" });
   });
 });
