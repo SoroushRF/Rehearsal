@@ -18,6 +18,7 @@ import { useTenantKey } from "../identity";
 import { droppedBy, requiredRoles } from "../plan";
 import { RunView } from "../runs";
 import { Segmented } from "./AppShell";
+import { AuditPanel } from "./AuditPanel";
 import { PlanReview } from "./PlanReview";
 import { RehearseBar } from "./Rehearse";
 import { RunTimeline } from "./RunTimeline";
@@ -371,6 +372,7 @@ function RunSection({
         </nav>
       )}
       <RunTimeline key={runId} apiFetch={apiFetch} runId={runId} />
+      <AuditPanel key={`audit-${runId}`} apiFetch={apiFetch} runId={runId} />
     </section>
   );
 }
