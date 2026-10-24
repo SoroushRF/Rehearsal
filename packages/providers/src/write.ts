@@ -551,7 +551,10 @@ export function stripeCreditWriter(target: WriteTarget): StripeCreditWriter {
         if (!parsed.success)
           return { kind: "indeterminate", detail: "invalid balance transaction page" };
         const list = parsed.data;
-        if (list.data.some((t) => seen.has(t.id))) {
+        if (
+          list.data.some((t) => seen.has(t.id)) ||
+          new Set(list.data.map((t) => t.id)).size !== list.data.length
+        ) {
           return { kind: "indeterminate", detail: "repeated balance transaction cursor" };
         }
         for (const t of list.data) seen.add(t.id);
