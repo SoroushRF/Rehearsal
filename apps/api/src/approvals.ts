@@ -96,6 +96,7 @@ export function registerApprovalRoutes(app: FastifyInstance, deps: ApprovalDeps)
       }
       const graph = validateGraph(plan.manifest.actions);
       if (graph.length > 0) return [422, { error: "invalid_graph", issues: graph }];
+      const policySnapshot: { id: string; version: number; contents: unknown }[] = [];
       for (const ref of plan.manifest.policies) {
         const policy = deps.policies.find((p) => p.id === ref.id && p.version === ref.version);
         if (!policy) return [422, { error: "unknown_policy", policy: ref }];
@@ -103,6 +104,7 @@ export function registerApprovalRoutes(app: FastifyInstance, deps: ApprovalDeps)
         if (violations.length > 0) {
           return [422, { error: "policy_violation", violations }];
         }
+        policySnapshot.push({ id: ref.id, version: ref.version, contents: policy });
       }
 
       // Where policy asks for two approvers (decision 0011) each signs for their own seat, so a
@@ -155,6 +157,7 @@ export function registerApprovalRoutes(app: FastifyInstance, deps: ApprovalDeps)
         grantedAt: new Date(grant.grantedAt),
         expiresAt: new Date(grant.expiresAt),
         revokedAt: null,
+        policies: policySnapshot,
       });
       const approval = await statusFor(tx, deps, plan, at);
       return [201, { grant, existing: false, approval }];
