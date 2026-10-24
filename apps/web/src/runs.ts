@@ -133,7 +133,7 @@ export function describeEvent(e: RunEvent): string {
       return `Run finished: ${String(p.state)}${p.error ? ` (${String(p.error)})` : ""}.`;
     case "run.stopped":
       if (p.unresolved && !p.error) {
-        return "Refused, but an earlier send can't be read back yet. It is read again automatically until retries run out, then handed to an operator.";
+        return "An earlier send can't be read back yet. It is read again automatically until retries run out, then handed to an operator. Nothing new is sent.";
       }
       return `Stopped on an unexpected error (${String(p.error)}). It is retried automatically until retries run out, then handed to an operator.`;
     default:

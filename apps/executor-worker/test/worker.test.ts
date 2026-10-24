@@ -782,6 +782,114 @@ describe.skipIf(!process.env.DB_TESTS)(
       expect(r.world.effects.length).toBe(writes);
     });
 
+    describe.each([
+      ["absent", { lands: false, unreadable: false }],
+      ["unreadable", { lands: true, unreadable: true }],
+    ])("a cancelled newer revision with an older revision's %s undo (#124)", (_n, how) => {
+      /** rev 2 is cancelled before its job runs; its worker can't read Zendesk if `unreadable`. */
+      async function cancelledRev2() {
+        const lost = await lostUndoThenRevision(how.lands);
+        expect(
+          await requestCancel(db, { orgId: lost.r.orgId, runId: lost.job2.runId }),
+        ).toMatchObject({ kind: "cancelled" });
+        const ctx = contextFor(lost.r.world);
+        const zendesk = ctx.providers.zendesk;
+        if (!zendesk) throw new Error("no zendesk provider");
+        const rev2Ctx: WorkerContext = how.unreadable
+          ? {
+              ...ctx,
+              providers: {
+                ...ctx.providers,
+                zendesk: {
+                  ...zendesk,
+                  reconcile: async () => {
+                    throw new Error("zendesk read unavailable (injected)");
+                  },
+                },
+              },
+            }
+          : ctx;
+        return { ...lost, rev2Ctx };
+      }
+
+      it("its real queue delivery is retried, not completed, and it stays cancelled", async () => {
+        const { r, job2, rev2Ctx, undoAttempts, writes } = await cancelledRev2();
+        const thrown: unknown[] = [];
+        const workerId = await boss.work(
+          APPLY_QUEUE,
+          { batchSize: 100, pollingIntervalSeconds: 0.5 },
+          async (jobs) => {
+            for (const job of jobs) {
+              if ((job.data as { runId?: string }).runId !== job2.runId) continue;
+              try {
+                await handleApplyJob(job.data, rev2Ctx);
+              } catch (err) {
+                thrown.push(err);
+                throw err;
+              }
+            }
+          },
+        );
+        const jobState = async () =>
+          (
+            await db.execute<{ state: string }>(
+              sql`select state::text from pgboss.job where name = ${APPLY_QUEUE}
+                    and data->>'runId' = ${job2.runId}`,
+            )
+          ).rows.map((x) => x.state);
+        try {
+          await waitFor(async () => thrown.length > 0 && (await jobState()).includes("retry"));
+        } finally {
+          await boss.offWork(APPLY_QUEUE, { id: workerId });
+        }
+        expect(thrown[0]).toBeInstanceOf(RetryLater);
+        expect(await jobState()).not.toContain("completed");
+        expect(await runState(job2.runId)).toBe("cancelled");
+        expect(await undoAttempts()).toEqual(["unknown_outcome"]);
+        expect(r.world.effects.length).toBe(writes);
+      }, 30_000);
+
+      it("the reaper re-enqueues it, then hands it to an operator; it stays cancelled", async () => {
+        const { r, job2, rev2Ctx, undoAttempts, writes } = await cancelledRev2();
+        await expect(
+          handleApplyJob(job2, rev2Ctx, { retryCount: 50, retryLimit: 50 }),
+        ).rejects.toBeInstanceOf(RetryLater);
+        /** pg-boss gave up on its job, and the run's last update is outside the stale window. */
+        const exhaust = async () => {
+          await db.execute(sql`delete from pgboss.job where data->>'runId' = ${job2.runId}`);
+          await db
+            .update(schema.runs)
+            .set({ updatedAt: new Date(Date.now() - 3_600_000) })
+            .where(eq(schema.runs.id, job2.runId));
+        };
+        const eventsOf = async (type: string) =>
+          (await db.select().from(schema.runEvents)).filter(
+            (e) => e.runId === job2.runId && e.type === type,
+          ).length;
+        /** Sweep until this run shows `type` (another suite's sweep may be the one that does it). */
+        const sweepUntil = async (type: string, count: number) => {
+          for (let i = 0; i < 50 && (await eventsOf(type)) < count; i++) {
+            await reapStuckRuns(db, boss, { now: new Date(), staleAfterMs: 10 * 60_000 });
+            if ((await eventsOf(type)) < count) await new Promise((res) => setTimeout(res, 50));
+          }
+          expect(await eventsOf(type)).toBe(count);
+        };
+        await exhaust();
+        await sweepUntil("run.reaped", 1);
+        // It was re-enqueued MAX_REAPS times in all; the next stale sweep hands it off.
+        for (let n = 1; n < MAX_REAPS; n++) {
+          await db
+            .insert(schema.runEvents)
+            .values({ orgId: r.orgId, runId: job2.runId, type: "run.reaped", payload: {} });
+        }
+        await exhaust();
+        await sweepUntil("run.needs_operator", 1);
+        expect(await runState(job2.runId)).toBe("cancelled");
+        expect(await undoAttempts()).toEqual(["unknown_outcome"]);
+        expect(r.world.effects.length).toBe(writes);
+      }, 30_000);
+    });
+
     it("an expired grant still reads back an unreceipted refund, and sends nothing new (#121)", async () => {
       const r = await approvedRun();
       const spy = failSettle("refund_001");
