@@ -122,11 +122,13 @@ export function fakeApi({ dual = false }: { dual?: boolean } = {}) {
     }
     // Decision 0011: with `dual`, a support lead and then a different finance lead each sign a seat.
     const seats = () => {
-      const signed = grants.map((g: any) => ({
-        role: g.roles[0],
-        grantId: g.id,
-        actorUserId: g.actorUserId,
-      }));
+      const signed = (grants as { id: string; roles: string[]; actorUserId: string }[]).map(
+        (g) => ({
+          role: g.roles[0],
+          grantId: g.id,
+          actorUserId: g.actorUserId,
+        }),
+      );
       return {
         dualRequired: true,
         satisfied: signed.length === 2,
