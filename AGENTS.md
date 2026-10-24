@@ -63,6 +63,7 @@ pnpm fixtures:write                        # regenerate scenarios/billing/cases 
 pnpm infra:up / infra:down                 # Postgres + 4 Era worlds (needs Docker Desktop)
 pnpm smoke:era                             # all worlds reachable + writable
 pnpm dev                                   # API :3000 + web :5173
+pnpm rehearsal up | start | test --all    # one command: worlds, all processes with their own env files, every test
 ```
 
 ## Tracks

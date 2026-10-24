@@ -1,6 +1,6 @@
 import type { ApprovalGrant, Role, RunState } from "@rehearsal/contracts";
-import type { ApplyStore, StoredRun } from "@rehearsal/core";
-import { and, eq, inArray } from "drizzle-orm";
+import type { ApplyStore, RemedyStepRef, StoredRun } from "@rehearsal/core";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Db } from "./index";
 import { approvalGrants, planVersions, runs } from "./schema";
 
@@ -115,6 +115,17 @@ export class PgApplyStore implements ApplyStore {
         giveBack(err as Error);
       }
     };
+  }
+
+  /** Refund and credit steps for this obligation in every stored plan revision of the org. */
+  async remedyStepsFor(orgId: string, obligationId: string): Promise<RemedyStepRef[]> {
+    const { rows } = await this.db.execute<{ plan_hash: string; action_id: string }>(sql`
+      select v.plan_hash, a->>'id' as action_id
+      from ${planVersions} v, jsonb_array_elements(v.manifest->'actions') a
+      where v.org_id = ${orgId}
+        and a->>'obligationId' = ${obligationId}
+        and a->>'kind' in ('stripe.refund.create', 'stripe.customer.balanceCredit')`);
+    return rows.map((r) => ({ planHash: r.plan_hash, actionId: r.action_id }));
   }
 
   async runCancelled(orgId: string, runId: string): Promise<boolean> {

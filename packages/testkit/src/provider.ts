@@ -46,6 +46,14 @@ export interface FakeRefund {
   status: "succeeded";
   operationKey: string;
 }
+/** A negative balance transaction. `chargeId` is null when the credit names no charge. */
+export interface FakeCredit {
+  id: string;
+  customerId: string;
+  amountMinor: number;
+  currency: string;
+  chargeId: string | null;
+}
 
 export interface FakeMessage {
   channel: string;
@@ -70,6 +78,7 @@ export class FakeWorld {
   readonly charges = new Map<string, FakeCharge>();
   readonly tickets = new Map<string, FakeTicket>();
   readonly refunds: FakeRefund[] = [];
+  readonly credits: FakeCredit[] = [];
   /** Slack posts, oldest first. */
   readonly messages: FakeMessage[] = [];
   /** Every effect actually applied, in order. Tests assert "exactly one refund" on this. */
@@ -87,6 +96,22 @@ export class FakeWorld {
   }
   #touch(ticketId: string): void {
     this.#stamps.set(ticketId, (this.#stamps.get(ticketId) ?? 0) + 1);
+  }
+
+  /** A balance credit applied outside the plan. It does not change the charge. */
+  teammateCredit(credit: {
+    customerId: string;
+    amountMinor: number;
+    currency: string;
+    chargeId?: string;
+  }): void {
+    this.credits.push({
+      id: `cbtxn_${this.credits.length + 1}`,
+      customerId: credit.customerId,
+      amountMinor: credit.amountMinor,
+      currency: credit.currency,
+      chargeId: credit.chargeId ?? null,
+    });
   }
 
   /** A teammate edits a ticket field directly (outside any plan); it moves the stamp. */
@@ -325,6 +350,26 @@ export class FakeWorld {
   }
 
   #observe(entity: EntityRef): Observation {
+    if (entity.kind === "customer_balance_transactions") {
+      const credits = this.credits
+        .filter((credit) => credit.customerId === entity.id)
+        .map((credit) => ({
+          id: credit.id,
+          amountMinor: credit.amountMinor,
+          currency: credit.currency,
+          chargeId: credit.chargeId,
+        }));
+      const projection = { complete: true, credits };
+      return {
+        id: `obs_${entity.kind}_${entity.id}`,
+        world: "operational",
+        entity,
+        projectionVersion: "stripe.balance_credit.v1",
+        projection,
+        fingerprint: fingerprint(projection),
+        capturedAt: new Date().toISOString(),
+      };
+    }
     const record =
       entity.kind === "charge" ? this.charges.get(entity.id) : this.tickets.get(entity.id);
     if (!record) throw new Error(`no ${entity.kind} ${entity.id}`);
