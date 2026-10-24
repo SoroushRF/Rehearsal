@@ -99,6 +99,41 @@ export const ZendeskTicketAppendPrivateNote = ActionBase.extend({
   }),
 });
 
+/** The text that starts every operation marker. No approved text may contain it. */
+export const OPERATION_MARKER_PREFIX = "[rehearsal-op:";
+
+/**
+ * A public reply on the customer's ticket. Unlike a private note, the customer reads it, so the
+ * reviewer approves the exact text: `body` is the template rendered with plan literals only (no
+ * receipt bindings), and it is part of the plan hash. The executor sends `body` followed by the
+ * operation marker. Zendesk has no exactly-once append, so a reply with an unknown outcome is
+ * resolved by reading the ticket's comments for that marker and is never re-sent blindly.
+ *
+ * Not in `Action` yet, so no plan can carry one. T1.13 adds it once the write adapter (T3.11)
+ * and the review UI and policy (T2.16) handle it.
+ */
+export const ZendeskTicketAppendPublicReply = ActionBase.extend({
+  kind: z.literal("zendesk.ticket.appendPublicReply"),
+  /** A sent reply stays forever. */
+  compensation: z.literal("irreversible"),
+  protection: z.literal("no_atomic_guard"),
+  args: z.object({
+    ticketId: z.string().min(1),
+    public: z.literal(true),
+    template: z.object({ id: z.string().min(1), version: z.int().positive() }),
+    /** Plan literals the template was rendered with, so the server can render it again. */
+    values: z.record(z.string(), z.union([z.string(), z.number()])),
+    /** The rendered text, exactly as approved and sent, without the marker. */
+    body: z
+      .string()
+      .refine((s) => s.trim().length > 0, "reply body must not be blank")
+      .refine(
+        (s) => !s.includes(OPERATION_MARKER_PREFIX),
+        "reply body must not contain an operation marker",
+      ),
+  }),
+});
+
 /**
  * Receipt outcomes a summary may count. Mirrors `ReceiptOutcome` in execution.ts, which imports
  * this module and so can't be imported here.

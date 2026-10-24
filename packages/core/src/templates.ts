@@ -1,4 +1,4 @@
-import type { Action } from "@rehearsal/contracts";
+import { type Action, OPERATION_MARKER_PREFIX } from "@rehearsal/contracts";
 import { bindingKey } from "./bindings";
 import type { ResolvedBindings } from "./ports";
 
@@ -18,7 +18,7 @@ function formatCad(minor: number): string {
 }
 
 export function operationMarker(operationKey: string): string {
-  return `[rehearsal-op:${operationKey}]`;
+  return `${OPERATION_MARKER_PREFIX}${operationKey}]`;
 }
 
 export function renderNote(
