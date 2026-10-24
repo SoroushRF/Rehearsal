@@ -245,6 +245,18 @@ importers:
         specifier: ^0.31.11
         version: 0.31.11
 
+  packages/memory:
+    dependencies:
+      '@rehearsal/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@rehearsal/core':
+        specifier: workspace:*
+        version: link:../core
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
+
   packages/planner:
     dependencies:
       '@anthropic-ai/sdk':
