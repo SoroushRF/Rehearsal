@@ -83,7 +83,8 @@ describe("a phantom run reads clearly", () => {
       "New matching record appeared after approval (ch_new_dup). The approved plan didn't account for it, so this step waits for a new plan.",
     );
     expect(html).toContain("Waits for refund_002, which didn't complete.");
-    expect(html).toContain("Applied and read back (refund re_1).");
+    expect(html).toContain("Applied (refund re_1).");
+    expect(html).not.toContain("read back");
   });
 
   it("summarizes outcomes and marks steps never reached", () => {

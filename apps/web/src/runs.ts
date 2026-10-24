@@ -80,10 +80,9 @@ export function explainHold(h: HoldReason): string {
 /** One line per receipt: what happened to this step and why. */
 export function explainReceipt(r: Receipt): string {
   switch (r.outcome) {
+    // How the effect was confirmed (write response or a read) is in the receipt's limitations.
     case "confirmed":
-      return r.providerRef
-        ? `Applied and read back (${r.providerRef.kind} ${r.providerRef.id}).`
-        : "Applied and read back.";
+      return r.providerRef ? `Applied (${r.providerRef.kind} ${r.providerRef.id}).` : "Applied.";
     case "held":
       return r.holdReason ? explainHold(r.holdReason) : "Held before sending.";
     case "skipped_dependency":

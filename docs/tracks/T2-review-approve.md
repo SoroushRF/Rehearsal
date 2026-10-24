@@ -38,6 +38,7 @@
 | T2.9 | Decide currency: align `policy.v1.json` with the Era seed (USD vs CAD) and record it in `docs/decisions/` | M2 | Decision merged; policy and seed agree | #40 | — |
 | T2.10 | Rehearse button: start a plan from the review page, follow the planner, show the stored plan | M3 | Planner states and failures in plain words; stored plan selected on arrival | #116 | T1.5 |
 | T2.11 | Saved run replay that opens without signing in (part of the T2.5 acceptance) | M4 | `?replay=phantom` is public, read-only and labelled saved; drift test | #118 | — |
+| T2.12 | Receipt wording: a confirmed receipt says "Applied", not "read back"; the limitations line says how it was confirmed | M5 | No "read back" claim on write-response confirmations; runs test updated. **Done** on `fix/132-receipt-wording` | #132 | — |
 
 ## Decisions
 
