@@ -113,6 +113,15 @@ describe.skipIf(!process.env.DB_TESTS)("approval routes (real Postgres)", () => 
   const grantsFor = (planId: string) =>
     db.select().from(schema.approvalGrants).where(eq(schema.approvalGrants.planId, planId));
 
+  it("keeps the policy it checked the plan against, verbatim, on the grant (T2.14)", async () => {
+    const { orgId, planId, hash } = await seed();
+    expect(
+      (await approve(finance(orgId), planId, { revision: 1, planHash: hash })).statusCode,
+    ).toBe(201);
+    const [row] = await grantsFor(planId);
+    expect(row?.policies).toEqual([{ id: POLICY.id, version: POLICY.version, contents: POLICY }]);
+  });
+
   it("binds a finance lead's grant to the org, revision, hash, actor and expiry", async () => {
     const { orgId, planId, hash } = await seed();
     const res = await approve(finance(orgId), planId, { revision: 1, planHash: hash });

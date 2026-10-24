@@ -40,7 +40,7 @@
 | T2.11 | Saved run replay that opens without signing in (part of the T2.5 acceptance) | M4 | `?replay=phantom` is public, read-only and labelled saved; drift test | #118 | — |
 | T2.12 | Receipt wording: a confirmed receipt says "Applied", not "read back"; the limitations line says how it was confirmed | M5 | No "read back" claim on write-response confirmations; runs test updated. In review: #133 | #132 | — |
 | T2.13 | _Full scope:_ two distinct approvers (support + finance) where policy requires | full scope | Admission refuses until both grants are live and from distinct actors; refusal matrix extended; needs a decision record | #135 | — |
-| T2.14 | _Full scope:_ historical audit view: the exact plan, policy, evidence and grants as approved | full scope | An old run opens with its own plan and policy after the policy changed; test | #138 | — |
+| T2.14 | _Full scope:_ historical audit view: the exact plan, policy, evidence and grants as approved | full scope | An old run opens with its own plan and policy after the policy changed; test. **Done:** API (`GET /api/runs/:id/audit`, policy snapshot on the grant); the web view follows | #138 | — |
 | T2.15 | _Full scope:_ review UI shows the Slack summary step and its exact text | full scope | Plan diff and run timeline render the step, its text and an unresolved post | #145 | T1.17 |
 | T2.16 | _Full scope:_ review UI shows the exact rendered public reply being approved | full scope | Excluding the customer drops the reply; uncertain sends shown honestly | #146 | T1.18 |
 | T2.17 | _Full scope:_ finance-only "Promote to precedent" route and UI; recalled precedents shown with trace | full scope | Role-checked route plus UI; promotion goes through T1.8's adapter | #147 | T1.8 |
@@ -55,6 +55,8 @@ _(add dated entries)_
 ## Handoff log
 
 _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
+
+- **2026-10-24, Parsa (T2.14 API).** Branch `t2/T2.14-audit-api`, off `main`. `GET /api/runs/:id/audit` returns the run, its stored plan (re-verified against its hash, evidence inside), the policies as approved, every grant for that hash (who, when, expiry, revoked; the one the run used is marked), and the attempts and receipts, all from stored rows (`source: "stored_history"`). The policy contents come from a new `approval_grants.policies` column, written verbatim at approval time (migration `0004`, additive and nullable; `packages/db` is T3's path, please look). A grant made before the column shows `contents: null`, never today's file. **Not done:** the web view; the DB-backed tests (`DB_TESTS=1`) were not run locally (no Docker), CI runs them. The pure `buildAudit` test with a changed policy does run.
 
 - **2026-10-23, Parsa (T2.11).** Branch `t2/T2.11-saved-replay`, off `main`. `?replay=<id>` opens a saved run from `apps/web/public/replays/<id>.json`: public, read-only, no sign-in and no API call (Clerk isn't even loaded), with a "Saved replay, not live" banner, its evidence label and how it was made. `pnpm replay:build` writes `happy-path` and `phantom` by running the real executor engine on the fake provider (event times come from its test clock, so a rebuild is byte-identical); a test fails if the checked-in files drift. Both are `fixture` evidence. **Next:** an export of a real run (Postgres, after an Era run) into this format, so replays can become `era_integration`; the deployed URL (T2.5) serves these files from `dist/replays`. **Gotcha:** `scripts/replay/` and one line in the root `package.json` are new; no other track's code changed.
 
