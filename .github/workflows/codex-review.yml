@@ -20,12 +20,18 @@ jobs:
   dispatch:
     if: >-
       (github.event_name == 'pull_request_target' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        contains(github.event.pull_request.labels.*.name, 'ai-review-ready') &&
+        contains(github.event.pull_request.requested_reviewers.*.login, 'SoroushRF') &&
         ((github.event.action == 'review_requested' && github.event.requested_reviewer.login == 'SoroushRF') ||
          (github.event.action == 'labeled' && github.event.label.name == 'ai-review-ready') ||
          github.event.action == 'ready_for_review')) ||
       (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
         github.event.comment.user.id == 98989697 && github.event.comment.body == '/codex-review-now') ||
-      github.event_name == 'workflow_run' || github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_run' &&
+        github.event.workflow_run.event == 'pull_request' &&
+        github.event.workflow_run.head_repository.full_name == github.repository &&
+        github.event.workflow_run.conclusion == 'success') || github.event_name == 'schedule' ||
       (github.event_name == 'workflow_dispatch' && github.actor_id == '98989697')
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -40,13 +46,13 @@ jobs:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
           sparse-checkout: scripts/ci
-      - name: Install pinned validation library (no lifecycle scripts or PR dependencies)
-        run: npm install --prefix scripts/ci --no-save --package-lock=false --ignore-scripts --no-audit --no-fund zod@4.6.7
+      - name: Install integrity-locked validation library (no lifecycle scripts or PR dependencies)
+        run: npm ci --prefix scripts/ci --ignore-scripts --no-audit --no-fund
       - uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8, Node 24
         env:
           REVIEW_TOKEN: ${{ secrets.CODEX_REVIEW_GITHUB_TOKEN }}
         with:
-          # The ledger reconciles unknown comment outcomes; never blindly retry a post.
+          # A durable reservation precedes dispatch. Never blindly retry either POST.
           retries: 0
           script: |
             if (!process.env.REVIEW_TOKEN) throw new Error('Missing CODEX_REVIEW_GITHUB_TOKEN');

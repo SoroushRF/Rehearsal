@@ -15,6 +15,7 @@ Re-request review or remove/re-add the readiness label to queue a new request.
 - A commit already dispatched by this workflow is not automatically reviewed again.
 - CI completion and an approximately 10-minute scheduled sweep drain deferred work.
   GitHub schedules can be delayed. Oldest PRs are considered first.
+- Queue comments are display only; changing or deleting them grants no permission.
 - The queue comment and workflow summary say **not reviewed** while deferred.
   Dispatch only requests a review; it is not an approval or a completed review.
 
@@ -35,9 +36,11 @@ Other users' commands and quoted/edited commands cannot grant an override.
 
 1. Keep automatic reviews off in [Codex review settings](https://chatgpt.com/settings/code-review).
 2. Store a fine-grained SoroushRF token as `CODEX_REVIEW_GITHUB_TOKEN`, restricted to
-   Rehearsal and **Pull requests: Read and write** (plus implicit Metadata read).
-   The secret's presence was verified October 24; runtime permissions still need
-   a live check. No OpenAI API key or ChatGPT login cache is used.
+   Rehearsal, with **Pull requests: Read and write** and **Commit statuses: Read and
+   write** (plus implicit Metadata read). The status permission is new: the old
+   pull-request-only token is insufficient. No Contents, Variables or Administration
+   write permission is needed. A failed/unacknowledged reservation sends no trigger.
+   No OpenAI API key or ChatGPT login cache is used.
 3. Merge the workflow through a PR after the required cross-track review. Its code
    and script are always loaded from the default branch, never the PR branch.
 4. Test a representative ready PR authored by another contributor: request, CI,
@@ -46,16 +49,45 @@ Other users' commands and quoted/edited commands cannot grant an override.
 
 The narrow personal token writes comments; the default Actions token only reads
 code and CI. There is no PR checkout, PR dependency install, or product-secret access.
-Only pinned Zod is installed for runtime validation, with lifecycle scripts disabled.
+Only Zod is installed for runtime validation, using the committed npm lockfile and
+integrity hash, with lifecycle scripts disabled.
 Pinned actions run the TypeScript directly on Node 24. Global Actions concurrency
-serializes budget decisions; GitHub timelines and owner-authored comments persist
-requests even when pending jobs are replaced. The trigger comment itself is the
-dispatch ledger, so a lost response is reconciled by reading before another post.
-Queued work is rechecked for the latest head immediately before dispatch.
+serializes budget decisions. GitHub timelines reconstruct ordinary requests; exact,
+unedited owner commands survive while they remain on the PR. REST timestamps and
+GraphQL `lastEditedAt` reject edited commands, including same-second edits.
 
-The ledger counts SoroushRF-authored `@codex review` trigger comments, including
-manual comments, on open or closed PRs. It cannot prevent someone from directly
-invoking Codex outside this workflow. These limits bound requests, not exact token
-spend or total account usage across other repositories. The workflow does not
+The authoritative ledger is the full history of owner-created commit statuses on
+the repository's root commit (`LEDGER_SHA` in `scripts/ci/codex-review.ts`). These
+records are append-only: another writer can append a status under their own identity,
+but cannot edit/delete an existing status or impersonate its creator. We enumerate
+all historical statuses, not the combined/latest context result. A daily context
+avoids accumulating GitHub's 1,000-status-per-SHA/context cap over the project lifetime.
+The status's `success` means **reservation recorded**, never review completed/approved.
+
+Each reservation consumes its request/override and counts against the budget **before**
+the trigger POST. A crash before the POST, a lost response or a deleted trigger never
+causes an automatic re-post. Inspect the PR's Codex activity; if no review started,
+an explicit new owner command may spend a new reservation. An unacknowledged ledger
+write stops the sweep until it can reload the ledger. PR-local read/parsing/comment
+failures hold that PR and allow the others to proceed; corrupt shared authoritative
+ledger state fails closed globally. Queue/receipt comments are never ledger authority.
+
+Fork ready/CI events cannot directly start token-bearing sweeps. A ready, requested
+fork PR can be picked up by the scheduled sweep or an owner command. When GitHub
+omits fork PR associations on a CI run, the gate also requires the exact head SHA,
+head repository and head branch. Unrelated PR timelines aren't fetched.
+
+Queued work is rechecked for the latest head immediately before dispatch. A push can
+still race the subsequent comment: compare the head in Codex's **completed review**
+with the current PR head. The reservation records the requested head. CI is a
+readiness signal (a PR may change its own CI/AGENTS.md), and model reviews remain
+advisory; neither is an authorization to merge a risky unreviewed change.
+
+The cap always counts workflow reservations, including closed PRs and uncertain
+dispatches. Visible manual SoroushRF-authored `@codex review` comments conservatively
+consume additional capacity, but manual comments remain outside this workflow's
+guarantees: edits/deletion may change that extra count. They cannot erase workflow
+reservations. The workflow cannot prevent direct invocations of Codex. These limits
+bound controlled requests, not exact token spend or total account usage. It does not
 cancel already-running hosted reviews or configure their model/reasoning effort.
 See the [official Codex review guide](https://learn.chatgpt.com/docs/third-party/github).
