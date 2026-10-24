@@ -368,10 +368,35 @@ export function zendeskWriter(target: WriteTarget): ProviderWriter {
   };
 }
 
+/** `chat.postMessage` errors Slack documents as a refusal with nothing posted. */
+const SLACK_REFUSALS = new Set([
+  "channel_not_found",
+  "not_in_channel",
+  "is_archived",
+  "msg_too_long",
+  "no_text",
+  "too_many_attachments",
+  "restricted_action",
+  "invalid_auth",
+  "not_authed",
+  "account_inactive",
+  "token_revoked",
+  "token_expired",
+  "missing_scope",
+  "invalid_arguments",
+  "invalid_arg_name",
+  "invalid_charset",
+  "invalid_form_data",
+  "invalid_post_type",
+  "missing_post_type",
+]);
+
 const SlackHistory = z.object({
   ok: z.boolean(),
   error: z.string().optional(),
-  messages: z.array(z.object({ ts: z.string(), text: z.string().optional() })).optional(),
+  messages: z
+    .array(z.object({ ts: z.string(), text: z.string().optional(), bot_id: z.string().optional() }))
+    .optional(),
   has_more: z.boolean().optional(),
   response_metadata: z.object({ next_cursor: z.string().optional() }).optional(),
 });
@@ -411,16 +436,19 @@ export function slackWriter(target: WriteTarget): SlackWriter {
       if (result.kind !== "confirmed") return result;
       const body = result.body as { ok?: unknown; error?: unknown; ts?: unknown };
       if (body?.ok === true && typeof body.ts === "string") return result;
-      if (body?.ok === false && typeof body.error === "string") {
-        // A definite refusal: nothing was posted. Slack's own rate limit is retryable.
-        return {
-          kind: "rejected",
-          status: body.error === "ratelimited" ? 429 : 400,
-          body,
-          retryable: body.error === "ratelimited",
-        };
+      if (body?.ok === false && body.error === "ratelimited") {
+        return { kind: "rejected", status: 429, body, retryable: true };
       }
-      return { kind: "unknown", error: "Slack answered 2xx without ok/ts; post unknown" };
+      if (body?.ok === false && typeof body.error === "string" && SLACK_REFUSALS.has(body.error)) {
+        // A definite refusal: Slack documents these as nothing posted.
+        return { kind: "rejected", status: 400, body, retryable: false };
+      }
+      // Anything else (internal_error, fatal_error, an unknown code, no ok/ts) may have posted:
+      // reconcile by reading, never treat it as refused.
+      return {
+        kind: "unknown",
+        error: `Slack answered ${body?.ok === false ? String(body.error) : "2xx without ok/ts"}; post unknown`,
+      };
     },
     async reconcile(attempt, action, ctx) {
       assertTarget(target, ctx);
@@ -437,7 +465,15 @@ export function slackWriter(target: WriteTarget): SlackWriter {
         if (!history.ok) {
           return { kind: "indeterminate", detail: `Slack history: ${history.error ?? "not ok"}` };
         }
-        const found = (history.messages ?? []).find((m) => m.text?.includes(marker));
+        const marked = (history.messages ?? []).filter((m) => m.text?.includes(marker));
+        // Ours is a bot post; a person quoting the summary is not the post.
+        const found = marked.find((m) => m.bot_id !== undefined);
+        if (!found && marked.length > 0) {
+          return {
+            kind: "indeterminate",
+            detail: "only non-bot messages carry this post's marker",
+          };
+        }
         if (found) {
           return {
             kind: "applied",
@@ -446,7 +482,8 @@ export function slackWriter(target: WriteTarget): SlackWriter {
           };
         }
         const next = history.response_metadata?.next_cursor;
-        if (!history.has_more || !next) return { kind: "not_applied" };
+        if (!history.has_more) return { kind: "not_applied" };
+        if (!next) return { kind: "indeterminate", detail: "more Slack history but no cursor" };
         if (cursors.has(next)) return { kind: "indeterminate", detail: "repeated Slack cursor" };
         cursors.add(next);
         path = `${base}&cursor=${encodeURIComponent(next)}`;

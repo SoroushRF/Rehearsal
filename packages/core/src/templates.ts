@@ -65,11 +65,27 @@ export interface SummaryAction {
   };
 }
 
-const SUMMARY_TEMPLATES: Record<string, (v: Readonly<Record<string, string | number>>) => string> =
-  {
-    "run-summary@1": (v) =>
+/** One summary template: which bindings it takes, which must be outcome counts, and its text. */
+interface SummaryTemplate {
+  /** Literal bindings: short single-line plan text, never a count. */
+  literals: readonly string[];
+  /** Bindings that must be counts of approved steps' outcomes (never a literal number). */
+  counts: readonly string[];
+  render: (v: Readonly<Record<string, string | number>>) => string;
+}
+
+const SUMMARY_TEMPLATES: Record<string, SummaryTemplate> = {
+  "run-summary@1": {
+    literals: ["incidentId"],
+    counts: ["refunded", "held"],
+    render: (v) =>
       `Billing remediation ${v.incidentId}: ${v.refunded} refund(s) issued, ${v.held} step(s) held for review.`,
-  };
+  },
+};
+
+/** Slack stores at most 40,000 characters of `text`; the marker comes last, so stay under it. */
+export const MAX_SUMMARY_CHARS = 39_000;
+const MAX_LITERAL_CHARS = 200;
 
 /** Where the executor puts an outcome count's value among the resolved bindings. */
 export function summaryCountKey(name: string): string {
@@ -86,17 +102,39 @@ export function summaryTextFor(
   resolved: ResolvedBindings,
   operationKey: string,
 ): string {
+  const key = `${action.args.template.id}@${action.args.template.version}`;
+  const template = SUMMARY_TEMPLATES[key];
+  if (!template) throw new Error(`unknown summary template ${key}`);
+  const expected = [...template.literals, ...template.counts].sort();
+  const given = Object.keys(action.args.bindings).sort();
+  if (expected.join("\0") !== given.join("\0")) {
+    throw new Error(`summary ${key} takes exactly ${expected.join(", ")}; got ${given.join(", ")}`);
+  }
   const values: Record<string, string | number> = {};
-  for (const [name, b] of Object.entries(action.args.bindings)) {
-    const value = typeof b === "object" ? resolved.get(summaryCountKey(name)) : b;
+  for (const name of template.literals) {
+    const b = action.args.bindings[name];
+    if (typeof b !== "string" || b.trim().length === 0 || b.length > MAX_LITERAL_CHARS) {
+      throw new TypeError(`summary literal ${name} must be a short non-empty string`);
+    }
+    if (/[\r\n]/.test(b) || b.includes(OPERATION_MARKER_PREFIX)) {
+      throw new TypeError(`summary literal ${name} must be one line without an operation marker`);
+    }
+    values[name] = b;
+  }
+  for (const name of template.counts) {
+    if (typeof action.args.bindings[name] !== "object") {
+      throw new TypeError(`summary ${name} must be a count of approved steps' outcomes`);
+    }
+    const value = resolved.get(summaryCountKey(name));
     if (value === undefined) throw new Error(`unresolved summary count ${name}`);
-    if (typeof b === "object" && !(Number.isInteger(value) && Number(value) >= 0)) {
+    if (!(typeof value === "number" && Number.isInteger(value) && value >= 0)) {
       throw new TypeError(`summary count ${name} must be a non-negative integer, got ${value}`);
     }
     values[name] = value;
   }
-  const key = `${action.args.template.id}@${action.args.template.version}`;
-  const render = SUMMARY_TEMPLATES[key];
-  if (!render) throw new Error(`unknown summary template ${key}`);
-  return `${render(values)}\n\n${operationMarker(operationKey)}`;
+  const text = `${template.render(values)}\n\n${operationMarker(operationKey)}`;
+  if (text.length > MAX_SUMMARY_CHARS) {
+    throw new Error(`summary is ${text.length} characters; Slack would cut the marker off`);
+  }
+  return text;
 }

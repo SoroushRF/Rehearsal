@@ -46,7 +46,7 @@ Every world runs with `SIMCORE_SEED=42`, `SIMCORE_TODAY=2026-10-01`, `SIMCORE_ST
 | T1.17 | Slack summary post (`slack.message.postSummary`): `chat.postMessage` doesn't deduplicate on `client_msg_id`, so an unknown post is resolved by finding its operation marker in `conversations.history` | **RUN (T3.10, `era_integration`).** `evals/providers/test/slack-summary.test.ts` (needs `pnpm infra:up:full`, `ERA_CONFORMANCE=1 ERA_SLACK=1`): the writer posts and reads its post back by marker, a lost response is resolved by reading the channel with exactly one post, a post that never went out reads not applied, an unknown channel is a definite refusal (HTTP 200 `ok:false`), and two posts with the same `client_msg_id` both land (no dedupe) | — |
 | T1.18 | Public reply (`zendesk.ticket.appendPublicReply`): `public:true` comment reads back byte for byte; the operation marker in the body finds exactly that reply; the same send again appends a second copy (no dedupe) | **PASS**, with two fidelity gaps (surprise 15) (2026-10-24, Windows 11 amd64) | `zendesk-public-reply.test.ts` |
 
-Not covered by this gate: Era fault injection (`/_admin/faults`), Slack, pagination-boundary phantoms, and executor gates 5–7 (journal, crash recovery, ID remapping).
+Not covered by this gate: Era fault injection (`/_admin/faults`), Slack (its own suite: `ERA_SLACK=1`), pagination-boundary phantoms, and executor gates 5–7 (journal, crash recovery, ID remapping).
 
 ## Surprises
 

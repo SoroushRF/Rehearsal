@@ -379,7 +379,7 @@ describe("slackWriter (T3.10)", () => {
   it("finds a post by its marker on a later history page", async () => {
     const w = slackWriter(target);
     const req = w.prepare(summary, counts, KEY);
-    const page = (messages: { ts: string; text: string }[], next?: string) => ({
+    const page = (messages: { ts: string; text: string; bot_id?: string }[], next?: string) => ({
       status: 200,
       body: JSON.stringify({
         ok: true,
@@ -390,7 +390,7 @@ describe("slackWriter (T3.10)", () => {
     });
     queue = [
       page([{ ts: "3", text: "someone else" }], "c1"),
-      page([{ ts: "2", text: JSON.parse(req.body).text }]),
+      page([{ ts: "2", text: JSON.parse(req.body).text, bot_id: "B1" }]),
     ];
     expect(await w.reconcile(attemptFor(req.body), summary, CTX)).toEqual({
       kind: "applied",
@@ -398,6 +398,97 @@ describe("slackWriter (T3.10)", () => {
       effect: { "message.ts": "2", channel: "chan-ops" },
     });
     expect(seen[1]?.url).toContain("cursor=c1");
+  });
+
+  it("treats errors that may have posted as unknown, never as a refusal", async () => {
+    const w = slackWriter(target);
+    const req = w.prepare(summary, counts, KEY);
+    for (const error of [
+      "internal_error",
+      "fatal_error",
+      "service_unavailable",
+      "brand_new_code",
+    ]) {
+      reply = { status: 200, body: JSON.stringify({ ok: false, error }) };
+      expect(await w.dispatch(req, CTX)).toMatchObject({ kind: "unknown" });
+    }
+  });
+
+  it("doesn't take a person quoting the summary for the post", async () => {
+    const w = slackWriter(target);
+    const req = w.prepare(summary, counts, KEY);
+    reply = {
+      status: 200,
+      body: JSON.stringify({
+        ok: true,
+        messages: [{ ts: "5", text: `> ${JSON.parse(req.body).text}` }],
+        has_more: false,
+      }),
+    };
+    expect((await w.reconcile(attemptFor(req.body), summary, CTX)).kind).toBe("indeterminate");
+  });
+
+  it("can't tell when Slack says there is more history but gives no cursor", async () => {
+    const w = slackWriter(target);
+    reply = {
+      status: 200,
+      body: JSON.stringify({
+        ok: true,
+        messages: [],
+        has_more: true,
+        response_metadata: { next_cursor: "" },
+      }),
+    };
+    expect(
+      await w.reconcile(attemptFor(w.prepare(summary, counts, KEY).body), summary, CTX),
+    ).toMatchObject({
+      kind: "indeterminate",
+      detail: "more Slack history but no cursor",
+    });
+  });
+
+  it("renders only the template's own bindings: literals short and single-line, counts as counts", () => {
+    const w = slackWriter(target);
+    const withBindings = (bindings: SummaryAction["args"]["bindings"]): SummaryAction => ({
+      ...summary,
+      args: { ...summary.args, bindings },
+    });
+    const bound = summary.args.bindings;
+    const incidentId = bound.incidentId as string;
+    const refunded = bound.refunded as NonNullable<typeof bound.refunded>;
+    const held = bound.held as NonNullable<typeof bound.held>;
+    expect(() => w.prepare(withBindings({ incidentId, refunded }), counts, KEY)).toThrow(
+      /takes exactly/,
+    );
+    expect(() =>
+      w.prepare(withBindings({ incidentId, refunded, held, extra: "x" }), counts, KEY),
+    ).toThrow(/takes exactly/);
+    expect(() => w.prepare(withBindings({ incidentId, refunded: 7, held }), counts, KEY)).toThrow(
+      /must be a count of approved steps' outcomes/,
+    );
+    expect(() =>
+      w.prepare(
+        withBindings({ incidentId: "INC [rehearsal-op:op_other]", refunded, held }),
+        counts,
+        KEY,
+      ),
+    ).toThrow(/without an operation marker/);
+    expect(() =>
+      w.prepare(withBindings({ incidentId: "INC\nline two", refunded, held }), counts, KEY),
+    ).toThrow(/one line/);
+    expect(() =>
+      w.prepare(withBindings({ incidentId: "x".repeat(201), refunded, held }), counts, KEY),
+    ).toThrow(/short non-empty/);
+    expect(() =>
+      w.prepare(
+        summary,
+        new Map([
+          [summaryCountKey("refunded"), -1],
+          [summaryCountKey("held"), 0],
+        ]),
+        KEY,
+      ),
+    ).toThrow(/non-negative integer/);
   });
 
   it("reads not_applied only after the last page; an unreadable page can't tell", async () => {
