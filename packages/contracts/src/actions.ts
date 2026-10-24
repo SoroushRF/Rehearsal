@@ -99,6 +99,58 @@ export const ZendeskTicketAppendPrivateNote = ActionBase.extend({
   }),
 });
 
+/**
+ * Receipt outcomes a summary may count. Mirrors `ReceiptOutcome` in execution.ts, which imports
+ * this module and so can't be imported here.
+ */
+export const SummaryOutcome = z.enum([
+  "confirmed",
+  "rejected",
+  "held",
+  "unknown_outcome",
+  "skipped_dependency",
+  "compensated",
+  "compensation_conflict",
+]);
+
+/** The number of listed steps whose receipt has one of `outcomes`, resolved by the executor. */
+export const OutcomeCount = z.object({
+  $count: z.literal("outcomes"),
+  stepIds: z.array(z.string().min(1)).min(1),
+  outcomes: z.array(SummaryOutcome).min(1),
+});
+export type OutcomeCount = z.infer<typeof OutcomeCount>;
+
+/** Summary substitutions are literals or counts of approved steps' outcomes — never model text. */
+export const SummaryBinding = z.union([z.string(), z.number(), OutcomeCount]);
+
+/**
+ * One Slack post summarising the run, as its final step. The text is rendered at apply from an
+ * approved template plus literals and outcome counts, followed by the operation marker. Slack
+ * doesn't deduplicate posts (not even on `client_msg_id`), so a post with an unknown outcome is
+ * resolved by reading the channel for that marker and is never re-sent blindly.
+ *
+ * Not in `Action` yet, so no plan can carry one. T1.7 adds it once the write adapter (T3.10) and
+ * the review UI (T2.15) handle it.
+ */
+export const SlackMessagePostSummary = ActionBase.extend({
+  kind: z.literal("slack.message.postSummary"),
+  /** A post stays forever and Slack has no conditional write. */
+  compensation: z.literal("irreversible"),
+  protection: z.literal("no_atomic_guard"),
+  args: z.object({
+    channelId: z.string().min(1),
+    template: z.object({ id: z.string().min(1), version: z.int().positive() }),
+    bindings: z.record(z.string(), SummaryBinding),
+  }),
+}).refine(
+  (a) =>
+    Object.values(a.args.bindings).every(
+      (b) => typeof b !== "object" || b.stepIds.every((id) => a.dependsOn.includes(id)),
+    ),
+  { message: "a summary must depend on every step it counts", path: ["args", "bindings"] },
+);
+
 export const Action = z.discriminatedUnion("kind", [
   StripeRefundCreate,
   ZendeskTicketPatchFields,
