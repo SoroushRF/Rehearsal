@@ -1,15 +1,17 @@
 import { PlanManifest } from "@rehearsal/contracts";
-import type { BillingPolicyV1 } from "@rehearsal/core";
+import type { BillingPolicy, BillingPolicyV1 } from "@rehearsal/core";
 import { createDb, type Db, migrateDb, type PgBoss, schema, startQueue } from "@rehearsal/db";
 import { billingManifest } from "@rehearsal/testkit";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import policyJson from "../../../scenarios/billing/policy.v1.json" with { type: "json" };
+import policyV3Json from "../../../scenarios/billing/policy.v3.json" with { type: "json" };
 import { buildApp } from "../src/app";
 import type { Reviewer } from "../src/auth";
 import { storePlan } from "../src/plans";
 
 const POLICY = policyJson as BillingPolicyV1;
+const POLICY_V3 = policyV3Json as BillingPolicy;
 const NOW = new Date("2026-10-22T12:00:00.000Z");
 const TTL = 60 * 60 * 1000;
 const HASH = "a".repeat(64);
@@ -95,9 +97,15 @@ describe.skipIf(!process.env.DB_TESTS)("approval routes (real Postgres)", () => 
 
   /** One app that can approve (at NOW), revise and apply (at `applyAt`) as the given reviewer. */
   const deps = (me: Reviewer | null, applyAt = NOW) => ({
-    approvals: { db, reviewer: () => me, policies: [POLICY], now: () => NOW, ttlMs: TTL },
+    approvals: {
+      db,
+      reviewer: () => me,
+      policies: [POLICY, POLICY_V3],
+      now: () => NOW,
+      ttlMs: TTL,
+    },
     plans: { db, auth: () => me },
-    apply: { db, boss, auth: () => me, now: () => applyAt },
+    apply: { db, boss, auth: () => me, now: () => applyAt, policies: [POLICY, POLICY_V3] },
   });
 
   async function seed(edit: (m: PlanManifest) => PlanManifest = (m) => m) {
@@ -143,7 +151,7 @@ describe.skipIf(!process.env.DB_TESTS)("approval routes (real Postgres)", () => 
 
     const again = await approve(finance(orgId), planId, { revision: 1, planHash: hash });
     expect(again.statusCode).toBe(200);
-    expect(again.json()).toEqual({ grant, existing: true });
+    expect(again.json()).toMatchObject({ grant, existing: true });
     expect(await grantsFor(planId)).toHaveLength(1);
   });
 
@@ -322,5 +330,105 @@ describe.skipIf(!process.env.DB_TESTS)("approval routes (real Postgres)", () => 
     const res = await approve(finance(orgId), planId, { revision: 1, planHash: hash });
     expect(res.statusCode).toBe(422);
     expect(res.json().error).toBe("unknown_policy");
+  });
+});
+
+// Decision 0011. A plan that cites policy v3 and has a refund above the line needs two people.
+describe.skipIf(!process.env.DB_TESTS)("two distinct approvers (real Postgres)", () => {
+  const url = process.env.DATABASE_URL ?? "postgres://rehearsal:rehearsal@localhost:5432/rehearsal";
+  const db = createDb(url);
+  let boss: PgBoss;
+  beforeAll(async () => {
+    await migrateDb(db);
+    boss = await startQueue(url);
+  });
+  afterAll(async () => {
+    await boss?.stop({ graceful: false });
+  });
+
+  const both = (orgId: string) => reviewer(orgId, ["finance_lead", "support_lead"], "user_boss");
+  const financeOnly = (orgId: string) => reviewer(orgId, ["finance_lead"], "user_fin");
+  const deps = (me: Reviewer | null) => ({
+    approvals: {
+      db,
+      reviewer: () => me,
+      policies: [POLICY, POLICY_V3],
+      now: () => NOW,
+      ttlMs: TTL,
+    },
+    apply: { db, boss, auth: () => me, now: () => NOW, policies: [POLICY, POLICY_V3] },
+  });
+
+  async function seed() {
+    const orgId = `org_${crypto.randomUUID()}`;
+    const planId = `plan_${crypto.randomUUID()}`;
+    const base = { ...billingManifest(planId), orgId };
+    const manifest = PlanManifest.parse({ ...base, policies: [{ id: POLICY_V3.id, version: 3 }] });
+    const stored = await storePlan(db, manifest);
+    if (!stored) throw new Error("seed failed");
+    return { orgId, planId, hash: stored.planHash };
+  }
+  const approve = (me: Reviewer, planId: string, hash: string) =>
+    send(deps(me), "POST", `/api/plans/${planId}/approvals`, { revision: 1, planHash: hash });
+  const apply = (me: Reviewer, planId: string, hash: string) =>
+    send(deps(me), "POST", `/api/plans/${planId}/apply`, { revision: 1, planHash: hash });
+
+  it("lets a support lead sign a plan with a finance-only refund, and says the finance seat is open", async () => {
+    const { orgId, planId, hash } = await seed();
+    const res = await approve(support(orgId), planId, hash);
+    expect(res.statusCode).toBe(201);
+    expect(res.json().approval).toMatchObject({
+      dualRequired: true,
+      satisfied: false,
+      needed: ["finance_lead"],
+    });
+  });
+
+  it("refuses apply with one signature, and with one person holding both roles", async () => {
+    const { orgId, planId, hash } = await seed();
+    await approve(both(orgId), planId, hash);
+    const again = await approve(both(orgId), planId, hash); // the same person can't fill the second seat
+    expect(again.json()).toMatchObject({ existing: true, approval: { satisfied: false } });
+    const res = await apply(both(orgId), planId, hash);
+    expect(res.statusCode).toBe(403);
+    expect(res.json().detail).toMatch(/two different approvers/);
+  });
+
+  it("accepts apply once a support lead and a different finance lead have signed", async () => {
+    const { orgId, planId, hash } = await seed();
+    await approve(financeOnly(orgId), planId, hash);
+    const second = await approve(support(orgId), planId, hash);
+    expect(second.json().approval).toMatchObject({ satisfied: true, needed: [] });
+    expect((await apply(financeOnly(orgId), planId, hash)).statusCode).toBe(202);
+  });
+
+  it("shows who signed which seat when approvals are listed", async () => {
+    const { orgId, planId, hash } = await seed();
+    await approve(financeOnly(orgId), planId, hash);
+    const { approval } = (
+      await send(deps(support(orgId)), "GET", `/api/plans/${planId}/approvals`)
+    ).json();
+    expect(approval).toMatchObject({
+      dualRequired: true,
+      satisfied: false,
+      signed: [{ role: "finance_lead", actorUserId: "user_fin" }],
+      needed: ["support_lead"],
+    });
+  });
+
+  it("stops being satisfied when either signer's grant is revoked", async () => {
+    const { orgId, planId, hash } = await seed();
+    await approve(financeOnly(orgId), planId, hash);
+    const { grant } = (await approve(support(orgId), planId, hash)).json();
+    const revoked = await send(
+      deps(support(orgId)),
+      "POST",
+      `/api/plans/${planId}/approvals/${grant.id}/revoke`,
+      {},
+    );
+    expect(revoked.statusCode).toBe(200);
+    const res = await apply(financeOnly(orgId), planId, hash);
+    expect(res.statusCode).toBe(403);
+    expect(res.json().detail).toMatch(/still needed: support_lead/);
   });
 });

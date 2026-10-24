@@ -1,5 +1,6 @@
 import type { ApprovalGrant, PlanManifest, ReplayBundle } from "@rehearsal/contracts";
 import {
+  type BillingPolicy,
   type BillingPolicyV1,
   caseGroups,
   createReadGuard,
@@ -24,6 +25,7 @@ import {
 } from "@rehearsal/testkit";
 import { describe, expect, it } from "vitest";
 import policy from "../../../scenarios/billing/policy.v1.json" with { type: "json" };
+import policyV3 from "../../../scenarios/billing/policy.v3.json" with { type: "json" };
 
 const POLICY = policy as BillingPolicyV1;
 const RUN = "run_1";
@@ -1757,5 +1759,92 @@ describe("operation keys", () => {
     const result = await s.run();
     expect(result.state).toBe("completed");
     expect(s.world.tickets.get("5531")?.comments).toHaveLength(2);
+  });
+});
+
+/** Decision 0011: where policy v3 asks for it, two different users must hold live grants. */
+describe("two distinct approvers (T2.13)", () => {
+  const V3 = policyV3 as BillingPolicy;
+  /** The happy path, citing policy v3: its 125.00 CAD refund is above the dual-approval line. */
+  function dual(over: Partial<ApprovalGrant> = {}) {
+    const bundle = happyPathBundle();
+    const s = setup(
+      { ...bundle, manifest: { ...bundle.manifest, policies: [{ id: V3.id, version: 3 }] } },
+      { actorUserId: "user_fin", roles: ["finance_lead"], ...over },
+    );
+    s.deps.policies = [POLICY, V3];
+    return s;
+  }
+  const grant = (s: ReturnType<typeof dual>, id: string, over: Partial<ApprovalGrant>) => {
+    const primary = s.store.grants.get(APPROVAL);
+    if (!primary) throw new Error("setup has no grant");
+    s.store.grants.set(id, { ...primary, id, ...over });
+  };
+  const refused = async (s: ReturnType<typeof dual>, detail: RegExp) => {
+    const result = await s.run();
+    expect(result.state).toBe("failed");
+    expect(result.refusal).toMatch(detail);
+    expect(s.world.effects).toEqual([]);
+    expect(s.journal.attempts.size).toBe(0);
+  };
+
+  it("runs once a support lead and a different finance lead both hold live grants", async () => {
+    const s = dual();
+    grant(s, "grant_2", { actorUserId: "user_sup", roles: ["support_lead"] });
+    const result = await s.run();
+    expect(result.state).toBe("completed");
+    expect(s.world.effects.length).toBeGreaterThan(0);
+  });
+
+  it("doesn't let one person holding both roles fill both seats", async () => {
+    await refused(dual({ roles: ["support_lead", "finance_lead"] }), /still needed: support_lead/);
+  });
+
+  it("refuses with only the finance seat filled, and says the support seat is open", async () => {
+    await refused(dual(), /still needed: support_lead/);
+  });
+
+  it("refuses two people who both hold only the same role", async () => {
+    const s = dual({ roles: ["support_lead"] });
+    grant(s, "grant_2", { actorUserId: "user_sup2", roles: ["support_lead"] });
+    await refused(s, /still needed: finance_lead/);
+  });
+
+  it("refuses the same user signing twice", async () => {
+    const s = dual({ roles: ["finance_lead", "support_lead"] });
+    grant(s, "grant_2", { roles: ["support_lead"], actorSessionId: "sess_other" });
+    await refused(s, /still needed/);
+  });
+
+  it.each<[string, Partial<ApprovalGrant>, RegExp]>([
+    ["is revoked", { revokedAt: "2026-10-21T11:30:00.000Z" }, /still needed: support_lead/],
+    ["has expired", { expiresAt: "2026-10-21T11:59:59.000Z" }, /still needed: support_lead/],
+    ["is dated in the future", { grantedAt: "2026-10-21T12:00:01.000Z" }, /still needed/],
+    ["is for another plan hash", { planHash: "f".repeat(64) }, /still needed/],
+    ["is for another revision", { revision: 2 }, /still needed/],
+    ["is for another org", { orgId: "org_other" }, /still needed/],
+  ])("doesn't count a second grant that %s", async (_label, over, detail) => {
+    const s = dual();
+    grant(s, "grant_2", { actorUserId: "user_sup", roles: ["support_lead"], ...over });
+    await refused(s, detail);
+  });
+
+  it("is blocked when the primary grant is revoked even though the other seat is filled", async () => {
+    const s = dual({ revokedAt: "2026-10-21T11:30:00.000Z" });
+    grant(s, "grant_2", { actorUserId: "user_sup", roles: ["support_lead"] });
+    await refused(s, /revoked/);
+  });
+
+  it("fails closed when the store can't list grants", async () => {
+    const s = dual();
+    grant(s, "grant_2", { actorUserId: "user_sup", roles: ["support_lead"] });
+    (s.store as { loadGrantsForPlanHash?: unknown }).loadGrantsForPlanHash = undefined;
+    await refused(s, /can't list grants/);
+  });
+
+  it("changes nothing for a plan that cites policy v1", async () => {
+    const s = setup(happyPathBundle());
+    s.deps.policies = [POLICY, V3];
+    expect((await s.run()).state).toBe("completed");
   });
 });

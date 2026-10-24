@@ -8,7 +8,9 @@ import {
   zendeskReader,
   zendeskWriter,
 } from "@rehearsal/providers";
-import policy from "../../../scenarios/billing/policy.v1.json" with { type: "json" };
+import policyV1 from "../../../scenarios/billing/policy.v1.json" with { type: "json" };
+import policyV2 from "../../../scenarios/billing/policy.v2.json" with { type: "json" };
+import policyV3 from "../../../scenarios/billing/policy.v3.json" with { type: "json" };
 import { executorCredentialViolations } from "./credentials";
 import { handleApplyJob, type WorkerContext } from "./worker";
 
@@ -53,7 +55,7 @@ const ctx: WorkerContext = {
     zendesk: { world: "operational", tenant: worlds.zendesk.tenant },
   },
   clock,
-  policies: [policy as WorkerContext["policies"][number]],
+  policies: [policyV1, policyV2, policyV3] as WorkerContext["policies"][number][],
   // Independent cases applied at once per run (cases sharing a record always run in order).
   executor: { caseConcurrency: Number(process.env.EXECUTOR_CASE_CONCURRENCY ?? 4) || 1 },
 };

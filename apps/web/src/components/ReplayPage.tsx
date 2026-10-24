@@ -1,8 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
+import { humanize } from "../format";
 import { loadReplay, loadReplayIndex, type SavedReplay } from "../replay";
-import { Badge } from "./Badge";
+import { AppShell, Segmented } from "./AppShell";
 import { PlanReview } from "./PlanReview";
 import { RunReport } from "./RunTimeline";
+import { Alert, Card, Chip, Icon, Skeleton } from "./ui";
 
 /** A saved run, read-only and public. Nothing on this page reads or changes live data. */
 export function ReplayPage({ id }: { id: string }) {
@@ -14,75 +16,84 @@ export function ReplayPage({ id }: { id: string }) {
   });
 
   return (
-    <main className="mx-auto max-w-4xl p-6 font-sans text-slate-900">
-      <h1 className="text-2xl font-semibold">Rehearsal</h1>
-      <p className="mt-1 text-slate-600">
-        Rehearse the plan. Approve its effects. Apply with evidence.
-      </p>
-
-      <nav aria-label="Saved replays" className="mt-6 flex flex-wrap gap-2">
-        {index.data?.map((r) => (
-          <a
-            key={r.id}
-            href={`?replay=${r.id}`}
-            title={r.title}
-            aria-current={r.id === id ? "page" : undefined}
-            className="rounded-full border border-slate-300 px-3 py-1 text-sm aria-[current=page]:border-slate-900 aria-[current=page]:bg-slate-900 aria-[current=page]:text-white"
-          >
-            {r.id}
-          </a>
-        ))}
-      </nav>
-
+    <AppShell
+      status={false}
+      nav={
+        index.data && (
+          <Segmented
+            label="Saved replays"
+            value={id}
+            options={index.data.map((r) => ({
+              id: r.id,
+              text: humanize(r.id),
+              title: r.title,
+              href: `?replay=${r.id}`,
+            }))}
+          />
+        )
+      }
+    >
       {id === "" && !index.isPending && (
-        <p className="mt-4 text-slate-600">Choose a saved replay.</p>
+        <Card className="border-dashed bg-transparent px-6 py-14 text-center shadow-none">
+          <p className="text-base font-semibold text-ink">Choose a saved replay</p>
+          <p className="mt-1 text-sm text-muted">
+            Each one is a recording of a plan and what happened when it was applied.
+          </p>
+        </Card>
       )}
       {replay.isPending && id !== "" && (
-        <p className="mt-4 text-sm text-slate-500">Loading replay…</p>
+        <div aria-busy="true" className="space-y-5">
+          <p className="sr-only">Loading replay…</p>
+          <Skeleton className="h-24" />
+          <Skeleton className="h-9 w-64" />
+          <Skeleton className="h-72" />
+        </div>
       )}
-      {replay.isError && (
-        <p role="alert" className="mt-4 rounded bg-rose-50 p-2 text-sm text-rose-800">
-          This saved replay can't be shown: {replay.error.message}
-        </p>
-      )}
+      {replay.isError && <Alert>This saved replay can't be shown: {replay.error.message}</Alert>}
       {replay.data && <ReplayView replay={replay.data} />}
-    </main>
+    </AppShell>
   );
 }
 
 export function ReplayView({ replay }: { replay: SavedReplay }) {
   return (
-    <div className="mt-4">
+    <div className="enter flex flex-col gap-6">
       <aside
         role="note"
         data-testid="replay-banner"
-        className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950"
+        className="flex flex-col gap-3 rounded-2xl border border-warn-line bg-warn-bg p-4 text-warn sm:flex-row sm:items-start sm:gap-4 sm:p-5"
       >
-        <p className="flex flex-wrap items-center gap-2 font-semibold">
-          Saved replay, not live
-          {replay.evidence === "fixture" ? (
-            <Badge tone="warn" hint="Not run against real Era images">
-              Fixture
-            </Badge>
-          ) : (
-            <Badge tone="good">Ran on Era</Badge>
-          )}
-        </p>
-        <p className="mt-1">
-          This is a recording of {replay.title.toLowerCase()}, saved{" "}
-          {new Date(replay.savedAt).toUTCString()}. Nothing here can be changed or applied.
-        </p>
-        <p className="mt-1 text-amber-900">{replay.source}</p>
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface/70">
+          <Icon name="film" className="h-5 w-5" />
+        </span>
+        <div className="min-w-0">
+          <p className="flex flex-wrap items-center gap-2 text-[15px] leading-6 font-semibold">
+            Saved replay, not live
+            {replay.evidence === "fixture" ? (
+              <Chip tone="warn" icon="flask" hint="Not run against real Era images">
+                Fixture
+              </Chip>
+            ) : (
+              <Chip tone="good" icon="check">
+                Ran on Era
+              </Chip>
+            )}
+          </p>
+          <p className="mt-1 text-sm leading-5">
+            This is a recording of {replay.title.toLowerCase()}, saved{" "}
+            {new Date(replay.savedAt).toUTCString()}. Nothing here can be changed or applied.
+          </p>
+          <p className="mt-1 text-[13px] leading-5">{replay.source}</p>
+        </div>
       </aside>
 
-      <div className="mt-4">
-        <PlanReview
-          manifest={replay.manifest}
-          planHash={replay.planHash}
-          evidence={replay.evidence}
-        />
-      </div>
+      {/* What happened comes first; the plan that was applied follows. */}
       <RunReport run={replay.run} events={replay.events} manifest={replay.manifest} />
+      <PlanReview
+        manifest={replay.manifest}
+        planHash={replay.planHash}
+        evidence={replay.evidence}
+      />
     </div>
   );
 }
