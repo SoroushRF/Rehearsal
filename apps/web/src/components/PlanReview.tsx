@@ -1,7 +1,6 @@
-import type { PlanManifest } from "@rehearsal/contracts";
 import { type ReactNode, useCallback, useState } from "react";
 import { formatMoney, roleLabel, shortHash, sumMoney } from "../format";
-import { droppedBy, groupByCase, requiredRoles } from "../plan";
+import { droppedBy, groupByCase, type ReviewManifest, requiredRoles } from "../plan";
 import { ActionRow } from "./ActionRow";
 import { EvidenceDrawer } from "./EvidenceDrawer";
 import { Card, Chip, CopyButton, Icon, Stat } from "./ui";
@@ -19,7 +18,7 @@ export function PlanReview({
   review,
   actions,
 }: {
-  manifest: PlanManifest;
+  manifest: ReviewManifest;
   planHash: string;
   /** A bundle's evidence label; null for a stored plan, which shows who planned it instead. */
   evidence: "fixture" | "era_integration" | null;
@@ -31,6 +30,7 @@ export function PlanReview({
   const close = useCallback(() => setSelectedId(null), []);
   const cases = groupByCase(manifest);
   const refunds = sumMoney(cases.flatMap((c) => c.refunds));
+  const credits = sumMoney(cases.flatMap((c) => c.credits));
   const irreversible = manifest.actions.filter((a) => a.compensation === "irreversible").length;
   const selected = manifest.actions.find((a) => a.id === selectedId);
   const roles = requiredRoles(manifest);
@@ -96,9 +96,18 @@ export function PlanReview({
               </div>
               <div className="text-right">
                 <p className="tnum text-lg leading-6 font-semibold text-ink">
-                  {c.refunds.map(formatMoney).join(" + ") || "No refund"}
+                  {[...c.refunds, ...c.credits].map(formatMoney).join(" + ") || "No refund"}
                 </p>
-                {c.refunds.length > 0 && <p className="text-xs text-subtle">to refund</p>}
+                {(c.refunds.length > 0 || c.credits.length > 0) && (
+                  <p className="text-xs text-subtle">
+                    {[
+                      c.refunds.length > 0 ? "to refund" : "",
+                      c.credits.length > 0 ? "as invoice credit" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(", ")}
+                  </p>
+                )}
               </div>
             </div>
             <ul className="divide-y divide-line">
@@ -150,6 +159,15 @@ export function PlanReview({
           <p className="tnum mt-1 text-[32px] leading-10 font-semibold tracking-tight text-ink">
             {refunds.map(formatMoney).join(" + ") || "None"}
           </p>
+          {credits.length > 0 && (
+            <p className="mt-1 text-sm text-muted">
+              Plus{" "}
+              <span className="tnum font-medium text-ink">
+                {credits.map(formatMoney).join(" + ")}
+              </span>{" "}
+              credited to next invoices
+            </p>
+          )}
 
           <dl className="mt-5 grid grid-cols-3 gap-3 border-t border-line pt-4">
             <Stat label="Customers" value={cases.length} />

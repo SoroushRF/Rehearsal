@@ -9,6 +9,11 @@ const KIND: Record<ReviewAction["kind"], { icon: IconName; tile: string; label: 
   "stripe.refund.create": { icon: "refund", tile: "bg-accent-soft text-accent", label: "Refund" },
   "zendesk.ticket.patchFields": { icon: "edit", tile: "bg-info-bg text-info", label: "Ticket" },
   "zendesk.ticket.appendPrivateNote": { icon: "note", tile: "bg-sunken text-muted", label: "Note" },
+  "stripe.customer.balanceCredit": {
+    icon: "refund",
+    tile: "bg-accent-soft text-accent",
+    label: "Invoice credit",
+  },
   "zendesk.ticket.appendPublicReply": {
     icon: "send",
     tile: "bg-warn-bg text-warn",
@@ -106,7 +111,8 @@ export function ActionRow({
             <Detail action={action} />
           </div>
 
-          {action.kind === "stripe.refund.create" && (
+          {(action.kind === "stripe.refund.create" ||
+            action.kind === "stripe.customer.balanceCredit") && (
             <p className="tnum shrink-0 text-right text-base leading-6 font-semibold text-ink">
               {formatMoney(action.args.amount)}
             </p>
@@ -169,6 +175,8 @@ function Title({ action }: { action: ReviewAction }) {
   switch (action.kind) {
     case "stripe.refund.create":
       return <>Refund the customer</>;
+    case "stripe.customer.balanceCredit":
+      return <>Credit the customer's next invoice</>;
     case "zendesk.ticket.patchFields":
       return (
         <>
@@ -207,6 +215,17 @@ function Detail({ action }: { action: ReviewAction }) {
             Charge <Mono>{action.args.chargeId}</Mono>
           </span>
           <span className="whitespace-nowrap">· {reasonLabel[action.args.reason]}</span>
+        </p>
+      );
+    case "stripe.customer.balanceCredit":
+      return (
+        <p className={line}>
+          <span className="whitespace-nowrap">
+            For charge <Mono>{action.args.chargeId}</Mono>
+          </span>
+          <span className="whitespace-nowrap">
+            · stays on their account, not paid back to the card
+          </span>
         </p>
       );
     case "zendesk.ticket.patchFields": {
