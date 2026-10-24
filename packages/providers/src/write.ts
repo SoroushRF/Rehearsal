@@ -525,6 +525,8 @@ export function stripeCreditWriter(target: WriteTarget): StripeCreditWriter {
       const body = new URLSearchParams([
         ["amount", String(-action.args.amount.amountMinor)],
         ["currency", action.args.amount.currency],
+        // The charge this credit remedies, so a refund of it counts as the same remedy (T4.10).
+        ["metadata[charge]", action.args.chargeId],
         ["metadata[rehearsal_op]", operationKey],
       ]).toString();
       return {
@@ -567,6 +569,7 @@ export function stripeCreditWriter(target: WriteTarget): StripeCreditWriter {
             "credit.id": tx.id,
             "credit.amount": tx.amount,
             "credit.type": tx.type,
+            "credit.charge": tx.metadata?.charge ?? "",
             customer: tx.customer,
             currency: tx.currency,
           };
@@ -576,6 +579,7 @@ export function stripeCreditWriter(target: WriteTarget): StripeCreditWriter {
             ...action,
             args: {
               ...action.args,
+              chargeId: sent.get("metadata[charge]") ?? "",
               amount: {
                 amountMinor: -Number(sent.get("amount")),
                 currency: sent.get("currency") ?? "",
