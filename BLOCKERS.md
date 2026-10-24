@@ -11,11 +11,11 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
 | **T4.5** ML smoke test: Qwen3.5-0.8B LoRA on 32 cases [#29](https://github.com/SoroushRF/Rehearsal/issues/29) | @skhdemo | 👀 in review | 2 |
+| **T1.8** SurrealDB precedents (explicit promotion, recall with trace) [#9](https://github.com/SoroushRF/Rehearsal/issues/9) | @SoroushRF | 🟨 ready | 1 |
 | **T2.15** Review UI: show the Slack summary step and its exact text [#145](https://github.com/SoroushRF/Rehearsal/issues/145) | @parsaabbasian | 🟨 ready | 1 |
 | **T2.16** Review UI: show the exact rendered public reply being approved [#146](https://github.com/SoroushRF/Rehearsal/issues/146) | @parsaabbasian | 🟨 ready | 1 |
 | **T2.18** Policy: choose a refund or an invoice credit per obligation [#148](https://github.com/SoroushRF/Rehearsal/issues/148) | @parsaabbasian | 🟨 ready | 1 |
 | **T3.10** Slack write adapter and uncertain-post reconciliation [#149](https://github.com/SoroushRF/Rehearsal/issues/149) | @ArtinMe | 🟨 ready | 1 |
-| **T3.11** Zendesk public reply write adapter and reconciliation [#150](https://github.com/SoroushRF/Rehearsal/issues/150) | @ArtinMe | 🟨 ready | 1 |
 
 ## T1 Rehearse
 
@@ -30,7 +30,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T1.5** Bounded Claude tool loop and planner-worker plan jobs [#6](https://github.com/SoroushRF/Rehearsal/issues/6) | ✅ done |  | T1.6, T1.7, T1.8, T1.15, T2.5 (T2), T2.10 (T2) |
 | **T1.6** ~20 benign and trap tasks plus baselines for the scorecard [#7](https://github.com/SoroushRF/Rehearsal/issues/7) | ✅ done |  |  |
 | **T1.7** Slack summary step (slack.message.postSummary) _(stretch)_ [#8](https://github.com/SoroushRF/Rehearsal/issues/8) | 🟥 blocked | T2.15 (T2, ready)<br>T3.10 (T3, ready) |  |
-| **T1.8** SurrealDB precedents (explicit promotion, recall with trace) _(stretch)_ [#9](https://github.com/SoroushRF/Rehearsal/issues/9) | 🟨 ready | — | T2.17 (T2) |
+| **T1.8** SurrealDB precedents (explicit promotion, recall with trace) [#9](https://github.com/SoroushRF/Rehearsal/issues/9) | 🟨 ready | — | T2.17 (T2) |
 | **T1.9** Signed Era tenant tokens in both workers [#39](https://github.com/SoroushRF/Rehearsal/issues/39) | ✅ done |  | T1.2, T1.5, T3.3 (T3), T4.3 (T4) |
 | **T1.10** Bind duplicate refunds to invoice identity and retain a paid anchor [#61](https://github.com/SoroushRF/Rehearsal/issues/61) | ✅ done |  |  |
 | **T1.11** Verify customer ownership before proposing ticket changes [#63](https://github.com/SoroushRF/Rehearsal/issues/63) | ✅ done |  |  |
@@ -119,6 +119,7 @@ flowchart LR
     T1_4["T1.4 Typed planning tools that record evidence a"]:::done
     T1_5["T1.5 Bounded Claude tool loop and planner-worker"]:::done
     T1_6["T1.6 ~20 benign and trap tasks plus baselines fo"]:::done
+    T1_8["T1.8 SurrealDB precedents (explicit promotion, r"]:::ready
     T1_9["T1.9 Signed Era tenant tokens in both workers"]:::done
     T1_10["T1.10 Bind duplicate refunds to invoice identity"]:::done
     T1_11["T1.11 Verify customer ownership before proposing"]:::done
@@ -183,6 +184,8 @@ flowchart LR
   T2_9 --> T1_5
   T1_5 --> T1_6
   T4_2 --> T1_6
+  T1_5 --> T1_8
+  T1_16 --> T1_8
   T1_1 --> T1_9
   T1_18 --> T1_13
   T2_16 --> T1_13
