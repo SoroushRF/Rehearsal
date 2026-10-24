@@ -1,12 +1,24 @@
-import type { Action, CompensationClass, ProtectionLevel } from "@rehearsal/contracts";
+import type { CompensationClass, ProtectionLevel } from "@rehearsal/contracts";
 import { compensationLabel, formatMoney, protectionLabel, roleLabel } from "../format";
+import type { ReviewAction } from "../plan";
+import { outcomeLabel } from "../runs";
 import { Chip, Icon, type IconName, type Tone } from "./ui";
 
 /** Which effect this is, as a colored tile: money moves, a field changes, or a note is added. */
-const KIND: Record<Action["kind"], { icon: IconName; tile: string; label: string }> = {
+const KIND: Record<ReviewAction["kind"], { icon: IconName; tile: string; label: string }> = {
   "stripe.refund.create": { icon: "refund", tile: "bg-accent-soft text-accent", label: "Refund" },
   "zendesk.ticket.patchFields": { icon: "edit", tile: "bg-info-bg text-info", label: "Ticket" },
   "zendesk.ticket.appendPrivateNote": { icon: "note", tile: "bg-sunken text-muted", label: "Note" },
+  "zendesk.ticket.appendPublicReply": {
+    icon: "send",
+    tile: "bg-warn-bg text-warn",
+    label: "Reply to customer",
+  },
+  "slack.message.postSummary": {
+    icon: "send",
+    tile: "bg-info-bg text-info",
+    label: "Slack summary",
+  },
 };
 
 const compensationTone: Record<CompensationClass, { tone: Tone; icon: IconName }> = {
@@ -39,7 +51,7 @@ export function ActionRow({
   include,
   dependsOnLabels = [],
 }: {
-  action: Action;
+  action: ReviewAction;
   selected: boolean;
   onShowEvidence: () => void;
   include?: IncludeControl;
@@ -103,6 +115,8 @@ export function ActionRow({
 
         <p className="mt-1 text-sm leading-5 text-muted">{action.rationale}</p>
 
+        <Message action={action} dropped={!!dropped} />
+
         <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
             <Chip
@@ -151,7 +165,7 @@ export function ActionRow({
   );
 }
 
-function Title({ action }: { action: Action }) {
+function Title({ action }: { action: ReviewAction }) {
   switch (action.kind) {
     case "stripe.refund.create":
       return <>Refund the customer</>;
@@ -167,11 +181,23 @@ function Title({ action }: { action: Action }) {
           Add a private note to ticket <Ref>#{action.args.ticketId}</Ref>
         </>
       );
+    case "zendesk.ticket.appendPublicReply":
+      return (
+        <>
+          Reply to the customer on ticket <Ref>#{action.args.ticketId}</Ref>
+        </>
+      );
+    case "slack.message.postSummary":
+      return (
+        <>
+          Post a summary to Slack channel <Ref>{action.args.channelId}</Ref>
+        </>
+      );
   }
 }
 
 /** The one line of specifics under the title, in words, with no field paths or template syntax. */
-function Detail({ action }: { action: Action }) {
+function Detail({ action }: { action: ReviewAction }) {
   const line = "flex flex-wrap gap-x-2 text-[13px] leading-5 text-subtle";
   switch (action.kind) {
     case "stripe.refund.create":
@@ -209,6 +235,88 @@ function Detail({ action }: { action: Action }) {
         </p>
       );
     }
+    case "zendesk.ticket.appendPublicReply":
+      return (
+        <p className={line}>
+          <span className="whitespace-nowrap">
+            Template <Mono>{action.args.template.id}</Mono> v{action.args.template.version}
+          </span>
+          <span className="whitespace-nowrap">· the customer reads this</span>
+        </p>
+      );
+    case "slack.message.postSummary":
+      return (
+        <p className={line}>
+          <span className="whitespace-nowrap">
+            Template <Mono>{action.args.template.id}</Mono> v{action.args.template.version}
+          </span>
+          <span className="whitespace-nowrap">· posts once the steps below have finished</span>
+        </p>
+      );
+  }
+}
+
+/**
+ * The text that goes out, for the two steps whose words other people read. A public reply is
+ * approved word for word: `body` is part of the plan hash. A Slack summary is filled in when the
+ * run ends, so the reviewer approves the template, its fixed values and which outcomes it counts.
+ */
+function Message({ action, dropped }: { action: ReviewAction; dropped: boolean }) {
+  const box = `mt-3 rounded-lg border border-line bg-sunken/60 px-3 py-2.5 ${dropped ? "opacity-60" : ""}`;
+  switch (action.kind) {
+    case "zendesk.ticket.appendPublicReply":
+      return (
+        <figure data-testid="public-reply" className={box}>
+          <figcaption className="text-xs font-medium text-muted">
+            The customer will receive exactly this text
+          </figcaption>
+          <blockquote
+            data-testid="public-reply-text"
+            className="mt-1.5 text-[14px] leading-6 whitespace-pre-wrap text-ink"
+          >
+            {action.args.body}
+          </blockquote>
+          <p className="mt-1.5 text-xs leading-5 text-subtle">
+            A short reference tag follows it, so a send whose answer is lost can be found again
+            instead of sent twice. Once sent it can't be taken back.
+          </p>
+        </figure>
+      );
+    case "slack.message.postSummary": {
+      const entries = Object.entries(action.args.bindings);
+      return (
+        <figure data-testid="slack-summary" className={box}>
+          <figcaption className="text-xs font-medium text-muted">
+            Posted to <Mono>{action.args.channelId}</Mono> when the run ends. The wording comes from
+            template <Mono>{action.args.template.id}</Mono> v{action.args.template.version}; only
+            these values are filled in, never free text
+          </figcaption>
+          <dl className="mt-1.5 space-y-1 text-[13px] leading-5">
+            {entries.map(([name, b]) => (
+              <div key={name} className="flex flex-wrap gap-x-2">
+                <dt className="font-mono text-muted">{name}</dt>
+                <dd className="text-ink">
+                  {typeof b === "object" ? (
+                    <>
+                      the number of {b.stepIds.join(", ")} that end up{" "}
+                      {b.outcomes.map((o) => outcomeLabel[o].toLowerCase()).join(" or ")}
+                    </>
+                  ) : (
+                    String(b)
+                  )}
+                </dd>
+              </div>
+            ))}
+          </dl>
+          <p className="mt-1.5 text-xs leading-5 text-subtle">
+            A post can't be edited or taken back, and Slack can't tell us whether a post already
+            went out; the channel is read for the reference tag instead of posting again.
+          </p>
+        </figure>
+      );
+    }
+    default:
+      return null;
   }
 }
 
