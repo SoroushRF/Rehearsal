@@ -128,8 +128,9 @@ describe.skipIf(!process.env.DB_TESTS)("audit route (real Postgres)", () => {
     if (!stored) throw new Error("seed failed");
     const planHash = stored.planHash;
     const runId = `run_${crypto.randomUUID()}`;
+    const grantId = `grant_${crypto.randomUUID()}`;
     await db.insert(schema.approvalGrants).values({
-      id: "grant_1",
+      id: grantId,
       orgId,
       planId,
       revision: 1,
@@ -147,23 +148,23 @@ describe.skipIf(!process.env.DB_TESTS)("audit route (real Postgres)", () => {
       planId,
       revision: 1,
       planHash,
-      approvalId: "grant_1",
+      approvalId: grantId,
       requestedBy: "user_fin",
       state: "completed",
     });
     await db.insert(schema.stepReceipts).values({
-      id: "rcpt_1",
+      id: `rcpt_${crypto.randomUUID()}`,
       orgId,
       planHash,
       actionId: "refund_001",
       receipt: { outcome: "confirmed" },
       recordedAt: AT,
     });
-    return { orgId, planId, runId, planHash };
+    return { orgId, planId, runId, planHash, grantId };
   }
 
   it("serves the run's own plan, policy, grants and receipts", async () => {
-    const { orgId, runId, planHash } = await seed();
+    const { orgId, runId, planHash, grantId } = await seed();
     const res = await get(deps(me(orgId)), `/api/runs/${runId}/audit`);
     expect(res.statusCode).toBe(200);
     const body = res.json();
@@ -171,7 +172,7 @@ describe.skipIf(!process.env.DB_TESTS)("audit route (real Postgres)", () => {
     expect(body.plan.planHash).toBe(planHash);
     expect(body.policies[0].contents).toEqual(POLICY);
     expect(body.grants.map((g: { id: string; usedByRun: boolean }) => [g.id, g.usedByRun])).toEqual(
-      [["grant_1", true]],
+      [[grantId, true]],
     );
     expect(body.receipts.map((r: { actionId: string }) => r.actionId)).toEqual(["refund_001"]);
   });
