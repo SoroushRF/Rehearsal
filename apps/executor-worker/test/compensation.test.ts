@@ -607,6 +607,107 @@ describe("conditional compensation", () => {
     expect(await patchReceipts(s, s.hash)).toHaveLength(3);
   });
 
+  describe("a lost undo on a run whose admission is refused", () => {
+    /** Run 1 compensates case 2, but the undo's response is lost (it lands only if `lands`). */
+    async function lostUndo(lands: boolean) {
+      const bundle = noteFails();
+      const s = setup(bundle);
+      replay(s, bundle, () =>
+        s.world.fault(TICKET, { kind: lands ? "drop_response_after_commit" : "server_error" }),
+      );
+      const first = await s.run();
+      expect(first.receipts.at(-1)).toMatchObject({
+        actionId: "patch_002",
+        holdReason: { kind: "unresolved_outcome" },
+      });
+      // The approval expires before anything reads the undo back.
+      (s.deps.clock as FakeClock).advance(2 * 3_600_000);
+      return { s, writes: s.ticketWrites() };
+    }
+    const expectNoWrites = (s: Setup, writes: number) => expect(s.ticketWrites()).toBe(writes);
+
+    it.each([
+      ["this hash", (s: Setup) => ({ run: s.run, hash: s.hash })],
+      ["a newer revision", (s: Setup) => s.addRevision()],
+    ])("reads back an undo that landed, under %s, and sends nothing", async (_n, which) => {
+      const { s, writes } = await lostUndo(true);
+      const next = which(s);
+      const result = await next.run();
+      expect(result.refusal).toBe("grant expired");
+      expect(result.unresolved).toBeUndefined();
+      expect((await patchReceipts(s, next.hash)).at(-1)).toMatchObject({
+        outcome: "compensated",
+        limitations: [expect.stringMatching(/found by reading the provider/)],
+      });
+      expect(s.world.tickets.get("5532")?.priority).toBe("normal");
+      expectNoWrites(s, writes);
+    });
+
+    it.each([
+      ["this hash", (s: Setup) => ({ run: s.run, hash: s.hash })],
+      ["a newer revision", (s: Setup) => s.addRevision()],
+    ])("holds an undo that never landed, under %s: no fresh undo, retried", async (_n, which) => {
+      const { s, writes } = await lostUndo(false);
+      const next = which(s);
+      // Old enough that a live run would send a fresh undo; a refused one never does.
+      const result = await next.run();
+      expect(result.refusal).toBe("grant expired");
+      expect(result.unresolved).toBe(true);
+      expect((await patchReceipts(s, next.hash)).at(-1)).toMatchObject({
+        outcome: "held",
+        holdReason: { kind: "unresolved_outcome" },
+      });
+      expect(s.world.tickets.get("5532")?.priority).toBe("high");
+      expectNoWrites(s, writes);
+    });
+
+    it("leaves an undo of different content to the hand-off: a revision changed the patch", async () => {
+      const { s, writes } = await lostUndo(true);
+      const rev2 = s.addRevision((m) => {
+        const patch = m.actions.find((a) => a.id === "patch_002");
+        if (patch?.kind === "zendesk.ticket.patchFields") patch.args.set = { priority: "urgent" };
+      });
+      const result = await rev2.run();
+      expect(result.refusal).toBe("grant expired");
+      expect(result.unresolved).toBe(true);
+      expect(await patchReceipts(s, rev2.hash)).toEqual([]);
+      expectNoWrites(s, writes);
+    });
+
+    it("copies nothing under a newer revision once the undo is already settled", async () => {
+      const { s, writes } = await lostUndo(true);
+      await s.run(); // this hash reads it back: compensated, the undo attempt reconciled
+      const rev2 = s.addRevision();
+      // Something else of the plan is in flight, so the refused rev2 does run its read-only pass.
+      const refund = [...s.journal.attempts.values()].find((a) => a.actionId === "refund_001");
+      if (!refund) throw new Error("no refund attempt");
+      const stray = {
+        ...refund,
+        id: "att_stray",
+        attemptNo: refund.attemptNo + 1,
+        state: "prepared" as const,
+      };
+      await s.journal.prepareAttempt(stray);
+      await s.journal.transition(stray.id, "prepared", "dispatched", {
+        dispatchedAt: refund.preparedAt,
+      });
+      const result = await rev2.run();
+      expect(result.refusal).toBe("grant expired");
+      expect(await patchReceipts(s, rev2.hash)).toEqual([]);
+      expectNoWrites(s, writes);
+    });
+
+    it("a cancelled newer revision also reads back the older revision's landed undo", async () => {
+      const { s, writes } = await lostUndo(true);
+      const rev2 = s.addRevision();
+      s.store.cancelled.add("run_2");
+      const result = await rev2.run();
+      expect(result.state).toBe("cancelled");
+      expect((await patchReceipts(s, rev2.hash)).at(-1)).toMatchObject({ outcome: "compensated" });
+      expectNoWrites(s, writes);
+    });
+  });
+
   it("sends a fresh undo once a read shows the lost one never landed", async () => {
     const bundle = noteFails();
     const s = setup(bundle);

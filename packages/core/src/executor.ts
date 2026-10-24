@@ -1131,7 +1131,18 @@ async function applyLocked(
       if (reconcileOnly) return; // no effect was found; a cancelled run sends nothing new
       prior = await journal.attemptsForKey(key); // read showed no effect: the step may be sent
     }
-    if (reconcileOnly) return;
+    if (reconcileOnly) {
+      // Nothing of this step's own is in flight, but an undo of it may be: say a newer revision
+      // that never applied this patch itself, refused or cancelled after an older revision's undo
+      // lost its response. Read that undo back too. `settleFromUndo` only reads, records or holds.
+      // Only an undo of this same content: one of a patch a revision changed was never this
+      // action's write, so judging it by this action's fields would record something false.
+      const sent = prior.filter((a) => a.state !== "prepared").at(-1);
+      if (!sent || !sameContent(sent)) return;
+      const undo = await sentUndo(action);
+      if (undo?.read) return settleFromUndo(action, undo);
+      return;
+    }
     /**
      * Decisions follow the newest attempt that was actually sent, under any revision. Prepared rows
      * were never sent: they matter only when nothing for this key has been sent yet, and then only
