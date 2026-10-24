@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
+import { AppShell } from "../src/components/AppShell";
 import { LivePlans } from "../src/components/LivePlans";
 import { IdentityScope, identityOf } from "../src/identity";
 import "../src/index.css";
@@ -24,25 +25,28 @@ function Harness() {
     return fetch(path, { ...init, headers });
   };
   return (
-    <main className="mx-auto max-w-4xl p-6 font-sans text-slate-900">
-      <div className="mb-4 flex gap-2 text-sm">
-        <button type="button" onClick={() => setWho({ userId: "user_a", orgId: "org_a" })}>
-          Be user A in org A
-        </button>
-        <button type="button" onClick={() => setWho({ userId: "user_a", orgId: "org_b" })}>
-          Switch to org B
-        </button>
-        <button type="button" onClick={() => setWho({ userId: "user_c", orgId: "org_b" })}>
-          Sign in as user C in org B
-        </button>
-        <button type="button" onClick={() => setWho(null)}>
-          Sign out
-        </button>
-      </div>
+    <AppShell
+      account={
+        <div className="flex flex-wrap gap-2 text-xs">
+          <button type="button" onClick={() => setWho({ userId: "user_a", orgId: "org_a" })}>
+            Be user A in org A
+          </button>
+          <button type="button" onClick={() => setWho({ userId: "user_a", orgId: "org_b" })}>
+            Switch to org B
+          </button>
+          <button type="button" onClick={() => setWho({ userId: "user_c", orgId: "org_b" })}>
+            Sign in as user C in org B
+          </button>
+          <button type="button" onClick={() => setWho(null)}>
+            Sign out
+          </button>
+        </div>
+      }
+    >
       <IdentityScope identity={identity} fallback={<p data-testid="signed-out">Signed out</p>}>
         <LivePlans apiFetch={apiFetch} />
       </IdentityScope>
-    </main>
+    </AppShell>
   );
 }
 

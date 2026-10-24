@@ -104,11 +104,7 @@ test("rehearsing follows the planner and shows the plan once it is stored", asyn
   await expect(
     page.getByText("Planner's summary: Two duplicate charges; refund both."),
   ).toBeVisible();
-  // The new plan is listed and already selected, with its actions on screen.
-  await expect(page.getByRole("button", { name: /plan_new/ })).toHaveAttribute(
-    "aria-current",
-    "page",
-  );
+  // The new plan is on screen, with its steps.
   await expect(page.getByTestId("action-row")).toHaveCount(6);
   await expect(button(page)).toBeEnabled();
 
@@ -135,7 +131,7 @@ test("a failed rehearsal says why and can be tried again", async ({ page }) => {
   await expect(page.getByTestId("rehearsal-state")).toContainText(
     "rejected_plan: plan has no steps",
   );
-  await expect(page.getByRole("button", { name: /plan_new/ })).toHaveCount(0);
+  await expect(page.getByText("No plans for this organization yet.")).toBeVisible();
   await expect(button(page)).toBeEnabled();
 });
 

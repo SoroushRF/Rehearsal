@@ -17,13 +17,15 @@ export interface WorldConfig {
   tenantToken?: string | TokenSource;
 }
 
-const ENV_KEYS: Record<Exclude<Vendor, "slack">, Record<World, string>> = {
+const ENV_KEYS: Record<Vendor, Record<World, string>> = {
   stripe: { planning: "ERA_STRIPE_PLANNING_URL", operational: "ERA_STRIPE_OPERATIONAL_URL" },
   zendesk: { planning: "ERA_ZENDESK_PLANNING_URL", operational: "ERA_ZENDESK_OPERATIONAL_URL" },
+  // Full extension (T3.10): only workers that post the run summary need these set.
+  slack: { planning: "ERA_SLACK_PLANNING_URL", operational: "ERA_SLACK_OPERATIONAL_URL" },
 };
 
 export function resolveWorld(
-  vendor: Exclude<Vendor, "slack">,
+  vendor: Vendor,
   world: World,
   env: NodeJS.ProcessEnv = process.env,
 ): WorldConfig {

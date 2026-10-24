@@ -38,6 +38,15 @@ export type NewRevision = z.infer<typeof NewRevision>;
 export const Grant = ApprovalGrant.extend({ live: z.boolean() });
 export type Grant = z.infer<typeof Grant>;
 
+/** Where a plan that needs two different approvers stands (decision 0011). */
+export const ApprovalStatus = z.object({
+  dualRequired: z.boolean(),
+  satisfied: z.boolean(),
+  signed: z.array(z.object({ role: Role, grantId: z.string(), actorUserId: z.string() })),
+  needed: z.array(Role),
+});
+export type ApprovalStatus = z.infer<typeof ApprovalStatus>;
+
 export const ApplyAccepted = z.object({
   runId: z.string(),
   state: z.string(),

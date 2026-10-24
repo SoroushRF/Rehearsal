@@ -45,7 +45,7 @@ test("a saved phantom run opens with no API and no sign-in, labelled as saved", 
 
 test("replays can be switched, and an unknown one says so", async ({ page }) => {
   await page.goto("/?replay=phantom");
-  await page.getByRole("link", { name: "happy-path" }).click();
+  await page.getByRole("link", { name: "Happy path" }).click();
   await expect(page).toHaveURL(/replay=happy-path/);
   await expect(page.getByTestId("run-report")).toContainText("completed");
   await expect(page.getByTestId("replay-banner")).toBeVisible();
@@ -55,7 +55,7 @@ test("replays can be switched, and an unknown one says so", async ({ page }) => 
 });
 
 test("the live page is untouched without ?replay", async ({ page }) => {
-  await page.goto("/");
-  await expect(page.getByRole("button", { name: "happy-path" })).toBeVisible();
+  await page.goto("/app");
+  await expect(page.getByRole("button", { name: "Happy path" })).toBeVisible();
   await expect(page.getByTestId("replay-banner")).toHaveCount(0);
 });

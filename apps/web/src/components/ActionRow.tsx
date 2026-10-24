@@ -1,25 +1,41 @@
-import type { Action, CompensationClass, ProtectionLevel } from "@rehearsal/contracts";
-import type { ReactNode } from "react";
+import type { CompensationClass, ProtectionLevel } from "@rehearsal/contracts";
 import { compensationLabel, formatMoney, protectionLabel, roleLabel } from "../format";
-import { Badge, type Tone } from "./Badge";
+import type { ReviewAction } from "../plan";
+import { outcomeLabel } from "../runs";
+import { Chip, Icon, type IconName, type Tone } from "./ui";
 
-const compensationTone: Record<CompensationClass, Tone> = {
-  conditional_reversible: "good",
-  compensable_by_new_action: "warn",
-  irreversible: "danger",
+/** Which effect this is, as a colored tile: money moves, a field changes, or a note is added. */
+const KIND: Record<ReviewAction["kind"], { icon: IconName; tile: string; label: string }> = {
+  "stripe.refund.create": { icon: "refund", tile: "bg-accent-soft text-accent", label: "Refund" },
+  "zendesk.ticket.patchFields": { icon: "edit", tile: "bg-info-bg text-info", label: "Ticket" },
+  "zendesk.ticket.appendPrivateNote": { icon: "note", tile: "bg-sunken text-muted", label: "Note" },
+  "stripe.customer.balanceCredit": {
+    icon: "refund",
+    tile: "bg-accent-soft text-accent",
+    label: "Invoice credit",
+  },
+  "zendesk.ticket.appendPublicReply": {
+    icon: "send",
+    tile: "bg-warn-bg text-warn",
+    label: "Reply to customer",
+  },
+  "slack.message.postSummary": {
+    icon: "send",
+    tile: "bg-info-bg text-info",
+    label: "Slack summary",
+  },
+};
+
+const compensationTone: Record<CompensationClass, { tone: Tone; icon: IconName }> = {
+  conditional_reversible: { tone: "good", icon: "undo" },
+  compensable_by_new_action: { tone: "warn", icon: "refund" },
+  irreversible: { tone: "danger", icon: "lock" },
 };
 
 const protectionTone: Record<ProtectionLevel, Tone> = {
   native_guard_with_documented_limits: "neutral",
   best_effort_reread: "warn",
   no_atomic_guard: "warn",
-};
-
-/** Diff-style marker: `$` moves money, `~` edits a field, `+` appends something permanent. */
-const marker: Record<Action["kind"], string> = {
-  "stripe.refund.create": "$",
-  "zendesk.ticket.patchFields": "~",
-  "zendesk.ticket.appendPrivateNote": "+",
 };
 
 /** Present only when the reviewer can uncheck actions (a live plan, not a fixture). */
@@ -31,28 +47,38 @@ export interface IncludeControl {
   onToggle: () => void;
 }
 
+const reasonLabel = { duplicate: "Duplicate charge", requested_by_customer: "Customer request" };
+
 export function ActionRow({
   action,
   selected,
   onShowEvidence,
   include,
+  dependsOnLabels = [],
 }: {
-  action: Action;
+  action: ReviewAction;
   selected: boolean;
   onShowEvidence: () => void;
   include?: IncludeControl;
+  /** Short names of the steps this one waits for. */
+  dependsOnLabels?: string[];
 }) {
+  const kind = KIND[action.kind];
   const comp = compensationLabel[action.compensation];
   const prot = protectionLabel[action.protection];
   const dropped = include && (include.unchecked || include.droppedWithDependency);
+  const evidenceCount = action.evidence.length + action.queryEvidence.length;
+
   return (
     <li
       data-testid="action-row"
       data-action-id={action.id}
       data-dropped={dropped ? "true" : undefined}
-      className={`flex gap-3 px-4 py-3 ${selected ? "bg-sky-50" : ""} ${dropped ? "opacity-50" : ""}`}
+      className={`group relative flex gap-2.5 px-3 py-4 transition-colors sm:gap-4 sm:px-5 ${
+        selected ? "bg-accent-soft/60" : dropped ? "bg-sunken/70" : "hover:bg-sunken/50"
+      }`}
     >
-      {include ? (
+      {include && (
         <input
           type="checkbox"
           aria-label={`Include ${action.id}`}
@@ -60,89 +86,264 @@ export function ActionRow({
           // A dependent can't be re-included on its own; re-check what it depends on instead.
           disabled={include.droppedWithDependency && !include.unchecked}
           onChange={include.onToggle}
-          className="mt-1 h-4 w-4 shrink-0"
+          className="mt-2.5 h-[18px] w-[18px] shrink-0 cursor-pointer accent-[var(--accent)] disabled:cursor-not-allowed"
         />
-      ) : null}
-      <span aria-hidden className="w-4 shrink-0 pt-0.5 font-mono text-slate-400">
-        {marker[action.kind]}
+      )}
+
+      <span
+        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg sm:h-10 sm:w-10 sm:rounded-xl ${kind.tile} ${dropped ? "opacity-50" : ""}`}
+        title={kind.label}
+      >
+        <Icon name={kind.icon} className="h-4 w-4 sm:h-5 sm:w-5" />
       </span>
-      <div className={`min-w-0 flex-1 ${dropped ? "line-through decoration-slate-400" : ""}`}>
-        <p className="font-medium text-slate-900">
-          <Summary action={action} />
-        </p>
-        <p className="mt-0.5 text-sm text-slate-600">{action.rationale}</p>
-        <div className="mt-2 flex flex-wrap items-center gap-1.5">
-          <Badge
-            tone={action.requiredRole === "finance_lead" ? "info" : "neutral"}
-            hint="Role that must approve this step"
-          >
-            {roleLabel[action.requiredRole]}
-          </Badge>
-          <Badge tone={compensationTone[action.compensation]} hint={comp.hint}>
-            {comp.text}
-          </Badge>
-          <Badge tone={protectionTone[action.protection]} hint={prot.hint}>
-            {prot.text}
-          </Badge>
-          {action.dependsOn.length > 0 && (
-            <span className="text-xs text-slate-500">after {action.dependsOn.join(", ")}</span>
+
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h4
+              className={`flex flex-wrap items-baseline gap-x-2 text-[15px] leading-6 font-semibold text-ink ${dropped ? "line-through decoration-subtle/60" : ""}`}
+            >
+              <span>
+                <Title action={action} />
+              </span>
+              <code className="font-mono text-[11px] font-normal text-subtle">{action.id}</code>
+            </h4>
+            <Detail action={action} />
+          </div>
+
+          {(action.kind === "stripe.refund.create" ||
+            action.kind === "stripe.customer.balanceCredit") && (
+            <p className="tnum shrink-0 text-right text-base leading-6 font-semibold text-ink">
+              {formatMoney(action.args.amount)}
+            </p>
           )}
-          <span className="font-mono text-xs text-slate-400">{action.id}</span>
+        </div>
+
+        <p className="mt-1 text-sm leading-5 text-muted">{action.rationale}</p>
+
+        <Message action={action} dropped={!!dropped} />
+
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+            <Chip
+              tone={compensationTone[action.compensation].tone}
+              icon={compensationTone[action.compensation].icon}
+              hint={comp.hint}
+            >
+              {comp.text}
+            </Chip>
+            <Chip tone={protectionTone[action.protection]} icon="shield" hint={prot.hint}>
+              {prot.text}
+            </Chip>
+            <Chip
+              tone={action.requiredRole === "finance_lead" ? "info" : "neutral"}
+              icon="users"
+              hint="Role that must approve this step"
+            >
+              {roleLabel[action.requiredRole]}
+            </Chip>
+            {dependsOnLabels.length > 0 && (
+              <Chip
+                tone="accent"
+                icon="arrow"
+                hint="This step only runs once the step it follows has been confirmed"
+              >
+                After {dependsOnLabels.join(", ")}
+              </Chip>
+            )}
+            {dropped && <Chip tone="neutral">Won't run</Chip>}
+          </div>
+          <button
+            type="button"
+            onClick={onShowEvidence}
+            aria-pressed={selected}
+            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-2.5 text-[13px] font-medium text-ink shadow-card hover:bg-sunken"
+          >
+            <Icon name="eye" className="h-3.5 w-3.5 text-subtle" />
+            Evidence
+            <span className="tnum rounded-full bg-sunken px-1.5 text-xs leading-5 text-muted">
+              {evidenceCount}
+            </span>
+          </button>
         </div>
       </div>
-      <button
-        type="button"
-        onClick={onShowEvidence}
-        aria-pressed={selected}
-        className="h-fit shrink-0 rounded border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"
-      >
-        Evidence ({action.evidence.length + action.queryEvidence.length})
-      </button>
     </li>
   );
 }
 
-function Summary({ action }: { action: Action }) {
+function Title({ action }: { action: ReviewAction }) {
   switch (action.kind) {
     case "stripe.refund.create":
+      return <>Refund the customer</>;
+    case "stripe.customer.balanceCredit":
+      return <>Credit the customer's next invoice</>;
+    case "zendesk.ticket.patchFields":
       return (
         <>
-          Refund <span className="tabular-nums">{formatMoney(action.args.amount)}</span> on charge{" "}
-          <Code>{action.args.chargeId}</Code>
-          <span className="font-normal text-slate-500"> ({action.args.reason})</span>
+          Update ticket <Ref>#{action.args.ticketId}</Ref>
         </>
       );
-    case "zendesk.ticket.patchFields": {
-      const { set, before } = action.args;
-      const changes = (Object.keys(set) as (keyof typeof set)[]).map(
-        (f) => `${f}: ${before[f] ?? "unset"} → ${set[f]}`,
-      );
+    case "zendesk.ticket.appendPrivateNote":
       return (
         <>
-          Set {changes.join(", ")} on ticket <Code>#{action.args.ticketId}</Code>
+          Add a private note to ticket <Ref>#{action.args.ticketId}</Ref>
         </>
       );
-    }
-    case "zendesk.ticket.appendPrivateNote": {
-      const { template, bindings } = action.args;
+    case "zendesk.ticket.appendPublicReply":
       return (
         <>
-          Private note on ticket <Code>#{action.args.ticketId}</Code>
-          <span className="font-normal text-slate-500">
-            {" "}
-            from template {template.id} v{template.version}
-            {Object.entries(bindings).map(([name, b]) => (
-              <span key={name}>
-                , {name} = {typeof b === "object" ? `result of ${b.stepId} (${b.path})` : String(b)}
-              </span>
-            ))}
-          </span>
+          Reply to the customer on ticket <Ref>#{action.args.ticketId}</Ref>
         </>
       );
-    }
+    case "slack.message.postSummary":
+      return (
+        <>
+          Post a summary to Slack channel <Ref>{action.args.channelId}</Ref>
+        </>
+      );
   }
 }
 
-function Code({ children }: { children: ReactNode }) {
-  return <code className="rounded bg-slate-100 px-1 font-mono text-[0.85em]">{children}</code>;
+/** The one line of specifics under the title, in words, with no field paths or template syntax. */
+function Detail({ action }: { action: ReviewAction }) {
+  const line = "flex flex-wrap gap-x-2 text-[13px] leading-5 text-subtle";
+  switch (action.kind) {
+    case "stripe.refund.create":
+      return (
+        <p className={line}>
+          <span className="whitespace-nowrap">
+            Charge <Mono>{action.args.chargeId}</Mono>
+          </span>
+          <span className="whitespace-nowrap">· {reasonLabel[action.args.reason]}</span>
+        </p>
+      );
+    case "stripe.customer.balanceCredit":
+      return (
+        <p className={line}>
+          <span className="whitespace-nowrap">
+            For charge <Mono>{action.args.chargeId}</Mono>
+          </span>
+          <span className="whitespace-nowrap">
+            · stays on their account, not paid back to the card
+          </span>
+        </p>
+      );
+    case "zendesk.ticket.patchFields": {
+      const { set, before } = action.args;
+      const fields = (Object.keys(set) as (keyof typeof set)[]).map((f) => (
+        <span key={f} className="whitespace-nowrap">
+          {f[0]?.toUpperCase()}
+          {f.slice(1)} {before[f] ?? "unset"}{" "}
+          <Icon name="arrow" className="inline h-3 w-3 align-[-1px]" /> {set[f]}
+        </span>
+      ));
+      return <p className={`${line} gap-x-3`}>{fields}</p>;
+    }
+    case "zendesk.ticket.appendPrivateNote": {
+      const refs = Object.values(action.args.bindings).flatMap((b) =>
+        typeof b === "object" ? [b.stepId] : [],
+      );
+      return (
+        <p className={line}>
+          <span className="whitespace-nowrap">
+            Template <Mono>{action.args.template.id}</Mono> v{action.args.template.version}
+          </span>
+          {refs.length > 0 && (
+            <span className="whitespace-nowrap">· cites the result of {refs.join(", ")}</span>
+          )}
+        </p>
+      );
+    }
+    case "zendesk.ticket.appendPublicReply":
+      return (
+        <p className={line}>
+          <span className="whitespace-nowrap">
+            Template <Mono>{action.args.template.id}</Mono> v{action.args.template.version}
+          </span>
+          <span className="whitespace-nowrap">· the customer reads this</span>
+        </p>
+      );
+    case "slack.message.postSummary":
+      return (
+        <p className={line}>
+          <span className="whitespace-nowrap">
+            Template <Mono>{action.args.template.id}</Mono> v{action.args.template.version}
+          </span>
+          <span className="whitespace-nowrap">· posts once the steps below have finished</span>
+        </p>
+      );
+  }
 }
+
+/**
+ * The text that goes out, for the two steps whose words other people read. A public reply is
+ * approved word for word: `body` is part of the plan hash. A Slack summary is filled in when the
+ * run ends, so the reviewer approves the template, its fixed values and which outcomes it counts.
+ */
+function Message({ action, dropped }: { action: ReviewAction; dropped: boolean }) {
+  const box = `mt-3 rounded-lg border border-line bg-sunken/60 px-3 py-2.5 ${dropped ? "opacity-60" : ""}`;
+  switch (action.kind) {
+    case "zendesk.ticket.appendPublicReply":
+      return (
+        <figure data-testid="public-reply" className={box}>
+          <figcaption className="text-xs font-medium text-muted">
+            The customer will receive exactly this text
+          </figcaption>
+          <blockquote
+            data-testid="public-reply-text"
+            className="mt-1.5 text-[14px] leading-6 whitespace-pre-wrap text-ink"
+          >
+            {action.args.body}
+          </blockquote>
+          <p className="mt-1.5 text-xs leading-5 text-subtle">
+            A short reference tag follows it, so a send whose answer is lost can be found again
+            instead of sent twice. Once sent it can't be taken back.
+          </p>
+        </figure>
+      );
+    case "slack.message.postSummary": {
+      const entries = Object.entries(action.args.bindings);
+      return (
+        <figure data-testid="slack-summary" className={box}>
+          <figcaption className="text-xs font-medium text-muted">
+            Posted to <Mono>{action.args.channelId}</Mono> when the run ends. The wording comes from
+            template <Mono>{action.args.template.id}</Mono> v{action.args.template.version}; only
+            these values are filled in, never free text
+          </figcaption>
+          <dl className="mt-1.5 space-y-1 text-[13px] leading-5">
+            {entries.map(([name, b]) => (
+              <div key={name} className="flex flex-wrap gap-x-2">
+                <dt className="font-mono text-muted">{name}</dt>
+                <dd className="text-ink">
+                  {typeof b === "object" ? (
+                    <>
+                      the number of {b.stepIds.join(", ")} that end up{" "}
+                      {b.outcomes.map((o) => outcomeLabel[o].toLowerCase()).join(" or ")}
+                    </>
+                  ) : (
+                    String(b)
+                  )}
+                </dd>
+              </div>
+            ))}
+          </dl>
+          <p className="mt-1.5 text-xs leading-5 text-subtle">
+            A post can't be edited or taken back, and Slack can't tell us whether a post already
+            went out; the channel is read for the reference tag instead of posting again.
+          </p>
+        </figure>
+      );
+    }
+    default:
+      return null;
+  }
+}
+
+const Ref = ({ children }: { children: React.ReactNode }) => (
+  <span className="tnum rounded-md bg-sunken px-1.5 py-0.5 font-mono text-[13px] font-medium">
+    {children}
+  </span>
+);
+const Mono = ({ children }: { children: React.ReactNode }) => (
+  <code className="font-mono text-[12px] text-muted">{children}</code>
+);
