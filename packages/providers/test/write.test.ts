@@ -494,6 +494,11 @@ describe("stripeCreditWriter (T3.12)", () => {
     });
   });
 
+  it("refuses a credit that doesn't name its charge", () => {
+    const unnamed = { ...credit, args: { ...credit.args, chargeId: " " } };
+    expect(() => stripeCreditWriter(target).prepare(unnamed, KEY)).toThrow(/name the charge/);
+  });
+
   it("refuses a zero, negative or fractional credit", () => {
     const w = stripeCreditWriter(target);
     for (const amountMinor of [0, -1500, 15.5]) {

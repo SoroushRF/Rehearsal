@@ -522,6 +522,10 @@ export function stripeCreditWriter(target: WriteTarget): StripeCreditWriter {
       ) {
         throw new Error("a balance credit must be a positive integer amount");
       }
+      // An empty value would unset the tag and bring back an untagged credit.
+      if (action.args.chargeId.trim().length === 0) {
+        throw new Error("a balance credit must name the charge it remedies");
+      }
       const body = new URLSearchParams([
         ["amount", String(-action.args.amount.amountMinor)],
         ["currency", action.args.amount.currency],
