@@ -164,8 +164,8 @@ export interface RunOutcome {
   /** Set when the run stopped early on an unexpected error; later steps were not attempted. */
   error: string | null;
   /**
-   * A refused run's read-only pass left an earlier send unresolved (its read was inconclusive):
-   * keep the run retryable so it is read again, bounded, rather than recording it as final.
+   * A read-only pass (cancelled or refused run) left a send of the plan unresolved, under any
+   * revision: keep the run retryable so it is read again, bounded, rather than treating it as done.
    */
   unresolved?: boolean;
 }
@@ -1644,8 +1644,9 @@ async function applyLocked(
               outcomes.some((o) => o === "held" || o === "unknown_outcome")
             ? "held"
             : "failed";
-  // A refused run's read-only pass that left a send unresolved is retried too.
-  const unresolved = refusedAs !== undefined && (await hasInFlight(job, deps, manifest));
+  // A read-only pass (cancelled or refused run) that left a send of the plan unresolved, under
+  // any revision, is retried too, so it is read again and, bounded, handed to an operator.
+  const unresolved = reconcileOnly && (await hasInFlight(job, deps, manifest));
   // A run that stopped on an error isn't finished: the worker retries it.
   await journal
     .appendEvent(job.runId, error === null && !unresolved ? "run.finished" : "run.stopped", {

@@ -3,7 +3,7 @@ import type { PgBoss } from "pg-boss";
 import { insertRunEvent } from "./events";
 import type { Db } from "./index";
 import { APPLY_QUEUE, enqueueApply } from "./queue";
-import { runEvents, runs, stepAttempts } from "./schema";
+import { planVersions, runEvents, runs, stepAttempts } from "./schema";
 
 export type CancelResult =
   | { kind: "cancelled"; runId: string }
@@ -79,9 +79,18 @@ export async function reapStuckRuns(
             // A cancelled run still owes a read-only reconcile of any send left in flight.
             and(
               eq(runs.state, "cancelled"),
+              // Any revision of the plan: a cancelled newer revision's pass owns an older one's
+              // lost send (say an undo) once that run has ended.
               sql`exists (
                 select 1 from ${stepAttempts} a
-                where a.org_id = ${runs.orgId} and a.plan_hash = ${runs.planHash}
+                where a.org_id = ${runs.orgId}
+                  and (
+                    a.plan_hash = ${runs.planHash}
+                    or a.plan_hash in (
+                      select pv.plan_hash from ${planVersions} pv
+                      where pv.org_id = ${runs.orgId} and pv.plan_id = ${runs.planId}
+                    )
+                  )
                   and a.state in ('dispatched', 'unknown_outcome')
               )`,
             ),
@@ -130,7 +139,14 @@ export async function reapStuckRuns(
             -- A cancelled run needs an operator only while a send is still unresolved.
             r.state = 'cancelled' and exists (
               select 1 from ${stepAttempts} a
-              where a.org_id = r.org_id and a.plan_hash = r.plan_hash
+              where a.org_id = r.org_id
+                and (
+                  a.plan_hash = r.plan_hash
+                  or a.plan_hash in (
+                    select pv.plan_hash from ${planVersions} pv
+                    where pv.org_id = r.org_id and pv.plan_id = r.plan_id
+                  )
+                )
                 and a.state in ('dispatched', 'unknown_outcome')
             )
           )

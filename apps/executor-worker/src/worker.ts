@@ -99,6 +99,10 @@ export async function handleApplyJob(
       // The read-only pass stopped on an error (journal down): try it again. The run stays
       // cancelled either way, and the reaper picks it up while a send is still in flight.
       if (outcome.error !== null) throw new RetryLater(outcome.error);
+      // A send of the plan, perhaps under an older revision, still can't be read back: retry, so
+      // a later read settles it or the reaper hands it to an operator. It stays cancelled.
+      if (outcome.unresolved)
+        throw new RetryLater("cancelled; an earlier send is still unresolved");
       return { kind: "ran", outcome };
     }
     return { kind: "skipped", reason: `run is ${state}` };

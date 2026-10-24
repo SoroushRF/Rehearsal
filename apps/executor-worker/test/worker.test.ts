@@ -673,6 +673,223 @@ describe.skipIf(!process.env.DB_TESTS)(
       clock: new FakeClock(new Date(NOW.getTime() + 2 * 3_600_000).toISOString()),
     });
 
+    /**
+     * Revision 1 compensates case 2 (its note is refused), but the undo's response is lost: the
+     * undo reaches the ticket only if `lands`. Revision 2, identical, is then approved; the test
+     * runs it after its approval expired.
+     */
+    async function lostUndoThenRevision(lands: boolean) {
+      const r = await approvedRun();
+      const ctx = contextFor(r.world);
+      const zendesk = ctx.providers.zendesk;
+      if (!zendesk) throw new Error("no zendesk provider");
+      let undoLost = false;
+      const losing: WorkerContext = {
+        ...ctx,
+        providers: {
+          ...ctx.providers,
+          zendesk: {
+            ...zendesk,
+            dispatch: async (req, c) => {
+              const onTicket = req.path === "/api/v2/tickets/5532.json";
+              const comment = req.body.includes('"comment"');
+              if (onTicket && comment && req.body.includes("safe_update") && !undoLost) {
+                undoLost = true; // the undo: a guarded patch carrying its operation marker
+                if (lands) await zendesk.dispatch(req, c);
+                return { kind: "unknown" as const, error: "undo unanswered (injected)" };
+              }
+              if (onTicket && comment) {
+                return { kind: "rejected" as const, status: 422, body: {}, retryable: false };
+              }
+              return zendesk.dispatch(req, c);
+            },
+          },
+        },
+      };
+      await handleApplyJob(jobOf(r), losing);
+      expect(undoLost).toBe(true);
+      expect(r.world.tickets.get("5532")?.priority).toBe(lands ? "normal" : "high");
+
+      const manifest2 = { ...r.manifest, revision: 2, parentRevision: 1 };
+      const hash2 = planHash(manifest2);
+      await db.insert(schema.planVersions).values({
+        orgId: r.orgId,
+        planId: r.planId,
+        revision: 2,
+        planHash: hash2,
+        manifest: manifest2,
+      });
+      await db.insert(schema.approvalGrants).values({
+        id: `grant_${randomUUID()}`,
+        orgId: r.orgId,
+        planId: r.planId,
+        revision: 2,
+        planHash: hash2,
+        actorUserId: "user_finance",
+        actorSessionId: "sess",
+        roles: ["support_lead", "finance_lead"],
+        grantedAt: new Date(NOW.getTime() - 3_600_000),
+        expiresAt: new Date(NOW.getTime() + 3_600_000),
+      });
+      const rev2 = await requestApply(db, boss, {
+        orgId: r.orgId,
+        userId: "user_finance",
+        planId: r.planId,
+        revision: 2,
+        planHash: hash2,
+        now: NOW,
+      });
+      if (rev2.kind !== "accepted") throw new Error(`apply refused: ${rev2.kind}`);
+      const job2 = { ...jobOf(r), runId: rev2.runId, revision: 2, planHash: hash2 };
+      const undoAttempts = async () =>
+        (await db.select().from(schema.stepAttempts))
+          .filter((a) => a.orgId === r.orgId && a.actionId === "patch_002")
+          .filter((a) => a.request && JSON.stringify(a.request).includes("comment"))
+          .map((a) => a.state);
+      const patchReceipts2 = async () =>
+        (await db.select().from(schema.stepReceipts))
+          .filter((x) => x.orgId === r.orgId && x.planHash === hash2 && x.actionId === "patch_002")
+          .map((x) => (x.receipt as { outcome: string }).outcome);
+      return { r, job2, undoAttempts, patchReceipts2, writes: r.world.effects.length };
+    }
+
+    it("a refused newer revision records an older revision's landed undo, with no hand-off (#124)", async () => {
+      const { r, job2, undoAttempts, patchReceipts2, writes } = await lostUndoThenRevision(true);
+      expect(await undoAttempts()).toEqual(["unknown_outcome"]);
+
+      const result = await handleApplyJob(job2, expired(r.world), {
+        retryCount: 0,
+        retryLimit: 50,
+      });
+      expect(result).toMatchObject({ kind: "ran", outcome: { refusal: "grant expired" } });
+      expect(stateOf(result)).toBe("failed"); // final: nothing left for the reaper or an operator
+      expect(await runState(job2.runId)).toBe("failed");
+      expect(await patchReceipts2()).toEqual(["compensated"]);
+      expect(await undoAttempts()).toEqual(["reconciled"]);
+      expect(r.world.tickets.get("5532")?.priority).toBe("normal");
+      expect(r.world.effects.length).toBe(writes); // no fresh undo, no replay, no forward patch
+    });
+
+    it("a refused newer revision keeps an older revision's absent undo unresolved and retryable (#124)", async () => {
+      const { r, job2, undoAttempts, patchReceipts2, writes } = await lostUndoThenRevision(false);
+      await expect(
+        handleApplyJob(job2, expired(r.world), { retryCount: 50, retryLimit: 50 }),
+      ).rejects.toBeInstanceOf(RetryLater);
+      expect(await runState(job2.runId)).toBe("applying");
+      expect(await patchReceipts2()).toEqual(["held"]);
+      expect(await undoAttempts()).toEqual(["unknown_outcome"]);
+      expect(r.world.tickets.get("5532")?.priority).toBe("high");
+      expect(r.world.effects.length).toBe(writes);
+    });
+
+    describe.each([
+      ["absent", { lands: false, unreadable: false }],
+      ["unreadable", { lands: true, unreadable: true }],
+    ])("a cancelled newer revision with an older revision's %s undo (#124)", (_n, how) => {
+      /** rev 2 is cancelled before its job runs; its worker can't read Zendesk if `unreadable`. */
+      async function cancelledRev2() {
+        const lost = await lostUndoThenRevision(how.lands);
+        expect(
+          await requestCancel(db, { orgId: lost.r.orgId, runId: lost.job2.runId }),
+        ).toMatchObject({ kind: "cancelled" });
+        const ctx = contextFor(lost.r.world);
+        const zendesk = ctx.providers.zendesk;
+        if (!zendesk) throw new Error("no zendesk provider");
+        const rev2Ctx: WorkerContext = how.unreadable
+          ? {
+              ...ctx,
+              providers: {
+                ...ctx.providers,
+                zendesk: {
+                  ...zendesk,
+                  reconcile: async () => {
+                    throw new Error("zendesk read unavailable (injected)");
+                  },
+                },
+              },
+            }
+          : ctx;
+        return { ...lost, rev2Ctx };
+      }
+
+      it("its real queue delivery is retried, not completed, and it stays cancelled", async () => {
+        const { r, job2, rev2Ctx, undoAttempts, writes } = await cancelledRev2();
+        const thrown: unknown[] = [];
+        const workerId = await boss.work(
+          APPLY_QUEUE,
+          { batchSize: 100, pollingIntervalSeconds: 0.5 },
+          async (jobs) => {
+            for (const job of jobs) {
+              if ((job.data as { runId?: string }).runId !== job2.runId) continue;
+              try {
+                await handleApplyJob(job.data, rev2Ctx);
+              } catch (err) {
+                thrown.push(err);
+                throw err;
+              }
+            }
+          },
+        );
+        const jobState = async () =>
+          (
+            await db.execute<{ state: string }>(
+              sql`select state::text from pgboss.job where name = ${APPLY_QUEUE}
+                    and data->>'runId' = ${job2.runId}`,
+            )
+          ).rows.map((x) => x.state);
+        try {
+          await waitFor(async () => thrown.length > 0 && (await jobState()).includes("retry"));
+        } finally {
+          await boss.offWork(APPLY_QUEUE, { id: workerId });
+        }
+        expect(thrown[0]).toBeInstanceOf(RetryLater);
+        expect(await jobState()).not.toContain("completed");
+        expect(await runState(job2.runId)).toBe("cancelled");
+        expect(await undoAttempts()).toEqual(["unknown_outcome"]);
+        expect(r.world.effects.length).toBe(writes);
+      }, 30_000);
+
+      it("the reaper re-enqueues it, then hands it to an operator; it stays cancelled", async () => {
+        const { r, job2, rev2Ctx, undoAttempts, writes } = await cancelledRev2();
+        await expect(
+          handleApplyJob(job2, rev2Ctx, { retryCount: 50, retryLimit: 50 }),
+        ).rejects.toBeInstanceOf(RetryLater);
+        /** pg-boss gave up on its job, and the run's last update is outside the stale window. */
+        const exhaust = async () => {
+          await db.execute(sql`delete from pgboss.job where data->>'runId' = ${job2.runId}`);
+          await db
+            .update(schema.runs)
+            .set({ updatedAt: new Date(Date.now() - 3_600_000) })
+            .where(eq(schema.runs.id, job2.runId));
+        };
+        const eventsOf = async (type: string) =>
+          (await db.select().from(schema.runEvents)).filter(
+            (e) => e.runId === job2.runId && e.type === type,
+          ).length;
+        /** Sweep until this run shows `type` (another suite's sweep may be the one that does it). */
+        const sweepUntil = async (type: string, count: number) => {
+          for (let i = 0; i < 50 && (await eventsOf(type)) < count; i++) {
+            await reapStuckRuns(db, boss, { now: new Date(), staleAfterMs: 10 * 60_000 });
+            if ((await eventsOf(type)) < count) await new Promise((res) => setTimeout(res, 50));
+          }
+          expect(await eventsOf(type)).toBe(count);
+        };
+        await exhaust();
+        await sweepUntil("run.reaped", 1);
+        // It was re-enqueued MAX_REAPS times in all; the next stale sweep hands it off.
+        for (let n = 1; n < MAX_REAPS; n++) {
+          await db
+            .insert(schema.runEvents)
+            .values({ orgId: r.orgId, runId: job2.runId, type: "run.reaped", payload: {} });
+        }
+        await exhaust();
+        await sweepUntil("run.needs_operator", 1);
+        expect(await runState(job2.runId)).toBe("cancelled");
+        expect(await undoAttempts()).toEqual(["unknown_outcome"]);
+        expect(r.world.effects.length).toBe(writes);
+      }, 30_000);
+    });
+
     it("an expired grant still reads back an unreceipted refund, and sends nothing new (#121)", async () => {
       const r = await approvedRun();
       const spy = failSettle("refund_001");
