@@ -1111,7 +1111,15 @@ async function applyLocked(
       ).find((a) => a.id === attemptId);
       if (!attempt) return { kind: "inconclusive", detail: "attempt not found in the journal" };
       const result = await provider.reconcile(attempt, action, world);
-      if (result.kind === "indeterminate") return { kind: "inconclusive", detail: result.detail };
+      if (result.kind === "indeterminate") {
+        return result.contradicts
+          ? {
+              kind: "contradicted",
+              detail: `a read-back contradicts it: ${result.detail}`,
+              read: {},
+            }
+          : { kind: "inconclusive", detail: result.detail };
+      }
       if (result.kind === "not_applied") {
         return { kind: "contradicted", detail: "a read-back doesn't find the effect", read: {} };
       }
@@ -1295,6 +1303,36 @@ async function applyLocked(
     if (latest && latest.state !== "rejected") {
       const undo = await sentUndo(action);
       if (undo) return settleFromUndo(action, undo);
+      // An earlier revision's write whose read-back contradicted it has no confirmed receipt (and
+      // no bindings): read it back now rather than adopt it (T3.8).
+      const confirmedEarlier = (await journal.receiptsFor(latest.planHash)).some(
+        (r) => r.actionId === action.id && r.outcome === "confirmed",
+      );
+      if (!confirmedEarlier) {
+        let back: ReconcileResult;
+        try {
+          back = await provider.reconcile(latest, action, world);
+        } catch (err) {
+          back = { kind: "indeterminate", detail: (err as Error).message };
+        }
+        if (
+          back.kind !== "applied" ||
+          (action.kind === "stripe.refund.create" && !refundEffectMatches(action, back.effect))
+        ) {
+          return hold(action, { kind: "unresolved_outcome", attemptId: latest.id });
+        }
+        return settle(
+          action,
+          receiptFor(action, "confirmed", {
+            providerRef: back.providerRef,
+            observedEffect: back.effect,
+            limitations: [
+              `applied by attempt ${latest.id} under plan hash ${latest.planHash}; read back, not re-sent`,
+            ],
+          }),
+          { results: bindable(back.effect) },
+        );
+      }
       // Confirmed under an earlier revision of this plan with the same content: adopt its results.
       const earlier = (await journal.bindings(latest.planHash)).filter(
         (b) => b.ref.stepId === latest.actionId,

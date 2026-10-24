@@ -213,6 +213,7 @@ export function stripeWriter(target: WriteTarget): ProviderWriter {
             return {
               kind: "indeterminate",
               detail: "refund read contradicts the journaled operation",
+              contradicts: true,
             };
           }
           return {
