@@ -257,6 +257,7 @@ export function stripeWriter(target: WriteTarget): ProviderWriter {
             return {
               kind: "indeterminate",
               detail: "refund read contradicts the journaled operation",
+              contradicts: true,
             };
           }
           return {
@@ -583,6 +584,7 @@ export function stripeCreditWriter(target: WriteTarget): StripeCreditWriter {
             return {
               kind: "indeterminate",
               detail: "credit read contradicts the journaled operation",
+              contradicts: true,
             };
           }
           return {

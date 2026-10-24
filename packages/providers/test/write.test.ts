@@ -549,6 +549,7 @@ describe("stripeCreditWriter (T3.12)", () => {
     expect(await w.reconcile(attempt, credit, CTX)).toMatchObject({
       kind: "indeterminate",
       detail: "credit read contradicts the journaled operation",
+      contradicts: true,
     });
     reply = page([]);
     expect(await w.reconcile(attempt, credit, CTX)).toEqual({ kind: "not_applied" });
