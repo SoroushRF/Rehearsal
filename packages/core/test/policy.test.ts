@@ -153,3 +153,13 @@ describe("policy v2: refund or invoice credit (T2.18)", () => {
     );
   });
 });
+
+describe("policy v3 file (decision 0011)", () => {
+  it("is v2 plus a dual-approval line at the finance threshold", () => {
+    expect(scenario("policy.v3.json")).toEqual({
+      ...scenario("policy.v2.json"),
+      version: 3,
+      dualApprovalMinor: 10_000,
+    });
+  });
+});
