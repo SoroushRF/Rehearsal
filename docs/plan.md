@@ -14,6 +14,8 @@ Team of four on four feature tracks (see [AGENTS.md](../AGENTS.md#tracks)). Date
 
 ## Trim decision (Oct 21 evening)
 
+> **Reversed on Oct 24** by [decision 0009](decisions/0009-reopen-full-scope.md): the full scope is back, without ML ([0008](decisions/0008-ml-out-of-hackathon-scope.md)). The freeze is lifted, and deploy and the video wait for the full version. The correctness checks below still hold.
+
 If M2 isn't met, switch to the trimmed scope:
 - No Slack, SurrealDB, Expo or model serving.
 - The ML experiment still finishes as a report.
@@ -51,7 +53,7 @@ Until a dependency lands, build against `@rehearsal/testkit` fixtures and the po
 
 See [decisions/0001](decisions/0001-open-team-decisions.md):
 1. Can the model clear soft holds?
-2. Slack in the trimmed scope?
+2. ~~Slack in the trimmed scope?~~ Settled: in ([0009](decisions/0009-reopen-full-scope.md))
 3. Closing line
 4. Pivot clause
 5. Deploy target

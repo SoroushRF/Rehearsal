@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { RunReport } from "../src/components/RunTimeline";
 import { fixtureBundles } from "../src/fixtures";
-import { describeEvent, latestReceipts, type RunView } from "../src/runs";
+import { describeEvent, explainReceipt, latestReceipts, type RunView } from "../src/runs";
 
 const HASH = "a".repeat(64);
 const manifest = fixtureBundles[0]?.bundle.manifest ?? expect.unreachable();
@@ -137,5 +137,62 @@ describe("run log", () => {
     [event("something.new", {}), "something.new"],
   ])("describes %j", (e, line) => {
     expect(describeEvent(e)).toBe(line);
+  });
+});
+
+describe("a confirmed receipt claims a read-back only when one happened", () => {
+  const confirmed = (limitations: string[]) =>
+    explainReceipt(
+      receipt("refund_001", {
+        providerRef: { vendor: "stripe", kind: "refund", id: "re_1" },
+        limitations,
+      }),
+    );
+
+  // The executor's limitation lines (packages/core/src/executor.ts), one per confirmed path.
+  it.each([
+    ["read back after the write", "read back from the provider after the write"],
+    [
+      "reconciled from a lost response",
+      "outcome of attempt att_1 (key op_1) found by reading the provider; not re-sent",
+    ],
+    [
+      "resolved by another revision's run",
+      "applied by attempt att_1, resolved by another revision's run; read back, not re-sent",
+    ],
+    [
+      "an earlier revision's unconfirmed write",
+      `applied by attempt att_1 under plan hash ${HASH}; read back, not re-sent`,
+    ],
+  ])("says read back when %s", (_, line) => {
+    expect(confirmed([line, "retried 2 times"])).toBe("Applied and read back (refund re_1).");
+  });
+
+  it.each([
+    [
+      "adopted from an earlier revision",
+      `applied by attempt att_1 under plan hash ${HASH}; not re-sent`,
+    ],
+    [
+      "recorded before read-backs existed",
+      "effect taken from the write response; no read-back yet",
+    ],
+  ])("says only applied when %s", (_, line) => {
+    expect(confirmed([line])).toBe("Applied (refund re_1).");
+  });
+
+  it("says the read-back was inconclusive when it was", () => {
+    expect(
+      confirmed(["effect taken from the write response; read-back inconclusive: read failed"]),
+    ).toBe("Applied: the provider confirmed the write, but reading it back was inconclusive.");
+  });
+
+  it("drops the reference when there is none", () => {
+    expect(explainReceipt(receipt("note_001", {}))).toBe("Applied.");
+    expect(
+      explainReceipt(
+        receipt("note_001", { limitations: ["read back from the provider after the write"] }),
+      ),
+    ).toBe("Applied and read back.");
   });
 });

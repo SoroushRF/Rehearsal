@@ -7,6 +7,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.1.0",
+    "@google/genai": "2.30.0",
     "@rehearsal/contracts": "workspace:*",
     "@rehearsal/core": "workspace:*",
     "@rehearsal/planner": "workspace:*",

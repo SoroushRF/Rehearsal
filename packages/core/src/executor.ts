@@ -15,11 +15,17 @@ import {
   ZendeskPriority,
   ZendeskStatus,
 } from "@rehearsal/contracts";
+import {
+  dualApprovalStatus,
+  explainShortfall,
+  liveGrantsFor,
+  requiresDualApproval,
+} from "./approvals";
 import { bindingKey } from "./bindings";
 import { topoOrder, validateGraph } from "./dag";
 import { refundEffectMatches } from "./effects";
 import { planHash as computePlanHash, fingerprint, sha256Hex } from "./hash";
-import { type BillingPolicyV1, evaluateBillingPolicy } from "./policy";
+import { type BillingPolicy, evaluateBillingPolicy } from "./policy";
 import type {
   Clock,
   DispatchResult,
@@ -59,6 +65,11 @@ export interface ApplyStore {
     revision: number,
   ): Promise<{ planHash: string; manifest: unknown } | null>;
   loadGrant(orgId: string, approvalId: string): Promise<ApprovalGrant | null>;
+  /**
+   * Every grant ever made for this plan hash, live or not; admission filters. Needed only for a
+   * plan that policy says needs two approvers. A store without it refuses such a plan.
+   */
+  loadGrantsForPlanHash?(orgId: string, planHash: string): Promise<ApprovalGrant[]>;
   /**
    * Exclusive apply lock for one plan (all its revisions). Returns a release function, or null if
    * another run of this plan holds it. Two revisions applying at once could both send one key.
@@ -120,7 +131,7 @@ export interface ExecutorDeps {
   /** Operational world tenant per vendor. */
   worlds: Partial<Record<Vendor, WorldContext>>;
   clock: Clock;
-  policies: readonly BillingPolicyV1[];
+  policies: readonly BillingPolicy[];
   newId: (prefix: string) => string;
   guard?: StepGuard;
   compensate?: Compensator;
@@ -388,10 +399,24 @@ async function admit(
   }
   if (grantedAt > now) return { ok: false, detail: "grant is dated in the future" };
   if (expiresAt <= now) return { ok: false, detail: "grant expired" };
-  const missing = [...new Set(manifest.actions.map((a) => a.requiredRole))].filter(
-    (r) => !grant.roles.includes(r),
-  );
-  if (missing.length > 0) return { ok: false, detail: `grant lacks roles: ${missing.join(", ")}` };
+  if (requiresDualApproval(manifest, deps.policies)) {
+    // Two live grants from two different users replace the single grant holding every role.
+    if (!deps.store.loadGrantsForPlanHash) {
+      return { ok: false, detail: "this plan needs two approvers and the store can't list grants" };
+    }
+    const all = await deps.store.loadGrantsForPlanHash(job.orgId, job.planHash);
+    const status = dualApprovalStatus(
+      liveGrantsFor(all, { ...manifest, planHash: job.planHash }, deps.clock.now()),
+    );
+    if (!status.satisfied) return { ok: false, detail: explainShortfall(status) };
+  } else {
+    const missing = [...new Set(manifest.actions.map((a) => a.requiredRole))].filter(
+      (r) => !grant.roles.includes(r),
+    );
+    if (missing.length > 0) {
+      return { ok: false, detail: `grant lacks roles: ${missing.join(", ")}` };
+    }
+  }
 
   const graph = validateGraph(manifest.actions);
   if (graph.length > 0) return { ok: false, detail: `invalid graph: ${graph[0]?.detail}` };
@@ -1064,6 +1089,57 @@ async function applyLocked(
   };
 
   /**
+   * Read a just-confirmed write back from the provider (T3.8): the refund by its operation key,
+   * the note by its marker, the patch's fields. `read` matches the approved effect; `contradicted`
+   * means the provider's records don't show what it just confirmed; `inconclusive` means the read
+   * couldn't tell (it failed, or someone else wrote the field since), so the write response stands.
+   */
+  const readBack = async (
+    action: Action,
+    attemptId: string,
+    provider: ProviderPort,
+    world: WorldContext,
+    written: EntityRef,
+  ): Promise<
+    | { kind: "read"; effect: Record<string, unknown> }
+    | { kind: "contradicted"; detail: string; read: Record<string, unknown> }
+    | { kind: "inconclusive"; detail: string }
+  > => {
+    try {
+      const attempt = (
+        await journal.attemptsForKey(operationKey(job.orgId, job.planId, action))
+      ).find((a) => a.id === attemptId);
+      if (!attempt) return { kind: "inconclusive", detail: "attempt not found in the journal" };
+      const result = await provider.reconcile(attempt, action, world);
+      if (result.kind === "indeterminate") {
+        return result.contradicts
+          ? {
+              kind: "contradicted",
+              detail: `a read-back contradicts it: ${result.detail}`,
+              read: {},
+            }
+          : { kind: "inconclusive", detail: result.detail };
+      }
+      if (result.kind === "not_applied") {
+        return { kind: "contradicted", detail: "a read-back doesn't find the effect", read: {} };
+      }
+      if (
+        action.kind === "stripe.refund.create" &&
+        (!refundEffectMatches(action, result.effect) || result.providerRef.id !== written.id)
+      ) {
+        return {
+          kind: "contradicted",
+          detail: "the refund read back doesn't match the approved refund",
+          read: result.effect,
+        };
+      }
+      return { kind: "read", effect: result.effect };
+    } catch (err) {
+      return { kind: "inconclusive", detail: `read failed: ${(err as Error).message}` };
+    }
+  };
+
+  /**
    * `recoveryFor` names an undone predecessor this action depends on: the action may only have its
    * earlier send recorded (confirmed by a read, or held), never a new one.
    */
@@ -1227,6 +1303,36 @@ async function applyLocked(
     if (latest && latest.state !== "rejected") {
       const undo = await sentUndo(action);
       if (undo) return settleFromUndo(action, undo);
+      // An earlier revision's write whose read-back contradicted it has no confirmed receipt (and
+      // no bindings): read it back now rather than adopt it (T3.8).
+      const confirmedEarlier = (await journal.receiptsFor(latest.planHash)).some(
+        (r) => r.actionId === action.id && r.outcome === "confirmed",
+      );
+      if (!confirmedEarlier) {
+        let back: ReconcileResult;
+        try {
+          back = await provider.reconcile(latest, action, world);
+        } catch (err) {
+          back = { kind: "indeterminate", detail: (err as Error).message };
+        }
+        if (
+          back.kind !== "applied" ||
+          (action.kind === "stripe.refund.create" && !refundEffectMatches(action, back.effect))
+        ) {
+          return hold(action, { kind: "unresolved_outcome", attemptId: latest.id });
+        }
+        return settle(
+          action,
+          receiptFor(action, "confirmed", {
+            providerRef: back.providerRef,
+            observedEffect: back.effect,
+            limitations: [
+              `applied by attempt ${latest.id} under plan hash ${latest.planHash}; read back, not re-sent`,
+            ],
+          }),
+          { results: bindable(back.effect) },
+        );
+      }
       // Confirmed under an earlier revision of this plan with the same content: adopt its results.
       const earlier = (await journal.bindings(latest.planHash)).filter(
         (b) => b.ref.stepId === latest.actionId,
@@ -1397,32 +1503,52 @@ async function applyLocked(
         }
         if (parsed && result.kind === "confirmed") {
           const { providerRef, results, observed } = parsed;
+          const transition: SettleTransition = {
+            attemptId: current,
+            from: "dispatched",
+            to: "confirmed",
+            patch: { providerStatus: result.status, settledAt: at() },
+          };
+          const replayed = unknownSends.map((id) => ({
+            attemptId: id,
+            from: "unknown_outcome" as const,
+            to: "reconciled" as const,
+            patch: { settledAt: at() },
+          }));
+          // Read the effect back before the receipt is final (T3.8).
+          const back = await readBack(action, current, provider, world, providerRef);
+          if (back.kind === "contradicted") {
+            // The provider said it worked, but its own records don't show it. Neither side is
+            // assumed: the step is held (dependents wait), nothing is bound, and a later run reads
+            // this confirmed attempt back again before it ever counts.
+            return settle(
+              action,
+              receiptFor(action, "held", {
+                providerRef,
+                observedEffect: { written: observed, read: back.read },
+                holdReason: { kind: "unresolved_outcome", attemptId: current },
+                limitations: [
+                  `the provider confirmed the write, but ${back.detail}`,
+                  ...retried(n),
+                ],
+              }),
+              { transitions: replayed, transition },
+            );
+          }
           return settle(
             action,
             receiptFor(action, "confirmed", {
               providerRef,
-              observedEffect: observed,
+              observedEffect: back.kind === "read" ? { ...observed, ...back.effect } : observed,
               limitations: [
-                "effect taken from the write response; no read-back yet",
+                back.kind === "read"
+                  ? "read back from the provider after the write"
+                  : `effect taken from the write response; read-back inconclusive: ${back.detail}`,
                 ...retried(n),
               ],
             }),
-            {
-              // The replay answered for the earlier unknown sends of the same bytes and key.
-              transitions: unknownSends.map((id) => ({
-                attemptId: id,
-                from: "unknown_outcome" as const,
-                to: "reconciled" as const,
-                patch: { settledAt: at() },
-              })),
-              transition: {
-                attemptId: current,
-                from: "dispatched",
-                to: "confirmed",
-                patch: { providerStatus: result.status, settledAt: at() },
-              },
-              results,
-            },
+            // The replay answered for the earlier unknown sends of the same bytes and key.
+            { transitions: replayed, transition, results },
           );
         }
       }

@@ -4,6 +4,7 @@
       "**",
       "!!**/.claude",
       "!**/dist",
+      "!**/dist-e2e",
       "!**/node_modules",
       "!ml",
       "!docs/source",
@@ -19,6 +20,11 @@
   "linter": {
     "rules": {
       "recommended": true
+    }
+  },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
     }
   }
 }

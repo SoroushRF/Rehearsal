@@ -4,6 +4,22 @@ import { and, eq, inArray } from "drizzle-orm";
 import type { Db } from "./index";
 import { approvalGrants, planVersions, runs } from "./schema";
 
+export function toApprovalGrant(row: typeof approvalGrants.$inferSelect): ApprovalGrant {
+  return {
+    id: row.id,
+    orgId: row.orgId,
+    planId: row.planId,
+    revision: row.revision,
+    planHash: row.planHash,
+    actorUserId: row.actorUserId,
+    actorSessionId: row.actorSessionId,
+    roles: row.roles as Role[],
+    grantedAt: row.grantedAt.toISOString(),
+    expiresAt: row.expiresAt.toISOString(),
+    revokedAt: row.revokedAt?.toISOString() ?? null,
+  };
+}
+
 /**
  * The executor's read access to runs, plans and grants, plus the per-plan apply lock. Every query
  * is scoped to the org passed in; nothing here trusts the job payload.
@@ -45,20 +61,15 @@ export class PgApplyStore implements ApplyStore {
       .select()
       .from(approvalGrants)
       .where(and(eq(approvalGrants.orgId, orgId), eq(approvalGrants.id, approvalId)));
-    if (!row) return null;
-    return {
-      id: row.id,
-      orgId: row.orgId,
-      planId: row.planId,
-      revision: row.revision,
-      planHash: row.planHash,
-      actorUserId: row.actorUserId,
-      actorSessionId: row.actorSessionId,
-      roles: row.roles as Role[],
-      grantedAt: row.grantedAt.toISOString(),
-      expiresAt: row.expiresAt.toISOString(),
-      revokedAt: row.revokedAt?.toISOString() ?? null,
-    };
+    return row ? toApprovalGrant(row) : null;
+  }
+
+  async loadGrantsForPlanHash(orgId: string, planHash: string): Promise<ApprovalGrant[]> {
+    const rows = await this.db
+      .select()
+      .from(approvalGrants)
+      .where(and(eq(approvalGrants.orgId, orgId), eq(approvalGrants.planHash, planHash)));
+    return rows.map(toApprovalGrant);
   }
 
   /**

@@ -11,14 +11,34 @@ import { useQuery } from "@tanstack/react-query";
 import { type ReactNode, useCallback } from "react";
 import { z } from "zod";
 import { Badge } from "./components/Badge";
+import { Button } from "./components/ui";
 import { roleLabel } from "./format";
 import { identityOf } from "./identity";
 
 /** Without a publishable key the app runs read-only on fixtures: no sign-in, no commands. */
 export const clerkKey: string | undefined = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || undefined;
 
+/** Clerk's own components (sign-in, user menu, org switcher) follow the app's colors and type. */
+const clerkAppearance = {
+  variables: {
+    colorPrimary: "#4338ca",
+    colorText: "#0e1626",
+    colorTextSecondary: "#465065",
+    borderRadius: "0.5rem",
+    fontFamily: '"Inter Variable", ui-sans-serif, system-ui, sans-serif',
+    fontSize: "0.9375rem",
+  },
+  elements: { organizationSwitcherTrigger: { padding: "0.25rem 0.5rem" } },
+} as const;
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  return clerkKey ? <ClerkProvider publishableKey={clerkKey}>{children}</ClerkProvider> : children;
+  return clerkKey ? (
+    <ClerkProvider publishableKey={clerkKey} appearance={clerkAppearance}>
+      {children}
+    </ClerkProvider>
+  ) : (
+    children
+  );
 }
 
 /**
@@ -43,26 +63,27 @@ const Me = z.object({ userId: z.string(), orgId: z.string(), roles: z.array(Role
 export function AccountBar() {
   if (!clerkKey) {
     return (
-      <p className="text-xs text-slate-500">
-        Sign-in isn't configured here, so plans are read-only fixtures.
-      </p>
+      <Badge
+        tone="warn"
+        icon="eye"
+        hint="Sign-in isn't configured here, so plans are read-only fixtures."
+      >
+        Read-only fixtures
+      </Badge>
     );
   }
   return (
-    <div className="flex flex-wrap items-center gap-3">
+    <div className="flex items-center gap-2.5 sm:gap-3">
       <Show when="signed-out">
         <SignInButton mode="modal">
-          <button
-            type="button"
-            className="rounded bg-slate-900 px-3 py-1.5 text-sm font-medium text-white"
-          >
+          <Button variant="primary" size="sm">
             Sign in
-          </button>
+          </Button>
         </SignInButton>
       </Show>
       <Show when="signed-in">
-        <OrganizationSwitcher hidePersonal />
         <VerifiedRoles />
+        <OrganizationSwitcher hidePersonal />
         <UserButton />
       </Show>
     </div>
@@ -86,13 +107,13 @@ function VerifiedRoles() {
   });
 
   if (!orgId) return <Badge tone="warn">Choose an organization</Badge>;
-  if (me.isPending) return <span className="text-xs text-slate-500">checking role…</span>;
+  if (me.isPending) return <span className="text-xs text-subtle">checking role…</span>;
   if (me.isError || me.data === null) return <Badge tone="danger">Role not verified</Badge>;
   if (me.data.roles.length === 0) return <Badge tone="neutral">Read only</Badge>;
   return (
-    <span data-testid="verified-roles" className="flex gap-1">
+    <span data-testid="verified-roles" className="flex flex-wrap gap-1">
       {me.data.roles.map((r) => (
-        <Badge key={r} tone={r === "finance_lead" ? "info" : "neutral"}>
+        <Badge key={r} tone={r === "finance_lead" ? "info" : "neutral"} icon="users">
           {roleLabel[r]}
         </Badge>
       ))}
