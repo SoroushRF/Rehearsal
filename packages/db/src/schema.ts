@@ -63,6 +63,12 @@ export const approvalGrants = pgTable("approval_grants", {
   grantedAt: timestamp("granted_at", { withTimezone: true }).notNull(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  /**
+   * The policy files the plan was checked against when it was approved, verbatim, so an old run
+   * shows the rules it was approved under even after the policy file changes. Null on a grant
+   * made before this column existed.
+   */
+  policies: jsonb("policies").$type<{ id: string; version: number; contents: unknown }[]>(),
 });
 
 export const stepAttempts = pgTable(

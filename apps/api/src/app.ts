@@ -5,6 +5,7 @@ import { CONTRACTS_VERSION, type HealthResponse } from "@rehearsal/contracts";
 import Fastify, { type FastifyReply } from "fastify";
 import { type ApplyDeps, registerApplyRoute } from "./apply";
 import { type ApprovalDeps, registerApprovalRoutes } from "./approvals";
+import { registerAuditRoute } from "./audit";
 import { type ReviewerResolver, registerMeRoute } from "./auth";
 import { registerCancelRoute } from "./cancel";
 import { type PlanDeps, registerPlanRoutes } from "./plans";
@@ -66,9 +67,12 @@ export function buildApp(
     app.post("/api/plans/:id/approvals", unavailable);
     app.post("/api/plans/:id/approvals/:grantId/revoke", unavailable);
   }
-  if (deps.runs) registerRunRoutes(app, deps.runs);
-  else {
+  if (deps.runs) {
+    registerRunRoutes(app, deps.runs);
+    registerAuditRoute(app, deps.runs);
+  } else {
     app.get("/api/runs/:id/events", unavailable);
+    app.get("/api/runs/:id/audit", unavailable);
     app.get("/api/plans/:id/runs", unavailable);
   }
 
