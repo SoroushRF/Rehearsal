@@ -4,7 +4,10 @@ import { planHash } from "@rehearsal/core";
 import { createDb, migrateDb, requestApply, schema, startQueue } from "@rehearsal/db";
 import { billingManifest } from "@rehearsal/testkit";
 import { eq } from "drizzle-orm";
-import { adminOrThrow, bind, fixture, getJson, report } from "../inject/session";
+import chargeFixture from "../../scenarios/billing/fixtures/stripe.charge.json" with {
+  type: "json",
+};
+import { adminOrThrow, bind, getJson, report } from "../inject/session";
 
 /**
  * End-to-end smoke for the executor worker. Seeds one CAD charge in the operational world of
@@ -22,7 +25,7 @@ const chargeId = `ch_smoke${randomUUID().replaceAll("-", "").slice(0, 12)}`;
 await adminOrThrow(stripe, "/inject", {
   charges: [
     {
-      ...fixture("stripe.charge.json"),
+      ...chargeFixture,
       id: chargeId,
       amount: 4210,
       amount_captured: 4210,
