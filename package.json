@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "pnpm --parallel --filter @rehearsal/api --filter @rehearsal/web dev",
     "build": "pnpm -r build",
-    "typecheck": "pnpm -r typecheck",
+    "typecheck": "pnpm -r typecheck && tsc --project scripts/ci/tsconfig.json",
     "test": "vitest run",
     "test:core": "vitest run --project core --project contracts --project testkit",
     "test:providers": "vitest run --project providers",
@@ -42,6 +42,7 @@
     "drizzle-orm": "^0.45.4",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
-    "vitest": "^5.0.5"
+    "vitest": "^5.0.5",
+    "zod": "4.6.7"
   }
 }

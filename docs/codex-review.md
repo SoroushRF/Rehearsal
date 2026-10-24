@@ -1,43 +1,61 @@
-# Codex reviews requested from SoroushRF
+# Codex review admission
 
-The `requested-codex-review` workflow posts `@codex review` when GitHub requests
-or re-requests a review from **SoroushRF**. Other reviewers, PR opens, and pushes
-do not trigger it. Team review requests do not count as direct user requests.
-The workflow must be merged into the default branch before it can run.
+Normal use: request **SoroushRF** as a reviewer, self-review the change, and add
+**ai-review-ready**. The dispatcher waits for a non-draft PR and successful
+`ci.yml` for the current head. Removing SoroushRF cancels an ordinary queued
+request. Removing readiness pauses it. Pushes update a pending request's head;
+there is no automatic review of later pushes after the request was dispatched.
+Re-request review or remove/re-add the readiness label to queue a new request.
 
-## One-time setup
+## Usage policy
 
-1. Connect `SoroushRF/Rehearsal` to Codex under the ChatGPT account whose allowance
-   should cover reviews. Keep automatic reviews off in
-   [Codex review settings](https://chatgpt.com/settings/code-review).
-2. As SoroushRF, create a fine-grained GitHub personal access token with access to
-   **only Rehearsal**, **Pull requests: Read and write**, and an expiry date.
-   GitHub includes Metadata read access. No Contents or Workflows write access
-   is required.
-3. Save it as the repository Actions secret `CODEX_REVIEW_GITHUB_TOKEN`. Never
-   commit it. An OpenAI API key or ChatGPT login cache is not needed.
-4. Merge the workflow through a PR, then request SoroushRF on a representative
-   PR authored by another contributor. Check the Actions run, the comment from
-   SoroushRF, and Codex's reaction and completed review.
+- At most **12 starts per rolling 5 hours**, across this repository. No daily or
+  separate hourly limit. Overrides also count against subsequent normal starts.
+- A **60-minute per-PR cooldown** applies to normal requests.
+- A commit already dispatched by this workflow is not automatically reviewed again.
+- CI completion and an approximately 10-minute scheduled sweep drain deferred work.
+  GitHub schedules can be delayed. Oldest PRs are considered first.
+- The queue comment and workflow summary say **not reviewed** while deferred.
+  Dispatch only requests a review; it is not an approval or a completed review.
 
-Posting the trigger as the linked GitHub user is intended to use that user's
-Codex subscription. The automated-comment path and account attribution still
-need a live check; a successful Actions job proves only that the comment posted.
-Do not call setup complete until Codex actually responds. The review is Codex's
-feedback; it does not submit an approval as SoroushRF.
+Only **SoroushRF**, verified by immutable GitHub user ID **98989697**, may post this
+exact, unedited top-level PR comment:
 
-## Operation
+```text
+/codex-review-now
+```
 
-The job verifies the token belongs to SoroushRF and rechecks that the PR is open
-and still requests that user. Retrying the same workflow run does not duplicate
-its comment; an explicit new review request can post another trigger. A request
-that is already running is not cancelled by removing the reviewer.
+It bypasses the quota, cooldown, duplicate-commit check, and normal request/label
+requirements. It still waits for non-draft and successful current-head CI. An
+owner command stays pending until then. Re-running the workflow cannot reuse a
+consumed command; multiple pending owner commands coalesce into one latest request.
+Other users' commands and quoted/edited commands cannot grant an override.
 
-The job never checks out PR code, runs PR commands, or receives product secrets.
-It uses a pinned GitHub action and no permissions for the default Actions token.
-The personal token can comment on PRs, so keep this workflow's trusted code under
-review. Replace the secret when the token expires or is revoked.
+## Setup and safety
 
-If the comment posts but Codex does not respond, verify the GitHub connection,
-manual review access, and subscription allowance before re-requesting a review.
+1. Keep automatic reviews off in [Codex review settings](https://chatgpt.com/settings/code-review).
+2. Store a fine-grained SoroushRF token as `CODEX_REVIEW_GITHUB_TOKEN`, restricted to
+   Rehearsal and **Pull requests: Read and write** (plus implicit Metadata read).
+   The secret's presence was verified October 24; runtime permissions still need
+   a live check. No OpenAI API key or ChatGPT login cache is used.
+3. Merge the workflow through a PR after the required cross-track review. Its code
+   and script are always loaded from the default branch, never the PR branch.
+4. Test a representative ready PR authored by another contributor: request, CI,
+   queue/dispatch comment, then Codex's completed review. Until then the full
+   admission path remains fixture-tested, not live-verified.
+
+The narrow personal token writes comments; the default Actions token only reads
+code and CI. There is no PR checkout, PR dependency install, or product-secret access.
+Only pinned Zod is installed for runtime validation, with lifecycle scripts disabled.
+Pinned actions run the TypeScript directly on Node 24. Global Actions concurrency
+serializes budget decisions; GitHub timelines and owner-authored comments persist
+requests even when pending jobs are replaced. The trigger comment itself is the
+dispatch ledger, so a lost response is reconciled by reading before another post.
+Queued work is rechecked for the latest head immediately before dispatch.
+
+The ledger counts SoroushRF-authored `@codex review` trigger comments, including
+manual comments, on open or closed PRs. It cannot prevent someone from directly
+invoking Codex outside this workflow. These limits bound requests, not exact token
+spend or total account usage across other repositories. The workflow does not
+cancel already-running hosted reviews or configure their model/reasoning effort.
 See the [official Codex review guide](https://learn.chatgpt.com/docs/third-party/github).

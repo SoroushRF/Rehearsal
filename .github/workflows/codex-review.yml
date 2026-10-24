@@ -1,69 +1,61 @@
 name: requested-codex-review
 
-# Run trusted default-branch code only. Never check out or execute the PR here.
 on:
   pull_request_target:
-    types: [review_requested]
+    types: [review_requested, labeled, ready_for_review]
+  issue_comment:
+    types: [created]
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+  schedule:
+    - cron: "7,17,27,37,47,57 * * * *"
+  workflow_dispatch:
 
-permissions: {}
+permissions:
+  contents: read
+  actions: read
 
 jobs:
-  request-review:
+  dispatch:
     if: >-
-      github.event.requested_reviewer.login == 'SoroushRF' &&
-      github.event.pull_request.state == 'open'
+      (github.event_name == 'pull_request_target' &&
+        ((github.event.action == 'review_requested' && github.event.requested_reviewer.login == 'SoroushRF') ||
+         (github.event.action == 'labeled' && github.event.label.name == 'ai-review-ready') ||
+         github.event.action == 'ready_for_review')) ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
+        github.event.comment.user.id == 98989697 && github.event.comment.body == '/codex-review-now') ||
+      github.event_name == 'workflow_run' || github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && github.actor_id == '98989697')
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
+    # Serialize the repository budget after filtering unrelated/comment-generated events.
     concurrency:
-      group: requested-codex-review-${{ github.event.pull_request.number }}
+      group: codex-review-admission
       cancel-in-progress: false
     steps:
-      - name: Check review token is configured
+      # Always load trusted default-branch automation, including on fork PRs/comments.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: scripts/ci
+      - name: Install pinned validation library (no lifecycle scripts or PR dependencies)
+        run: npm install --prefix scripts/ci --no-save --package-lock=false --ignore-scripts --no-audit --no-fund zod@4.6.7
+      - uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8, Node 24
         env:
           REVIEW_TOKEN: ${{ secrets.CODEX_REVIEW_GITHUB_TOKEN }}
-        run: |
-          if [ -z "$REVIEW_TOKEN" ]; then
-            echo "::error::Add CODEX_REVIEW_GITHUB_TOKEN: a SoroushRF fine-grained GitHub token for Rehearsal with Pull requests read/write. See docs/codex-review.md."
-            exit 1
-          fi
-      - name: Request Codex review as SoroushRF
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
-          github-token: ${{ secrets.CODEX_REVIEW_GITHUB_TOKEN }}
+          # The ledger reconciles unknown comment outcomes; never blindly retry a post.
+          retries: 0
           script: |
-            const expectedLogin = 'SoroushRF';
-            const { data: user } = await github.rest.users.getAuthenticated();
-            if (user.login.toLowerCase() !== expectedLogin.toLowerCase()) {
-              throw new Error('CODEX_REVIEW_GITHUB_TOKEN must belong to SoroushRF.');
-            }
-
-            const { owner, repo } = context.repo;
-            const pull_number = context.payload.pull_request.number;
-            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number });
-            if (pr.state !== 'open' || !pr.requested_reviewers.some(
-              reviewer => reviewer.login.toLowerCase() === expectedLogin.toLowerCase()
-            )) {
-              core.info('The PR is closed or SoroushRF is no longer requested; skipping.');
-              return;
-            }
-
-            // runId survives job retries; a new review request gets a new runId.
-            const marker = `<!-- codex-review-request:${context.runId} -->`;
-            for await (const page of github.paginate.iterator(
-              github.rest.issues.listComments,
-              { owner, repo, issue_number: pull_number, per_page: 100 }
-            )) {
-              if (page.data.some(comment =>
-                comment.user?.login.toLowerCase() === expectedLogin.toLowerCase() &&
-                comment.body?.includes(marker)
-              )) {
-                core.info('This review request already has a Codex comment; skipping.');
-                return;
-              }
-            }
-
-            const { data: comment } = await github.rest.issues.createComment({
-              owner, repo, issue_number: pull_number,
-              body: `@codex review\n\n${marker}`
+            if (!process.env.REVIEW_TOKEN) throw new Error('Missing CODEX_REVIEW_GITHUB_TOKEN');
+            const account = new github.constructor({
+              auth: process.env.REVIEW_TOKEN,
+              retry: { enabled: false },
+              request: { retries: 0, timeout: 30000 }
             });
-            core.info(`Requested Codex review: ${comment.html_url}`);
+            const { dispatch } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/ci/codex-review.ts`);
+            const results = await dispatch(github, account, context);
+            await core.summary.addHeading('Codex admission — not a review approval')
+              .addList(results).write();

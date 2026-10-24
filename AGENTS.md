@@ -120,6 +120,47 @@ No `develop` branch and no long-lived per-track branches. Rebase on `main` at le
 
 **Integrator of the day.** Keeps `main` green, merges approved PRs promptly, runs the end-to-end demo on `main` each evening and posts the result in team chat.
 
+## Code Review Rules
+
+Review the PR against its base and current head. Trace affected callers, dependencies,
+and trust boundaries as far as needed to establish correctness; expand investigation
+when the evidence warrants it. Prioritize concrete regressions and the non-negotiable
+invariants above, especially exact-hash approval, credential isolation, money, stale
+guards, journal-before-dispatch, and uncertain-write reconciliation.
+
+Use targeted searches and relevant tests. Reuse CI evidence where applicable, and
+distinguish inspected code, executed checks, fixture evidence, and live validation.
+Avoid unrelated refactoring, speculative enhancements, and mechanical checks already
+enforced by CI. Report every distinct actionable finding once, with severity, precise
+location, triggering condition, and consequence. Keep explanations concise without
+limiting the number of valid findings or investigation depth. State unresolved
+verification gaps. A clean review is not proof that unexecuted integrations work.
+
+### When to request a Codex review
+
+- Prioritize contracts, canonicalization, approvals/auth, executor admission, guards,
+  journal/reconciliation, provider writes, money, precedent trust, and credentials.
+- Request review at a stable feature checkpoint after self-review and green CI.
+  Supply the design, relevant invariants, and related PRs. Preserve small PRs; do not
+  merge unreviewed risky follow-up changes because an earlier version was reviewed.
+- Cosmetic layout, straightforward docs, and formatting usually need CI and human
+  review only. Escalate changes that alter product meaning or safety behavior.
+- For automation, request **SoroushRF** and add **ai-review-ready**. The workflow
+  waits for a non-draft PR and successful `ci.yml` on the current head, deduplicates
+  commits, and applies a **60-minute per-PR cooldown** and **12 dispatches per rolling
+  5 hours repository-wide**. There is no daily or separate hourly limit.
+- Deferred requests remain queued; pushes update a pending request to its latest
+  head, but do not request another review after dispatch. Re-request or remove/re-add
+  the readiness label for a new request. Queued/dispatched is never an approval.
+- Only **SoroushRF** (GitHub user ID **98989697**) may bypass quotas/cooldown or
+  deliberately repeat a commit by posting exactly **/codex-review-now** as a top-level
+  PR comment. It also supplies explicit readiness; non-draft and green CI still apply.
+  Other users, quoted commands, and edited-comment events cannot invoke this override.
+- Override starts count toward the next rolling window. Manual `@codex review`
+  comments bypass admission, so use the workflow/owner command for controlled usage.
+  These are review-request limits, not a guarantee of a particular token spend.
+  See [docs/codex-review.md](docs/codex-review.md) for operation and activation gates.
+
 ## Conventions
 
 - TypeScript everywhere except `ml/`. Validate with Zod at every trust boundary (HTTP, jobs, provider responses, model output).
