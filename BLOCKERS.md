@@ -6,16 +6,16 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 
 ## Top blockers
 
-35 of 56 tasks done. These open tasks hold up the most other work:
+36 of 56 tasks done. These open tasks hold up the most other work:
 
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
-| **T4.5** ML smoke test: Qwen3.5-0.8B LoRA on 32 cases [#29](https://github.com/SoroushRF/Rehearsal/issues/29) | @skhdemo | 👀 in review | 2 |
 | **T2.15** Review UI: show the Slack summary step and its exact text [#145](https://github.com/SoroushRF/Rehearsal/issues/145) | @parsaabbasian | 🟨 ready | 1 |
 | **T2.16** Review UI: show the exact rendered public reply being approved [#146](https://github.com/SoroushRF/Rehearsal/issues/146) | @parsaabbasian | 🟨 ready | 1 |
 | **T2.18** Policy: choose a refund or an invoice credit per obligation [#148](https://github.com/SoroushRF/Rehearsal/issues/148) | @parsaabbasian | 🟨 ready | 1 |
-| **T3.10** Slack write adapter and uncertain-post reconciliation [#149](https://github.com/SoroushRF/Rehearsal/issues/149) | @ArtinMe | 🟨 ready | 1 |
-| **T3.11** Zendesk public reply write adapter and reconciliation [#150](https://github.com/SoroushRF/Rehearsal/issues/150) | @ArtinMe | 🟨 ready | 1 |
+| **T3.10** Slack write adapter and uncertain-post reconciliation [#149](https://github.com/SoroushRF/Rehearsal/issues/149) | @ArtinMe | 👀 in review | 1 |
+| **T3.11** Zendesk public reply write adapter and reconciliation [#150](https://github.com/SoroushRF/Rehearsal/issues/150) | @ArtinMe | 👀 in review | 1 |
+| **T3.12** Stripe balance credit write adapter and reconciliation [#151](https://github.com/SoroushRF/Rehearsal/issues/151) | @ArtinMe | 👀 in review | 1 |
 
 ## T1 Rehearse
 
@@ -29,14 +29,14 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T1.4** Typed planning tools that record evidence and dependency edges [#5](https://github.com/SoroushRF/Rehearsal/issues/5) | ✅ done |  | T1.5 |
 | **T1.5** Bounded Claude tool loop and planner-worker plan jobs [#6](https://github.com/SoroushRF/Rehearsal/issues/6) | ✅ done |  | T1.6, T1.7, T1.8, T1.15, T2.5 (T2), T2.10 (T2) |
 | **T1.6** ~20 benign and trap tasks plus baselines for the scorecard [#7](https://github.com/SoroushRF/Rehearsal/issues/7) | ✅ done |  |  |
-| **T1.7** Slack summary step (slack.message.postSummary) _(stretch)_ [#8](https://github.com/SoroushRF/Rehearsal/issues/8) | 🟥 blocked | T2.15 (T2, ready)<br>T3.10 (T3, ready) |  |
+| **T1.7** Slack summary step (slack.message.postSummary) _(stretch)_ [#8](https://github.com/SoroushRF/Rehearsal/issues/8) | 🟥 blocked | T2.15 (T2, ready)<br>T3.10 (T3, in review) |  |
 | **T1.8** SurrealDB precedents (explicit promotion, recall with trace) [#9](https://github.com/SoroushRF/Rehearsal/issues/9) | ✅ done |  | T2.17 (T2) |
 | **T1.9** Signed Era tenant tokens in both workers [#39](https://github.com/SoroushRF/Rehearsal/issues/39) | ✅ done |  | T1.2, T1.5, T3.3 (T3), T4.3 (T4) |
 | **T1.10** Bind duplicate refunds to invoice identity and retain a paid anchor [#61](https://github.com/SoroushRF/Rehearsal/issues/61) | ✅ done |  |  |
 | **T1.11** Verify customer ownership before proposing ticket changes [#63](https://github.com/SoroushRF/Rehearsal/issues/63) | ✅ done |  |  |
 | **T1.12** Preserve the evidence snapshot used to construct each action [#73](https://github.com/SoroushRF/Rehearsal/issues/73) | ✅ done |  |  |
-| **T1.13** Public customer reply from an exact approved template [#136](https://github.com/SoroushRF/Rehearsal/issues/136) | 🟥 blocked | T2.16 (T2, ready)<br>T3.11 (T3, ready) |  |
-| **T1.14** Invoice-balance credit as an alternative remedy to a refund [#137](https://github.com/SoroushRF/Rehearsal/issues/137) | 🟥 blocked | T2.18 (T2, ready)<br>T3.12 (T3, ready)<br>T4.10 (T4, ready)<br>T3.8 (T3, ready) |  |
+| **T1.13** Public customer reply from an exact approved template [#136](https://github.com/SoroushRF/Rehearsal/issues/136) | 🟥 blocked | T2.16 (T2, ready)<br>T3.11 (T3, in review) |  |
+| **T1.14** Invoice-balance credit as an alternative remedy to a refund [#137](https://github.com/SoroushRF/Rehearsal/issues/137) | 🟥 blocked | T2.18 (T2, ready)<br>T3.12 (T3, in review)<br>T4.10 (T4, ready)<br>T3.8 (T3, in review) |  |
 | **T1.15** Scorecard rows from a real model planner (T1.6 follow-up) [#140](https://github.com/SoroushRF/Rehearsal/issues/140) | ✅ done |  |  |
 | **T1.16** Full-scope decision record: reopen the trimmed scope [#141](https://github.com/SoroushRF/Rehearsal/issues/141) | ✅ done |  | T1.8, T1.17, T1.18, T1.19 |
 | **T1.17** Contracts: typed op slack.message.postSummary [#142](https://github.com/SoroushRF/Rehearsal/issues/142) | ✅ done |  | T1.7, T2.15 (T2), T3.10 (T3) |
@@ -81,10 +81,10 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T3.5** Unknown outcome: lost response, restart, reconcile through reads [#22](https://github.com/SoroushRF/Rehearsal/issues/22) | ✅ done |  | T3.7 |
 | **T3.6** ID divergence test, partial-completion state, cancellation [#23](https://github.com/SoroushRF/Rehearsal/issues/23) | ✅ done |  | T3.7 |
 | **T3.7** Bounded concurrency across independent cases [#24](https://github.com/SoroushRF/Rehearsal/issues/24) | ✅ done |  |  |
-| **T3.8** Read back each write before confirming its receipt [#134](https://github.com/SoroushRF/Rehearsal/issues/134) | 🟨 ready | — | T1.14 (T1) |
-| **T3.10** Slack write adapter and uncertain-post reconciliation [#149](https://github.com/SoroushRF/Rehearsal/issues/149) | 🟨 ready | — | T1.7 (T1) |
-| **T3.11** Zendesk public reply write adapter and reconciliation [#150](https://github.com/SoroushRF/Rehearsal/issues/150) | 🟨 ready | — | T1.13 (T1) |
-| **T3.12** Stripe balance credit write adapter and reconciliation [#151](https://github.com/SoroushRF/Rehearsal/issues/151) | 🟨 ready | — | T1.14 (T1) |
+| **T3.8** Read back each write before confirming its receipt [#134](https://github.com/SoroushRF/Rehearsal/issues/134) | 👀 in review [PR #194](https://github.com/SoroushRF/Rehearsal/pull/194) | — | T1.14 (T1) |
+| **T3.10** Slack write adapter and uncertain-post reconciliation [#149](https://github.com/SoroushRF/Rehearsal/issues/149) | 👀 in review [PR #195](https://github.com/SoroushRF/Rehearsal/pull/195) | — | T1.7 (T1) |
+| **T3.11** Zendesk public reply write adapter and reconciliation [#150](https://github.com/SoroushRF/Rehearsal/issues/150) | 👀 in review [PR #196](https://github.com/SoroushRF/Rehearsal/pull/196) | — | T1.13 (T1) |
+| **T3.12** Stripe balance credit write adapter and reconciliation [#151](https://github.com/SoroushRF/Rehearsal/issues/151) | 👀 in review [PR #197](https://github.com/SoroushRF/Rehearsal/pull/197) | — | T1.14 (T1) |
 
 ## T4 Guard
 
@@ -96,9 +96,9 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T4.2** Injection scripts and demo:phantom / demo:conflict / demo:reset [#26](https://github.com/SoroushRF/Rehearsal/issues/26) | ✅ done |  | T1.6 (T1), T4.3 |
 | **T4.3** Wire guards into executor admission [#27](https://github.com/SoroushRF/Rehearsal/issues/27) | ✅ done |  | T4.4 |
 | **T4.4** Conditional compensation on owned fields [#28](https://github.com/SoroushRF/Rehearsal/issues/28) | ✅ done |  |  |
-| **T4.5** ML smoke test: Qwen3.5-0.8B LoRA on 32 cases [#29](https://github.com/SoroushRF/Rehearsal/issues/29) | 👀 in review [PR #102](https://github.com/SoroushRF/Rehearsal/pull/102) | — | T4.6 |
-| **T4.6** ML pilot and go/no-go [#30](https://github.com/SoroushRF/Rehearsal/issues/30) | 🟥 blocked | T4.5 (T4, in review) | T4.7 |
-| **T4.7** Impact service behind ImpactPort (if ML go) [#31](https://github.com/SoroushRF/Rehearsal/issues/31) | 🟥 blocked | T4.6 (T4, blocked) |  |
+| **T4.5** ML smoke test: Qwen3.5-0.8B LoRA on 32 cases [#29](https://github.com/SoroushRF/Rehearsal/issues/29) | ✅ done |  | T4.6 |
+| **T4.6** ML pilot and go/no-go [#30](https://github.com/SoroushRF/Rehearsal/issues/30) | 🟨 ready | — | T4.7 |
+| **T4.7** Impact service behind ImpactPort (if ML go) [#31](https://github.com/SoroushRF/Rehearsal/issues/31) | 🟥 blocked | T4.6 (T4, ready) |  |
 | **T4.10** Guard: one remedy per obligation across refunds and credits [#152](https://github.com/SoroushRF/Rehearsal/issues/152) | 🟨 ready | — | T1.14 (T1) |
 
 ## Task graph
@@ -159,18 +159,18 @@ flowchart LR
     T3_5["T3.5 Unknown outcome: lost response, restart, re"]:::done
     T3_6["T3.6 ID divergence test, partial-completion stat"]:::done
     T3_7["T3.7 Bounded concurrency across independent case"]:::done
-    T3_8["T3.8 Read back each write before confirming its "]:::ready
-    T3_10["T3.10 Slack write adapter and uncertain-post rec"]:::ready
-    T3_11["T3.11 Zendesk public reply write adapter and rec"]:::ready
-    T3_12["T3.12 Stripe balance credit write adapter and re"]:::ready
+    T3_8["T3.8 Read back each write before confirming its "]:::review
+    T3_10["T3.10 Slack write adapter and uncertain-post rec"]:::review
+    T3_11["T3.11 Zendesk public reply write adapter and rec"]:::review
+    T3_12["T3.12 Stripe balance credit write adapter and re"]:::review
   end
   subgraph T4[T4 Guard]
     T4_1["T4.1 Pure guards: observation compare, query-mem"]:::done
     T4_2["T4.2 Injection scripts and demo:phantom / demo:c"]:::done
     T4_3["T4.3 Wire guards into executor admission"]:::done
     T4_4["T4.4 Conditional compensation on owned fields"]:::done
-    T4_5["T4.5 ML smoke test: Qwen3.5-0.8B LoRA on 32 case"]:::review
-    T4_6["T4.6 ML pilot and go/no-go"]:::blocked
+    T4_5["T4.5 ML smoke test: Qwen3.5-0.8B LoRA on 32 case"]:::done
+    T4_6["T4.6 ML pilot and go/no-go"]:::ready
     T4_7["T4.7 Impact service behind ImpactPort (if ML go)"]:::blocked
     T4_10["T4.10 Guard: one remedy per obligation across re"]:::ready
   end
