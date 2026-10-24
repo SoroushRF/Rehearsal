@@ -339,7 +339,11 @@ function stop(): boolean {
     const ps = `Get-CimInstance Win32_Process -Filter "name='node.exe'" | Where-Object { $_.ProcessId -ne ${process.pid} -and $_.CommandLine -match '${OURS}' } | ForEach-Object { taskkill /PID $_.ProcessId /T /F | Out-Null; $_.ProcessId }`;
     const r = spawnSync("powershell", ["-NoProfile", "-Command", ps], { encoding: "utf8" });
     const killed = r.stdout.trim().split(/\s+/).filter(Boolean);
-    console.log(killed.length ? `Stopped ${killed.length} process(es): ${killed.join(", ")}` : "Nothing to stop.");
+    console.log(
+      killed.length
+        ? `Stopped ${killed.length} process(es): ${killed.join(", ")}`
+        : "Nothing to stop.",
+    );
     return true;
   }
   spawnSync("pkill", ["-f", OURS], { stdio: "inherit" });
