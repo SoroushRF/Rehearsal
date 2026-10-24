@@ -52,7 +52,13 @@ export type DispatchResult =
 export type ReconcileResult =
   | { kind: "applied"; providerRef: EntityRef; effect: Record<string, unknown> }
   | { kind: "not_applied" }
-  | { kind: "indeterminate"; detail: string };
+  | {
+      kind: "indeterminate";
+      detail: string;
+      /** The read found the operation's effect, but it contradicts what was sent (say, a refund
+       * of another amount or one that failed). Never "applied"; a read-back holds on it. */
+      contradicts?: boolean;
+    };
 
 /** Resolved values for an action's ResultRefs, from confirmed predecessor receipts. */
 export type ResolvedBindings = ReadonlyMap<string, string | number>;

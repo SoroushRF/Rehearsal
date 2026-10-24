@@ -259,6 +259,7 @@ export function stripeWriter(target: WriteTarget): ProviderWriter {
             return {
               kind: "indeterminate",
               detail: "refund read contradicts the journaled operation",
+              contradicts: true,
             };
           }
           return {
@@ -585,6 +586,7 @@ export function stripeCreditWriter(target: WriteTarget): StripeCreditWriter {
             return {
               kind: "indeterminate",
               detail: "credit read contradicts the journaled operation",
+              contradicts: true,
             };
           }
           return {
@@ -640,6 +642,11 @@ const SlackHistory = z.object({
   response_metadata: z.object({ next_cursor: z.string().optional() }).optional(),
 });
 
+/** Slack's text escaping: `&`, `<` and `>` come back as entities. */
+function unescapeSlack(text: string): string {
+  return text.replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&");
+}
+
 /** The write side of `slack.message.postSummary` (T3.10); `executeRun` takes it once T1.7 adds the op. */
 export interface SlackWriter {
   vendor: "slack";
@@ -692,11 +699,19 @@ export function slackWriter(target: WriteTarget): SlackWriter {
     async reconcile(attempt, action, ctx) {
       assertTarget(target, ctx);
       const marker = operationMarker(attempt.operationKey);
+      let sent: string;
+      try {
+        sent = String((JSON.parse(attempt.request.body) as { text?: unknown }).text);
+      } catch {
+        return { kind: "indeterminate", detail: "journaled Slack request is unreadable" };
+      }
       // No `oldest` window: message timestamps come from the provider's clock (Era's is simulated),
       // so a window from ours could hide the very post we look for. Page the whole history.
       const base = `/api/conversations.history?channel=${encodeURIComponent(action.args.channelId)}&limit=200`;
       let path = base;
       const cursors = new Set<string>();
+      /** A message carrying the marker that isn't our exact post (a quote, a forward, an edit). */
+      let lookalike = false;
       for (let page = 0; page < MAX_PAGES; page++) {
         const parsed = SlackHistory.safeParse(await readJson<unknown>(target, path));
         if (!parsed.success) return { kind: "indeterminate", detail: "invalid Slack history page" };
@@ -704,24 +719,28 @@ export function slackWriter(target: WriteTarget): SlackWriter {
         if (!history.ok) {
           return { kind: "indeterminate", detail: `Slack history: ${history.error ?? "not ok"}` };
         }
-        const marked = (history.messages ?? []).filter((m) => m.text?.includes(marker));
-        // Ours is a bot post; a person quoting the summary is not the post.
-        const found = marked.find((m) => m.bot_id !== undefined);
-        if (!found && marked.length > 0) {
-          return {
-            kind: "indeterminate",
-            detail: "only non-bot messages carry this post's marker",
-          };
-        }
-        if (found) {
-          return {
-            kind: "applied",
-            providerRef: { vendor: "slack", kind: "message", id: found.ts },
-            effect: { "message.ts": found.ts, channel: action.args.channelId },
-          };
+        for (const m of history.messages ?? []) {
+          if (!m.text?.includes(marker)) continue;
+          // Ours is a bot post with exactly the journaled text (Slack escapes &, < and >).
+          if (m.bot_id !== undefined && unescapeSlack(m.text) === sent) {
+            return {
+              kind: "applied",
+              providerRef: { vendor: "slack", kind: "message", id: m.ts },
+              effect: { "message.ts": m.ts, channel: action.args.channelId },
+            };
+          }
+          lookalike = true;
         }
         const next = history.response_metadata?.next_cursor;
-        if (!history.has_more) return { kind: "not_applied" };
+        if (!history.has_more) {
+          // Something carries our marker but isn't our post: whether ours exists can't be told.
+          return lookalike
+            ? {
+                kind: "indeterminate",
+                detail: "only messages that aren't this exact post carry its marker",
+              }
+            : { kind: "not_applied" };
+        }
         if (!next) return { kind: "indeterminate", detail: "more Slack history but no cursor" };
         if (cursors.has(next)) return { kind: "indeterminate", detail: "repeated Slack cursor" };
         cursors.add(next);

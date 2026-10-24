@@ -556,6 +556,7 @@ describe("stripeCreditWriter (T3.12)", () => {
     expect(await w.reconcile(attempt, credit, CTX)).toMatchObject({
       kind: "indeterminate",
       detail: "credit read contradicts the journaled operation",
+      contradicts: true,
     });
     reply = page([]);
     expect(await w.reconcile(attempt, credit, CTX)).toEqual({ kind: "not_applied" });
@@ -724,6 +725,64 @@ describe("slackWriter (T3.10)", () => {
       }),
     };
     expect((await w.reconcile(attemptFor(req.body), summary, CTX)).kind).toBe("indeterminate");
+  });
+
+  it("keeps paging past a quote of the summary to find the real post (review)", async () => {
+    const w = slackWriter(target);
+    const req = w.prepare(summary, counts, KEY);
+    const text = JSON.parse(req.body).text as string;
+    const page = (messages: object[], next?: string) => ({
+      status: 200,
+      body: JSON.stringify({
+        ok: true,
+        messages,
+        has_more: next !== undefined,
+        response_metadata: { next_cursor: next ?? "" },
+      }),
+    });
+    queue = [page([{ ts: "9", text: `> ${text}` }], "c1"), page([{ ts: "2", text, bot_id: "B1" }])];
+    expect(await w.reconcile(attemptFor(req.body), summary, CTX)).toMatchObject({
+      kind: "applied",
+      providerRef: { id: "2" },
+    });
+  });
+
+  it("takes only a bot message with exactly the journaled text as the post (review)", async () => {
+    const w = slackWriter(target);
+    const req = w.prepare(summary, counts, KEY);
+    const text = JSON.parse(req.body).text as string;
+    const altered = text.replace("1 refund(s)", "999 refund(s)");
+    reply = {
+      status: 200,
+      body: JSON.stringify({
+        ok: true,
+        messages: [{ ts: "7", text: altered, bot_id: "B2" }],
+        has_more: false,
+      }),
+    };
+    expect(await w.reconcile(attemptFor(req.body), summary, CTX)).toMatchObject({
+      kind: "indeterminate",
+      detail: "only messages that aren't this exact post carry its marker",
+    });
+    // Slack returns &, < and > escaped; the journaled text is compared unescaped.
+    const amp = {
+      ...summary,
+      args: { ...summary.args, bindings: { ...summary.args.bindings, incidentId: "INC <a&b>" } },
+    };
+    const ampReq = w.prepare(amp, counts, KEY);
+    const escaped = (JSON.parse(ampReq.body).text as string)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;");
+    reply = {
+      status: 200,
+      body: JSON.stringify({
+        ok: true,
+        messages: [{ ts: "8", text: escaped, bot_id: "B1" }],
+        has_more: false,
+      }),
+    };
+    expect((await w.reconcile(attemptFor(ampReq.body), amp, CTX)).kind).toBe("applied");
   });
 
   it("can't tell when Slack says there is more history but gives no cursor", async () => {

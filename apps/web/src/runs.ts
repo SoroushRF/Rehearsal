@@ -89,6 +89,9 @@ const UNKNOWN_SEND: Record<string, string> = {
 export function explainReceipt(r: Receipt, kind?: string): string {
   switch (r.outcome) {
     case "confirmed":
+      if (r.limitations.some((l) => l.includes("read-back inconclusive"))) {
+        return "Applied: the provider confirmed the write, but reading it back was inconclusive.";
+      }
       return r.providerRef
         ? `Applied and read back (${r.providerRef.kind} ${r.providerRef.id}).`
         : "Applied and read back.";
