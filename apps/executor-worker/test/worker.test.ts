@@ -4,17 +4,19 @@ import { planHash } from "@rehearsal/core";
 import {
   APPLY_QUEUE,
   createDb,
+  MAX_REAPS,
   migrateDb,
   PgApplyStore,
   type PgBoss,
   PgJournal,
+  reapStuckRuns,
   requestApply,
   requestCancel,
   schema,
   startQueue,
 } from "@rehearsal/db";
 import { billingManifest, FakeClock, type FakeWorld, worldFromManifest } from "@rehearsal/testkit";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import policy from "../../../scenarios/billing/policy.v1.json" with { type: "json" };
 import { type ApplyJobResult, handleApplyJob, RetryLater, type WorkerContext } from "../src/worker";
@@ -251,10 +253,10 @@ describe.skipIf(!process.env.DB_TESTS)(
 
         const b = handleApplyJob(jobOf(r), contextFor(r.world), attempt);
 
-        if (attempt) await b;
-        else await expect(b).rejects.toBeInstanceOf(RetryLater);
+        // Even on the last try it never marks the run failed: the holder may have sent something.
+        await expect(b).rejects.toBeInstanceOf(RetryLater);
 
-        expect(await runState(r.runId)).toBe(attempt ? "failed" : "applying");
+        expect(await runState(r.runId)).toBe("applying");
 
         release();
 
@@ -597,28 +599,417 @@ describe.skipIf(!process.env.DB_TESTS)(
       expect(r.world.refunds).toHaveLength(2);
     });
 
-    it("on the last retry, a run still blocked by the plan lock ends failed so it can be re-applied", async () => {
+    it("past the last retry, a run still blocked by the plan lock stays applying for the reaper (#121)", async () => {
       const r = await approvedRun();
       const release = await new PgApplyStore(createDb(url)).lockPlan(r.orgId, r.planId);
       try {
-        const result = await handleApplyJob(jobOf(r), contextFor(r.world), {
-          retryCount: 50,
-          retryLimit: 50,
-        });
-        expect(stateOf(result)).toBe("failed");
-        expect(await runState(r.runId)).toBe("failed");
+        await expect(
+          handleApplyJob(jobOf(r), contextFor(r.world), { retryCount: 50, retryLimit: 50 }),
+        ).rejects.toBeInstanceOf(RetryLater);
+        // The holder may have sent something this delivery can't see: never mark it failed here.
+        expect(await runState(r.runId)).toBe("applying");
       } finally {
         await release?.();
       }
-      const again = await requestApply(db, boss, {
+    });
+
+    it("an overlapping delivery's last lock retry never strands the holder's unreceipted refund (#121)", async () => {
+      const r = await approvedRun();
+      const ctx = contextFor(r.world);
+      const stripe = r.world.provider("stripe");
+      let landed = () => {};
+      const refundLanded = new Promise<void>((res) => {
+        landed = res;
+      });
+      let resume = () => {};
+      const gate = new Promise<void>((res) => {
+        resume = res;
+      });
+      let paused = false;
+      const pausing: WorkerContext = {
+        ...ctx,
+        providers: {
+          ...ctx.providers,
+          stripe: {
+            ...stripe,
+            dispatch: async (req, c) => {
+              const res = await stripe.dispatch(req, c);
+              if (!paused) {
+                paused = true;
+                landed();
+                await gate; // the refund is committed; the response hasn't come back yet
+              }
+              return res;
+            },
+          },
+        },
+      };
+      // Delivery A holds the plan lock, its refund committed but unanswered.
+      const a = handleApplyJob(jobOf(r), pausing, { retryCount: 0, retryLimit: 50 });
+      await refundLanded;
+      // Delivery B of the same job, on its last try, can't get the lock.
+      await expect(
+        handleApplyJob(jobOf(r), ctx, { retryCount: 50, retryLimit: 50 }),
+      ).rejects.toBeInstanceOf(RetryLater);
+      // A's refund settle then fails once, so A returns an executor error.
+      const spy = failSettle("refund_001");
+      try {
+        resume();
+        await expect(a).rejects.toBeInstanceOf(RetryLater);
+      } finally {
+        spy.mockRestore();
+      }
+      expect(await runState(r.runId)).toBe("applying");
+
+      const again = await handleApplyJob(jobOf(r), ctx, { retryCount: 1, retryLimit: 50 });
+      expect(stateOf(again)).toBe("completed");
+      expect(r.world.refunds.filter((x) => x.charge === "ch_fixture_001")).toHaveLength(1);
+      expect(await refundReceipt(r.orgId)).toEqual(["confirmed"]);
+    });
+
+    /** The same worker context with the clock past the approval's expiry (NOW + 1 h). */
+    const expired = (world: FakeWorld): WorkerContext => ({
+      ...contextFor(world),
+      clock: new FakeClock(new Date(NOW.getTime() + 2 * 3_600_000).toISOString()),
+    });
+
+    /**
+     * Revision 1 compensates case 2 (its note is refused), but the undo's response is lost: the
+     * undo reaches the ticket only if `lands`. Revision 2, identical, is then approved; the test
+     * runs it after its approval expired.
+     */
+    async function lostUndoThenRevision(lands: boolean) {
+      const r = await approvedRun();
+      const ctx = contextFor(r.world);
+      const zendesk = ctx.providers.zendesk;
+      if (!zendesk) throw new Error("no zendesk provider");
+      let undoLost = false;
+      const losing: WorkerContext = {
+        ...ctx,
+        providers: {
+          ...ctx.providers,
+          zendesk: {
+            ...zendesk,
+            dispatch: async (req, c) => {
+              const onTicket = req.path === "/api/v2/tickets/5532.json";
+              const comment = req.body.includes('"comment"');
+              if (onTicket && comment && req.body.includes("safe_update") && !undoLost) {
+                undoLost = true; // the undo: a guarded patch carrying its operation marker
+                if (lands) await zendesk.dispatch(req, c);
+                return { kind: "unknown" as const, error: "undo unanswered (injected)" };
+              }
+              if (onTicket && comment) {
+                return { kind: "rejected" as const, status: 422, body: {}, retryable: false };
+              }
+              return zendesk.dispatch(req, c);
+            },
+          },
+        },
+      };
+      await handleApplyJob(jobOf(r), losing);
+      expect(undoLost).toBe(true);
+      expect(r.world.tickets.get("5532")?.priority).toBe(lands ? "normal" : "high");
+
+      const manifest2 = { ...r.manifest, revision: 2, parentRevision: 1 };
+      const hash2 = planHash(manifest2);
+      await db.insert(schema.planVersions).values({
+        orgId: r.orgId,
+        planId: r.planId,
+        revision: 2,
+        planHash: hash2,
+        manifest: manifest2,
+      });
+      await db.insert(schema.approvalGrants).values({
+        id: `grant_${randomUUID()}`,
+        orgId: r.orgId,
+        planId: r.planId,
+        revision: 2,
+        planHash: hash2,
+        actorUserId: "user_finance",
+        actorSessionId: "sess",
+        roles: ["support_lead", "finance_lead"],
+        grantedAt: new Date(NOW.getTime() - 3_600_000),
+        expiresAt: new Date(NOW.getTime() + 3_600_000),
+      });
+      const rev2 = await requestApply(db, boss, {
         orgId: r.orgId,
         userId: "user_finance",
         planId: r.planId,
-        revision: 1,
-        planHash: r.hash,
+        revision: 2,
+        planHash: hash2,
         now: NOW,
       });
-      expect(again).toMatchObject({ kind: "accepted", existing: false });
+      if (rev2.kind !== "accepted") throw new Error(`apply refused: ${rev2.kind}`);
+      const job2 = { ...jobOf(r), runId: rev2.runId, revision: 2, planHash: hash2 };
+      const undoAttempts = async () =>
+        (await db.select().from(schema.stepAttempts))
+          .filter((a) => a.orgId === r.orgId && a.actionId === "patch_002")
+          .filter((a) => a.request && JSON.stringify(a.request).includes("comment"))
+          .map((a) => a.state);
+      const patchReceipts2 = async () =>
+        (await db.select().from(schema.stepReceipts))
+          .filter((x) => x.orgId === r.orgId && x.planHash === hash2 && x.actionId === "patch_002")
+          .map((x) => (x.receipt as { outcome: string }).outcome);
+      return { r, job2, undoAttempts, patchReceipts2, writes: r.world.effects.length };
+    }
+
+    it("a refused newer revision records an older revision's landed undo, with no hand-off (#124)", async () => {
+      const { r, job2, undoAttempts, patchReceipts2, writes } = await lostUndoThenRevision(true);
+      expect(await undoAttempts()).toEqual(["unknown_outcome"]);
+
+      const result = await handleApplyJob(job2, expired(r.world), {
+        retryCount: 0,
+        retryLimit: 50,
+      });
+      expect(result).toMatchObject({ kind: "ran", outcome: { refusal: "grant expired" } });
+      expect(stateOf(result)).toBe("failed"); // final: nothing left for the reaper or an operator
+      expect(await runState(job2.runId)).toBe("failed");
+      expect(await patchReceipts2()).toEqual(["compensated"]);
+      expect(await undoAttempts()).toEqual(["reconciled"]);
+      expect(r.world.tickets.get("5532")?.priority).toBe("normal");
+      expect(r.world.effects.length).toBe(writes); // no fresh undo, no replay, no forward patch
+    });
+
+    it("a refused newer revision keeps an older revision's absent undo unresolved and retryable (#124)", async () => {
+      const { r, job2, undoAttempts, patchReceipts2, writes } = await lostUndoThenRevision(false);
+      await expect(
+        handleApplyJob(job2, expired(r.world), { retryCount: 50, retryLimit: 50 }),
+      ).rejects.toBeInstanceOf(RetryLater);
+      expect(await runState(job2.runId)).toBe("applying");
+      expect(await patchReceipts2()).toEqual(["held"]);
+      expect(await undoAttempts()).toEqual(["unknown_outcome"]);
+      expect(r.world.tickets.get("5532")?.priority).toBe("high");
+      expect(r.world.effects.length).toBe(writes);
+    });
+
+    describe.each([
+      ["absent", { lands: false, unreadable: false }],
+      ["unreadable", { lands: true, unreadable: true }],
+    ])("a cancelled newer revision with an older revision's %s undo (#124)", (_n, how) => {
+      /** rev 2 is cancelled before its job runs; its worker can't read Zendesk if `unreadable`. */
+      async function cancelledRev2() {
+        const lost = await lostUndoThenRevision(how.lands);
+        expect(
+          await requestCancel(db, { orgId: lost.r.orgId, runId: lost.job2.runId }),
+        ).toMatchObject({ kind: "cancelled" });
+        const ctx = contextFor(lost.r.world);
+        const zendesk = ctx.providers.zendesk;
+        if (!zendesk) throw new Error("no zendesk provider");
+        const rev2Ctx: WorkerContext = how.unreadable
+          ? {
+              ...ctx,
+              providers: {
+                ...ctx.providers,
+                zendesk: {
+                  ...zendesk,
+                  reconcile: async () => {
+                    throw new Error("zendesk read unavailable (injected)");
+                  },
+                },
+              },
+            }
+          : ctx;
+        return { ...lost, rev2Ctx };
+      }
+
+      it("its real queue delivery is retried, not completed, and it stays cancelled", async () => {
+        const { r, job2, rev2Ctx, undoAttempts, writes } = await cancelledRev2();
+        const thrown: unknown[] = [];
+        const workerId = await boss.work(
+          APPLY_QUEUE,
+          { batchSize: 100, pollingIntervalSeconds: 0.5 },
+          async (jobs) => {
+            for (const job of jobs) {
+              if ((job.data as { runId?: string }).runId !== job2.runId) continue;
+              try {
+                await handleApplyJob(job.data, rev2Ctx);
+              } catch (err) {
+                thrown.push(err);
+                throw err;
+              }
+            }
+          },
+        );
+        const jobState = async () =>
+          (
+            await db.execute<{ state: string }>(
+              sql`select state::text from pgboss.job where name = ${APPLY_QUEUE}
+                    and data->>'runId' = ${job2.runId}`,
+            )
+          ).rows.map((x) => x.state);
+        try {
+          await waitFor(async () => thrown.length > 0 && (await jobState()).includes("retry"));
+        } finally {
+          await boss.offWork(APPLY_QUEUE, { id: workerId });
+        }
+        expect(thrown[0]).toBeInstanceOf(RetryLater);
+        expect(await jobState()).not.toContain("completed");
+        expect(await runState(job2.runId)).toBe("cancelled");
+        expect(await undoAttempts()).toEqual(["unknown_outcome"]);
+        expect(r.world.effects.length).toBe(writes);
+      }, 30_000);
+
+      it("the reaper re-enqueues it, then hands it to an operator; it stays cancelled", async () => {
+        const { r, job2, rev2Ctx, undoAttempts, writes } = await cancelledRev2();
+        await expect(
+          handleApplyJob(job2, rev2Ctx, { retryCount: 50, retryLimit: 50 }),
+        ).rejects.toBeInstanceOf(RetryLater);
+        /** pg-boss gave up on its job, and the run's last update is outside the stale window. */
+        const exhaust = async () => {
+          await db.execute(sql`delete from pgboss.job where data->>'runId' = ${job2.runId}`);
+          await db
+            .update(schema.runs)
+            .set({ updatedAt: new Date(Date.now() - 3_600_000) })
+            .where(eq(schema.runs.id, job2.runId));
+        };
+        const eventsOf = async (type: string) =>
+          (await db.select().from(schema.runEvents)).filter(
+            (e) => e.runId === job2.runId && e.type === type,
+          ).length;
+        /** Sweep until this run shows `type` (another suite's sweep may be the one that does it). */
+        const sweepUntil = async (type: string, count: number) => {
+          for (let i = 0; i < 50 && (await eventsOf(type)) < count; i++) {
+            await reapStuckRuns(db, boss, { now: new Date(), staleAfterMs: 10 * 60_000 });
+            if ((await eventsOf(type)) < count) await new Promise((res) => setTimeout(res, 50));
+          }
+          expect(await eventsOf(type)).toBe(count);
+        };
+        await exhaust();
+        await sweepUntil("run.reaped", 1);
+        // It was re-enqueued MAX_REAPS times in all; the next stale sweep hands it off.
+        for (let n = 1; n < MAX_REAPS; n++) {
+          await db
+            .insert(schema.runEvents)
+            .values({ orgId: r.orgId, runId: job2.runId, type: "run.reaped", payload: {} });
+        }
+        await exhaust();
+        await sweepUntil("run.needs_operator", 1);
+        expect(await runState(job2.runId)).toBe("cancelled");
+        expect(await undoAttempts()).toEqual(["unknown_outcome"]);
+        expect(r.world.effects.length).toBe(writes);
+      }, 30_000);
+    });
+
+    it("an expired grant still reads back an unreceipted refund, and sends nothing new (#121)", async () => {
+      const r = await approvedRun();
+      const spy = failSettle("refund_001");
+      try {
+        await expect(
+          handleApplyJob(jobOf(r), contextFor(r.world), { retryCount: 0, retryLimit: 50 }),
+        ).rejects.toBeInstanceOf(RetryLater);
+      } finally {
+        spy.mockRestore();
+      }
+      const effects = r.world.effects.length;
+
+      const after = await handleApplyJob(jobOf(r), expired(r.world), {
+        retryCount: 1,
+        retryLimit: 50,
+      });
+      expect(after).toMatchObject({ kind: "ran", outcome: { refusal: "grant expired" } });
+      expect(stateOf(after)).toBe("failed");
+      expect(await runState(r.runId)).toBe("failed");
+      expect(await refundReceipt(r.orgId)).toEqual(["confirmed"]);
+      expect(r.world.effects.length).toBe(effects); // read only: no new send, no replay
+      expect(r.world.refunds.filter((x) => x.charge === "ch_fixture_001")).toHaveLength(1);
+    });
+
+    it("a run stranded by an expired grant and an unreadable send is reaped, then handed to an operator (#121)", async () => {
+      const r = await approvedRun();
+      const spy = failSettle("refund_001");
+      try {
+        await expect(
+          handleApplyJob(jobOf(r), contextFor(r.world), { retryCount: 0, retryLimit: 50 }),
+        ).rejects.toBeInstanceOf(RetryLater);
+      } finally {
+        spy.mockRestore();
+      }
+      const ctx = expired(r.world);
+      const stripe = r.world.provider("stripe");
+      const unreadable: WorkerContext = {
+        ...ctx,
+        providers: {
+          ...ctx.providers,
+          stripe: {
+            ...stripe,
+            reconcile: async () => {
+              throw new Error("stripe read unavailable (injected)");
+            },
+          },
+        },
+      };
+      // Past pg-boss's last try the run stays applying: the reaper's to hand off, not ours.
+      await expect(
+        handleApplyJob(jobOf(r), unreadable, { retryCount: 50, retryLimit: 50 }),
+      ).rejects.toBeInstanceOf(RetryLater);
+      expect(await runState(r.runId)).toBe("applying");
+
+      // It was already re-enqueued MAX_REAPS times (the reaper's own tests cover selection), its
+      // last job is gone and the run is stale. One sweep must hand it to an operator. Another
+      // suite's sweep may be the one that does, so check the database, not this sweep's result.
+      for (let n = 0; n < MAX_REAPS; n++) {
+        await db.insert(schema.runEvents).values({
+          orgId: r.orgId,
+          runId: r.runId,
+          type: "run.reaped",
+          payload: {},
+        });
+      }
+      await db.execute(sql`delete from pgboss.job where data->>'runId' = ${r.runId}`);
+      await db
+        .update(schema.runs)
+        .set({ updatedAt: new Date(Date.now() - 3_600_000) })
+        .where(eq(schema.runs.id, r.runId));
+      const handedOff = async () =>
+        (await db.select().from(schema.runEvents)).filter(
+          (e) => e.runId === r.runId && e.type === "run.needs_operator",
+        ).length;
+      for (let i = 0; i < 50 && (await handedOff()) === 0; i++) {
+        await reapStuckRuns(db, boss, { now: new Date(), staleAfterMs: 10 * 60_000 });
+        if ((await handedOff()) === 0) await new Promise((res) => setTimeout(res, 50));
+      }
+      expect(await handedOff()).toBe(1);
+      expect(await runState(r.runId)).toBe("failed");
+      expect(r.world.refunds.filter((x) => x.charge === "ch_fixture_001")).toHaveLength(1);
+    }, 60_000);
+
+    it("an expired grant keeps a run retryable while its unreceipted send can't be read (#121)", async () => {
+      const r = await approvedRun();
+      const spy = failSettle("refund_001");
+      try {
+        await expect(
+          handleApplyJob(jobOf(r), contextFor(r.world), { retryCount: 0, retryLimit: 50 }),
+        ).rejects.toBeInstanceOf(RetryLater);
+      } finally {
+        spy.mockRestore();
+      }
+      const effects = r.world.effects.length;
+      const ctx = expired(r.world);
+      const stripe = r.world.provider("stripe");
+      const unreadable: WorkerContext = {
+        ...ctx,
+        providers: {
+          ...ctx.providers,
+          stripe: {
+            ...stripe,
+            reconcile: async () => {
+              throw new Error("stripe read unavailable (injected)");
+            },
+          },
+        },
+      };
+      // Even on the last try: the reaper re-enqueues it, bounded, then hands it to an operator.
+      await expect(
+        handleApplyJob(jobOf(r), unreadable, { retryCount: 50, retryLimit: 50 }),
+      ).rejects.toBeInstanceOf(RetryLater);
+      expect(await runState(r.runId)).toBe("applying");
+      expect(r.world.effects.length).toBe(effects);
+
+      // Once the read works, the refund is recorded and the refusal stands.
+      const after = await handleApplyJob(jobOf(r), ctx, { retryCount: 0, retryLimit: 50 });
+      expect(stateOf(after)).toBe("failed");
+      expect(await refundReceipt(r.orgId)).toContain("confirmed");
+      expect(r.world.effects.length).toBe(effects);
     });
   },
 );
