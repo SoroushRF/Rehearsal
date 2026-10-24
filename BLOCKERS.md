@@ -61,7 +61,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T2.10** Rehearse button: start a plan from the review page and follow it [#116](https://github.com/SoroushRF/Rehearsal/issues/116) | ✅ done |  |  |
 | **T2.11** Saved run replay that opens without signing in [#118](https://github.com/SoroushRF/Rehearsal/issues/118) | ✅ done |  |  |
 | **T2.12** Receipt wording: don't say "read back" for write-response confirmations [#132](https://github.com/SoroushRF/Rehearsal/issues/132) | 🟨 ready | — |  |
-| **T2.13** Two distinct approvers where policy requires (support + finance) [#135](https://github.com/SoroushRF/Rehearsal/issues/135) | 👀 in review [PR #193](https://github.com/SoroushRF/Rehearsal/pull/193) | — |  |
+| **T2.13** Two distinct approvers where policy requires (support + finance) [#135](https://github.com/SoroushRF/Rehearsal/issues/135) | 🟨 ready | — |  |
 | **T2.14** Historical audit view: the exact plan and policy as approved [#138](https://github.com/SoroushRF/Rehearsal/issues/138) | 🟨 ready | — |  |
 | **T2.15** Review UI: show the Slack summary step and its exact text [#145](https://github.com/SoroushRF/Rehearsal/issues/145) | 🟨 ready | — | T1.7 (T1) |
 | **T2.16** Review UI: show the exact rendered public reply being approved [#146](https://github.com/SoroushRF/Rehearsal/issues/146) | 🟨 ready | — | T1.13 (T1) |
@@ -144,7 +144,7 @@ flowchart LR
     T2_10["T2.10 Rehearse button: start a plan from the rev"]:::done
     T2_11["T2.11 Saved run replay that opens without signin"]:::done
     T2_12["T2.12 Receipt wording: don't say read back for w"]:::ready
-    T2_13["T2.13 Two distinct approvers where policy requir"]:::review
+    T2_13["T2.13 Two distinct approvers where policy requir"]:::ready
     T2_14["T2.14 Historical audit view: the exact plan and "]:::ready
     T2_15["T2.15 Review UI: show the Slack summary step and"]:::ready
     T2_16["T2.16 Review UI: show the exact rendered public "]:::ready
