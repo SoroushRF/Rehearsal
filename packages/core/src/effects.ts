@@ -32,7 +32,7 @@ export interface CreditAction {
 
 /**
  * A balance credit may confirm only as the exact approved credit: a negative `adjustment` balance
- * transaction on that customer, for that amount and currency (T3.12).
+ * transaction on that customer, naming the charge it remedies, for that amount and currency (T3.12).
  */
 export function creditEffectMatches(
   action: CreditAction,
@@ -43,6 +43,7 @@ export function creditEffectMatches(
     effect["credit.id"].length > 0 &&
     effect["credit.type"] === "adjustment" &&
     effect.customer === action.args.customerId &&
+    effect["credit.charge"] === action.args.chargeId &&
     effect["credit.amount"] === -action.args.amount.amountMinor &&
     effect.currency === action.args.amount.currency
   );
