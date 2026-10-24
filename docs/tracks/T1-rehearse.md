@@ -46,7 +46,7 @@
 | T1.16 | _Full scope:_ decision record reopening the trimmed scope (Slack in, SurrealDB allowed, ML out per 0008) | full scope | `docs/decisions/0009-reopen-full-scope.md` merged | #141 | — |
 | T1.17 | _Full scope:_ contracts: typed op `slack.message.postSummary` | full scope | Additive contracts change merged with a reviewer from another track; AGENTS.md op list updated | #142 | T1.16 |
 | T1.18 | _Full scope:_ contracts: typed op `zendesk.ticket.appendPublicReply` (rendered text in the hash) | full scope | Additive contracts change merged with a reviewer from another track | #143 | T1.16 |
-| T1.19 | _Full scope:_ contracts: typed op `stripe.customer.balanceCredit`, after an Era semantics check | full scope | Capability matrix entry plus additive contracts change merged | #144 | T1.16 |
+| T1.19 | _Full scope:_ contracts: typed op `stripe.customer.balanceCredit`, after an Era semantics check | full scope | Capability matrix entry plus additive contracts change merged. **Done:** `StripeCustomerBalanceCredit` in contracts, not yet in `Action` (T1.14 adds it); Era check 6/6 in `stripe-balance-credit.test.ts`. Era doesn't enforce the customer's currency, and the cohort customers are USD while their charges are CAD (capability matrix, surprise 8) | #144 | T1.16 |
 
 ## Decisions
 

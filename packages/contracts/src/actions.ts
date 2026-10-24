@@ -48,6 +48,25 @@ export const StripeRefundCreate = ActionBase.extend({
   }),
 });
 
+/**
+ * A credit to the customer's Stripe balance, applied to their next invoice, as the remedy for a
+ * duplicate charge instead of a refund. Sent as a negative customer balance transaction, so
+ * `amount` is the credit and is always positive. The customer's own currency must match: Era
+ * accepts any currency here, but Stripe doesn't (docs/capability-matrix.md).
+ *
+ * Not in `Action` yet, so no plan can carry one. T1.14 adds it once the write adapter (T3.12),
+ * the one-remedy guard (T4.10) and the policy (T2.18) handle it.
+ */
+export const StripeCustomerBalanceCredit = ActionBase.extend({
+  kind: z.literal("stripe.customer.balanceCredit"),
+  args: z.object({
+    customerId: z.string().min(1),
+    /** The duplicate charge this credit remedies, so a refund of it counts as the same remedy. */
+    chargeId: z.string().min(1),
+    amount: PositiveMoney,
+  }),
+});
+
 export const ZendeskPriority = z.enum(["low", "normal", "high", "urgent"]);
 export const ZendeskStatus = z.enum(["open", "pending", "solved"]);
 
