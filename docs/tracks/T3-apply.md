@@ -44,11 +44,26 @@ These must pass on Era, not just on fixtures:
 | T3.11 | _Full scope:_ Zendesk public reply write adapter; reconcile by reading the ticket's comments | full scope | Unknown outcome resolved through reads on Era; no blind re-send | #150 | T1.18 |
 | T3.12 | _Full scope:_ Stripe balance credit write adapter with idempotency, read-back and reconciliation | full scope | Lost-response test on Era | #151 | T1.19 |
 
+### Beyond and benchmark backlog (Oct 24)
+
+See [beyond.md](../beyond.md) for scope, parallel work, external gates and the release cut line. Blockers are completion prerequisites; fixture/contract work may start earlier. Killer rows are optional.
+
+| ID | Task | Milestone | Done when | Issue | Blocked by |
+|---|---|---|---|---|---|
+| T3.13 | _Beyond:_ Separate rehearsal persistence and durable jobs | M5 | Separate immutable records and transactional enqueue survive duplicates/restarts | [#164](https://github.com/SoroushRF/Rehearsal/issues/164) | [T1.21](https://github.com/SoroushRF/Rehearsal/issues/163) |
+| T3.14 | _Beyond:_ Share deterministic execution mechanics while preserving admission boundaries | M5 | Shared mechanics preserve operational refusal and recovery invariants | [#165](https://github.com/SoroushRF/Rehearsal/issues/165) | [T1.20](https://github.com/SoroushRF/Rehearsal/issues/162), [T1.21](https://github.com/SoroushRF/Rehearsal/issues/163), [T3.8](https://github.com/SoroushRF/Rehearsal/issues/134), [T1.7](https://github.com/SoroushRF/Rehearsal/issues/8), [T1.13](https://github.com/SoroushRF/Rehearsal/issues/136), [T1.14](https://github.com/SoroushRF/Rehearsal/issues/137), [T2.13](https://github.com/SoroushRF/Rehearsal/issues/135) |
+| T3.15 | _Beyond:_ Execute a stored plan against disposable worlds | M5 | Exact stored plan runs model-free only in matching disposable worlds | [#168](https://github.com/SoroushRF/Rehearsal/issues/168) | [T3.13](https://github.com/SoroushRF/Rehearsal/issues/164), [T3.14](https://github.com/SoroushRF/Rehearsal/issues/165), [T1.22](https://github.com/SoroushRF/Rehearsal/issues/166), [T1.23](https://github.com/SoroushRF/Rehearsal/issues/167) |
+| T3.16 | _Beyond:_ Rehearsal worker: restart, cancellation, and cleanup | M5 | Restart/cancel/cleanup preserve unknown outcomes and run isolation | [#170](https://github.com/SoroushRF/Rehearsal/issues/170) | [T3.15](https://github.com/SoroushRF/Rehearsal/issues/168), [T4.11](https://github.com/SoroushRF/Rehearsal/issues/169) |
+| T3.17 | _Stretch:_ _Killer:_ Native Stripe sandbox refund writer | M5 | Test-only native refund dispatch/read-back/reconciliation preserves target binding | [#184](https://github.com/SoroushRF/Rehearsal/issues/184) | [T1.24](https://github.com/SoroushRF/Rehearsal/issues/178), [T3.8](https://github.com/SoroushRF/Rehearsal/issues/134) |
+| T3.18 | _Stretch:_ _Killer:_ Native Stripe executor recovery gate | M5 | Native sandbox approved-refund/lost-response/restart produces one observed effect | [#185](https://github.com/SoroushRF/Rehearsal/issues/185) | [T3.17](https://github.com/SoroushRF/Rehearsal/issues/184), [T3.5](https://github.com/SoroushRF/Rehearsal/issues/22) |
+
 ## Decisions
 
 _(add dated entries)_
 
 ## Handoff log
+
+- **2026-10-24 (Codex, backlog planning):** Filed 6 owned M5 issues (T3.13 #164, T3.14 #165, T3.15 #168, T3.16 #170, T3.17 #184, T3.18 #185) with scope/track labels, acceptance criteria and linked blockers. Added the cross-track dependency map in [beyond.md](../beyond.md); native GitHub dependencies mirror these rows. No feature implementation or live validation is claimed. Next: finish the full prerequisites, then follow the graph; optional killer work stays off the main release path.
 
 _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
 

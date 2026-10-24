@@ -33,7 +33,7 @@
 | T2.4 | `POST /api/plans/:id/approvals`: grant bound to org, revision, hash, actor and expiry; full refusal test matrix | M2 | Refusal tests green; grant visible to T3 | #13 | T2.2, T2.3 |
 | T2.5 | Deploy thin slice: API + web, workers, Postgres, private simulators. Prove the cloud workers can reach the simulators. | M2 | Public URL plus a smoke script; the fallback is decided if this fails | #14 | T2.2, T1.5, T3.2 |
 | T2.6 | Run timeline, receipts and held-step views (polling `GET /api/runs/:id/events`) | M3 | Phantom and conflict runs read clearly to a stranger | #15 | T3.2 |
-| T2.7 | Two-minute video script, recording, Devpost page | M4–M5 | Submitted | #16 | T2.6 |
+| T2.7 | Two-minute video script, recording, Devpost page | M4–M5 | Final integration gate and frozen-head benchmark evidence used in video/Devpost; submitted | #16 | [T2.6](https://github.com/SoroushRF/Rehearsal/issues/15), [T2.5](https://github.com/SoroushRF/Rehearsal/issues/14), [T1.28](https://github.com/SoroushRF/Rehearsal/issues/176) |
 | T2.8 | _Stretch:_ thin Expo approver app on the same API | after M4 | Only if everything else is frozen | #17 | T2.4 |
 | T2.9 | Decide currency: align `policy.v1.json` with the Era seed (USD vs CAD) and record it in `docs/decisions/` | M2 | Decision merged; policy and seed agree | #40 | — |
 | T2.10 | Rehearse button: start a plan from the review page, follow the planner, show the stored plan | M3 | Planner states and failures in plain words; stored plan selected on arrival | #116 | T1.5 |
@@ -46,6 +46,19 @@
 | T2.17 | _Full scope:_ finance-only "Promote to precedent" route and UI; recalled precedents shown with trace | full scope | Role-checked route plus UI; promotion goes through T1.8's adapter | #147 | T1.8 |
 | T2.18 | _Full scope:_ policy chooses a refund or an invoice credit per obligation | full scope | New policy version; a completed remedy blocks a second; UI shows the remedy | #148 | T1.19 |
 
+### Beyond and benchmark backlog (Oct 24)
+
+See [beyond.md](../beyond.md) for scope, parallel work, external gates and the release cut line. Blockers are completion prerequisites; fixture/contract work may start earlier. Killer rows are optional.
+
+| ID | Task | Milestone | Done when | Issue | Blocked by |
+|---|---|---|---|---|---|
+| T2.19 | _Beyond:_ API: request and read an execution rehearsal | M5 | Authorized idempotent endpoints queue stored references and expose scoped reports | [#171](https://github.com/SoroushRF/Rehearsal/issues/171) | [T1.21](https://github.com/SoroushRF/Rehearsal/issues/163), [T3.13](https://github.com/SoroushRF/Rehearsal/issues/164), [T2.14](https://github.com/SoroushRF/Rehearsal/issues/138) |
+| T2.20 | _Beyond:_ Review UI: start a rehearsal and follow its progress | M5 | Reviewer starts one scoped job and follows progress without granting apply | [#172](https://github.com/SoroushRF/Rehearsal/issues/172) | [T2.19](https://github.com/SoroushRF/Rehearsal/issues/171) |
+| T2.21 | _Beyond:_ Review UI: compare expected and observed rehearsal outcomes | M5 | Expected/observed report shows discrepancies, uncertainty and stale revisions | [#174](https://github.com/SoroushRF/Rehearsal/issues/174) | [T2.19](https://github.com/SoroushRF/Rehearsal/issues/171), [T4.12](https://github.com/SoroushRF/Rehearsal/issues/173) |
+| T2.22 | _Beyond:_ Operator task tests and findings | M5 | Two outside operators complete observed tasks; findings and limits are recorded | [#177](https://github.com/SoroushRF/Rehearsal/issues/177) | [T2.5](https://github.com/SoroushRF/Rehearsal/issues/14), [T2.6](https://github.com/SoroushRF/Rehearsal/issues/15) |
+| T2.23 | _Stretch:_ _Killer:_ Server-side fresh verification bound to the plan | M5 | Fresh verified session authorizes only one exact approval intent | [#182](https://github.com/SoroushRF/Rehearsal/issues/182) | [T2.13](https://github.com/SoroushRF/Rehearsal/issues/135), [T2.4](https://github.com/SoroushRF/Rehearsal/issues/13) |
+| T2.24 | _Stretch:_ _Killer:_ Clerk verification UI | M5 | Real verification UI preserves reviewed intent through cancel/stale/retry paths | [#183](https://github.com/SoroushRF/Rehearsal/issues/183) | [T2.23](https://github.com/SoroushRF/Rehearsal/issues/182), [T2.3](https://github.com/SoroushRF/Rehearsal/issues/12) |
+
 ## Decisions
 
 _(add dated entries)_
@@ -53,6 +66,8 @@ _(add dated entries)_
 - **2026-10-22:** The demo currency is CAD; the seeded cohort already matches the policy ([0005](../decisions/0005-currency-cad.md)).
 
 ## Handoff log
+
+- **2026-10-24 (Codex, backlog planning):** Filed 6 owned M5 issues (T2.19 #171, T2.20 #172, T2.21 #174, T2.22 #177, T2.23 #182, T2.24 #183) with scope/track labels, acceptance criteria and linked blockers. Added the cross-track dependency map in [beyond.md](../beyond.md); native GitHub dependencies mirror these rows. No feature implementation or live validation is claimed. Next: finish the full prerequisites, then follow the graph; optional killer work stays off the main release path.
 
 _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
 
