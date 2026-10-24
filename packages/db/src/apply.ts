@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
+import type { ApprovalGrant } from "@rehearsal/contracts";
 import { planHash as computePlanHash } from "@rehearsal/core";
 import { and, desc, eq, gt, inArray, isNull, lte } from "drizzle-orm";
 import type { PgBoss } from "pg-boss";
+import { toApprovalGrant } from "./apply-store";
 import type { Db } from "./index";
 import { enqueueApply } from "./queue";
 import { approvalGrants, planVersions, runs } from "./schema";
@@ -13,6 +15,12 @@ export interface ApplyCommand {
   revision: number;
   planHash: string;
   now: Date;
+  /**
+   * Extra approval rules the caller knows about, such as two distinct approvers. Given the stored
+   * manifest and every grant for this hash; returns why the plan isn't covered, or null. The
+   * executor re-checks at admission regardless.
+   */
+  checkApprovals?: (manifest: unknown, grants: ApprovalGrant[]) => string | null;
 }
 
 export type ApplyResult =
@@ -96,6 +104,15 @@ export async function requestApply(db: Db, boss: PgBoss, cmd: ApplyCommand): Pro
       .limit(1);
     if (!grant) {
       return { kind: "approval_invalid", detail: "no live approval grant for this exact hash" };
+    }
+
+    if (cmd.checkApprovals) {
+      const all = await tx
+        .select()
+        .from(approvalGrants)
+        .where(and(eq(approvalGrants.orgId, cmd.orgId), eq(approvalGrants.planHash, cmd.planHash)));
+      const why = cmd.checkApprovals(plan.manifest, all.map(toApprovalGrant));
+      if (why) return { kind: "approval_invalid", detail: why };
     }
 
     const runId = `run_${randomUUID()}`;
