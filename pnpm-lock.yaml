@@ -11,6 +11,9 @@ importers:
       '@biomejs/biome':
         specifier: ^2.5.15
         version: 2.5.15
+      '@rehearsal/contracts':
+        specifier: workspace:*
+        version: link:packages/contracts
       '@rehearsal/core':
         specifier: workspace:*
         version: link:packages/core
@@ -41,6 +44,9 @@ importers:
       vitest:
         specifier: ^5.0.5
         version: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.5)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15))
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
 
   apps/api:
     dependencies:

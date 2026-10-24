@@ -26,6 +26,7 @@
     "demo:conflict": "tsx --env-file-if-exists=.env scripts/inject/conflict.ts",
     "demo:fault": "tsx --env-file-if-exists=.env scripts/inject/fault.ts",
     "infra:up:full": "docker compose -f infra/compose.yaml --profile full up -d",
+    "infra:up:rehearsal": "docker compose -f infra/compose.yaml --profile rehearsal up -d",
     "infra:down": "docker compose -f infra/compose.yaml down",
     "smoke:era": "tsx --env-file-if-exists=.env scripts/smoke/era-meta.ts",
     "blockers": "node scripts/blockers/generate.ts",
@@ -34,6 +35,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",
+    "@rehearsal/contracts": "workspace:*",
     "@rehearsal/core": "workspace:*",
     "@rehearsal/db": "workspace:*",
     "@rehearsal/providers": "workspace:*",
@@ -43,6 +45,7 @@
     "drizzle-orm": "^0.45.4",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
-    "vitest": "^5.0.5"
+    "vitest": "^5.0.5",
+    "zod": "^4.6.7"
   }
 }
