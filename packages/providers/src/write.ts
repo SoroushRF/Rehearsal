@@ -1,5 +1,7 @@
 import type { Action, Attempt, World } from "@rehearsal/contracts";
 import {
+  type CreditAction,
+  creditEffectMatches,
   type DispatchResult,
   noteBodyFor,
   operationMarker,
@@ -453,6 +455,151 @@ export function zendeskReplyWriter(target: WriteTarget): ZendeskReplyWriter {
           ...(found.comment.id !== undefined && { "comment.id": String(found.comment.id) }),
           public: true,
         },
+      };
+    },
+  };
+}
+
+const BalanceTransactionPage = z.object({
+  data: z.array(
+    z.object({
+      id: z.string(),
+      amount: z.number(),
+      currency: z.string(),
+      customer: z.string(),
+      type: z.string(),
+      metadata: z.record(z.string(), z.string()).nullable().optional(),
+    }),
+  ),
+  has_more: z.boolean(),
+});
+
+/** The write side of `stripe.customer.balanceCredit` (T3.12); `executeRun` takes it once T1.14 adds the op. */
+export interface StripeCreditWriter {
+  vendor: "stripe";
+  idempotentResend(action: CreditAction): boolean;
+  preconditions(action: CreditAction, ctx: WorldContext): Promise<Preconditions>;
+  prepare(action: CreditAction, operationKey: string): PreparedRequest;
+  dispatch(req: PreparedRequest, ctx: WorldContext): Promise<DispatchResult>;
+  reconcile(attempt: Attempt, action: CreditAction, ctx: WorldContext): Promise<ReconcileResult>;
+}
+
+/**
+ * Customer balance credits: a negative customer balance transaction, form-encoded in a fixed
+ * order, with the operation key as the idempotency key and in metadata (T1.19 showed Era replays
+ * the same key and bytes and refuses other bytes). Era takes any currency, Stripe doesn't, so the
+ * customer's currency is checked before the credit is prepared.
+ */
+export function stripeCreditWriter(target: WriteTarget): StripeCreditWriter {
+  const path = (customerId: string) =>
+    `/v1/customers/${encodeURIComponent(customerId)}/balance_transactions`;
+  return {
+    vendor: "stripe",
+    idempotentResend: () => true,
+    async preconditions(action, ctx) {
+      assertTarget(target, ctx);
+      const customer = await readJson<{ currency?: unknown }>(
+        target,
+        `/v1/customers/${encodeURIComponent(action.args.customerId)}`,
+      );
+      // A customer without a currency takes the first balance transaction's, as Stripe does.
+      if (customer.currency !== null && customer.currency !== undefined) {
+        if (customer.currency !== action.args.amount.currency) {
+          throw new Error(
+            `customer ${action.args.customerId} is in ${String(customer.currency)}, the credit is in ${action.args.amount.currency}`,
+          );
+        }
+      }
+      return {};
+    },
+    prepare(action, operationKey) {
+      if (
+        !Number.isInteger(action.args.amount.amountMinor) ||
+        action.args.amount.amountMinor <= 0
+      ) {
+        throw new Error("a balance credit must be a positive integer amount");
+      }
+      const body = new URLSearchParams([
+        ["amount", String(-action.args.amount.amountMinor)],
+        ["currency", action.args.amount.currency],
+        ["metadata[rehearsal_op]", operationKey],
+      ]).toString();
+      return {
+        method: "POST",
+        path: path(action.args.customerId),
+        encoding: "form",
+        body,
+        headers: { "idempotency-key": operationKey },
+      };
+    },
+    async dispatch(req, ctx) {
+      assertTarget(target, ctx);
+      const result = await send(target, req);
+      // 409 here means the key is in use by a concurrent request that may still apply.
+      if (result.kind === "rejected" && result.status === 409) {
+        return { kind: "unknown", error: "idempotency key in use by a concurrent request" };
+      }
+      return result;
+    },
+    /** Find the credit by the operation key in its metadata, among all the customer's transactions. */
+    async reconcile(attempt, action, ctx) {
+      assertTarget(target, ctx);
+      let page = `${path(action.args.customerId)}?limit=100`;
+      const seen = new Set<string>();
+      for (let n = 0; n < MAX_PAGES; n++) {
+        const parsed = BalanceTransactionPage.safeParse(await readJson<unknown>(target, page));
+        if (!parsed.success)
+          return { kind: "indeterminate", detail: "invalid balance transaction page" };
+        const list = parsed.data;
+        if (
+          list.data.some((t) => seen.has(t.id)) ||
+          new Set(list.data.map((t) => t.id)).size !== list.data.length
+        ) {
+          return { kind: "indeterminate", detail: "repeated balance transaction cursor" };
+        }
+        for (const t of list.data) seen.add(t.id);
+        const tx = list.data.find((t) => t.metadata?.rehearsal_op === attempt.operationKey);
+        if (tx) {
+          const effect = {
+            "credit.id": tx.id,
+            "credit.amount": tx.amount,
+            "credit.type": tx.type,
+            customer: tx.customer,
+            currency: tx.currency,
+          };
+          // Correlate to the bytes that were actually dispatched (a revision may differ).
+          const sent = new URLSearchParams(attempt.request.body);
+          const original: CreditAction = {
+            ...action,
+            args: {
+              ...action.args,
+              amount: {
+                amountMinor: -Number(sent.get("amount")),
+                currency: sent.get("currency") ?? "",
+              },
+            },
+          };
+          if (!creditEffectMatches(original, effect)) {
+            return {
+              kind: "indeterminate",
+              detail: "credit read contradicts the journaled operation",
+            };
+          }
+          return {
+            kind: "applied",
+            providerRef: { vendor: "stripe", kind: "customer_balance_transaction", id: tx.id },
+            effect,
+          };
+        }
+        const last = list.data.at(-1);
+        if (!list.has_more) return { kind: "not_applied" };
+        if (!last)
+          return { kind: "indeterminate", detail: "empty balance transaction page with has_more" };
+        page = `${path(action.args.customerId)}?limit=100&starting_after=${encodeURIComponent(last.id)}`;
+      }
+      return {
+        kind: "indeterminate",
+        detail: `more than ${MAX_PAGES} pages of balance transactions`,
       };
     },
   };

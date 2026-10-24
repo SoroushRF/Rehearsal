@@ -19,3 +19,31 @@ export function refundEffectMatches(
     money.data.currency === action.args.amount.currency
   );
 }
+
+/**
+ * What sending needs of a `stripe.customer.balanceCredit` action (contracts'
+ * `StripeCustomerBalanceCredit`; not in `Action` until T1.14 adds it).
+ */
+export interface CreditAction {
+  id: string;
+  kind: "stripe.customer.balanceCredit";
+  args: { customerId: string; chargeId: string; amount: { amountMinor: number; currency: string } };
+}
+
+/**
+ * A balance credit may confirm only as the exact approved credit: a negative `adjustment` balance
+ * transaction on that customer, for that amount and currency (T3.12).
+ */
+export function creditEffectMatches(
+  action: CreditAction,
+  effect: Record<string, unknown>,
+): boolean {
+  return (
+    typeof effect["credit.id"] === "string" &&
+    effect["credit.id"].length > 0 &&
+    effect["credit.type"] === "adjustment" &&
+    effect.customer === action.args.customerId &&
+    effect["credit.amount"] === -action.args.amount.amountMinor &&
+    effect.currency === action.args.amount.currency
+  );
+}
