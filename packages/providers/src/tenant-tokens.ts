@@ -1,6 +1,6 @@
 import type { World } from "@rehearsal/contracts";
 import { z } from "zod";
-import { resolveWorld, type WorldConfig } from "./worlds";
+import { resolveWorld, type WorldConfig, worldEnvKey } from "./worlds";
 
 /** A signed tenant token and when it stops working (epoch ms). */
 export const MintedToken = z.object({ token: z.string().min(1), expiresAt: z.number().int() });
@@ -59,18 +59,19 @@ export type WorkerRole = keyof typeof WORKER_ROLES;
 /** Path of the operator's mint route in apps/api. */
 export const TENANT_TOKEN_ROUTE = "/internal/era/tenant-token";
 
-type EraVendor = "stripe" | "zendesk";
+type EraVendor = "stripe" | "zendesk" | "slack";
 
 /**
- * A worker's Stripe and Zendesk worlds, each carrying a token source that mints through the
- * operator (the API process, which alone holds ERA_ADMIN_TOKEN). The worker's secret only ever
- * mints tokens for its own world.
+ * A worker's Stripe and Zendesk worlds, plus the executor's Slack world when its URL is set (only
+ * the executor posts the optional run summary), each carrying a token source that mints through the operator (the API
+ * process, which alone holds ERA_ADMIN_TOKEN). The worker's secret only ever mints tokens for its
+ * own world.
  */
 export function workerWorlds(
   role: WorkerRole,
   env: NodeJS.ProcessEnv = process.env,
   options: { clock?: { now(): Date }; fetch?: typeof fetch } = {},
-): Record<EraVendor, WorldConfig> {
+): Record<"stripe" | "zendesk", WorldConfig> & { slack?: WorldConfig } {
   const { world, secretEnv } = WORKER_ROLES[role];
   const apiUrl = env.REHEARSAL_API_URL?.replace(/\/$/, "");
   const secret = env[secretEnv];
@@ -93,7 +94,11 @@ export function workerWorlds(
       tenantToken: new RefreshingTokenSource(mint, options.clock),
     };
   };
-  return { stripe: bind("stripe"), zendesk: bind("zendesk") };
+  return {
+    stripe: bind("stripe"),
+    zendesk: bind("zendesk"),
+    ...(role === "executor" && env[worldEnvKey("slack", world)] ? { slack: bind("slack") } : {}),
+  };
 }
 
 /** Mint every world's token now, so a misconfigured minter fails at startup, not mid-run. */

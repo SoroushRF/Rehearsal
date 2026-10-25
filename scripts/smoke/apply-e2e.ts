@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import type { PlanManifest } from "@rehearsal/contracts";
 import { planHash } from "@rehearsal/core";
 import { createDb, migrateDb, requestApply, schema, startQueue } from "@rehearsal/db";
 import { billingManifest } from "@rehearsal/testkit";
 import { eq } from "drizzle-orm";
-import { adminOrThrow, bind, fixture, getJson, report } from "../inject/session";
+import { adminOrThrow, bind, getJson, report } from "../inject/session";
 
 /**
  * End-to-end smoke for the executor worker. Seeds one CAD charge in the operational world of
@@ -14,6 +15,12 @@ import { adminOrThrow, bind, fixture, getJson, report } from "../inject/session"
  * Run the API (the tenant-token minter) and `pnpm --filter @rehearsal/executor-worker start` with
  * the same DATABASE_URL and ERA_TENANT first. Operator script: it needs ERA_ADMIN_TOKEN.
  */
+
+/** A captured Era response from scenarios/billing/fixtures, used as the template for a seeded record. */
+const fixture = (name: string): Record<string, unknown> =>
+  JSON.parse(
+    readFileSync(new URL(`../../scenarios/billing/fixtures/${name}`, import.meta.url), "utf8"),
+  );
 
 const TICKET = 4000002;
 const stripe = await bind("stripe", "operational");

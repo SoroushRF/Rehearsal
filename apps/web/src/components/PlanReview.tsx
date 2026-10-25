@@ -1,6 +1,7 @@
+import type { PlanManifest } from "@rehearsal/contracts";
 import { type ReactNode, useCallback, useState } from "react";
 import { formatMoney, roleLabel, shortHash, sumMoney } from "../format";
-import { droppedBy, groupByCase, type ReviewManifest, requiredRoles } from "../plan";
+import { droppedBy, groupByCase, requiredRoles } from "../plan";
 import { ActionRow } from "./ActionRow";
 import { EvidenceDrawer } from "./EvidenceDrawer";
 import { Card, Chip, CopyButton, Icon, Stat } from "./ui";
@@ -18,7 +19,7 @@ export function PlanReview({
   review,
   actions,
 }: {
-  manifest: ReviewManifest;
+  manifest: PlanManifest;
   planHash: string;
   /** A bundle's evidence label; null for a stored plan, which shows who planned it instead. */
   evidence: "fixture" | "era_integration" | null;
@@ -38,12 +39,10 @@ export function PlanReview({
   return (
     <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_21.5rem] lg:gap-x-8 lg:gap-y-6">
       {/* Title */}
-      <header className="order-1 lg:col-span-2">
-        <p className="text-xs font-semibold tracking-wider text-subtle uppercase">Incident</p>
-        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-2">
-          <h2 className="text-2xl leading-8 font-semibold tracking-tight text-ink sm:text-[28px] sm:leading-9">
-            {manifest.incidentId}
-          </h2>
+      <header className="review-heading order-1 lg:col-span-2">
+        <p className="workspace-label">Billing operations / Plan review</p>
+        <div className="review-title">
+          <h2>{manifest.incidentId}</h2>
           <div className="flex flex-wrap items-center gap-1.5">
             <Chip tone="neutral">
               Revision {manifest.revision}
@@ -65,25 +64,42 @@ export function PlanReview({
             )}
           </div>
         </div>
-        <p className="mt-1 text-sm text-subtle">
-          Plan <code className="font-mono text-[13px] text-muted">{manifest.planId}</code>
-        </p>
+        <div className="review-context">
+          <p>
+            Plan <code className="font-mono text-muted">{manifest.planId}</code>
+          </p>
+          <p>
+            {review
+              ? "Review each effect before signing."
+              : "Inspect the plan and the evidence behind each effect."}
+          </p>
+        </div>
+        <ol className="review-stage" aria-label="Plan and apply process">
+          <li>
+            <span className="stage-number">01</span>Plan
+          </li>
+          <li aria-current="step">
+            <span className="stage-number">02</span>Review
+          </li>
+          <li>
+            <span className="stage-number">03</span>Apply
+          </li>
+        </ol>
       </header>
 
       {/* Steps, grouped by customer */}
       <div className="order-3 flex min-w-0 flex-col gap-5 lg:order-none lg:col-start-1 lg:row-start-2">
-        {cases.map((c) => (
+        <p className="workspace-label">Planned effects · {cases.length} customer cases</p>
+        {cases.map((c, index) => (
           <Card
             key={c.caseId}
             data-testid="case-card"
             data-case-id={c.caseId}
-            className="overflow-hidden"
+            className="ledger-section overflow-hidden"
           >
-            <div className="flex items-center justify-between gap-4 border-b border-line bg-sunken/60 px-4 py-3.5 sm:px-5">
+            <div className="ledger-customer">
               <div className="flex min-w-0 items-center gap-3">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface text-subtle shadow-card ring-1 ring-line">
-                  <Icon name="users" className="h-[18px] w-[18px]" />
-                </span>
+                <span className="ledger-index">{String(index + 1).padStart(2, "0")}</span>
                 <div className="min-w-0">
                   <h3 className="truncate text-[15px] leading-5 font-semibold text-ink">
                     {c.customerId ?? "Unknown customer"}
@@ -151,13 +167,16 @@ export function PlanReview({
       </div>
 
       {/* Summary, then the approval panel */}
-      <div className="contents lg:sticky lg:top-[4.75rem] lg:col-start-2 lg:row-start-2 lg:block lg:max-h-[calc(100dvh-5.75rem)] lg:self-start lg:overflow-y-auto lg:pb-1">
-        <Card className="order-2 p-5 lg:order-none">
-          <p className="text-xs font-semibold tracking-wider text-subtle uppercase">
-            Total refunds
-          </p>
-          <p className="tnum mt-1 text-[32px] leading-10 font-semibold tracking-tight text-ink">
+      <div className="review-sidebar contents lg:sticky lg:top-24 lg:col-start-2 lg:row-start-2 lg:block lg:max-h-[calc(100dvh-7rem)] lg:self-start lg:overflow-y-auto lg:pb-1">
+        <Card className="ledger-summary order-2 p-5 lg:order-none">
+          <p className="workspace-label">Total refunds</p>
+          <p className="ledger-summary-amount tnum text-ink">
             {refunds.map(formatMoney).join(" + ") || "None"}
+          </p>
+          <p className="ledger-summary-note">
+            {review
+              ? "Your signature covers the effects in this exact revision."
+              : "This is a read-only plan. Live plans require a signed approval before apply."}
           </p>
           {credits.length > 0 && (
             <p className="mt-1 text-sm text-muted">

@@ -85,7 +85,8 @@ describe("slack.message.postSummary (T1.17)", () => {
     expect(Union.safeParse({ ...summary, dependsOn: notes }).success).toBe(false);
   });
 
-  it("is not a plannable action until T1.7 wires it in", () => {
-    expect(Action.safeParse(summary).success).toBe(false);
+  it("is a plannable action (T1.7), with its refinement intact", () => {
+    expect(Action.safeParse(summary).success).toBe(true);
+    expect(Action.safeParse({ ...summary, dependsOn: notes }).success).toBe(false);
   });
 });

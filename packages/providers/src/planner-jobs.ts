@@ -38,6 +38,10 @@ export interface FailPlanJob {
 /**
  * The worker's client for those routes. Errors carry the status so the caller can log them. Each
  * call gives up after `timeoutMs`, so an API that never answers can't hold the serial worker.
+ *
+ * Redirects are refused, never followed: every request carries the worker's secret, and Fetch
+ * keeps the Authorization header on a same-origin redirect, so a proxy that sends `/internal/…`
+ * somewhere else would hand that service the secret (#242). Same policy as the Era transports.
  */
 export function plannerJobsClient(
   apiUrl: string,
@@ -55,6 +59,7 @@ export function plannerJobsClient(
       },
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(timeoutMs),
+      redirect: "error",
     });
   const expect = async (res: Response, ok: number[], what: string) => {
     if (!ok.includes(res.status)) {

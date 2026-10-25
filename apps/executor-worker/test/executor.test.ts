@@ -1463,7 +1463,11 @@ describe("bounded concurrency across cases (T3.7)", () => {
         );
         copy.queryEvidence = a.queryEvidence.map((q) => q.replace("001", tag));
         if (copy.kind === "stripe.refund.create") copy.args.chargeId = chargeId;
-        else copy.args.ticketId = ticketId;
+        else if (
+          copy.kind !== "slack.message.postSummary" &&
+          copy.kind !== "stripe.customer.balanceCredit"
+        )
+          copy.args.ticketId = ticketId;
         if (copy.kind === "zendesk.ticket.appendPrivateNote") {
           copy.args.bindings.refundId = {
             $ref: "result",

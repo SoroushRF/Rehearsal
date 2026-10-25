@@ -66,7 +66,7 @@ describe("zendesk.ticket.appendPublicReply (T1.18)", () => {
     expect(parse({}, { protection: "native_guard_with_documented_limits" }).success).toBe(false);
   });
 
-  it("is not a plannable action until T1.13 wires it in", () => {
-    expect(Action.safeParse(reply).success).toBe(false);
+  it("is a plannable action (T1.13)", () => {
+    expect(Action.safeParse(reply).success).toBe(true);
   });
 });

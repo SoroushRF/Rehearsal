@@ -149,12 +149,15 @@ describe("planning loop", () => {
     const first = requests[0];
     expect(first?.model).toBe(MODEL);
     expect(first?.system).toBe(SYSTEM_PROMPT);
+    // Every tool but the balance credit, which only a session with credits on offers (T1.14).
     expect(first?.tools?.map((t) => (t as Anthropic.Tool).name).sort()).toEqual(
-      Object.keys(PLANNING_TOOLS).sort(),
+      Object.keys(PLANNING_TOOLS)
+        .filter((name) => name !== "propose_balance_credit")
+        .sort(),
     );
     expect(first?.messages).toEqual([{ role: "user", content: briefMessage(BRIEF) }]);
     // Every request is the same prefix plus new turns, so the cache keeps hitting.
-    expect(requests.every((r) => r.system === SYSTEM_PROMPT && r.tools?.length === 7)).toBe(true);
+    expect(requests.every((r) => r.system === SYSTEM_PROMPT && r.tools?.length === 9)).toBe(true);
     expect(requests[3]?.messages.slice(0, 5)).toEqual(requests[2]?.messages);
   });
 

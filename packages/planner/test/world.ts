@@ -2,12 +2,13 @@ import type { QueryPredicate } from "@rehearsal/contracts";
 import { fingerprint } from "@rehearsal/core";
 import {
   STRIPE_CHARGE_PROJECTION,
+  STRIPE_CUSTOMER_PROJECTION,
   stripeChargeProjection,
   ZENDESK_TICKET_PROJECTION,
   zendeskTicketProjection,
 } from "@rehearsal/providers";
 import { FakeClock, INCIDENT, incidentRecords } from "@rehearsal/testkit";
-import { type PlanningReader, PlanningSession } from "../src";
+import { type PlanningReader, PlanningSession, type PlanningSessionOptions } from "../src";
 
 export const POLICY = {
   id: "billing-remedy",
@@ -15,18 +16,39 @@ export const POLICY = {
   currency: "cad",
   financeThresholdMinor: 10_000,
 } as const;
+/** Policy v2: a credit below 100.00 CAD may settle a duplicate instead of a refund (T1.14). */
+export const POLICY_V2 = { ...POLICY, version: 2, creditMaxMinor: 10_000 } as const;
 export const CTX = { world: "planning", tenant: "t1-4" } as const;
 
 /** In-memory planning world over the seeded cohort, with the real read projections. */
-export function world() {
+export function world(
+  opts: Partial<
+    Pick<PlanningSessionOptions, "runSummary" | "customerNames" | "credits" | "policy">
+  > = {},
+) {
   const records = incidentRecords();
   const charges = new Map(records.stripe.charges.map((c) => [String(c.id), c]));
   const tickets = new Map(records.zendesk.tickets.map((t) => [String(t.id), t]));
+  /** A Stripe customer's billing currency; unset reads as null, as for a customer never billed. */
+  const customerCurrencies = new Map<string, string>();
   const reads: string[] = [];
   const at = new Date().toISOString();
   const stripe: PlanningReader = {
     vendor: "stripe",
     async observe(entity) {
+      if (entity.kind === "customer") {
+        reads.push(`customer ${entity.id}`);
+        const projection = { id: entity.id, currency: customerCurrencies.get(entity.id) ?? null };
+        return {
+          id: `obs_customer_${entity.id}`,
+          world: "planning",
+          entity,
+          projectionVersion: STRIPE_CUSTOMER_PROJECTION,
+          projection,
+          fingerprint: fingerprint(projection),
+          capturedAt: at,
+        };
+      }
       reads.push(`charge ${entity.id}`);
       const c = charges.get(entity.id);
       if (!c) throw new Error(`GET /v1/charges/${entity.id} → 404`);
@@ -96,6 +118,7 @@ export function world() {
     policy: POLICY,
     window: INCIDENT.window,
     clock: new FakeClock("2026-10-02T12:00:00.000Z"),
+    ...opts,
   });
-  return { session, reads, records, charges, tickets };
+  return { session, reads, records, charges, tickets, customerCurrencies };
 }

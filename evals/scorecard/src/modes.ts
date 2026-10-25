@@ -1,23 +1,26 @@
 import type { Action, PlanManifest, Receipt, Role } from "@rehearsal/contracts";
 import {
-  type BillingPolicyV1,
+  type BillingPolicy,
   bindingKey,
   createReadGuard,
   type DispatchResult,
   executeRun,
   type ProviderPort,
   planHash,
+  renderReply,
+  summaryCountKey,
 } from "@rehearsal/core";
 import { FakeClock, MemoryApplyStore, MemoryJournal } from "@rehearsal/testkit";
-import type { EraVendor } from "../../providers/src/harness";
-import type { DecidedIntent, Intent } from "./agent";
+import type { HarnessVendor } from "../../providers/src/harness";
+import { type DecidedIntent, type Intent, stepIdOf } from "./agent";
 
 /**
  * The three ways of applying the same agent decisions to an operational world.
  *
  * - direct: every intent is sent as soon as it's made, through the same typed writers the executor
- *   uses (same idempotency keys on refunds, same guarded Zendesk update). No plan, no review, no
- *   guard. Like an SDK client, it re-sends the same bytes once after a 429 or a lost response.
+ *   uses (same idempotency keys on refunds and credits, same guarded Zendesk update). No plan, no
+ *   review, no guard. Like an SDK client, it re-sends the same bytes once after a 429 or a lost
+ *   response, and its run summary counts what its own sends returned.
  * - per_call: direct, but a reviewer is asked before every call. The reviewer is modelled as
  *   diligent: they reject exactly the calls the planning tools' policy checks reject, and pass the
  *   rest. They see the call, not later changes in the world.
@@ -33,8 +36,16 @@ export interface ApplyResult {
   log: string[];
 }
 
-type Ports = Record<EraVendor, ProviderPort>;
-type Contexts = Record<EraVendor, { world: "operational"; tenant: string }>;
+/** Slack only for a task with a run summary. */
+type Ports = Partial<Record<HarnessVendor, ProviderPort>>;
+type Contexts = Partial<Record<HarnessVendor, { world: "operational"; tenant: string }>>;
+
+const vendorOf = (action: Action): HarnessVendor =>
+  action.kind.startsWith("stripe.")
+    ? "stripe"
+    : action.kind.startsWith("slack.")
+      ? "slack"
+      : "zendesk";
 
 /** Direct and per-call: send each intent as a typed write, in the order the agent made them. */
 export async function applyCalls(
@@ -44,11 +55,14 @@ export async function applyCalls(
   opts: { taskId: string; review: boolean },
 ): Promise<ApplyResult> {
   const refundIds = new Map<string, string>();
+  /** Each sent step's outcome, for the run summary's counts. */
+  const outcomes = new Map<string, "confirmed" | "not_confirmed">();
   const log: string[] = [];
   let unresolved = 0;
   let prompts = 0;
   for (const [n, { intent, accepted, refusal }] of decided.entries()) {
     const label = `${intent.tool} ${JSON.stringify(intent.input)}`;
+    const stepId = stepIdOf(intent);
     if (opts.review) {
       prompts++;
       if (!accepted) {
@@ -56,35 +70,49 @@ export async function applyCalls(
         continue;
       }
     }
-    const action = actionFor(intent);
-    const vendor: EraVendor = action.kind === "stripe.refund.create" ? "stripe" : "zendesk";
-    const port = ports[vendor];
     const bindings = new Map<string, string | number>();
-    if (action.kind === "zendesk.ticket.appendPrivateNote") {
-      const refundStepId = intent.tool === "propose_refund_note" ? intent.input.refundStepId : "";
+    if (intent.tool === "propose_refund_note" || intent.tool === "propose_customer_reply") {
+      // Both say the refund went out, so neither is sent (or even rendered) unless it did.
+      const refundStepId = intent.input.refundStepId;
       const refundId = refundIds.get(refundStepId);
       if (!refundId) {
+        outcomes.set(stepId, "not_confirmed");
         log.push(`skipped (its refund didn't go through): ${label}`);
         continue;
       }
       bindings.set(bindingKey({ stepId: refundStepId, path: "refund.id" }), refundId);
     }
+    const action = actionFor(intent, decided);
+    const vendor = vendorOf(action);
+    const port = ports[vendor];
+    const context = ctx[vendor];
+    if (!port || !context) throw new Error(`no ${vendor} world for ${label}`);
+    if (action.kind === "slack.message.postSummary") {
+      const steps = [...outcomes];
+      bindings.set(
+        summaryCountKey("refunded"),
+        steps.filter(([id, o]) => id.startsWith("refund_") && o === "confirmed").length,
+      );
+      bindings.set(summaryCountKey("held"), steps.filter(([, o]) => o !== "confirmed").length);
+    }
     try {
-      const pre = (await port.preconditions?.(action, ctx[vendor])) ?? {};
+      const pre = (await port.preconditions?.(action, context)) ?? {};
       // A fresh key per call: a separate tool call is a separate request.
       const req = port.prepare(action, bindings, `op_direct_${opts.taskId}_${n}`, pre);
-      let result: DispatchResult = await port.dispatch(req, ctx[vendor]);
+      let result: DispatchResult = await port.dispatch(req, context);
       if (result.kind === "unknown" || (result.kind === "rejected" && result.retryable)) {
         if (result.kind === "rejected") await sleep(result.retryAfterMs ?? 1000);
-        result = await port.dispatch(req, ctx[vendor]);
+        result = await port.dispatch(req, context);
       }
       log.push(`${describe(result)}: ${label}`);
+      outcomes.set(stepId, result.kind === "confirmed" ? "confirmed" : "not_confirmed");
       if (result.kind === "unknown") unresolved++;
       if (result.kind === "confirmed" && action.kind === "stripe.refund.create") {
         const body = result.body as { id?: unknown };
         if (typeof body.id === "string") refundIds.set(action.id, body.id);
       }
     } catch (e) {
+      outcomes.set(stepId, "not_confirmed");
       log.push(`failed before sending (${(e as Error).message}): ${label}`);
     }
   }
@@ -100,10 +128,12 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
  * The action an intent describes, built from the agent's own reads without any checks: what a
- * direct tool call would carry. Same IDs and shapes as the planning tools produce.
+ * direct tool call would carry. Same IDs and shapes as the planning tools produce. The summary
+ * counts every step the agent decided on before it.
  */
-function actionFor(intent: Intent): Action {
+function actionFor(intent: Intent, decided: readonly DecidedIntent[]): Action {
   const common = {
+    id: stepIdOf(intent),
     caseId: `case_${intent.caseKey}`,
     obligationId: `obl_${intent.caseKey}`,
     requiredRole: "support_lead" as Role,
@@ -114,7 +144,6 @@ function actionFor(intent: Intent): Action {
     case "propose_duplicate_refund":
       return {
         ...common,
-        id: `refund_${intent.input.chargeId}`,
         kind: "stripe.refund.create",
         dependsOn: [],
         compensation: "compensable_by_new_action",
@@ -126,10 +155,23 @@ function actionFor(intent: Intent): Action {
           reason: "duplicate",
         },
       } as Action;
+    case "propose_balance_credit":
+      return {
+        ...common,
+        kind: "stripe.customer.balanceCredit",
+        dependsOn: [],
+        compensation: "compensable_by_new_action",
+        protection: "native_guard_with_documented_limits",
+        rationale: intent.input.rationale,
+        args: {
+          customerId: intent.customerId,
+          chargeId: intent.input.chargeId,
+          amount: { amountMinor: intent.amountMinor, currency: intent.currency },
+        },
+      } as Action;
     case "propose_ticket_priority":
       return {
         ...common,
-        id: `patch_${intent.input.ticketId}`,
         kind: "zendesk.ticket.patchFields",
         dependsOn: [],
         compensation: "conditional_reversible",
@@ -144,7 +186,6 @@ function actionFor(intent: Intent): Action {
     case "propose_refund_note":
       return {
         ...common,
-        id: `note_${intent.input.refundStepId}`,
         kind: "zendesk.ticket.appendPrivateNote",
         dependsOn: [intent.input.refundStepId],
         compensation: "irreversible",
@@ -160,6 +201,59 @@ function actionFor(intent: Intent): Action {
           },
         },
       } as Action;
+    case "propose_customer_reply": {
+      const template = { id: "refund-issued", version: 1 };
+      const values = { customerName: intent.customerName, amountMinor: intent.amountMinor };
+      return {
+        ...common,
+        kind: "zendesk.ticket.appendPublicReply",
+        dependsOn: [intent.input.refundStepId],
+        compensation: "irreversible",
+        protection: "no_atomic_guard",
+        rationale: `Tell the customer ${intent.input.refundStepId} went out.`,
+        args: {
+          ticketId: intent.input.ticketId,
+          public: true,
+          template,
+          values,
+          body: renderReply(template, values),
+        },
+      } as Action;
+    }
+    case "propose_run_summary": {
+      const before = decided.slice(
+        0,
+        decided.findIndex((d) => d.intent === intent),
+      );
+      const steps = before.map((d) => stepIdOf(d.intent));
+      return {
+        ...common,
+        caseId: "run",
+        obligationId: "run_summary",
+        kind: "slack.message.postSummary",
+        dependsOn: steps,
+        compensation: "irreversible",
+        protection: "no_atomic_guard",
+        rationale: `Tell ${intent.channelId} how the run went.`,
+        args: {
+          channelId: intent.channelId,
+          template: { id: "run-summary", version: 1 },
+          bindings: {
+            incidentId: intent.incidentId,
+            refunded: {
+              $count: "outcomes",
+              stepIds: steps.filter((s) => s.startsWith("refund_")),
+              outcomes: ["confirmed"],
+            },
+            held: {
+              $count: "outcomes",
+              stepIds: steps,
+              outcomes: ["held", "unknown_outcome", "rejected", "skipped_dependency"],
+            },
+          },
+        },
+      } as Action;
+    }
   }
 }
 
@@ -171,7 +265,7 @@ export async function applyPlan(
   manifest: PlanManifest,
   ports: Ports,
   ctx: Contexts,
-  policy: BillingPolicyV1,
+  policies: readonly BillingPolicy[],
 ): Promise<ApplyResult> {
   const log: string[] = [];
   const roles = [...new Set(manifest.actions.map((a) => a.requiredRole))].sort();
@@ -208,7 +302,7 @@ export async function applyPlan(
     clock,
     providers: ports,
     worlds: ctx,
-    policies: [policy],
+    policies: [...policies],
     newId: (p: string) => `${p}_${++n}`,
     guard: createReadGuard({ providers: ports, worlds: ctx, clock }),
   };

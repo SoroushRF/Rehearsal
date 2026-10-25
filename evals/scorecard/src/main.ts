@@ -1,13 +1,20 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { parseArgs } from "node:util";
-import type { BillingPolicyV1 } from "@rehearsal/core";
 import { type MessagesClient, PlanningSession, PROMPT_VERSION } from "@rehearsal/planner";
 import { STRIPE_CHARGE_PROJECTION, ZENDESK_TICKET_PROJECTION } from "@rehearsal/providers";
 import { INCIDENT } from "@rehearsal/testkit";
-import policyJson from "../../../scenarios/billing/policy.v1.json" with { type: "json" };
 import { pinnedImage, resetScratchTenants } from "../../providers/src/harness";
-import { AGENT_ID, AGENT_VERSION, type AgentResult, runAgent } from "./agent";
+import {
+  AGENT_ID,
+  AGENT_VERSION,
+  type AgentResult,
+  POLICIES,
+  policyFor,
+  proposedByCase,
+  runAgent,
+  sessionOps,
+} from "./agent";
 import {
   addUsage,
   describeModelPlan,
@@ -24,6 +31,7 @@ import {
   operationalPorts,
   readers,
   readOutcomes,
+  readSummary,
   records,
   seededWorlds,
   type Worlds,
@@ -34,6 +42,7 @@ import {
  * ERA_ADMIN_TOKEN in .env). Prints the comparison table and writes the results file.
  *   --only B1,T3   run some tasks
  *   --out <path>   results file (default evals/scorecard/results/latest.json)
+ * The F tasks (T1.27) also post a run summary, so they need the Slack worlds (ERA_SLACK_*_URL).
  *
  * With PLANNER_MODEL set, every task is planned by that model through the planner's bounded tool
  * loop (Gemini on Vertex AI needs GOOGLE_CLOUD_PROJECT and ADC; Claude needs ANTHROPIC_API_KEY),
@@ -58,10 +67,10 @@ if (!process.env.ERA_ADMIN_TOKEN) {
 // Planning phase only: the modes below never see the model client.
 const client = model ? await modelClient(model) : undefined;
 
-const policy = policyJson as BillingPolicyV1;
 const ctxOf = (w: Worlds) => ({
   stripe: { world: "operational" as const, tenant: w.stripe.tenant },
   zendesk: { world: "operational" as const, tenant: w.zendesk.tenant },
+  ...(w.slack && { slack: { world: "operational" as const, tenant: w.slack.tenant } }),
 });
 
 const runs: ModeRun[] = [];
@@ -87,15 +96,17 @@ try {
           model,
           readers: readers(planning, "planning"),
           ctx: planningCtx,
-          policy,
+          policy: policyFor(task),
+          ops: sessionOps(task),
           meta,
         });
       }
       const session = new PlanningSession({
         readers: readers(planning, "planning"),
         ctx: planningCtx,
-        policy,
+        policy: policyFor(task),
         window: INCIDENT.window,
+        ...sessionOps(task),
       });
       return runAgent(task, records.cases, session, meta);
     });
@@ -108,13 +119,15 @@ try {
     }
 
     for (const mode of MODES) {
-      const op = await seededWorlds("operational", `sc-${task.id}-${mode}`.toLowerCase());
+      const op = await seededWorlds("operational", `sc-${task.id}-${mode}`.toLowerCase(), {
+        slack: task.ops.summary,
+      });
       await applyDrift(op, task.drift);
       const ports = operationalPorts(op, task.faults);
       const t0 = performance.now();
       const applied = await countingEraCalls([op], () =>
         mode === "rehearsal"
-          ? applyPlan(manifest, ports, ctxOf(op), policy)
+          ? applyPlan(manifest, ports, ctxOf(op), POLICIES)
           : applyCalls(intents, ports, ctxOf(op), { taskId: task.id, review: mode === "per_call" }),
       );
       const latencyMs = Math.round(performance.now() - t0);
@@ -122,6 +135,8 @@ try {
         taskId: task.id,
         mode,
         cases: await readOutcomes(op),
+        proposed: proposedByCase(intents, Object.keys(task.gold)),
+        summary: await readSummary(op),
         unresolved: applied.value.unresolved,
         reviewerActions: applied.value.reviewerActions,
         promptOpportunities: applied.value.promptOpportunities,

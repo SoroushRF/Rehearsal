@@ -18,5 +18,6 @@
 ## Consequences
 
 - With both limits at 10000, a credit never reaches the finance threshold today; `R3` is kept so a later policy can raise `creditMaxMinor` without a gap.
-- Nothing is wired to produce a credit until T1.14 adds the op to `Action`; until then the new rules are exercised only by tests.
+- Nothing is wired to produce a credit until T1.14 adds the op to `Action`; until then the new rules are exercised only by tests. (T1.14 has added it: the planner proposes a credit only when its worker has `BALANCE_CREDITS=1`, which plans under v2.)
 - Admission and approval re-evaluate under whichever policy a plan cites, so a plan that cites v2 and carries a refund or a small credit is accepted, and one carrying a large credit is held at both places.
+- T4.10 supplies item 4 from the journal: every remedy attempt for the obligation in any plan or revision of the org. One limit remains. Two plans applying at once can both read "no remedy" before either sends, because nothing reserves the obligation. Inside one plan, R2 already rules this out. Across plans it needs a per-obligation lock or reservation, which isn't built.

@@ -32,5 +32,6 @@ The migration, the registry (approve, activate, withdraw, snapshot, list), the p
 
 - With memory unconfigured, a promotion is accepted and stays `approved` forever; nothing is planned from it. That is deliberate and visible.
 - The epoch only moves on activation and withdrawal, so a promoted-but-unsynced precedent holds no plan.
-- There is no withdraw route yet; the registry supports it, and the route is a small follow-up once finance says who may withdraw.
+- **Withdrawal (added for #233):** finance only, `POST /api/precedents/:id/withdraw` with the version the reviewer saw as active (a stale page is refused, like a changed hash). It appends `withdrawn` under a per-precedent transaction lock that the sync's activation also takes, so the two can't interleave. A newer version that is still waiting is its own approval and becomes active if its sync completes.
+- Agent Memory keeps its copy after a withdrawal (the service has no delete we rely on). That is safe because the registry, not recall, is the authority: whoever recalls must drop anything the registry doesn't list as active (#235), and admission checks citations against the registry (#234).
 - Recalled precedents with their trace on the review page waits on the contracts change above.

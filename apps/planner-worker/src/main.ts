@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenAI } from "@google/genai";
-import type { BillingPolicyV1 } from "@rehearsal/core";
+import type { BillingPolicyV1, BillingPolicyV2 } from "@rehearsal/core";
 import { DEFAULT_PLANNER_MODEL, PROMPT_VERSION } from "@rehearsal/planner";
 import {
   plannerJobsClient,
@@ -11,7 +11,8 @@ import {
   ZENDESK_TICKET_PROJECTION,
   zendeskReader,
 } from "@rehearsal/providers";
-import policy from "../../../scenarios/billing/policy.v1.json" with { type: "json" };
+import policyV1 from "../../../scenarios/billing/policy.v1.json" with { type: "json" };
+import policyV2 from "../../../scenarios/billing/policy.v2.json" with { type: "json" };
 import { plannerCredentialViolations } from "./credentials";
 import { geminiMessagesClient } from "./gemini";
 import { handlePlanJob } from "./job";
@@ -80,8 +81,16 @@ const ctx = {
   model,
   readers,
   ctx: { world: "planning", tenant: worlds.stripe.tenant } as const,
-  policy: policy as BillingPolicyV1,
+  // Invoice-balance credits (T1.14). Off unless BALANCE_CREDITS=1, which plans under policy v2, the
+  // first version with a credit limit; the API and executor load v2 to check those plans.
+  ...(process.env.BALANCE_CREDITS === "1"
+    ? { policy: policyV2 as BillingPolicyV2, balanceCredits: true }
+    : { policy: policyV1 as BillingPolicyV1 }),
   adapters: { stripe: STRIPE_CHARGE_PROJECTION, zendesk: ZENDESK_TICKET_PROJECTION },
+  // The run summary's channel (T1.7). The planner only names it; the executor posts.
+  summaryChannelId: process.env.RUN_SUMMARY_CHANNEL || undefined,
+  // Public replies to customers (T1.13). Off unless CUSTOMER_REPLIES=1.
+  customerReplies: process.env.CUSTOMER_REPLIES === "1",
   log: (line: string) => console.log(line),
 };
 

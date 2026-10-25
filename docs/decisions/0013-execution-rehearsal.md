@@ -55,7 +55,13 @@ Staleness is computed when the report is read, not stored, so nothing is edited 
 ### 3. Isolation, storage and credentials
 
 - **Separate containers.** A third Era container set, one per vendor, on its own compose profile (`rehearsal`, ports 8103/8113/8123), with its **own admin token** `REHEARSAL_ERA_ADMIN_TOKEN`. Its tenants never share a container with planning or operational ones, so a rehearsal's faults can't reach a real run, and its admin token can't mint, reset or fault a real world. This is the new infrastructure this record allows; nothing else is added.
-- **One tenant per rehearsal.** The tenant is `rh-<rehearsalId>`, chosen by the server. Data isolation between concurrent rehearsals relies on signed tenant tokens, which is tested. Fault isolation is not provided by tenants, so **only one rehearsal with challenges runs at a time per container set** (a Postgres advisory lock). Rehearsals without challenges may run side by side.
+- **One tenant per rehearsal.** The tenant is `rh-<rehearsalId>`, chosen by the server. Data isolation between concurrent rehearsals relies on signed tenant tokens, which is tested. Fault isolation is not provided by tenants: a container's faults hit every tenant in it. So **every rehearsal takes the container set's lock** (a Postgres advisory lock):
+  - A rehearsal without challenges takes it **shared**, so those run side by side.
+  - A rehearsal with challenges takes it **exclusive**. It holds the lock from before the first fault is injected, through execution and verification, until its fault cleanup is confirmed: the container-wide settings are cleared and read back as cleared. No other rehearsal runs on the set in that window, so no other run's report can describe a fault it didn't ask for.
+  - Once a challenged rehearsal is waiting, new unchallenged ones queue behind it, so a stream of shared holders can't starve it.
+  - Postgres drops an advisory lock when its connection dies, so the lock alone can't keep a crashed run's faults fenced. Before injecting, the challenged run writes a **dirty mark** for the set (a row). Only a confirmed cleanup clears it. Admission refuses every rehearsal on a set that is marked dirty, whoever holds the lock.
+  - Cancellation, an error or an expired lease goes through the same confirmed cleanup. A tenant reset is not fault cleanup. If cleanup can't be confirmed, the mark stays, and the set is reported to the operator instead of being reused.
+  - T4.13 tests both cases: an unchallenged rehearsal that arrives while a challenged one holds the set must wait, and a challenged run that crashes before cleanup leaves the set refused until cleanup is confirmed.
 - **Separate storage.** Rehearsal jobs, attempts, receipts and reports live in their own tables (T3.13), with their own `rehearsal` queue. The operational journal is never written or read by a rehearsal, and the rehearsal journal is never read by operational admission or the executor. This is what makes fact 4 safe. Rehearsal operation keys are also namespaced (`rh_<rehearsalId>_<operation key>`), so even a mistaken join can't match an operational key.
 - **A third worker role, `rehearsal`.**
 
@@ -100,7 +106,7 @@ The seeder ([`scripts/seed/snapshot.ts`](../../scripts/seed/snapshot.ts), T1.22)
 ### 5. Lifecycle and unknown outcomes
 
 ```text
-requested → provisioning → running → verifying → completed | failed | cancelled → torn down
+queued → provisioning → running → verifying → completed | failed | cancelled → torn down
 ```
 
 - Every state change is a new row.
@@ -133,7 +139,7 @@ A real Stripe account is allowed only as a narrow test-mode target:
 ## Consequences
 
 - One more container set and one more worker process to run. The demo stack without the `rehearsal` profile is unchanged.
-- Rehearsals with challenges are serialized, which bounds throughput. That's acceptable for a review step.
+- A rehearsal with challenges has its container set to itself, from injection to confirmed cleanup, which bounds throughput. That's acceptable for a review step. A set whose cleanup failed stays marked dirty and out of use until an operator clears it. The mark is one small table beside T3.13's.
 - T1.21 adds the contracts: the `"rehearsal"` world literal, rehearsal request, job, scenario reference, state events, step results and report, plus the tenant, operation-key, snapshot and staleness helpers in `core`.
 - T1.23 adds the third worker's credentials and routing checks.
 - T3.13 and T3.14 build the tables and `admitRehearsal` beside `admit`, without changing it.

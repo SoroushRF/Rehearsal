@@ -4,6 +4,7 @@ import { fingerprint } from "@rehearsal/core";
 import type { MessagesClient, PlanningReader } from "@rehearsal/planner";
 import {
   STRIPE_CHARGE_PROJECTION,
+  STRIPE_CUSTOMER_PROJECTION,
   stripeChargeProjection,
   ZENDESK_TICKET_PROJECTION,
   zendeskTicketProjection,
@@ -56,6 +57,15 @@ export function planningWorld() {
   const stripe: PlanningReader = {
     vendor: "stripe",
     async observe(entity) {
+      if (entity.kind === "customer") {
+        const owner = records.cases.find((x) => x.customerId === entity.id);
+        if (!owner) throw new Error(`GET /v1/customers/${entity.id} → 404`);
+        // As the scorecard seeds them: each customer billed in its case's currency.
+        return observation(entity, STRIPE_CUSTOMER_PROJECTION, {
+          id: entity.id,
+          currency: owner.currency,
+        });
+      }
       const c = charges.get(entity.id);
       if (!c) throw new Error(`GET /v1/charges/${entity.id} → 404`);
       return observation(entity, STRIPE_CHARGE_PROJECTION, stripeChargeProjection(c));
