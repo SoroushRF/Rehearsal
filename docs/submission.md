@@ -80,7 +80,7 @@ This run predates later merges to `main`. The final T1.28 run on the tagged subm
 - That rollback or recovery exists. A refund or an appended note is never "rolled back"; only owned fields are conditionally restored.
 - That a model gates execution, or that any ML model was trained or served: out of scope ([0008](decisions/0008-ml-out-of-hackathon-scope.md)).
 - That the human reviewer numbers are measured: they are modelled. No outside operator has used it yet (T2.22).
-- That precedents are live: the promotion path is built, but it hasn't run against the hosted Agent Memory service, and plans can't yet cite precedents (T2.17).
+- That precedents are live end to end. Plans can cite precedents (T1.29), the review page shows each citation with its trace, approval refuses a changed precedent (T2.17), and executor admission re-checks citations against the Postgres registry (#258). The memory gate passed 6/6 on the hosted Agent Memory service (T1.8), and promotion ran there once in a throwaway scope. But the planner's recall has not run against the hosted service, so a plan citing a precedent is `fixture` evidence.
 - The two statistics (PocketOS, Georgian) must be quoted exactly as in the brief, and checked against their original sources first. PocketOS: the founder reported about 30 hours of disruption; Railway restored backups within about 30 minutes of being contacted. Don't say permanent loss or 30 hours of hard downtime.
 
 ## Devpost text (draft)
