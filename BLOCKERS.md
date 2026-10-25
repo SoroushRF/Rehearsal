@@ -11,7 +11,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
 | **T4.11** Allowlisted rehearsal challenges and controls [#169](https://github.com/SoroushRF/Rehearsal/issues/169) | @skhdemo | 🟨 ready | 6 |
-| **T4.19** IAM service: verify Clerk session, map role to permissions, evaluate rules, fail closed [#224](https://github.com/SoroushRF/Rehearsal/issues/224) | @skhdemo | 🟨 ready | 6 |
+| **T4.19** IAM service: verify Clerk session, map role to permissions, evaluate rules, fail closed [#224](https://github.com/SoroushRF/Rehearsal/issues/224) | @skhdemo | 👀 in review | 6 |
 | **T2.19** API: request and read an execution rehearsal [#171](https://github.com/SoroushRF/Rehearsal/issues/171) | @parsaabbasian | 🟨 ready | 5 |
 | **T4.20** API as the enforcement point: every route asks IAM with facts from stored rows [#225](https://github.com/SoroushRF/Rehearsal/issues/225) | @skhdemo | 🟥 blocked | 5 |
 | **T2.17** Precedent promotion: finance-only route and UI [#147](https://github.com/SoroushRF/Rehearsal/issues/147) | @parsaabbasian | 🟨 ready | 4 |
@@ -126,10 +126,10 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T4.16** Contracts: permissions, rule file schema, IAM decision request/response; grants gain permissions and rule version [#221](https://github.com/SoroushRF/Rehearsal/issues/221) | ✅ done |  | T4.17, T4.18, T4.21 |
 | **T4.17** Rule file v1 (`rehearsal-authz@1`): role → permission table, every route and `run:admit` [#222](https://github.com/SoroushRF/Rehearsal/issues/222) | ✅ done |  | T4.19 |
 | **T4.18** Pure PDP engine: permission RBAC, ABAC checks, deny by default [#223](https://github.com/SoroushRF/Rehearsal/issues/223) | ✅ done |  | T4.19 |
-| **T4.19** IAM service: verify Clerk session, map role to permissions, evaluate rules, fail closed [#224](https://github.com/SoroushRF/Rehearsal/issues/224) | 🟨 ready | — | T4.20, T4.22 |
-| **T4.20** API as the enforcement point: every route asks IAM with facts from stored rows [#225](https://github.com/SoroushRF/Rehearsal/issues/225) | 🟥 blocked | T4.19 (T4, ready) | T4.21, T4.23, T4.24, T4.26 |
+| **T4.19** IAM service: verify Clerk session, map role to permissions, evaluate rules, fail closed [#224](https://github.com/SoroushRF/Rehearsal/issues/224) | 👀 in review [PR #267](https://github.com/SoroushRF/Rehearsal/pull/267) | — | T4.20, T4.22 |
+| **T4.20** API as the enforcement point: every route asks IAM with facts from stored rows [#225](https://github.com/SoroushRF/Rehearsal/issues/225) | 🟥 blocked | T4.19 (T4, in review) | T4.21, T4.23, T4.24, T4.26 |
 | **T4.21** Approvals store permissions and rule version; two-person rule judged on permissions [#226](https://github.com/SoroushRF/Rehearsal/issues/226) | 🟥 blocked | T4.20 (T4, blocked) | T4.22, T4.26 |
-| **T4.22** Executor admission as enforcement point: `run:admit` through IAM, fail closed [#227](https://github.com/SoroushRF/Rehearsal/issues/227) | 🟥 blocked | T4.19 (T4, ready)<br>T4.21 (T4, blocked) | T4.26 |
+| **T4.22** Executor admission as enforcement point: `run:admit` through IAM, fail closed [#227](https://github.com/SoroushRF/Rehearsal/issues/227) | 🟥 blocked | T4.19 (T4, in review)<br>T4.21 (T4, blocked) | T4.26 |
 | **T4.23** Invites and role changes through our API [#228](https://github.com/SoroushRF/Rehearsal/issues/228) | 🟥 blocked | T4.20 (T4, blocked) | T4.24, T4.26 |
 | **T4.24** Web: verified permissions, actions shown by permission, invite UI [#229](https://github.com/SoroushRF/Rehearsal/issues/229) | 🟥 blocked | T4.20 (T4, blocked)<br>T4.23 (T4, blocked) | T4.26 |
 | **T4.25** Clerk configuration and demo organization [#230](https://github.com/SoroushRF/Rehearsal/issues/230) | 🟨 ready | — | T4.26 |
@@ -226,7 +226,7 @@ flowchart LR
     T4_16["T4.16 Contracts: permissions, rule file schema, "]:::done
     T4_17["T4.17 Rule file v1 (`rehearsal-authz@1`): role →"]:::done
     T4_18["T4.18 Pure PDP engine: permission RBAC, ABAC che"]:::done
-    T4_19["T4.19 IAM service: verify Clerk session, map rol"]:::ready
+    T4_19["T4.19 IAM service: verify Clerk session, map rol"]:::review
     T4_20["T4.20 API as the enforcement point: every route "]:::blocked
     T4_21["T4.21 Approvals store permissions and rule versi"]:::blocked
     T4_22["T4.22 Executor admission as enforcement point: `"]:::blocked
