@@ -1,7 +1,11 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
-import type { PlanManifest, RehearsalScenarioId } from "@rehearsal/contracts";
-import { type BillingPolicy, planHash } from "@rehearsal/core";
+import type {
+  ExecutionRehearsalReport,
+  PlanManifest,
+  RehearsalScenarioId,
+} from "@rehearsal/contracts";
+import { type BillingPolicy, planHash, VERIFIER_VERSION } from "@rehearsal/core";
 import {
   createDb,
   listRehearsalStepResults,
@@ -171,7 +175,8 @@ describe.skipIf(!REHEARSAL_ENABLED || !process.env.DB_TESTS)(
         ["refund_001", "confirmed"],
       ]);
       const [report] = await rehearsalReportsFor(db, manifest.orgId, manifest.planId);
-      expect(report).toMatchObject({ rehearsalId: id, state: "completed" });
+      expect(report).toMatchObject({ rehearsalId: id, state: "completed", verdict: "passed" });
+      expectMatched(report);
       const stored = await loadRehearsal(db, manifest.orgId, id);
       expect(stored?.tornDown).toBe(true);
       // Reset: the operator mints nothing more for it.
@@ -191,6 +196,14 @@ describe.skipIf(!REHEARSAL_ENABLED || !process.env.DB_TESTS)(
         expect(await db.select().from(table).where(eq(table.orgId, manifest.orgId))).toEqual([]);
       }
     }, 90_000);
+
+    /** Every step was judged from reads of the tenant (T4.12), not from the receipts. */
+    function expectMatched(report: ExecutionRehearsalReport | undefined) {
+      expect(report?.versions.verifier).toBe(VERIFIER_VERSION);
+      expect(report?.steps.map((x) => [x.actionId, x.verification.status]).sort()).toEqual(
+        report?.steps.map((x) => [x.actionId, "matched"]).sort(),
+      );
+    }
 
     /** Refunds of one charge in this rehearsal's own Stripe tenant, read just before teardown. */
     function countingRefunds(id: string, chargeId: string) {
@@ -226,6 +239,8 @@ describe.skipIf(!REHEARSAL_ENABLED || !process.env.DB_TESTS)(
       }
       const refund = report.steps.find((x) => x.actionId === "refund_001");
       expect(refund?.result?.holdReason?.kind).toBe("query_membership_changed");
+      expect(report.verdict).toBe("passed");
+      expectMatched(report);
       const attempts = await db
         .select()
         .from(schema.rehearsalAttempts)
@@ -241,6 +256,25 @@ describe.skipIf(!REHEARSAL_ENABLED || !process.env.DB_TESTS)(
         expect(await db.select().from(table).where(eq(table.orgId, manifest.orgId))).toEqual([]);
       }
     }, 90_000);
+
+    for (const scenario of ["teammate_field_edit", "benign_nonmatching_change"] as const) {
+      it(`${scenario} on Era: every step ends as the catalog expects and reads back matched`, async () => {
+        const manifest = manifestFor(`org_${randomUUID()}`, `plan_${randomUUID()}`);
+        const { id, data } = await requested(manifest, scenario);
+        const result = await runRehearsalJob(data, runContext(id, config()));
+        const report = result.kind === "ran" ? result.report : null;
+        if (!report) throw new Error(`no report: ${JSON.stringify(result)}`);
+        for (const step of report.steps) {
+          expect({ step: step.actionId, got: step.result?.outcome }).toEqual({
+            step: step.actionId,
+            got: step.expected,
+          });
+        }
+        expect(report.verdict).toBe("passed");
+        expectMatched(report);
+        expect((await loadRehearsal(db, manifest.orgId, id))?.tornDown).toBe(true);
+      }, 90_000);
+    }
 
     it("lost_response_restart on Era: the refund commits once, the restart reads it back", async () => {
       const manifest = manifestFor(`org_${randomUUID()}`, `plan_${randomUUID()}`);
@@ -269,6 +303,8 @@ describe.skipIf(!REHEARSAL_ENABLED || !process.env.DB_TESTS)(
       expect(refundAttempts.map((a) => a.state)).toEqual(["reconciled"]);
       const refundStep = report.steps.find((x) => x.actionId === "refund_001");
       expect(refundStep?.result?.providerRef).toMatchObject({ vendor: "stripe", kind: "refund" });
+      expect(report.verdict).toBe("passed");
+      expectMatched(report);
       expect((await loadRehearsal(db, manifest.orgId, id))?.tornDown).toBe(true);
     }, 90_000);
   },

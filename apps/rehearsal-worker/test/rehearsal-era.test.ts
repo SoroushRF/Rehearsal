@@ -95,9 +95,9 @@ describe.skipIf(!ENABLED)("execution rehearsal through the API and the worker (E
     expect(got).toMatchObject({
       rehearsalId: id,
       state: "completed",
-      verdict: "unknown",
+      verdict: "passed",
       evidence: "era_integration",
-      versions: { worker: "rehearsal-worker@0.0.0", verifier: "none" },
+      versions: { worker: "rehearsal-worker@0.0.0", verifier: "verifier@1" },
     });
     const steps = got.steps as { actionId: string; result: { outcome: string } | null }[];
     expect(steps.map((x) => [x.actionId, x.result?.outcome]).sort()).toEqual([
