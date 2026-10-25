@@ -226,6 +226,12 @@ importers:
         specifier: workspace:*
         version: link:../../packages/testkit
 
+  packages/authz:
+    dependencies:
+      '@rehearsal/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+
   packages/contracts:
     dependencies:
       zod:
