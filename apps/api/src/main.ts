@@ -69,6 +69,7 @@ const rehearse = apply && {
   plannerSecret: process.env.PLANNER_WORKER_SECRET,
   precedentRegistry: async (orgId: string) => (await loadRegistry(apply.db, orgId)).snapshot,
 };
+const executionRehearsals = apply && { db: apply.db, boss: apply.boss, iam };
 const app = buildApp({
   apply,
   plans,
@@ -76,6 +77,7 @@ const app = buildApp({
   runs,
   precedents,
   rehearse,
+  executionRehearsals,
   iam,
   tenantTokens: tenantTokenDepsFromEnv(),
 });
