@@ -62,6 +62,9 @@ function fakeStripe(options: { livemode?: boolean; account?: string } = {}) {
         });
       }
       if (kind === "refunds") {
+        // Like native Stripe, a refund names its charge and carries no `livemode`.
+        delete record.livemode;
+        Object.assign(record, { object: "refund", charge: form.get("charge") });
         const charge = records.get(String(form.get("charge")));
         if (charge) charge.amount_refunded = Number(form.get("amount"));
       }
@@ -160,6 +163,21 @@ describe("native Stripe sandbox gate (T1.24)", () => {
     if (changed) changed.currency = "usd";
     const checks = await checkSandbox(client, run, env);
     expect(checks.find((c) => !c.ok)?.detail).toBe(`${run.chargeIds[0]} is 4210 usd`);
+  });
+
+  it("binds the refund through its charge, and fails one that refunds another charge", async () => {
+    const stripe = fakeStripe();
+    const client = sandboxClient(env, stripe.fetch);
+    const run = await seedSandbox(client, "run00006");
+    expect(stripe.records.get(run.refundId)?.livemode).toBeUndefined();
+    expect((await checkSandbox(client, run, env))[1]?.ok).toBe(true);
+    const refund = stripe.records.get(run.refundId);
+    if (refund) refund.charge = run.chargeIds[0];
+    expect((await checkSandbox(client, run, env))[1]).toEqual({
+      name: "livemode false on every record",
+      ok: false,
+      detail: `/v1/refunds/${run.refundId} refunds ${run.chargeIds[0]}, not ${run.chargeIds[1]}`,
+    });
   });
 });
 

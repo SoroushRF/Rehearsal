@@ -187,14 +187,22 @@ export async function checkSandbox(
     return `${account.id}${pinned ? " (pinned)" : ""}`;
   });
   await check("livemode false on every record", async () => {
-    const paths = [
-      `/v1/customers/${run.customerId}`,
-      `/v1/refunds/${run.refundId}`,
-      ...run.chargeIds.map((id) => `/v1/charges/${id}`),
+    // A Stripe refund has no `livemode` of its own. It is bound to test mode through the charge it
+    // refunds, which must be the run's second charge (checked below like the others).
+    const refunded = run.chargeIds[1];
+    const records: { path: string; refunds?: string }[] = [
+      { path: `/v1/customers/${run.customerId}` },
+      { path: `/v1/refunds/${run.refundId}`, refunds: refunded },
+      ...run.chargeIds.map((id) => ({ path: `/v1/charges/${id}` })),
     ];
-    for (const path of paths) {
+    const paths = records.map((r) => r.path);
+    for (const { path, refunds } of records) {
       const body = await client.get(path);
-      expect(body.livemode === false, `${path} has livemode ${String(body.livemode)}`);
+      if (refunds) {
+        expect(body.charge === refunds, `${path} refunds ${String(body.charge)}, not ${refunds}`);
+      } else {
+        expect(body.livemode === false, `${path} has livemode ${String(body.livemode)}`);
+      }
       const metadata = body.metadata as Record<string, unknown> | undefined;
       expect(metadata?.[SANDBOX_LABEL] === run.runId, `${path} isn't labelled ${run.runId}`);
     }
