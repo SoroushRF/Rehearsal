@@ -4,6 +4,8 @@ import {
   type Clock,
   createReadGuard,
   type ProviderPort,
+  VERIFIER_VERSION,
+  verifyRehearsal,
   type WorldContext,
 } from "@rehearsal/core";
 import type { Db, Provisioning, RehearsalRunContext, RehearsalSweepContext } from "@rehearsal/db";
@@ -11,6 +13,7 @@ import {
   REHEARSAL_CHALLENGE_ROUTE,
   REHEARSAL_PROVISION_ROUTE,
   REHEARSAL_TEARDOWN_ROUTE,
+  readVerifierEffects,
   rehearsalOperatorPath,
   rehearsalWorkerViolations,
   rehearsalWorkerWorlds,
@@ -137,7 +140,7 @@ function bound(rehearsalId: string, config: RehearsalWorkerConfig) {
     stripe: { world: "rehearsal", tenant: worlds.stripe.tenant },
     zendesk: { world: "rehearsal", tenant: worlds.zendesk.tenant },
   };
-  return { providers, worlds: contexts };
+  return { providers, worlds: contexts, configs: worlds };
 }
 
 /** The run context for one rehearsal job. */
@@ -146,7 +149,7 @@ export function runContext(
   config: RehearsalWorkerConfig,
 ): RehearsalRunContext {
   const operator = operatorClient(config.env, config.fetch);
-  const tenant = bound(rehearsalId, config);
+  const { configs, ...tenant } = bound(rehearsalId, config);
   return {
     db: config.db,
     ...tenant,
@@ -159,6 +162,27 @@ export function runContext(
     teardown: (id) => operator.teardown(id),
     challenge: (input) => operator.challenge(input),
     guard: createReadGuard({ ...tenant, clock: config.clock }),
+    // T4.12: judge the run from reads of this tenant before teardown, not from its own receipts.
+    verify: async ({ manifest, job, results }) => {
+      const reads = await readVerifierEffects({
+        manifest,
+        rehearsalId: job.rehearsalId,
+        scenario: job.scenario,
+        worlds: configs,
+        env: config.env,
+      });
+      const judgment = verifyRehearsal({
+        manifest,
+        rehearsalId: job.rehearsalId,
+        planHash: job.plan.planHash,
+        snapshotDigest: job.snapshot.digest,
+        verifierVersion: VERIFIER_VERSION,
+        scenario: job.scenario,
+        results,
+        reads,
+      });
+      return new Map(judgment.steps.map((step) => [step.actionId, step.verification]));
+    },
   };
 }
 
