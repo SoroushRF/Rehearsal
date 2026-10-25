@@ -441,6 +441,32 @@ export function caseGroups(
 }
 
 /** Run-level admission. Any failure means nothing is dispatched. */
+/**
+ * Checks both admissions run before any step, so neither mode can start a plan the other would stop
+ * halfway: every vendor the plan writes to is wired (say, a summary with no Slack provider after
+ * the refunds went out), and a public reply is exactly what its template renders (at send time the
+ * refund it announces would already be out).
+ */
+function whyNotRunnable(
+  manifest: PlanManifest,
+  deps: Pick<ExecutorDeps, "providers" | "worlds">,
+  mode: "operational" | "rehearsal",
+): string | null {
+  const unwired = [...new Set(manifest.actions.map(vendorOf))].filter(
+    (v) => !deps.providers[v] || !deps.worlds[v],
+  );
+  if (unwired.length > 0) return `no ${mode} provider for ${unwired.join(", ")}`;
+  for (const action of manifest.actions) {
+    if (action.kind !== "zendesk.ticket.appendPublicReply") continue;
+    try {
+      replyBodyFor(action);
+    } catch (err) {
+      return `${action.id}: ${(err as Error).message}`;
+    }
+  }
+  return null;
+}
+
 async function admit(
   job: ApplyJobInput,
   deps: ExecutorDeps,
@@ -490,25 +516,8 @@ async function admit(
 
   // A read-only pass resolves what the wired vendors can read; it never needs the rest.
   if (readOnly) return { ok: true, manifest, grant };
-  // Every vendor the plan writes to must be wired, or the run would stop halfway (say, a summary
-  // with no Slack provider after the refunds went out).
-  const unwired = [...new Set(manifest.actions.map(vendorOf))].filter(
-    (v) => !deps.providers[v] || !deps.worlds[v],
-  );
-  if (unwired.length > 0) {
-    return { ok: false, detail: `no operational provider for ${unwired.join(", ")}` };
-  }
-
-  // A public reply must be exactly what its template renders, checked before any step runs; at
-  // send time the refund it announces would already be out.
-  for (const action of manifest.actions) {
-    if (action.kind !== "zendesk.ticket.appendPublicReply") continue;
-    try {
-      replyBodyFor(action);
-    } catch (err) {
-      return { ok: false, detail: `${action.id}: ${(err as Error).message}` };
-    }
-  }
+  const unrunnable = whyNotRunnable(manifest, deps, "operational");
+  if (unrunnable) return { ok: false, detail: unrunnable };
 
   if (grant.revokedAt !== null) return { ok: false, detail: "grant was revoked" };
   const grantedAt = Date.parse(grant.grantedAt);
@@ -685,6 +694,8 @@ export async function admitRehearsal(
   }
   const manifest = parsed.data;
   if (manifest.orgId !== job.orgId) return { ok: false, detail: "manifest belongs to another org" };
+  const unrunnable = whyNotRunnable(manifest, deps, "rehearsal");
+  if (unrunnable) return { ok: false, detail: unrunnable };
   const graph = validateGraph(manifest.actions);
   if (graph.length > 0) return { ok: false, detail: `invalid graph: ${graph[0]?.detail}` };
   for (const ref of manifest.policies) {
@@ -745,9 +756,15 @@ export async function executeRehearsal(
 }
 
 /** The keys a pass journals and sends under: a rehearsal's are namespaced to it (decision 0013, §3). */
+function operationalKeys(job: ApplyJobInput): RunKeys {
+  return {
+    operation: (action) => operationKey(job.orgId, job.planId, action),
+    undo: (action) => undoKey(job.orgId, job.planId, action),
+  };
+}
+
 function runKeys(job: ApplyJobInput, authority: Authority): RunKeys {
-  const operation = (action: Action) => operationKey(job.orgId, job.planId, action);
-  const undo = (action: Action) => undoKey(job.orgId, job.planId, action);
+  const { operation, undo } = operationalKeys(job);
   if (authority.kind === "grant") return { operation, undo };
   const ns = (key: string) => rehearsalOperationKey(authority.rehearsalId, key);
   return { operation: (a) => ns(operation(a)), undo: (a) => ns(undo(a)) };
@@ -758,11 +775,12 @@ async function hasInFlight(
   job: ApplyJobInput,
   deps: ExecutorDeps,
   manifest: PlanManifest,
+  /** The run's own keys; a rehearsal's are namespaced. Operational by default. */
+  runKeysOf: RunKeys = operationalKeys(job),
 ): Promise<boolean> {
   for (const action of manifest.actions) {
-    const keys = [operationKey(job.orgId, job.planId, action)];
-    if (action.kind === "zendesk.ticket.patchFields")
-      keys.push(undoKey(job.orgId, job.planId, action));
+    const keys = [runKeysOf.operation(action)];
+    if (action.kind === "zendesk.ticket.patchFields") keys.push(runKeysOf.undo(action));
     for (const key of keys) {
       const attempts = await deps.journal.attemptsForKey(key);
       if (attempts.some((a) => a.state === "dispatched" || a.state === "unknown_outcome"))
@@ -2126,7 +2144,7 @@ async function applyLocked(
             : "failed";
   // A read-only pass (cancelled or refused run) that left a send of the plan unresolved, under
   // any revision, is retried too, so it is read again and, bounded, handed to an operator.
-  const unresolved = reconcileOnly && (await hasInFlight(job, deps, manifest));
+  const unresolved = reconcileOnly && (await hasInFlight(job, deps, manifest, keys));
   // A run that stopped on an error isn't finished: the worker retries it.
   await journal
     .appendEvent(job.runId, error === null && !unresolved ? "run.finished" : "run.stopped", {

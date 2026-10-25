@@ -1,5 +1,6 @@
 import {
   type BillingPolicy,
+  createCompensator,
   type ExecutorDeps,
   executeRehearsal,
   executeRun,
@@ -255,5 +256,95 @@ describe("shared execution mechanics, separate admission (T3.14)", () => {
     expect(outcomes(pass.receipts).refund_001).toBe("confirmed");
     expect(r.world.effects.length).toBe(effects);
     expect(r.world.refunds.filter((x) => x.charge === "ch_fixture_001")).toHaveLength(1);
+  });
+
+  it("keeps a cancelled rehearsal unresolved while its own lost send can't be read (review)", async () => {
+    const s = setup();
+    const r = s.rehearsal();
+    r.deps.retry = { maxAttempts: 1 };
+    const stripe = r.deps.providers.stripe;
+    let lose = true;
+    r.deps.providers.stripe = {
+      ...stripe,
+      dispatch: async (req, ctx) => {
+        const res = await stripe.dispatch(req, ctx);
+        if (!lose) return res;
+        lose = false;
+        return { kind: "unknown", error: "response lost (injected)" };
+      },
+    };
+    await r.run();
+    r.deps.providers.stripe = {
+      ...r.deps.providers.stripe,
+      reconcile: async () => {
+        throw new Error("read unavailable (injected)");
+      },
+    };
+    s.cancelled.add(RID);
+    const pass = await r.run();
+    expect(pass.state).toBe("cancelled");
+    expect(pass.unresolved).toBe(true);
+    expect(r.journal.events.at(-1)?.type).toBe("run.stopped");
+  });
+
+  it("isn't made unresolved by an operational send in flight in a shared journal (review)", async () => {
+    const s = setup();
+    const shared = new MemoryJournal();
+    const o = s.operational(shared);
+    o.deps.retry = { maxAttempts: 1 };
+    const stripe = o.deps.providers.stripe;
+    o.deps.providers.stripe = {
+      ...stripe,
+      dispatch: async () => ({ kind: "unknown", error: "response lost (injected)" }),
+      reconcile: async () => ({ kind: "indeterminate", detail: "can't tell (injected)" }),
+    };
+    await o.run(); // leaves operational refunds in flight
+    s.cancelled.add(RID);
+    const pass = await s.rehearsal(shared).run();
+    expect(pass.state).toBe("cancelled");
+    expect(pass.unresolved).toBeUndefined();
+  });
+
+  it("refuses a rehearsal that would stop halfway: a vendor the plan writes to has no world (review)", async () => {
+    const s = setup();
+    const r = s.rehearsal();
+    r.deps.worlds = { stripe: r.deps.worlds.stripe };
+    const result = await r.run();
+    expect(result.refusal).toBe("no rehearsal provider for zendesk");
+    expect(r.world.effects).toEqual([]);
+  });
+
+  it("compensates inside the rehearsal, under its own undo keys (review)", async () => {
+    const s = setup();
+    const r = s.rehearsal();
+    const zendesk = r.deps.providers.zendesk;
+    let firstNote = true;
+    r.deps.providers.zendesk = {
+      ...zendesk,
+      dispatch: async (req, ctx) => {
+        // The first private note (case 1's) is refused, so case 1's patch is undone.
+        if (req.body.includes('"comment"') && !req.body.includes("safe_update") && firstNote) {
+          firstNote = false;
+          return { kind: "rejected", status: 422, body: { error: "injected" }, retryable: false };
+        }
+        return zendesk.dispatch(req, ctx);
+      },
+    };
+    r.deps.compensate = createCompensator({
+      providers: r.deps.providers,
+      worlds: r.deps.worlds,
+      clock: r.deps.clock,
+    });
+    const result = await r.run();
+    expect(outcomes(result.receipts)).toMatchObject({
+      note_001: "rejected",
+      patch_001: "compensated",
+    });
+    const patchAttempts = [...r.journal.attempts.values()].filter(
+      (a) => a.actionId === "patch_001",
+    );
+    expect(patchAttempts.length).toBeGreaterThan(1); // the forward patch and its undo
+    expect(patchAttempts.every((a) => a.operationKey.startsWith(`rh_${RID}_op_`))).toBe(true);
+    expect(r.world.tickets.get("5531")?.priority).toBe("normal");
   });
 });
