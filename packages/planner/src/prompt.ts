@@ -49,6 +49,14 @@ export interface IncidentBrief {
   window: { createdGte: string; createdLt: string };
   /** The customers who reported the problem. What happened to each is for the agent to find out. */
   customers: { customerId: string; name: string; requesterId: string }[];
+  /** Finance-approved precedents recalled for this org, already checked against the registry. */
+  precedents?: {
+    id: string;
+    version: number;
+    statement: string;
+    conditions: string[];
+    exceptions: string[];
+  }[];
 }
 
 /** The first user message: the incident report, without anything the agent should discover. */
@@ -61,6 +69,23 @@ export function briefMessage(brief: IncidentBrief): string {
     `Incident window: charges created from ${brief.window.createdGte} up to (not including) ${brief.window.createdLt}.`,
     `Customers who reported it (${brief.customers.length}):`,
     ...rows,
+    ...precedentLines(brief.precedents ?? []),
     "Plan the remediation.",
   ].join("\n");
+}
+
+/**
+ * Precedents are context for the plan, never permission: a tool's refusal still stands. The
+ * plan records exactly which versions it was given, so the reviewer sees them too.
+ */
+function precedentLines(precedents: NonNullable<IncidentBrief["precedents"]>): string[] {
+  if (precedents.length === 0) return [];
+  return [
+    `Finance-approved precedents for this organization (${precedents.length}). Follow them where they apply; they never override a tool's refusal:`,
+    ...precedents.flatMap((p) => [
+      `- ${p.id} v${p.version}: ${p.statement}`,
+      ...p.conditions.map((c) => `  - Applies when: ${c}`),
+      ...p.exceptions.map((e) => `  - Except: ${e}`),
+    ]),
+  ];
 }

@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
+import type { PrecedentBasis } from "@rehearsal/contracts";
 import type { BillingPolicy, WorldContext } from "@rehearsal/core";
+import { type PrecedentRecall, recallBasis } from "@rehearsal/memory";
 import {
   incidentBrief,
   type MessagesClient,
@@ -9,7 +11,7 @@ import {
   runPlanningLoop,
   type TurnLog,
 } from "@rehearsal/planner";
-import type { ClaimedPlanJob, PlannerJobsClient } from "@rehearsal/providers";
+import { type ClaimedPlanJob, type PlannerJobsClient, registryOfJob } from "@rehearsal/providers";
 
 /** Everything a plan job needs. Only planning-world readers: the worker has nothing else. */
 export interface PlanJobContext {
@@ -26,6 +28,11 @@ export interface PlanJobContext {
   customerReplies?: boolean;
   /** Invoice-balance credits instead of small refunds (T1.14); needs a policy with a credit limit. */
   balanceCredits?: boolean;
+  /**
+   * Agent Memory recall in an org's own scope (#235), or absent in core mode. A job whose org has
+   * active precedents then fails instead of planning without them.
+   */
+  precedents?: (orgId: string) => { recall(caseKey: string): Promise<PrecedentRecall> };
   /** Hard wall-clock bound on one run, on top of the loop's turn and call limits. */
   timeoutMs?: number;
   log?: (line: string) => void;
@@ -36,6 +43,9 @@ export type PlanJobResult =
   | { kind: "failed"; reason: string; message: string };
 
 const DEFAULT_TIMEOUT_MS = 10 * 60_000;
+const NO_RECALL = {
+  recall: async (): Promise<PrecedentRecall> => ({ precedents: [], traceId: null, rejected: [] }),
+};
 
 /**
  * Run one claimed `plan` job: plan in the planning world, then hand the manifest to the API, which
@@ -55,6 +65,32 @@ export async function handlePlanJob(
 
   const brief = incidentBrief(job.incidentId);
   if (!brief) return fail("unknown_incident", `no brief for ${job.incidentId}`);
+
+  let recalled: Awaited<ReturnType<typeof recallBasis>> = null;
+  if (job.precedents) {
+    const registry = registryOfJob(job.precedents);
+    if (registry.active.size > 0 && !deps.precedents) {
+      return fail("precedents_unavailable", "the org has active precedents but no Agent Memory");
+    }
+    try {
+      // With nothing active, recallBasis records the epochs without recalling.
+      recalled = await recallBasis(deps.precedents?.(job.orgId) ?? NO_RECALL, registry);
+    } catch (err) {
+      // An outage blocks a plan that depends on memory rather than planning without it (§7).
+      return fail("precedent_recall_failed", (err as Error).message.slice(0, 2000));
+    }
+    for (const d of recalled?.dropped ?? []) log(`precedent ${d.id} not cited: ${d.reason}`);
+  }
+  const basis: PrecedentBasis | undefined = recalled?.basis;
+  if (recalled && recalled.precedents.length > 0) {
+    brief.precedents = recalled.precedents.map((p) => ({
+      id: p.id,
+      version: p.version,
+      statement: p.record.statement,
+      conditions: p.record.conditions,
+      exceptions: p.record.exceptions,
+    }));
+  }
 
   const session = new PlanningSession({
     readers: deps.readers,
@@ -81,7 +117,12 @@ export async function handlePlanJob(
       model: deps.model,
       session,
       brief,
-      meta: { orgId: job.orgId, planId: job.planId, adapters: deps.adapters },
+      meta: {
+        orgId: job.orgId,
+        planId: job.planId,
+        adapters: deps.adapters,
+        ...(basis && { precedentBasis: basis }),
+      },
       signal,
       onTurn: (t: TurnLog) => log(`[${run}] turn ${t.turn}: ${describe(t)}`),
     });

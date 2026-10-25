@@ -1,5 +1,5 @@
 import type { BillingPolicy } from "@rehearsal/core";
-import { createDb, type PgBoss, startQueue } from "@rehearsal/db";
+import { createDb, loadRegistry, type PgBoss, startQueue } from "@rehearsal/db";
 import policyV1 from "../../../scenarios/billing/policy.v1.json" with { type: "json" };
 import policyV2 from "../../../scenarios/billing/policy.v2.json" with { type: "json" };
 import policyV3 from "../../../scenarios/billing/policy.v3.json" with { type: "json" };
@@ -55,6 +55,7 @@ const rehearse = apply && {
   boss: apply.boss,
   reviewer,
   plannerSecret: process.env.PLANNER_WORKER_SECRET,
+  precedentRegistry: async (orgId: string) => (await loadRegistry(apply.db, orgId)).snapshot,
 };
 const app = buildApp({
   apply,

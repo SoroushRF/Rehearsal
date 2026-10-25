@@ -1,6 +1,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type { PlanManifest } from "@rehearsal/contracts";
 import { type BillingPolicyV1, fingerprint } from "@rehearsal/core";
+import { precedentDigest } from "@rehearsal/memory";
 import type { MessagesClient, PlanningReader } from "@rehearsal/planner";
 import {
   type ClaimedPlanJob,
@@ -238,5 +239,108 @@ describe("plan job", () => {
     const result = await handlePlanJob(job, deps(model([]), jobs));
     expect(result).toMatchObject({ kind: "failed", reason: "unknown_incident" });
     expect(failed).toHaveLength(1);
+  });
+});
+
+describe("plan job with precedents", () => {
+  const AREA = "billing.duplicate_charge";
+  const record = {
+    id: "dup-refund",
+    version: 2,
+    appliesTo: AREA,
+    statement: "Refund a duplicate charge in full.",
+    conditions: ["same invoice and amount"],
+    exceptions: ["disputed charges"],
+    effectiveFrom: "2026-10-01",
+    effectiveUntil: null,
+    author: { userId: "user_f", role: "finance_lead" as const },
+    approvedAt: "2026-10-20T15:04:05Z",
+  };
+  const digest = precedentDigest(record);
+  const withRegistry = (active: { id: string; version: number; digest: string }[]) => ({
+    ...JOB,
+    data: { ...JOB.data, precedents: { active, epochs: { [AREA]: 3 } } },
+  });
+  const memory = (orgIds: string[]) => (orgId: string) => {
+    orgIds.push(orgId);
+    return {
+      recall: async () => ({
+        precedents: [
+          {
+            id: record.id,
+            version: record.version,
+            statement: record.statement,
+            author: record.author,
+            record,
+            digest,
+            factIds: ["f1", "f2"],
+            hitIds: ["h1"],
+          },
+        ],
+        traceId: "trace_1",
+        rejected: [],
+      }),
+    };
+  };
+
+  it("recalls in the org's scope, shows the model the precedent and records the basis", async () => {
+    const { jobs, completed } = fakeJobs();
+    const prompts: string[] = [];
+    const scripted = model(refundOneDuplicate());
+    const client: MessagesClient = {
+      create: (params, options) => {
+        prompts.push(JSON.stringify(params.messages[0]?.content));
+        return scripted.create(params, options);
+      },
+    };
+    const orgs: string[] = [];
+    const job = withRegistry([{ id: record.id, version: 2, digest }]);
+    await handlePlanJob(job, { ...deps(client, jobs), precedents: memory(orgs) });
+
+    expect(orgs).toEqual([JOB.data.orgId]);
+    expect(prompts[0]).toContain("dup-refund v2: Refund a duplicate charge in full.");
+    expect((completed[0]?.[1].manifest as PlanManifest | undefined)?.precedentBasis).toEqual({
+      citations: [
+        {
+          id: record.id,
+          version: 2,
+          digest,
+          appliesTo: AREA,
+          factIds: ["f1", "f2"],
+          traceId: "trace_1",
+        },
+      ],
+      epochs: { [AREA]: 3 },
+    });
+  });
+
+  it("doesn't cite or show a precedent the registry no longer lists as active", async () => {
+    const { jobs, completed } = fakeJobs();
+    await handlePlanJob(withRegistry([]), {
+      ...deps(model(refundOneDuplicate()), jobs),
+      precedents: memory([]),
+    });
+    expect((completed[0]?.[1].manifest as PlanManifest | undefined)?.precedentBasis).toEqual({
+      citations: [],
+      epochs: { [AREA]: 3 },
+    });
+  });
+
+  it("fails the job when the org has active precedents but memory is missing or down", async () => {
+    const active = withRegistry([{ id: record.id, version: 2, digest }]);
+    const a = fakeJobs();
+    expect(await handlePlanJob(active, deps(model(refundOneDuplicate()), a.jobs))).toMatchObject({
+      kind: "failed",
+      reason: "precedents_unavailable",
+    });
+    const b = fakeJobs();
+    const down = () => ({ recall: () => Promise.reject(new Error("memory down")) });
+    expect(
+      await handlePlanJob(active, {
+        ...deps(model(refundOneDuplicate()), b.jobs),
+        precedents: down,
+      }),
+    ).toMatchObject({ kind: "failed", reason: "precedent_recall_failed" });
+    expect([...a.completed, ...b.completed]).toEqual([]);
   });
 });
