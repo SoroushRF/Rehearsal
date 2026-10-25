@@ -2,7 +2,6 @@ import { existsSync, readFileSync } from "node:fs";
 import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
 import {
-  type ApprovalGrant,
   type AuthzDecision,
   AuthzDecision as AuthzDecisionSchema,
   type AuthzRequest,
@@ -10,11 +9,12 @@ import {
   type MembershipResult,
   MembershipResult as MembershipResultSchema,
   type PermissionV1,
-  type PlanManifest,
   type Role,
 } from "@rehearsal/contracts";
-import { type BillingPolicy, evaluateBillingPolicy, requiresDualApproval } from "@rehearsal/core";
+import { approvalFacts, decisionEchoes, grantFact } from "@rehearsal/core";
 import type { FastifyReply, FastifyRequest } from "fastify";
+
+export { approvalFacts, grantFact };
 
 /** The rule file this API asks IAM to load. The caller names it; IAM has the text. */
 export const AUTHZ_RULE = { id: "rehearsal-authz", version: 1 } as const;
@@ -174,52 +174,15 @@ export async function authorizeGrants(
   return { ok: true };
 }
 
-/** The seats a plan's actions name, and whether policy asks for two approvers. No amounts. */
-export function approvalFacts(
-  manifest: PlanManifest,
-  policies: readonly BillingPolicy[],
-): { requiredPermissions: PermissionV1[]; dualRequired: boolean } {
-  const required = new Set<PermissionV1>();
-  for (const action of manifest.actions) required.add(ROLE_PERMISSION[action.requiredRole]);
-  for (const ref of manifest.policies) {
-    const policy = policies.find((p) => p.id === ref.id && p.version === ref.version);
-    if (!policy) continue;
-    for (const role of evaluateBillingPolicy(manifest, policy).requiredRoles) {
-      required.add(ROLE_PERMISSION[role]);
-    }
-  }
-  return {
-    requiredPermissions: [...required].sort(),
-    dualRequired: requiresDualApproval(manifest, policies),
-  };
-}
-
-/**
- * Facts IAM's `run:admit` rules read. Permissions are copied only when the row has them.
- * `roles` are not turned into permissions: a role-only grant does not cover the list.
- */
-export function grantFact(grant: ApprovalGrant): Record<string, unknown> {
-  return {
-    orgId: grant.orgId,
-    planHash: grant.planHash,
-    revision: grant.revision,
-    revokedAt: grant.revokedAt,
-    grantedAt: grant.grantedAt,
-    expiresAt: grant.expiresAt,
-    actorUserId: grant.actorUserId,
-    ...(grant.permissions ? { permissions: grant.permissions } : {}),
-  };
-}
-
 const ROLE_PERMISSION = {
   support_lead: "rehearsal:approve:support_step",
   finance_lead: "rehearsal:approve:finance_step",
 } as const satisfies Record<Role, PermissionV1>;
 
 /**
- * The legacy `roles` column is still required, and the executor still reads it (T4.22 replaces
- * that check). These are the approve permissions IAM already allowed for this person, not a
- * second authorization decision.
+ * The legacy `roles` column is still required. These are the approve permissions IAM already
+ * allowed for this person, copied onto the grant. They are not a second authorization decision,
+ * and they are not derived from `roles`.
  */
 export function rolesFromPermissions(permissions: readonly string[]): Role[] {
   const roles: Role[] = [];
@@ -230,23 +193,7 @@ export function rolesFromPermissions(permissions: readonly string[]): Role[] {
 
 /** True when the decision is about the action and the facts we sent, including nested keys. */
 export function echoes(request: AuthzRequest, decision: AuthzDecision): boolean {
-  return (
-    decision.action === request.action &&
-    decision.rule.id === request.rule.id &&
-    decision.rule.version === request.rule.version &&
-    canonical(decision.resource) === canonical(request.resource)
-  );
-}
-
-function canonical(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
-  if (value !== null && typeof value === "object") {
-    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
-      a < b ? -1 : a > b ? 1 : 0,
-    );
-    return `{${entries.map(([key, inner]) => `${JSON.stringify(key)}:${canonical(inner)}`).join(",")}}`;
-  }
-  return JSON.stringify(value) ?? "undefined";
+  return decisionEchoes(request, decision);
 }
 
 export interface IamClientOptions {

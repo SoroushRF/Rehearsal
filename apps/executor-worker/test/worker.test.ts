@@ -15,7 +15,15 @@ import {
   schema,
   startQueue,
 } from "@rehearsal/db";
-import { billingManifest, FakeClock, type FakeWorld, worldFromManifest } from "@rehearsal/testkit";
+import {
+  APPROVAL_PERMISSIONS,
+  AUTHZ_RULE,
+  billingManifest,
+  FakeClock,
+  type FakeWorld,
+  fakeRunAdmit,
+  worldFromManifest,
+} from "@rehearsal/testkit";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import policy from "../../../scenarios/billing/policy.v1.json" with { type: "json" };
@@ -62,6 +70,8 @@ describe.skipIf(!process.env.DB_TESTS)(
         actorUserId: "user_finance",
         actorSessionId: "sess",
         roles: ["support_lead", "finance_lead"],
+        permissions: [...APPROVAL_PERMISSIONS],
+        authzRule: AUTHZ_RULE,
         grantedAt: new Date(NOW.getTime() - 3_600_000),
         expiresAt: new Date(NOW.getTime() + 3_600_000),
       });
@@ -80,6 +90,7 @@ describe.skipIf(!process.env.DB_TESTS)(
 
     function contextFor(world: FakeWorld): WorkerContext {
       const providers = { stripe: world.provider("stripe"), zendesk: world.provider("zendesk") };
+      const clock = new FakeClock(NOW.toISOString());
       return {
         db,
         providers,
@@ -87,7 +98,8 @@ describe.skipIf(!process.env.DB_TESTS)(
           stripe: { world: "operational", tenant: "test" },
           zendesk: { world: "operational", tenant: "test" },
         },
-        clock: new FakeClock(NOW.toISOString()),
+        clock,
+        admit: fakeRunAdmit({ now: () => clock.now() }),
         policies: [policy as BillingPolicyV1],
         executor: { sleep: async () => {} },
       };
@@ -728,6 +740,8 @@ describe.skipIf(!process.env.DB_TESTS)(
         actorUserId: "user_finance",
         actorSessionId: "sess",
         roles: ["support_lead", "finance_lead"],
+        permissions: [...APPROVAL_PERMISSIONS],
+        authzRule: AUTHZ_RULE,
         grantedAt: new Date(NOW.getTime() - 3_600_000),
         expiresAt: new Date(NOW.getTime() + 3_600_000),
       });
