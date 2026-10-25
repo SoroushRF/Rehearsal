@@ -83,9 +83,13 @@ Stripe/Zendesk. Cloud checks established all nine worlds reachable and writable 
 token minting, Postgres and IAM mTLS/invalid-token refusal. The initial IAM smoke ran
 during Render's port reconfiguration and failed; a later direct mTLS probe succeeded.
 The next smoke exposed a missing HTML Accept header for `/app`; navigation clients
-already send it, and the smoke now does too. Final smoke and signed-in workflow results
-must be recorded after they finish. Agent Memory and Slack summaries are not configured
-in this deployment yet (their services/code remain available).
+already send it, and the smoke now does too. On `8c82eb2`, cloud job
+`job-dbf4b7l9fdbs738peij0` reran the smoke with that same header correction and succeeded
+at 18:08:53 UTC (14:08 Toronto): all nine worlds, DB, IAM, `/`, `/app`, health,
+phantom replay JSON and signed-out plan refusal. PR #315 persists the correction.
+The complete signed-in model/review/approval/apply flow on this cloud deployment is
+still unverified. Agent Memory and Slack summaries are not configured in this deployment
+yet (their services/code remain available).
 
 Render required a card despite the credit; the owner added it. The temporary empty
 Stripe form loaded after reloading Billing. The deployment uses a dedicated Google
@@ -94,3 +98,8 @@ returned `gemini-4-argon`. Private material is in ignored `.deploy/render`; the 
 was not uploaded. Certificates expire 90 days after issuance. Services were created
 through Render's API from the Blueprint configuration; they are not yet linked to a
 managed Blueprint instance. Auto-deploy is off: release changes deliberately.
+
+Google sign-in initially requested organization creation because the real owner's user
+had no memberships; Rehearsal Demo contained test users only. The owner explicitly
+authorized joining that existing organization as `org:owner`; the membership was created.
+No new organization, email invitation or authorization bypass was used.
