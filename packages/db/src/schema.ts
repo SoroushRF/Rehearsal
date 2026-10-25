@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   bigserial,
+  check,
   index,
   integer,
   jsonb,
@@ -156,4 +157,114 @@ export const precedentEvents = pgTable(
     uniqueIndex().on(t.orgId, t.precedentId, t.version, t.kind),
     index().on(t.orgId, t.appliesTo),
   ],
+);
+
+/**
+ * Execution rehearsals (T3.13, decision 0013). Their own tables: the operational journal, admission
+ * and approval lookup never read these, and nothing here is a run, a grant or a receipt. Every row
+ * is org-scoped and append-only; a rehearsal's state is its last event.
+ */
+export const rehearsals = pgTable(
+  "rehearsals",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id").notNull(),
+    planId: text("plan_id").notNull(),
+    revision: integer("revision").notNull(),
+    planHash: text("plan_hash").notNull(),
+    scenarioId: text("scenario_id").notNull(),
+    scenarioVersion: integer("scenario_version").notNull(),
+    snapshotDigest: text("snapshot_digest").notNull(),
+    policyId: text("policy_id").notNull(),
+    policyVersion: integer("policy_version").notNull(),
+    requestedBy: text("requested_by").notNull(),
+    requestedAt: timestamp("requested_at", { withTimezone: true }).notNull(),
+    /** The caller's key for this request: a repeat returns the same rehearsal. */
+    idempotencyKey: text("idempotency_key").notNull(),
+  },
+  (t) => [uniqueIndex().on(t.orgId, t.idempotencyKey), index().on(t.orgId, t.planId)],
+);
+
+export const rehearsalEvents = pgTable(
+  "rehearsal_events",
+  {
+    seq: bigserial("seq", { mode: "number" }).primaryKey(),
+    orgId: text("org_id").notNull(),
+    rehearsalId: text("rehearsal_id").notNull(),
+    state: text("state").notNull(),
+    detail: text("detail"),
+    tornDownAt: timestamp("torn_down_at", { withTimezone: true }),
+    at: timestamp("at", { withTimezone: true }).notNull(),
+  },
+  (t) => [index().on(t.orgId, t.rehearsalId)],
+);
+
+/** The rehearsal's own journal: same shape as `step_attempts`, keys namespaced `rh_<id>_`. */
+export const rehearsalAttempts = pgTable(
+  "rehearsal_attempts",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id").notNull(),
+    rehearsalId: text("rehearsal_id").notNull(),
+    planHash: text("plan_hash").notNull(),
+    actionId: text("action_id").notNull(),
+    operationKey: text("operation_key").notNull(),
+    attemptNo: integer("attempt_no").notNull(),
+    state: text("state").notNull(),
+    request: jsonb("request").notNull(),
+    providerStatus: integer("provider_status"),
+    error: text("error"),
+    preparedAt: timestamp("prepared_at", { withTimezone: true }).notNull(),
+    dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
+    settledAt: timestamp("settled_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex().on(t.orgId, t.operationKey, t.attemptNo),
+    index().on(t.orgId, t.rehearsalId),
+    check(
+      "rehearsal_attempts_key_namespaced",
+      sql`starts_with(${t.operationKey}, 'rh_' || ${t.rehearsalId} || '_')`,
+    ),
+  ],
+);
+
+export const rehearsalBindings = pgTable(
+  "rehearsal_bindings",
+  {
+    orgId: text("org_id").notNull(),
+    rehearsalId: text("rehearsal_id").notNull(),
+    stepId: text("step_id").notNull(),
+    path: text("path").notNull(),
+    value: jsonb("value").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.orgId, t.rehearsalId, t.stepId, t.path] })],
+);
+
+/** One `RehearsalStepResult` per settled step, as recorded. Never an operational receipt. */
+export const rehearsalStepResults = pgTable(
+  "rehearsal_step_results",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id").notNull(),
+    rehearsalId: text("rehearsal_id").notNull(),
+    actionId: text("action_id").notNull(),
+    result: jsonb("result").notNull(),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+  },
+  // One result per step: a redelivered job can't record a second, different one.
+  (t) => [uniqueIndex().on(t.orgId, t.rehearsalId, t.actionId)],
+);
+
+/** The immutable report, one per rehearsal. Kept for history: superseded reports are never deleted. */
+export const rehearsalReports = pgTable(
+  "rehearsal_reports",
+  {
+    rehearsalId: text("rehearsal_id").primaryKey(),
+    orgId: text("org_id").notNull(),
+    planId: text("plan_id").notNull(),
+    planHash: text("plan_hash").notNull(),
+    report: jsonb("report").notNull(),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [index().on(t.orgId, t.planId)],
 );
