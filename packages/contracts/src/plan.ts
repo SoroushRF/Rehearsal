@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { Action } from "./actions";
+import { AuthzRuleRef, PermissionV1 } from "./authz";
 import { CONTRACTS_VERSION, PolicyRef, Role, Sha256Hex, Timestamp } from "./common";
 import { Observation, QueryObservation } from "./observations";
 import { PrecedentBasis } from "./precedents";
@@ -51,6 +52,13 @@ export const ApprovalGrant = z.object({
   actorSessionId: z.string().min(1),
   /** Roles the actor held when granting, as verified server-side. */
   roles: z.array(Role).min(1),
+  /**
+   * Permissions the approver held under `authzRule`. Absent on grants written before decision
+   * 0014. Those rows are not a silent allow; reading them is a later migration.
+   */
+  permissions: z.array(PermissionV1).min(1).optional(),
+  /** The rule file those permissions were copied from. Absent on the same older grants. */
+  authzRule: AuthzRuleRef.optional(),
   grantedAt: Timestamp,
   expiresAt: Timestamp,
   revokedAt: Timestamp.nullable(),
