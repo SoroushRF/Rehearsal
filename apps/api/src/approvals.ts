@@ -11,6 +11,7 @@ import { type Db, schema, toApprovalGrant } from "@rehearsal/db";
 import { and, desc, eq, gt, isNull, lte } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import {
+  AUTHZ_RULE,
   approvalFacts,
   authorize,
   bearerToken,
@@ -38,12 +39,7 @@ export interface ApprovalDeps {
 type GrantRow = typeof approvalGrants.$inferSelect;
 
 function toGrant(row: GrantRow): ApprovalGrant {
-  return ApprovalGrant.parse({
-    ...row,
-    grantedAt: row.grantedAt.toISOString(),
-    expiresAt: row.expiresAt.toISOString(),
-    revokedAt: row.revokedAt?.toISOString() ?? null,
-  });
+  return ApprovalGrant.parse(toApprovalGrant(row));
 }
 
 /** Who has signed which seat, and which is open, from the stored grants for this exact hash. */
@@ -168,6 +164,8 @@ export function registerApprovalRoutes(app: FastifyInstance, deps: ApprovalDeps)
         actorUserId: gate.person.userId,
         actorSessionId: gate.person.sessionId,
         roles,
+        permissions: gate.person.permissions,
+        authzRule: AUTHZ_RULE,
         grantedAt: at.toISOString(),
         expiresAt: new Date(at.getTime() + (deps.ttlMs ?? DEFAULT_APPROVAL_TTL_MS)).toISOString(),
         revokedAt: null,

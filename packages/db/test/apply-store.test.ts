@@ -64,14 +64,46 @@ describe.skipIf(!process.env.DB_TESTS)("PgApplyStore (real Postgres)", () => {
       approvalId: s.grantId,
     });
     expect((await store.loadPlan(s.orgId, s.planId, 1))?.planHash).toBe(s.hash);
-    expect(await store.loadGrant(s.orgId, s.grantId)).toMatchObject({
+    const loaded = await store.loadGrant(s.orgId, s.grantId);
+    expect(loaded).toMatchObject({
       roles: ["finance_lead"],
       grantedAt: "2026-10-22T10:00:00.000Z",
       expiresAt: "2026-10-22T12:00:00.000Z",
       revokedAt: null,
     });
+    expect(loaded?.permissions).toBeUndefined();
+    expect(loaded?.authzRule).toBeUndefined();
     expect(await store.loadRun("org_other", s.runId)).toBeNull();
     expect(await store.loadGrant("org_other", s.grantId)).toBeNull();
+  });
+
+  it("reads permissions and the rule from a new grant, and omits them on a role-only row", async () => {
+    const s = await seed();
+    const id = `grant_${randomUUID()}`;
+    await db.insert(schema.approvalGrants).values({
+      id,
+      orgId: s.orgId,
+      planId: s.planId,
+      revision: 1,
+      planHash: s.hash,
+      actorUserId: "u2",
+      actorSessionId: "s2",
+      roles: ["support_lead"],
+      permissions: ["rehearsal:approve:support_step"],
+      authzRule: { id: "rehearsal-authz", version: 1 },
+      grantedAt: new Date("2026-10-22T10:00:00.000Z"),
+      expiresAt: new Date("2026-10-22T12:00:00.000Z"),
+    });
+    const store = new PgApplyStore(db);
+    expect(await store.loadGrant(s.orgId, id)).toMatchObject({
+      roles: ["support_lead"],
+      permissions: ["rehearsal:approve:support_step"],
+      authzRule: { id: "rehearsal-authz", version: 1 },
+    });
+    const old = await store.loadGrant(s.orgId, s.grantId);
+    expect(old?.roles).toEqual(["finance_lead"]);
+    expect(old?.permissions).toBeUndefined();
+    expect(old?.authzRule).toBeUndefined();
   });
 
   it("lists remedy steps for an obligation across plans of the org only", async () => {
