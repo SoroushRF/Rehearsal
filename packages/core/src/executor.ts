@@ -38,6 +38,11 @@ import type {
   SettleTransition,
   WorldContext,
 } from "./ports";
+import {
+  checkPrecedentBasis,
+  describePrecedentHold,
+  type PrecedentRegistryPort,
+} from "./precedents";
 import { rehearsalOperationKey, rehearsalTenant } from "./rehearsal";
 import { remedyOf } from "./remedy";
 import { replyBodyFor, summaryCountKey } from "./templates";
@@ -181,6 +186,11 @@ export interface ExecutorDeps {
   worlds: Partial<Record<Vendor, WorldContext>>;
   clock: Clock;
   policies: readonly BillingPolicy[];
+  /**
+   * The precedent registry, read from Postgres. Needed only for a plan that cites precedents; such
+   * a plan is refused when it is missing (fail closed), and a plan that cites none never reads it.
+   */
+  precedents?: PrecedentRegistryPort;
   newId: (prefix: string) => string;
   guard?: StepGuard;
   compensate?: Compensator;
@@ -598,6 +608,31 @@ async function admit(
     const { violations } = evaluateBillingPolicy(manifest, policy);
     if (violations.length > 0) {
       return { ok: false, detail: `policy ${violations[0]?.rule}: ${violations[0]?.detail}` };
+    }
+  }
+  // A precedent the plan rested on may have been replaced or withdrawn since it was approved. The
+  // registry decides, never recall, so an Agent Memory outage can't block a plan or let one through.
+  if (manifest.precedentBasis) {
+    if (!deps.precedents) {
+      return { ok: false, detail: "plan cites precedents and no precedent registry is configured" };
+    }
+    let verdict: ReturnType<typeof checkPrecedentBasis>;
+    try {
+      verdict = checkPrecedentBasis(
+        manifest.precedentBasis,
+        await deps.precedents.snapshot(manifest.orgId),
+      );
+    } catch (err) {
+      // Can't read the registry: not "nothing changed".
+      return { ok: false, detail: `precedent registry unavailable: ${(err as Error).message}` };
+    }
+    if (!verdict.ok) {
+      const first = verdict.holds[0];
+      const more = verdict.holds.length > 1 ? ` (+${verdict.holds.length - 1} more)` : "";
+      return {
+        ok: false,
+        detail: `precedent changed since approval: ${first ? describePrecedentHold(first) : ""}${more}`,
+      };
     }
   }
   return { ok: true, manifest, grant };

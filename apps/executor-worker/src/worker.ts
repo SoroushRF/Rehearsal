@@ -13,7 +13,7 @@ import {
   type RunOutcome,
   type WorldContext,
 } from "@rehearsal/core";
-import { ApplyJob, type Db, PgApplyStore, PgJournal } from "@rehearsal/db";
+import { ApplyJob, type Db, loadRegistry, PgApplyStore, PgJournal } from "@rehearsal/db";
 
 /** Everything the executor needs except the per-job store and journal. */
 export interface WorkerContext {
@@ -82,6 +82,10 @@ export async function handleApplyJob(
     worlds: ctx.worlds,
     clock: ctx.clock,
     policies: ctx.policies,
+    // Postgres, never Agent Memory: the executor holds no memory credentials.
+    precedents: {
+      snapshot: async (orgId) => (await loadRegistry(ctx.db, orgId)).snapshot,
+    },
     admit: ctx.admit,
     newId: (prefix) => `${prefix}_${randomUUID()}`,
     guard: createReadGuard({ providers: ctx.providers, worlds: ctx.worlds, clock: ctx.clock }),
