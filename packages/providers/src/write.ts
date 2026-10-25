@@ -18,7 +18,7 @@ import {
   type WorldContext,
 } from "@rehearsal/core";
 import { z } from "zod";
-import { eraFetch } from "./era";
+import { eraFetch, NO_REDIRECTS } from "./era";
 import type { WorldConfig } from "./worlds";
 
 /** The write half of a ProviderPort. T1 owns the read half (observe, query). */
@@ -42,6 +42,29 @@ export interface WriteTarget {
   authorization: string;
   /** Per-request timeout; a timeout is an unknown outcome, never a rejection. */
   timeoutMs?: number;
+  /**
+   * `native` writes to a real Stripe **test-mode** account (T3.17, decision 0013 §7): plain HTTPS to
+   * `config.baseUrl` with the bearer key, no Era tenant header. Only `stripeWriter` takes it, only
+   * with an `sk_test_` key, never for an operational world, and only to the pinned account.
+   */
+  transport?: "era" | "native";
+  /** The Stripe account a native writer may write to; checked before anything is journaled. */
+  accountId?: string;
+  /** Extra headers for a native request, e.g. a pinned `Stripe-Version`. */
+  headers?: Record<string, string>;
+  /** The fetch a native writer uses (tests stand in for Stripe). Defaults to the global one. */
+  fetch?: typeof fetch;
+}
+
+/** One HTTP call through the target's transport: Era with its tenant credential, or native Stripe. */
+function request(target: WriteTarget, path: string, init: RequestInit): Promise<Response> {
+  if (target.transport !== "native") return eraFetch(target.config, path, init);
+  const doFetch = target.fetch ?? fetch;
+  return doFetch(`${target.config.baseUrl}${path}`, {
+    ...init,
+    headers: { ...target.headers, ...(init.headers as Record<string, string>) },
+    ...NO_REDIRECTS,
+  });
 }
 
 function assertTarget(target: WriteTarget, ctx: WorldContext) {
@@ -97,7 +120,7 @@ async function send(target: WriteTarget, req: PreparedRequest): Promise<Dispatch
   let res: Response;
   let text: string;
   try {
-    res = await eraFetch(target.config, req.path, {
+    res = await request(target, req.path, {
       method: req.method,
       headers,
       body: req.body,
@@ -113,17 +136,25 @@ async function send(target: WriteTarget, req: PreparedRequest): Promise<Dispatch
   } catch {
     // Keep the raw text; a confirmed but unreadable body becomes unknown in the executor.
   }
+  if ((body as { livemode?: unknown } | null)?.livemode === true) {
+    // A live-mode answer means real money moved or might have: never confirm it, reconcile it.
+    return { kind: "unknown", error: "the provider answered in live mode; refusing to confirm" };
+  }
   return classifyResponse(res.status, body, res.headers.get("retry-after"));
 }
 
 /** GET through the bound tenant with the vendor auth; throws on a non-2xx (reconcile → indeterminate). */
 async function readJson<T>(target: WriteTarget, path: string): Promise<T> {
-  const res = await eraFetch(target.config, path, {
+  const res = await request(target, path, {
     headers: { authorization: target.authorization },
     signal: AbortSignal.timeout(target.timeoutMs ?? 10_000),
   });
   if (!res.ok) throw new Error(`GET ${path} → ${res.status}`);
-  return (await res.json()) as T;
+  const body = (await res.json()) as T;
+  if ((body as { livemode?: unknown } | null)?.livemode === true) {
+    throw new Error(`GET ${path} answered in live mode`);
+  }
+  return body;
 }
 
 const MAX_PAGES = 50;
@@ -190,8 +221,33 @@ async function findMarkedComment(
  * bytes), idempotency key = operation key, and the key also stored in metadata so a later read can
  * find the refund.
  */
+/**
+ * A native Stripe target is narrow (decision 0013, §7): a test-mode secret key, a pinned account,
+ * and never an operational world, so it can't stand in for one or reuse a grant bound to it.
+ */
+function assertNativeTarget(target: WriteTarget): void {
+  if (!/^Bearer sk_test_[A-Za-z0-9]+$/.test(target.authorization)) {
+    throw new Error("a native Stripe writer needs a test-mode secret key (sk_test_…)");
+  }
+  if (target.world === "operational") {
+    throw new Error("a native Stripe sandbox is never an operational world");
+  }
+  if (!target.accountId) throw new Error("a native Stripe writer needs a pinned account ID");
+}
+
 export function stripeWriter(target: WriteTarget): ProviderWriter {
+  if (target.transport === "native") assertNativeTarget(target);
   const credits = stripeCreditWriter(target);
+  let accountChecked = false;
+  /** A native writer checks, before anything is journaled, that the key is the pinned account's. */
+  const checkAccount = async () => {
+    if (target.transport !== "native" || accountChecked) return;
+    const account = await readJson<{ id?: unknown }>(target, "/v1/account");
+    if (account.id !== target.accountId) {
+      throw new Error(`the key belongs to account ${String(account.id)}, not the pinned one`);
+    }
+    accountChecked = true;
+  };
   return {
     vendor: "stripe",
     // Same key + same bytes either creates the refund (or credit) once or replays the response.
@@ -199,6 +255,8 @@ export function stripeWriter(target: WriteTarget): ProviderWriter {
       action.kind === "stripe.refund.create" || action.kind === "stripe.customer.balanceCredit",
     // A credit checks the customer's currency first; Era takes any, Stripe doesn't.
     async preconditions(action: Action, ctx: WorldContext): Promise<Preconditions> {
+      assertTarget(target, ctx);
+      await checkAccount();
       return action.kind === "stripe.customer.balanceCredit"
         ? credits.preconditions(action, ctx)
         : {};
@@ -270,6 +328,10 @@ export function stripeWriter(target: WriteTarget): ProviderWriter {
               amount: { ...action.args.amount, amountMinor: Number(sent.get("amount")) },
             },
           };
+          if (refund.status === "pending" || refund.status === "requires_action") {
+            // Not settled yet: neither applied nor contradicted; a later read decides.
+            return { kind: "indeterminate", detail: `the refund is ${refund.status}` };
+          }
           if (!refundEffectMatches(original, effect)) {
             return {
               kind: "indeterminate",
