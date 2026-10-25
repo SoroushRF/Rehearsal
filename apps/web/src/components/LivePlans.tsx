@@ -14,14 +14,17 @@ import {
   RefusedError,
   StoredPlan,
 } from "../api";
+import { usePermissions } from "../auth";
 import { roleLabel, shortHash } from "../format";
 import { useTenantKey } from "../identity";
+import { APPROVAL_SEATS, actionAllowed } from "../permissions";
 import { droppedBy, requiredRoles } from "../plan";
 import { explainPrecedentHold, PrecedentCheck } from "../precedent-holds";
 import { RunView } from "../runs";
 import { Segmented } from "./AppShell";
 import { AuditPanel } from "./AuditPanel";
 import { ExecutionRehearsalPanel } from "./ExecutionRehearsalPanel";
+import { MembersPanel } from "./MembersPanel";
 import { PlanReview } from "./PlanReview";
 import { PrecedentPanel } from "./PrecedentPanel";
 import { RehearseBar } from "./Rehearse";
@@ -42,6 +45,7 @@ const planPath = (planId: string) => `/api/plans/${encodeURIComponent(planId)}`;
 /** Plans stored for the reviewer's organization, reviewed and approved through the API. */
 export function LivePlans({ apiFetch }: { apiFetch: ApiFetch }) {
   const key = useTenantKey();
+  const access = usePermissions(apiFetch);
   const plans = useQuery({
     queryKey: key("plans"),
     queryFn: () => call(apiFetch, PlanList, "/api/plans"),
@@ -55,8 +59,17 @@ export function LivePlans({ apiFetch }: { apiFetch: ApiFetch }) {
   if (plans.isError) return <Alert className="mt-2">{explain(plans.error)}</Alert>;
 
   return (
-    <div className="flex flex-col gap-6">
-      <RehearseBar apiFetch={apiFetch} onStored={showStored} />
+    <div
+      data-testid="access"
+      data-ready={access.ready ? "true" : "false"}
+      className="flex flex-col gap-6"
+    >
+      <MembersPanel apiFetch={apiFetch} permissions={access.permissions} />
+      <RehearseBar
+        apiFetch={apiFetch}
+        onStored={showStored}
+        allowed={actionAllowed(access.permissions, "rehearse")}
+      />
 
       {!planId ? (
         <Card className="flex flex-col items-center gap-3 border-dashed bg-transparent px-6 py-14 text-center shadow-none">
@@ -83,7 +96,12 @@ export function LivePlans({ apiFetch }: { apiFetch: ApiFetch }) {
             />
           )}
           {plans.data.plans.length === 1 && <h2 className="sr-only">Plans</h2>}
-          <LivePlan key={planId} apiFetch={apiFetch} planId={planId} />
+          <LivePlan
+            key={planId}
+            apiFetch={apiFetch}
+            planId={planId}
+            permissions={access.permissions}
+          />
         </>
       )}
     </div>
@@ -118,7 +136,15 @@ function useApprovals(apiFetch: ApiFetch, planId: string) {
   });
 }
 
-function LivePlan({ apiFetch, planId }: { apiFetch: ApiFetch; planId: string }) {
+function LivePlan({
+  apiFetch,
+  planId,
+  permissions,
+}: {
+  apiFetch: ApiFetch;
+  planId: string;
+  permissions: readonly string[] | null;
+}) {
   const queryClient = useQueryClient();
   const key = useTenantKey();
   const approvals = useApprovals(apiFetch, planId);
@@ -181,6 +207,7 @@ function LivePlan({ apiFetch, planId }: { apiFetch: ApiFetch; planId: string }) 
             apiFetch={apiFetch}
             plan={plan.data}
             editing={unchecked.size > 0}
+            permissions={permissions}
             onStale={() => queryClient.invalidateQueries({ queryKey: key("plan", planId) })}
             onRunStarted={setShownRun}
           />
@@ -194,7 +221,13 @@ function LivePlan({ apiFetch, planId }: { apiFetch: ApiFetch; planId: string }) 
         manifest={manifest}
       />
 
-      <RunSection apiFetch={apiFetch} planId={planId} shownRun={shownRun} onShow={setShownRun} />
+      <RunSection
+        apiFetch={apiFetch}
+        planId={planId}
+        shownRun={shownRun}
+        onShow={setShownRun}
+        canCancel={actionAllowed(permissions, "cancel")}
+      />
 
       {unchecked.size > 0 && (
         // Floats over the page, lined up under the steps (not the approval panel) on wide screens.
@@ -237,12 +270,14 @@ function ApprovalPanel({
   apiFetch,
   plan,
   editing,
+  permissions,
   onStale,
   onRunStarted,
 }: {
   apiFetch: ApiFetch;
   plan: StoredPlan;
   editing: boolean;
+  permissions: readonly string[] | null;
   onStale: () => void;
   onRunStarted: (runId: string) => void;
 }) {
@@ -271,6 +306,19 @@ function ApprovalPanel({
       queryClient.invalidateQueries({ queryKey: key("runs", plan.planId) });
     },
   });
+  const revoke = useMutation({
+    mutationFn: (grantId: string) =>
+      call(
+        apiFetch,
+        z.object({ grant: ApprovalGrant, existing: z.boolean() }),
+        `${planPath(plan.planId)}/approvals/${encodeURIComponent(grantId)}/revoke`,
+        {},
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: key("grants", plan.planId) }),
+  });
+  const canApprove = actionAllowed(permissions, "approve");
+  const canApply = actionAllowed(permissions, "apply");
+  const canRevoke = actionAllowed(permissions, "revoke");
   // Where two different approvers are needed, one person's grant isn't "approved" yet.
   const seats = grants.data?.approval?.dualRequired ? grants.data.approval : null;
   const live = grants.data?.grants.find(
@@ -317,11 +365,27 @@ function ApprovalPanel({
             icon="play"
             className="mt-4 w-full"
             loading={apply.isPending}
-            disabled={editing}
+            disabled={editing || !canApply}
+            title={canApply ? undefined : "You don't have permission to apply this plan"}
             onClick={() => apply.mutate()}
           >
             Apply to production
           </Button>
+          {!canApply && (
+            <p className="mt-2 text-xs leading-4 text-subtle">
+              You don't have permission to apply this plan.
+            </p>
+          )}
+          {canRevoke && (
+            <Button
+              variant="secondary"
+              className="mt-2 w-full"
+              loading={revoke.isPending}
+              onClick={() => revoke.mutate(live.id)}
+            >
+              Revoke approval
+            </Button>
+          )}
           <p className="mt-2 text-xs leading-4 text-subtle">
             Applies exactly this plan. Before each step the executor re-checks what it relied on and
             holds anything that changed.
@@ -332,8 +396,9 @@ function ApprovalPanel({
           <p className="mt-3 text-sm leading-5 text-muted">
             {seats ? (
               <>
-                Needs <span className="font-medium text-ink">two different people</span>: a support
-                lead and a finance lead. One person can't fill both seats.
+                Needs <span className="font-medium text-ink">two different people</span>, one
+                holding rehearsal:approve:support_step and one holding
+                rehearsal:approve:finance_step. One person can't fill both seats.
               </>
             ) : (
               <>
@@ -347,13 +412,24 @@ function ApprovalPanel({
             icon="check"
             className="mt-4 w-full"
             loading={approve.isPending}
-            disabled={editing || heldPrecedents.length > 0}
-            title={editing ? "Create the revision first, then approve it" : undefined}
+            disabled={editing || heldPrecedents.length > 0 || !canApprove}
+            title={
+              !canApprove
+                ? "You don't have permission to approve"
+                : editing
+                  ? "Create the revision first, then approve it"
+                  : undefined
+            }
             onClick={() => approve.mutate()}
           >
             {seats && seats.signed.length > 0 ? "Add my approval" : "Approve"} revision{" "}
             {plan.revision}
           </Button>
+          {!canApprove && (
+            <p className="mt-2 text-xs leading-4 text-subtle">
+              You don't have permission to approve.
+            </p>
+          )}
           {editing && (
             <p className="mt-2 text-xs leading-4 text-subtle">
               Create the revision first, then approve it.
@@ -371,6 +447,7 @@ function ApprovalPanel({
       )}
       {approve.isError && <Alert className="mt-3">{explain(approve.error)}</Alert>}
       {apply.isError && <Alert className="mt-3">{explain(apply.error)}</Alert>}
+      {revoke.isError && <Alert className="mt-3">{explain(revoke.error)}</Alert>}
       {apply.data && (
         <Alert tone="info" className="mt-3" data-testid="run-started">
           Run <code className="font-mono">{apply.data.runId}</code>{" "}
@@ -383,36 +460,40 @@ function ApprovalPanel({
 
 /** The two seats a large refund needs filled by different people, and who holds each. */
 export function Seats({ status }: { status: ApprovalStatus }) {
-  const seat = (role: "support_lead" | "finance_lead") => {
-    const signer = status.signed.find((s) => s.role === role);
-    return (
-      <li
-        key={role}
-        data-testid="approval-seat"
-        data-seat={role}
-        data-signed={signer ? "true" : "false"}
-        className="flex items-center justify-between gap-3 text-sm"
-      >
-        <span className="text-muted">{roleLabel[role]}</span>
-        {signer ? (
-          <Chip tone="good" icon="check">
-            {signer.actorUserId}
-          </Chip>
-        ) : (
-          <Chip tone="warn" icon="clock">
-            Waiting
-          </Chip>
-        )}
-      </li>
-    );
-  };
   return (
     <ul
       aria-label="Approvers"
       className="mt-3 space-y-2 rounded-lg border border-line bg-sunken/60 p-3"
     >
-      {seat("support_lead")}
-      {seat("finance_lead")}
+      {APPROVAL_SEATS.map((seat) => {
+        const signer = status.signed.find((s) => s.permission === seat.permission);
+        return (
+          <li
+            key={seat.permission}
+            data-testid="approval-seat"
+            data-seat={seat.seat}
+            data-permission={seat.permission}
+            data-signed={signer ? "true" : "false"}
+            className="flex items-center justify-between gap-3 text-sm"
+          >
+            <span className="text-muted">
+              {seat.label}
+              <span className="mt-0.5 block font-mono text-[11px] text-subtle">
+                {seat.permission}
+              </span>
+            </span>
+            {signer ? (
+              <Chip tone="good" icon="check">
+                {signer.actorUserId}
+              </Chip>
+            ) : (
+              <Chip tone="warn" icon="clock">
+                Waiting
+              </Chip>
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -423,13 +504,26 @@ function RunSection({
   planId,
   shownRun,
   onShow,
+  canCancel,
 }: {
   apiFetch: ApiFetch;
   planId: string;
   shownRun: string | null;
   onShow: (id: string) => void;
+  canCancel: boolean;
 }) {
   const key = useTenantKey();
+  const queryClient = useQueryClient();
+  const cancel = useMutation({
+    mutationFn: (id: string) =>
+      call(
+        apiFetch,
+        z.object({ runId: z.string(), state: z.string() }),
+        `/api/runs/${encodeURIComponent(id)}/cancel`,
+        {},
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: key("runs", planId) }),
+  });
   const runs = useQuery({
     queryKey: key("runs", planId),
     queryFn: () => call(apiFetch, RunList, `${planPath(planId)}/runs`),
@@ -447,6 +541,18 @@ function RunSection({
 
   return (
     <section ref={top} aria-label="Runs" className="flex scroll-mt-20 flex-col gap-3">
+      {canCancel && (
+        <div className="flex justify-end">
+          <Button
+            variant="secondary"
+            loading={cancel.isPending}
+            onClick={() => cancel.mutate(runId)}
+          >
+            Cancel run
+          </Button>
+        </div>
+      )}
+      {cancel.isError && <Alert>{explain(cancel.error)}</Alert>}
       {all.length > 1 && (
         <nav aria-label="Runs" className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1">
           {all.map((r) => (

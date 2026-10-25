@@ -6,14 +6,13 @@ import {
   UserButton,
   useAuth,
 } from "@clerk/react";
-import { Role } from "@rehearsal/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { type ReactNode, useCallback } from "react";
 import { z } from "zod";
+import type { ApiFetch } from "./api";
 import { Badge } from "./components/Badge";
 import { Button } from "./components/ui";
-import { roleLabel } from "./format";
-import { identityOf } from "./identity";
+import { identityOf, useTenantKey } from "./identity";
 
 /** Without a publishable key the app runs read-only on fixtures: no sign-in, no commands. */
 export const clerkKey: string | undefined = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || undefined;
@@ -58,7 +57,58 @@ export function useApiFetch() {
   );
 }
 
-const Me = z.object({ userId: z.string(), orgId: z.string(), roles: z.array(Role) });
+/** `GET /api/me`: the person IAM verified, their Clerk role, and the permissions that role holds. */
+export const Me = z.object({
+  userId: z.string(),
+  orgId: z.string(),
+  clerkRole: z.string().nullable(),
+  permissions: z.array(z.string()),
+});
+export type Me = z.infer<typeof Me>;
+
+/** A missing or refused `/api/me` is no permission list. A 200 is parsed. */
+export async function loadMe(apiFetch: ApiFetch): Promise<Me | null> {
+  const res = await apiFetch("/api/me");
+  if (!res.ok) return null;
+  return Me.parse(await res.json());
+}
+
+/**
+ * Permissions for the plan page. Keyed by the signed-in identity, so switching organization
+ * refetches `/api/me` instead of keeping the previous org's list.
+ */
+export function usePermissions(apiFetch: ApiFetch): {
+  permissions: readonly string[] | null;
+  ready: boolean;
+} {
+  const key = useTenantKey();
+  const me = useQuery({
+    queryKey: key("me"),
+    retry: false,
+    queryFn: () => loadMe(apiFetch),
+  });
+  return { permissions: me.data?.permissions ?? null, ready: me.isFetched };
+}
+
+/** Clerk role and permissions as the API verified them. */
+export function VerifiedIdentity({
+  clerkRole,
+  permissions,
+}: {
+  clerkRole: string | null;
+  permissions: readonly string[];
+}) {
+  return (
+    <span data-testid="verified-identity" className="flex max-w-xl flex-wrap items-center gap-1.5">
+      <Badge tone="info" icon="users" hint="Clerk organization role verified by the API">
+        {clerkRole ?? "No role"}
+      </Badge>
+      <span data-testid="verified-permissions" className="text-xs leading-4 text-muted">
+        {permissions.length > 0 ? permissions.join(", ") : "No permissions"}
+      </span>
+    </span>
+  );
+}
 
 export function AccountBar() {
   if (!clerkKey) {
@@ -90,14 +140,15 @@ export function AccountBar() {
   );
 }
 
-/** Roles as the API verified them, not as the browser believes them. */
+/** Clerk role and permissions as the API verified them, not as the browser believes them. */
 function VerifiedRoles() {
   const { userId, orgId } = useAuth();
   const apiFetch = useApiFetch();
   const me = useQuery({
-    // Keyed by the verified user and org, so a switch never shows the previous role.
+    // Keyed by the verified user and org, so switching organization refetches /api/me.
     queryKey: ["tenant", orgId && userId ? identityOf(userId, orgId) : "none", "me"],
     enabled: Boolean(userId && orgId),
+    retry: false,
     queryFn: async () => {
       const res = await apiFetch("/api/me");
       if (res.status === 401) return null;
@@ -107,16 +158,7 @@ function VerifiedRoles() {
   });
 
   if (!orgId) return <Badge tone="warn">Choose an organization</Badge>;
-  if (me.isPending) return <span className="text-xs text-subtle">checking role…</span>;
-  if (me.isError || me.data === null) return <Badge tone="danger">Role not verified</Badge>;
-  if (me.data.roles.length === 0) return <Badge tone="neutral">Read only</Badge>;
-  return (
-    <span data-testid="verified-roles" className="flex flex-wrap gap-1">
-      {me.data.roles.map((r) => (
-        <Badge key={r} tone={r === "finance_lead" ? "info" : "neutral"} icon="users">
-          {roleLabel[r]}
-        </Badge>
-      ))}
-    </span>
-  );
+  if (me.isPending) return <span className="text-xs text-subtle">checking permissions…</span>;
+  if (me.isError || me.data === null) return <Badge tone="danger">Permissions not verified</Badge>;
+  return <VerifiedIdentity clerkRole={me.data.clerkRole} permissions={me.data.permissions} />;
 }

@@ -38,12 +38,17 @@ export type NewRevision = z.infer<typeof NewRevision>;
 export const Grant = ApprovalGrant.extend({ live: z.boolean() });
 export type Grant = z.infer<typeof Grant>;
 
-/** Where a plan that needs two different approvers stands (decision 0011). */
+/**
+ * Where a plan that needs two different approvers stands. A seat is a permission
+ * (`rehearsal:approve:support_step`), not a role name on `signed.role`.
+ */
 export const ApprovalStatus = z.object({
   dualRequired: z.boolean(),
   satisfied: z.boolean(),
-  signed: z.array(z.object({ role: Role, grantId: z.string(), actorUserId: z.string() })),
-  needed: z.array(Role),
+  signed: z.array(
+    z.object({ permission: z.string(), grantId: z.string(), actorUserId: z.string() }),
+  ),
+  needed: z.array(z.string()),
 });
 export type ApprovalStatus = z.infer<typeof ApprovalStatus>;
 
@@ -79,13 +84,14 @@ export async function call<T>(
   schema: z.ZodType<T>,
   path: string,
   body?: object,
+  method: "POST" | "PATCH" = "POST",
 ): Promise<T> {
   const res = await apiFetch(
     path,
     body === undefined
       ? {}
       : {
-          method: "POST",
+          method,
           headers: { "content-type": "application/json" },
           body: JSON.stringify(body),
         },
@@ -128,7 +134,15 @@ export function explain(err: unknown): string {
     case "approval_invalid":
       return `No live approval for this exact plan${r.detail ? `: ${r.detail}` : ""}.`;
     case "forbidden":
-      return "Your role can read plans but not ask for a rehearsal.";
+      return "You don't have permission to do that.";
+    case "invalid_request":
+      return "Check the email and choose a role the organization can assign.";
+    case "invalid_role":
+      return "That role can't be assigned. Choose owner, finance lead, support lead, or member.";
+    case "last_owner":
+      return "This organization still needs an owner, so that role change was refused.";
+    case "member_not_found":
+      return "That person isn't a member of this organization.";
     case "incident_not_found":
       return "This deployment can't rehearse that incident.";
     case "not_enqueued":
@@ -140,6 +154,7 @@ export function explain(err: unknown): string {
     case "database_unavailable":
       return "The API has no database right now.";
     default:
+      if (err.status === 403) return "You don't have permission to do that.";
       return `Refused: ${r.error}.`;
   }
 }

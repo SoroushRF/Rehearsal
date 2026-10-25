@@ -72,6 +72,7 @@ export function fakeApi({
   completedRun = false,
   activePrecedent = false,
   citesPrecedent = false,
+  me,
 }: {
   dual?: boolean;
   /** Serve the applied run as completed, and the precedent routes, instead of the held phantom. */
@@ -80,6 +81,8 @@ export function fakeApi({
   activePrecedent?: boolean;
   /** The plan cites a precedent; `held` says the registry has moved on since it was planned. */
   citesPrecedent?: false | "holds" | "held";
+  /** When set, `GET /api/me` returns this Clerk role and permission list. */
+  me?: { clerkRole: string | null; permissions: readonly string[] };
 } = {}) {
   const run = () => (completedRun ? { ...RUN, state: "completed" } : RUN);
   const precedents: Record<string, unknown>[] = activePrecedent
@@ -135,6 +138,27 @@ export function fakeApi({
       createdAt: "2026-10-22T12:00:00.000Z",
     };
 
+    if (path === "/api/me") {
+      if (!me) return json(route, 404, { error: "not_found" });
+      return json(route, 200, {
+        userId: "user_a",
+        orgId: "org_a",
+        clerkRole: me.clerkRole,
+        permissions: me.permissions,
+      });
+    }
+    if (path === "/api/members/invitations" && req.method() === "POST") {
+      const sent = body as { email?: string; role?: string } | null;
+      return json(route, 201, { email: sent?.email, role: sent?.role });
+    }
+    const memberRole = /^\/api\/members\/([^/]+)\/role$/.exec(path);
+    if (memberRole && req.method() === "PATCH") {
+      const sent = body as { role?: string } | null;
+      return json(route, 200, {
+        userId: decodeURIComponent(memberRole[1] ?? ""),
+        role: sent?.role,
+      });
+    }
     if (path === "/api/plans") return json(route, 200, { plans: [summary] });
     if (path === "/api/plans/plan_happy")
       return json(route, 200, {
@@ -172,7 +196,10 @@ export function fakeApi({
     const seats = () => {
       const signed = (grants as { id: string; roles: string[]; actorUserId: string }[]).map(
         (g) => ({
-          role: g.roles[0],
+          permission:
+            g.roles[0] === "finance_lead"
+              ? "rehearsal:approve:finance_step"
+              : "rehearsal:approve:support_step",
           grantId: g.id,
           actorUserId: g.actorUserId,
         }),
@@ -183,9 +210,9 @@ export function fakeApi({
         signed,
         needed:
           signed.length === 0
-            ? ["support_lead", "finance_lead"]
+            ? ["rehearsal:approve:support_step", "rehearsal:approve:finance_step"]
             : signed.length === 1
-              ? ["finance_lead"]
+              ? ["rehearsal:approve:finance_step"]
               : [],
       };
     };
