@@ -6,8 +6,14 @@ import Fastify, { type FastifyReply } from "fastify";
 import { type ApplyDeps, registerApplyRoute } from "./apply";
 import { type ApprovalDeps, registerApprovalRoutes } from "./approvals";
 import { registerAuditRoute } from "./audit";
-import { type ReviewerResolver, registerMeRoute } from "./auth";
+import { registerMeRoute } from "./auth";
 import { registerCancelRoute } from "./cancel";
+import {
+  type ExecutionRehearsalDeps,
+  registerExecutionRehearsalRoutes,
+} from "./execution-rehearsals";
+import type { IamClient } from "./iam";
+import { registerMemberRoutes } from "./members";
 import { type PlanDeps, registerPlanRoutes } from "./plans";
 import { type PrecedentDeps, registerPrecedentRoutes } from "./precedents";
 import { type RehearsalTokenDeps, registerRehearsalTokenRoute } from "./rehearsal-tokens";
@@ -28,9 +34,11 @@ export function buildApp(
     approvals?: ApprovalDeps;
     runs?: RunDeps;
     rehearse?: RehearseDeps;
+    /** T2.19: request and read an execution rehearsal of a stored plan. */
+    executionRehearsals?: ExecutionRehearsalDeps;
     precedents?: PrecedentDeps;
-    /** Clerk-backed in production; without it nobody is signed in. */
-    reviewer?: ReviewerResolver;
+    /** mTLS client for IAM. Without it a person cannot be verified. */
+    iam?: IamClient;
     tenantTokens?: TenantTokenDeps;
     /** T1.23: the rehearsal worker's minter, once rehearsals are provisioned here (T3.13). */
     rehearsalTokens?: RehearsalTokenDeps;
@@ -47,7 +55,8 @@ export function buildApp(
       contractsVersion: CONTRACTS_VERSION,
     }),
   );
-  registerMeRoute(app, deps.reviewer ?? (() => null));
+  registerMeRoute(app, deps.iam);
+  registerMemberRoutes(app, deps.iam);
 
   // Command routes need Postgres; health stays available without it (core mode with no DB).
   // Without it they say "unavailable", not 404, so clients don't mistake an outage for a missing plan.
@@ -92,6 +101,13 @@ export function buildApp(
   else {
     app.post("/api/incidents/:id/rehearse", unavailable);
     app.get("/api/rehearsals/:id", unavailable);
+  }
+
+  if (deps.executionRehearsals) registerExecutionRehearsalRoutes(app, deps.executionRehearsals);
+  else {
+    app.get("/api/plans/:id/execution-rehearsals", unavailable);
+    app.post("/api/plans/:id/execution-rehearsals", unavailable);
+    app.get("/api/execution-rehearsals/:id/report", unavailable);
   }
 
   // Only an API that holds ERA_ADMIN_TOKEN mints tenant tokens for the workers.

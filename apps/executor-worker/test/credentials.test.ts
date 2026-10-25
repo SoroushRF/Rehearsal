@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { executorCredentialViolations } from "../src/credentials";
+import { executorCredentialViolations, executorIamUrlViolations } from "../src/credentials";
 
 it("refuses a model key, the admin token and the planner's minting secret", () => {
   expect(
@@ -30,6 +30,30 @@ it("refuses Google model credentials too", () => {
       GOOGLE_APPLICATION_CREDENTIALS: "C:/adc.json",
     }),
   ).toEqual(["GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_APPLICATION_CREDENTIALS"]);
+});
+
+it("refuses IAM's server certificate", () => {
+  expect(
+    executorCredentialViolations({
+      IAM_TLS_CERT: "infra/iam/dev/server.crt",
+      IAM_TLS_KEY: "infra/iam/dev/server.key",
+      IAM_TLS_CLIENT_CA: "infra/iam/dev/ca.crt",
+    }),
+  ).toEqual(["IAM_TLS_CERT", "IAM_TLS_KEY", "IAM_TLS_CLIENT_CA"]);
+});
+
+it("needs IAM_URL and still accepts its own client certificate", () => {
+  expect(executorIamUrlViolations({})).toEqual(["IAM_URL"]);
+  expect(executorIamUrlViolations({ IAM_URL: "" })).toEqual(["IAM_URL"]);
+  expect(
+    executorCredentialViolations({
+      IAM_URL: "https://127.0.0.1:3443",
+      IAM_CLIENT_CERT: "infra/iam/dev/executor.crt",
+      IAM_CLIENT_KEY: "infra/iam/dev/executor.key",
+      IAM_CLIENT_CA: "infra/iam/dev/ca.crt",
+    }),
+  ).toEqual([]);
+  expect(executorIamUrlViolations({ IAM_URL: "https://127.0.0.1:3443" })).toEqual([]);
 });
 
 it("refuses the execution rehearsal's admin token, worker secret and worlds", () => {

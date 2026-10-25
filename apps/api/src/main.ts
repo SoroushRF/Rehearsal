@@ -6,24 +6,25 @@ import policyV2 from "../../../scenarios/billing/policy.v2.json" with { type: "j
 import policyV3 from "../../../scenarios/billing/policy.v3.json" with { type: "json" };
 import { buildApp } from "./app";
 import type { ApplyDeps } from "./apply";
-import { bearerReviewer, clerkFromEnv, type ReviewerResolver } from "./auth";
+import { iamClientFromEnv } from "./iam";
 import { publisherFromEnv, startPrecedentWorker } from "./precedent-sync";
 import { tenantTokenDepsFromEnv } from "./tenant-tokens";
 
 /**
  * The API is one of the two clients IAM trusts. Without its client certificate it does not boot,
- * so it cannot ask over an open connection. Routes still check Clerk until they ask IAM (T4.20).
+ * so it cannot ask over an open connection. Person routes send the session token to IAM; this
+ * process does not hold the Clerk secret.
  */
 const iamCerts = iamClientViolations();
 if (iamCerts.length > 0) {
   console.error(`api needs its IAM client certificate: ${iamCerts.join(", ")}`);
   process.exit(1);
 }
-
-/** Without Clerk keys every command is refused as unauthenticated. */
-const authenticate = clerkFromEnv();
-if (!authenticate) console.warn("Clerk keys not set; every command will be refused (401)");
-const reviewer: ReviewerResolver = authenticate ? bearerReviewer(authenticate) : () => null;
+const iam = iamClientFromEnv();
+if (!iam) {
+  console.error("api needs IAM_URL and its client certificate to ask IAM");
+  process.exit(1);
+}
 
 // The same policy files the executor loads, so approval and apply refuse what admission would refuse.
 const policies = [policyV1, policyV2, policyV3] as BillingPolicy[];
@@ -32,7 +33,7 @@ const policies = [policyV1, policyV2, policyV3] as BillingPolicy[];
 async function applyDeps(): Promise<ApplyDeps | undefined> {
   if (!process.env.DATABASE_URL) return undefined;
   try {
-    return { db: createDb(), boss: await startQueue(), auth: reviewer, policies };
+    return { db: createDb(), boss: await startQueue(), iam, policies };
   } catch (err) {
     console.error("database unavailable; starting without command routes", err);
     return undefined;
@@ -41,20 +42,20 @@ async function applyDeps(): Promise<ApplyDeps | undefined> {
 
 const apply = await applyDeps();
 const boss: PgBoss | undefined = apply?.boss;
-const plans = apply && { db: apply.db, auth: reviewer };
+const plans = apply && { db: apply.db, iam };
 // The same policy file the executor loads, so approval refuses what admission would refuse.
 const approvals = apply && {
   db: apply.db,
-  reviewer,
+  iam,
   policies,
 };
-const runs = apply && { db: apply.db, auth: reviewer };
+const runs = apply && { db: apply.db, iam };
 // Agent Memory is optional: without it a promotion is recorded and waits, and nothing plans from it.
 const publisherFor = publisherFromEnv();
 const precedents = apply && {
   db: apply.db,
   boss: apply.boss,
-  reviewer,
+  iam,
   syncEnabled: publisherFor !== null,
 };
 if (apply && publisherFor) await startPrecedentWorker(apply.boss, { db: apply.db, publisherFor });
@@ -64,10 +65,11 @@ else if (apply) {
 const rehearse = apply && {
   db: apply.db,
   boss: apply.boss,
-  reviewer,
+  iam,
   plannerSecret: process.env.PLANNER_WORKER_SECRET,
   precedentRegistry: async (orgId: string) => (await loadRegistry(apply.db, orgId)).snapshot,
 };
+const executionRehearsals = apply && { db: apply.db, boss: apply.boss, iam };
 const app = buildApp({
   apply,
   plans,
@@ -75,7 +77,8 @@ const app = buildApp({
   runs,
   precedents,
   rehearse,
-  reviewer,
+  executionRehearsals,
+  iam,
   tenantTokens: tenantTokenDepsFromEnv(),
 });
 const port = Number(process.env.API_PORT ?? process.env.PORT ?? 3000);

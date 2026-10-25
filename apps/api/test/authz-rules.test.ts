@@ -12,6 +12,7 @@ import raw from "../../../scenarios/authz/rehearsal-authz.v1.json" with { type: 
 import { buildApp } from "../src/app";
 import type { ApplyDeps } from "../src/apply";
 import type { ApprovalDeps } from "../src/approvals";
+import type { ExecutionRehearsalDeps } from "../src/execution-rehearsals";
 import type { PlanDeps } from "../src/plans";
 import type { PrecedentDeps } from "../src/precedents";
 import type { RehearsalTokenDeps } from "../src/rehearsal-tokens";
@@ -66,8 +67,8 @@ async function registeredRoutes() {
       approvals: fake<ApprovalDeps>(),
       runs: fake<RunDeps>(),
       rehearse: fake<RehearseDeps>(),
+      executionRehearsals: fake<ExecutionRehearsalDeps>(),
       precedents: fake<PrecedentDeps>(),
-      reviewer: () => null,
       tenantTokens: fake<TenantTokenDeps>(),
       rehearsalTokens: fake<RehearsalTokenDeps>(),
     }),

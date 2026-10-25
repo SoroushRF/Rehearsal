@@ -23,12 +23,13 @@ const render = (check: Parameters<typeof PrecedentBasisCard>[0]["check"]) =>
   renderToStaticMarkup(<PrecedentBasisCard basis={basis} check={check} />);
 
 describe("precedent basis card (T2.17)", () => {
-  it("shows each cited version with its trace and fact count", () => {
+  it("shows each cited version with its trace, fact count and fact IDs", () => {
     const text = words(render({ ok: true }));
     expect(text).toContain("duplicate-charge-refund v2");
     expect(text).toContain("billing.duplicate_charge");
     expect(text).toContain("trace_abc");
     expect(text).toContain("2 stored facts");
+    expect(text).toContain("fact_1 fact_2");
     expect(text).toContain("All still in force");
   });
 

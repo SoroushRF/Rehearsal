@@ -11,5 +11,8 @@
   },
   "dependencies": {
     "@rehearsal/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "@rehearsal/authz": "workspace:*"
   }
 }

@@ -8,7 +8,7 @@ import {
   TERMINAL_REHEARSAL_STATES,
 } from "@rehearsal/contracts";
 import { planHash as computePlanHash, fingerprint, snapshotDigest } from "@rehearsal/core";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { fromDrizzle, type PgBoss } from "pg-boss";
 import type { Db } from "./index";
 import { REHEARSAL_QUEUE } from "./queue";
@@ -232,6 +232,69 @@ export async function loadRehearsal(
     state: last.state as ExecutionRehearsalState,
     tornDown: events.some((e) => e.tornDownAt !== null),
   };
+}
+
+/** A rehearsal's request row by ID alone, to learn which org owns it. IDs are server-chosen and unique. */
+export async function rehearsalOrgOf(db: Db, rehearsalId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ orgId: rehearsals.orgId })
+    .from(rehearsals)
+    .where(eq(rehearsals.id, rehearsalId));
+  return row?.orgId ?? null;
+}
+
+/**
+ * Every rehearsal of a plan in this org, across all its revisions, oldest first, each with its
+ * lifecycle. Read-only (T2.19): the review page lists them and ties each to the revision it ran on.
+ */
+export async function listRehearsalsForPlan(
+  db: Db,
+  orgId: string,
+  planId: string,
+): Promise<StoredRehearsal[]> {
+  const rows = await db
+    .select()
+    .from(rehearsals)
+    .where(and(eq(rehearsals.orgId, orgId), eq(rehearsals.planId, planId)))
+    .orderBy(asc(rehearsals.requestedAt), asc(rehearsals.id));
+  if (rows.length === 0) return [];
+  const events = await db
+    .select()
+    .from(rehearsalEvents)
+    .where(
+      and(
+        eq(rehearsalEvents.orgId, orgId),
+        inArray(
+          rehearsalEvents.rehearsalId,
+          rows.map((r) => r.id),
+        ),
+      ),
+    )
+    .orderBy(asc(rehearsalEvents.seq));
+  return rows.map((rehearsal) => {
+    const own = events.filter((e) => e.rehearsalId === rehearsal.id);
+    const last = own.at(-1);
+    if (!last) throw new Error(`rehearsal ${rehearsal.id} has no state`);
+    return {
+      rehearsal,
+      events: own,
+      state: last.state as ExecutionRehearsalState,
+      tornDown: own.some((e) => e.tornDownAt !== null),
+    };
+  });
+}
+
+/** The stored report of one rehearsal in this org, or null if it has none yet. */
+export async function loadRehearsalReport(
+  db: Db,
+  orgId: string,
+  rehearsalId: string,
+): Promise<ExecutionRehearsalReport | null> {
+  const [row] = await db
+    .select({ report: rehearsalReports.report })
+    .from(rehearsalReports)
+    .where(and(eq(rehearsalReports.orgId, orgId), eq(rehearsalReports.rehearsalId, rehearsalId)));
+  return row ? ExecutionRehearsalReport.parse(row.report) : null;
 }
 
 /**

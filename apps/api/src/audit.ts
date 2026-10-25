@@ -2,14 +2,14 @@ import type { PlanManifest } from "@rehearsal/contracts";
 import { type Db, schema } from "@rehearsal/db";
 import { and, asc, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
-import type { AuthResolver } from "./apply";
+import { authorize, bearerToken, type IamClient, refuse, requirePerson } from "./iam";
 import { loadPlan } from "./plans";
 
 const { runs, approvalGrants, stepAttempts, stepReceipts } = schema;
 
 export interface AuditDeps {
   db: Db;
-  auth: AuthResolver;
+  iam?: IamClient;
 }
 
 type RunRow = typeof runs.$inferSelect;
@@ -93,17 +93,20 @@ export function buildAudit({ run, plan, grants, attempts, receipts }: AuditInput
 /** Read-only: the audit of a past run, assembled from append-only history. */
 export function registerAuditRoute(app: FastifyInstance, deps: AuditDeps) {
   app.get<{ Params: { id: string } }>("/api/runs/:id/audit", async (req, reply) => {
-    const auth = await deps.auth(req);
-    if (!auth) return reply.code(401).send({ error: "unauthenticated" });
+    const token = bearerToken(req);
+    if (!token) return reply.code(401).send({ error: "unauthenticated" });
 
-    const [run] = await deps.db
-      .select()
-      .from(runs)
-      .where(and(eq(runs.orgId, auth.orgId), eq(runs.id, req.params.id)));
-    if (!run) return reply.code(404).send({ error: "run_not_found" });
+    const [run] = await deps.db.select().from(runs).where(eq(runs.id, req.params.id));
+    if (!run) {
+      const person = await requirePerson(deps.iam, token);
+      if (!person.ok) return refuse(reply, person, "run_not_found");
+      return reply.code(404).send({ error: "run_not_found" });
+    }
+    const gate = await authorize(deps.iam, token, "GET /api/runs/:id/audit", { orgId: run.orgId });
+    if (!gate.ok) return refuse(reply, gate, "run_not_found");
 
     // Re-verified against its own hash: a row that doesn't match is never shown as approved.
-    const loaded = await loadPlan(deps.db, auth.orgId, run.planId, run.revision);
+    const loaded = await loadPlan(deps.db, run.orgId, run.planId, run.revision);
     if (loaded.kind === "not_found") return reply.code(404).send({ error: "plan_not_found" });
     if (loaded.kind === "corrupt" || loaded.plan.planHash !== run.planHash) {
       req.log.error({ runId: run.id }, "stored plan does not match the run's hash");
@@ -114,17 +117,17 @@ export function registerAuditRoute(app: FastifyInstance, deps: AuditDeps) {
       deps.db
         .select()
         .from(approvalGrants)
-        .where(and(eq(approvalGrants.orgId, auth.orgId), eq(approvalGrants.planHash, run.planHash)))
+        .where(and(eq(approvalGrants.orgId, run.orgId), eq(approvalGrants.planHash, run.planHash)))
         .orderBy(asc(approvalGrants.grantedAt)),
       deps.db
         .select()
         .from(stepAttempts)
-        .where(and(eq(stepAttempts.orgId, auth.orgId), eq(stepAttempts.planHash, run.planHash)))
+        .where(and(eq(stepAttempts.orgId, run.orgId), eq(stepAttempts.planHash, run.planHash)))
         .orderBy(asc(stepAttempts.preparedAt), asc(stepAttempts.attemptNo)),
       deps.db
         .select()
         .from(stepReceipts)
-        .where(and(eq(stepReceipts.orgId, auth.orgId), eq(stepReceipts.planHash, run.planHash)))
+        .where(and(eq(stepReceipts.orgId, run.orgId), eq(stepReceipts.planHash, run.planHash)))
         .orderBy(asc(stepReceipts.recordedAt)),
     ]);
     return buildAudit({ run, plan: loaded.plan, grants, attempts, receipts });

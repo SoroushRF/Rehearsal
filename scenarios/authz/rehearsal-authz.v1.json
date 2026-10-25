@@ -75,6 +75,21 @@
       "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
     },
     {
+      "action": "GET /api/plans/:id/execution-rehearsals",
+      "rbac": { "anyOf": ["rehearsal:read:plan"] },
+      "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
+    },
+    {
+      "action": "GET /api/execution-rehearsals/:id/report",
+      "rbac": { "anyOf": ["rehearsal:read:plan"] },
+      "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
+    },
+    {
+      "action": "POST /api/plans/:id/execution-rehearsals",
+      "rbac": { "anyOf": ["rehearsal:rehearse:incident"] },
+      "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
+    },
+    {
       "action": "GET /api/precedents",
       "rbac": { "anyOf": ["rehearsal:read:precedent"] },
       "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]

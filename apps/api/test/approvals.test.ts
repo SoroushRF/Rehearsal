@@ -1,4 +1,5 @@
-import { PlanManifest } from "@rehearsal/contracts";
+import { permissionsFor } from "@rehearsal/authz";
+import { AuthzRuleFile, PlanManifest } from "@rehearsal/contracts";
 import type { BillingPolicy, BillingPolicyV1 } from "@rehearsal/core";
 import {
   approvePrecedent,
@@ -13,44 +14,46 @@ import {
 import { billingManifest } from "@rehearsal/testkit";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import authzJson from "../../../scenarios/authz/rehearsal-authz.v1.json" with { type: "json" };
 import policyJson from "../../../scenarios/billing/policy.v1.json" with { type: "json" };
 import policyV3Json from "../../../scenarios/billing/policy.v3.json" with { type: "json" };
 import { buildApp } from "../src/app";
-import type { Reviewer } from "../src/auth";
 import { storePlan } from "../src/plans";
+import { bearer, type Caller, fakeIam, finance, owner, support } from "./fake-iam";
 
 const POLICY = policyJson as BillingPolicyV1;
 const POLICY_V3 = policyV3Json as BillingPolicy;
+const AUTHZ = AuthzRuleFile.parse(authzJson);
+const FINANCE_PERMISSIONS = permissionsFor(AUTHZ, "org:finance_lead");
+const SUPPORT_SEAT = "rehearsal:approve:support_step";
+const FINANCE_SEAT = "rehearsal:approve:finance_step";
 const NOW = new Date("2026-10-22T12:00:00.000Z");
 const TTL = 60 * 60 * 1000;
 const HASH = "a".repeat(64);
-
-const reviewer = (orgId: string, roles: Reviewer["roles"], userId = "user_1"): Reviewer => ({
-  orgId,
-  userId,
-  sessionId: `sess_${userId}`,
-  roles,
-});
-const finance = (orgId: string) => reviewer(orgId, ["finance_lead", "support_lead"], "user_fin");
-const support = (orgId: string) => reviewer(orgId, ["support_lead"], "user_sup");
 
 async function send(
   deps: Parameters<typeof buildApp>[0],
   method: "GET" | "POST",
   url: string,
   payload?: object,
+  person?: Caller | null,
 ) {
   const app = buildApp({ webRoot: null, ...deps });
   try {
-    return await app.inject({ method, url, ...(payload ? { payload } : {}) });
+    return await app.inject({
+      method,
+      url,
+      headers: person ? bearer(person) : {},
+      ...(payload ? { payload } : {}),
+    });
   } finally {
     await app.close();
   }
 }
 
 describe("approval routes before touching the database", () => {
-  const as = (me: Reviewer | null) => ({
-    approvals: { db: {} as Db, reviewer: () => me, policies: [POLICY] },
+  const as = (me: Caller | null) => ({
+    approvals: { db: {} as Db, iam: fakeIam(me ? [me] : []), policies: [POLICY] },
   });
 
   it("are unavailable without a database", async () => {
@@ -62,20 +65,8 @@ describe("approval routes before touching the database", () => {
     ["POST", "/api/plans/p1/approvals"],
     ["POST", "/api/plans/p1/approvals/g1/revoke"],
   ] as const)("%s %s refuses a caller who isn't signed in", async (method, url) => {
-    const res = await send(as(null), method, url, method === "POST" ? {} : undefined);
+    const res = await send(as(null), method, url, method === "POST" ? {} : undefined, null);
     expect(res.statusCode).toBe(401);
-  });
-
-  it("refuses a member with no approving role", async () => {
-    const readOnly = as(reviewer("org_1", []));
-    const approve = await send(readOnly, "POST", "/api/plans/p1/approvals", {
-      revision: 1,
-      planHash: HASH,
-    });
-    expect(approve.statusCode).toBe(403);
-    expect((await send(readOnly, "POST", "/api/plans/p1/approvals/g1/revoke", {})).statusCode).toBe(
-      403,
-    );
   });
 
   it.each([
@@ -85,8 +76,13 @@ describe("approval routes before touching the database", () => {
       "action bodies alongside a valid revision and hash",
       { revision: 1, planHash: HASH, actions: [] },
     ],
+    [
+      "permissions alongside a valid revision and hash",
+      { revision: 1, planHash: HASH, permissions: [FINANCE_SEAT] },
+    ],
   ])("refuses a body with %s", async (_label, body) => {
-    const res = await send(as(finance("org_1")), "POST", "/api/plans/p1/approvals", body);
+    const person = finance("org_1");
+    const res = await send(as(person), "POST", "/api/plans/p1/approvals", body, person);
     expect(res.statusCode).toBe(400);
   });
 });
@@ -105,16 +101,22 @@ describe.skipIf(!process.env.DB_TESTS)("approval routes (real Postgres)", () => 
   });
 
   /** One app that can approve (at NOW), revise and apply (at `applyAt`) as the given reviewer. */
-  const deps = (me: Reviewer | null, applyAt = NOW) => ({
+  const deps = (me: Caller | null, applyAt = NOW) => ({
     approvals: {
       db,
-      reviewer: () => me,
+      iam: fakeIam(me ? [me] : [], { now: () => NOW }),
       policies: [POLICY, POLICY_V3],
       now: () => NOW,
       ttlMs: TTL,
     },
-    plans: { db, auth: () => me },
-    apply: { db, boss, auth: () => me, now: () => applyAt, policies: [POLICY, POLICY_V3] },
+    plans: { db, iam: fakeIam(me ? [me] : []) },
+    apply: {
+      db,
+      boss,
+      iam: fakeIam(me ? [me] : [], { now: () => applyAt }),
+      now: () => applyAt,
+      policies: [POLICY, POLICY_V3],
+    },
   });
 
   async function seed(edit: (m: PlanManifest) => PlanManifest = (m) => m) {
@@ -125,8 +127,8 @@ describe.skipIf(!process.env.DB_TESTS)("approval routes (real Postgres)", () => 
     if (!stored) throw new Error("seed failed");
     return { orgId, planId, hash: stored.planHash };
   }
-  const approve = (me: Reviewer | null, planId: string, body: object) =>
-    send(deps(me), "POST", `/api/plans/${planId}/approvals`, body);
+  const approve = (me: Caller | null, planId: string, body: object) =>
+    send(deps(me), "POST", `/api/plans/${planId}/approvals`, body, me);
   const grantsFor = (planId: string) =>
     db.select().from(schema.approvalGrants).where(eq(schema.approvalGrants.planId, planId));
 
@@ -153,10 +155,16 @@ describe.skipIf(!process.env.DB_TESTS)("approval routes (real Postgres)", () => 
       actorUserId: "user_fin",
       actorSessionId: "sess_user_fin",
       roles: ["finance_lead", "support_lead"],
+      permissions: FINANCE_PERMISSIONS,
+      authzRule: { id: "rehearsal-authz", version: 1 },
       grantedAt: NOW.toISOString(),
       expiresAt: new Date(NOW.getTime() + TTL).toISOString(),
       revokedAt: null,
     });
+    const [row] = await grantsFor(planId);
+    expect(row?.permissions).toEqual(FINANCE_PERMISSIONS);
+    expect(row?.authzRule).toEqual({ id: "rehearsal-authz", version: 1 });
+    expect(row?.roles).toEqual(["finance_lead", "support_lead"]);
 
     const again = await approve(finance(orgId), planId, { revision: 1, planHash: hash });
     expect(again.statusCode).toBe(200);
@@ -181,7 +189,7 @@ describe.skipIf(!process.env.DB_TESTS)("approval routes (real Postgres)", () => 
       webRoot: null,
       approvals: {
         db: watched,
-        reviewer: () => finance(orgId),
+        iam: fakeIam([finance(orgId)], { now: () => NOW }),
         policies: [POLICY],
         now: () => NOW,
       },
@@ -194,6 +202,7 @@ describe.skipIf(!process.env.DB_TESTS)("approval routes (real Postgres)", () => 
       const res = await app.inject({
         method: "POST",
         url: `/api/plans/${planId}/approvals`,
+        headers: bearer(finance(orgId)),
         payload: { revision: 1, planHash: hash },
       });
       expect(res.statusCode).toBe(201);
@@ -203,14 +212,34 @@ describe.skipIf(!process.env.DB_TESTS)("approval routes (real Postgres)", () => 
     }
   });
 
-  it("the grant is what apply needs (visible to T3)", async () => {
+  it("does not queue an apply from a grant that only has roles", async () => {
     const { orgId, planId, hash } = await seed();
-    await approve(finance(orgId), planId, { revision: 1, planHash: hash });
-    const res = await send(deps(finance(orgId)), "POST", `/api/plans/${planId}/apply`, {
+    // An old row: roles, and neither permissions nor a rule. Granted before now, so the
+    // refusal is the missing permissions, not the clock.
+    await db.insert(schema.approvalGrants).values({
+      id: `grant_${crypto.randomUUID()}`,
+      orgId,
+      planId,
       revision: 1,
       planHash: hash,
+      actorUserId: "user_fin",
+      actorSessionId: "sess_user_fin",
+      roles: ["finance_lead", "support_lead"],
+      grantedAt: new Date(NOW.getTime() - 60_000),
+      expiresAt: new Date(NOW.getTime() + TTL),
     });
-    expect(res.statusCode).toBe(202);
+    const person = finance(orgId);
+    const res = await send(
+      deps(person),
+      "POST",
+      `/api/plans/${planId}/apply`,
+      { revision: 1, planHash: hash },
+      person,
+    );
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toEqual({ error: "forbidden" });
+    const rows = await db.select().from(schema.runs).where(eq(schema.runs.planId, planId));
+    expect(rows).toEqual([]);
   });
 
   it("refuses another organization's plan and stores nothing", async () => {
@@ -224,21 +253,24 @@ describe.skipIf(!process.env.DB_TESTS)("approval routes (real Postgres)", () => 
     const { orgId, planId, hash } = await seed();
     const res = await approve(support(orgId), planId, { revision: 1, planHash: hash });
     expect(res.statusCode).toBe(403);
-    expect(res.json()).toEqual({
-      error: "missing_roles",
-      missing: ["finance_lead"],
-      held: ["support_lead"],
-    });
+    expect(res.json()).toEqual({ error: "forbidden" });
     expect(await grantsFor(planId)).toEqual([]);
   });
 
   it("lets a support lead approve once the finance-only refund is unchecked", async () => {
     const { orgId, planId, hash } = await seed();
-    const revised = await send(deps(support(orgId)), "POST", `/api/plans/${planId}/revisions`, {
-      baseRevision: 1,
-      basePlanHash: hash,
-      excludeActionIds: ["refund_002"],
-    });
+    const lead = support(orgId);
+    const revised = await send(
+      deps(lead),
+      "POST",
+      `/api/plans/${planId}/revisions`,
+      {
+        baseRevision: 1,
+        basePlanHash: hash,
+        excludeActionIds: ["refund_002"],
+      },
+      lead,
+    );
     expect(revised.statusCode).toBe(201);
     const { revision, planHash } = revised.json();
     const res = await approve(support(orgId), planId, { revision, planHash });
@@ -252,11 +284,18 @@ describe.skipIf(!process.env.DB_TESTS)("approval routes (real Postgres)", () => 
       (await approve(finance(orgId), planId, { revision: 1, planHash: "f".repeat(64) })).json(),
     ).toEqual({ error: "hash_mismatch" });
 
-    await send(deps(finance(orgId)), "POST", `/api/plans/${planId}/revisions`, {
-      baseRevision: 1,
-      basePlanHash: hash,
-      excludeActionIds: ["patch_001"],
-    });
+    const person = finance(orgId);
+    await send(
+      deps(person),
+      "POST",
+      `/api/plans/${planId}/revisions`,
+      {
+        baseRevision: 1,
+        basePlanHash: hash,
+        excludeActionIds: ["patch_001"],
+      },
+      person,
+    );
     const stale = await approve(finance(orgId), planId, { revision: 1, planHash: hash });
     expect(stale.statusCode).toBe(409);
     expect(stale.json()).toEqual({ error: "stale_revision", latestRevision: 2 });
@@ -267,12 +306,16 @@ describe.skipIf(!process.env.DB_TESTS)("approval routes (real Postgres)", () => 
     const { orgId, planId, hash } = await seed();
     await approve(finance(orgId), planId, { revision: 1, planHash: hash });
     const later = new Date(NOW.getTime() + TTL);
-    const res = await send(deps(finance(orgId), later), "POST", `/api/plans/${planId}/apply`, {
-      revision: 1,
-      planHash: hash,
-    });
+    const person = finance(orgId);
+    const res = await send(
+      deps(person, later),
+      "POST",
+      `/api/plans/${planId}/apply`,
+      { revision: 1, planHash: hash },
+      person,
+    );
     expect(res.statusCode).toBe(403);
-    expect(res.json().error).toBe("approval_invalid");
+    expect(res.json().error).toBe("forbidden");
   });
 
   it("a revoked grant no longer lets the plan apply, and revoking is idempotent", async () => {
@@ -281,21 +324,34 @@ describe.skipIf(!process.env.DB_TESTS)("approval routes (real Postgres)", () => 
       await approve(finance(orgId), planId, { revision: 1, planHash: hash })
     ).json();
 
+    const lead = support(orgId);
+    const refused = await send(
+      deps(lead),
+      "POST",
+      `/api/plans/${planId}/approvals/${grant.id}/revoke`,
+      {},
+      lead,
+    );
+    expect(refused.statusCode).toBe(403);
+    const fin = finance(orgId);
     const revoke = () =>
-      send(deps(support(orgId)), "POST", `/api/plans/${planId}/approvals/${grant.id}/revoke`, {});
+      send(deps(fin), "POST", `/api/plans/${planId}/approvals/${grant.id}/revoke`, {}, fin);
     const first = await revoke();
     expect(first.statusCode).toBe(200);
     expect(first.json().grant.revokedAt).toBe(NOW.toISOString());
     expect((await revoke()).json()).toMatchObject({ existing: true });
 
-    const res = await send(deps(finance(orgId)), "POST", `/api/plans/${planId}/apply`, {
-      revision: 1,
-      planHash: hash,
-    });
+    const res = await send(
+      deps(fin),
+      "POST",
+      `/api/plans/${planId}/apply`,
+      { revision: 1, planHash: hash },
+      fin,
+    );
     expect(res.statusCode).toBe(403);
 
     const { grants } = (
-      await send(deps(finance(orgId)), "GET", `/api/plans/${planId}/approvals`)
+      await send(deps(fin), "GET", `/api/plans/${planId}/approvals`, undefined, fin)
     ).json();
     expect(grants).toMatchObject([{ id: grant.id, live: false }]);
   });
@@ -305,11 +361,13 @@ describe.skipIf(!process.env.DB_TESTS)("approval routes (real Postgres)", () => 
     const { grant } = (
       await approve(finance(orgId), planId, { revision: 1, planHash: hash })
     ).json();
+    const other = finance("org_other");
     const res = await send(
-      deps(finance("org_other")),
+      deps(other),
       "POST",
       `/api/plans/${planId}/approvals/${grant.id}/revoke`,
       {},
+      other,
     );
     expect(res.statusCode).toBe(404);
     const [row] = await grantsFor(planId);
@@ -355,17 +413,23 @@ describe.skipIf(!process.env.DB_TESTS)("two distinct approvers (real Postgres)",
     await boss?.stop({ graceful: false });
   });
 
-  const both = (orgId: string) => reviewer(orgId, ["finance_lead", "support_lead"], "user_boss");
-  const financeOnly = (orgId: string) => reviewer(orgId, ["finance_lead"], "user_fin");
-  const deps = (me: Reviewer | null) => ({
+  const both = (orgId: string) => owner(orgId, "user_boss");
+  const financeOnly = (orgId: string) => finance(orgId);
+  const deps = (me: Caller | null, applyAt = NOW) => ({
     approvals: {
       db,
-      reviewer: () => me,
+      iam: fakeIam(me ? [me] : [], { now: () => NOW }),
       policies: [POLICY, POLICY_V3],
       now: () => NOW,
       ttlMs: TTL,
     },
-    apply: { db, boss, auth: () => me, now: () => NOW, policies: [POLICY, POLICY_V3] },
+    apply: {
+      db,
+      boss,
+      iam: fakeIam(me ? [me] : [], { now: () => applyAt }),
+      now: () => applyAt,
+      policies: [POLICY, POLICY_V3],
+    },
   });
 
   async function seed() {
@@ -377,10 +441,10 @@ describe.skipIf(!process.env.DB_TESTS)("two distinct approvers (real Postgres)",
     if (!stored) throw new Error("seed failed");
     return { orgId, planId, hash: stored.planHash };
   }
-  const approve = (me: Reviewer, planId: string, hash: string) =>
-    send(deps(me), "POST", `/api/plans/${planId}/approvals`, { revision: 1, planHash: hash });
-  const apply = (me: Reviewer, planId: string, hash: string) =>
-    send(deps(me), "POST", `/api/plans/${planId}/apply`, { revision: 1, planHash: hash });
+  const approve = (me: Caller, planId: string, hash: string) =>
+    send(deps(me), "POST", `/api/plans/${planId}/approvals`, { revision: 1, planHash: hash }, me);
+  const apply = (me: Caller, planId: string, hash: string) =>
+    send(deps(me), "POST", `/api/plans/${planId}/apply`, { revision: 1, planHash: hash }, me);
 
   it("lets a support lead sign a plan with a finance-only refund, and says the finance seat is open", async () => {
     const { orgId, planId, hash } = await seed();
@@ -389,7 +453,7 @@ describe.skipIf(!process.env.DB_TESTS)("two distinct approvers (real Postgres)",
     expect(res.json().approval).toMatchObject({
       dualRequired: true,
       satisfied: false,
-      needed: ["finance_lead"],
+      needed: [FINANCE_SEAT],
     });
   });
 
@@ -400,28 +464,100 @@ describe.skipIf(!process.env.DB_TESTS)("two distinct approvers (real Postgres)",
     expect(again.json()).toMatchObject({ existing: true, approval: { satisfied: false } });
     const res = await apply(both(orgId), planId, hash);
     expect(res.statusCode).toBe(403);
-    expect(res.json().detail).toMatch(/two different approvers/);
+    expect(res.json()).toEqual({ error: "forbidden" });
   });
 
-  it("accepts apply once a support lead and a different finance lead have signed", async () => {
+  it("fills both permission seats from two people, and a role-only grant fills none", async () => {
     const { orgId, planId, hash } = await seed();
     await approve(financeOnly(orgId), planId, hash);
     const second = await approve(support(orgId), planId, hash);
-    expect(second.json().approval).toMatchObject({ satisfied: true, needed: [] });
-    expect((await apply(financeOnly(orgId), planId, hash)).statusCode).toBe(202);
+    expect(second.json().approval).toMatchObject({
+      satisfied: true,
+      needed: [],
+      signed: [
+        { permission: SUPPORT_SEAT, actorUserId: "user_sup" },
+        { permission: FINANCE_SEAT, actorUserId: "user_fin" },
+      ],
+    });
+    const later = new Date(NOW.getTime() + 1);
+    const res = await send(
+      deps(financeOnly(orgId), later),
+      "POST",
+      `/api/plans/${planId}/apply`,
+      { revision: 1, planHash: hash },
+      financeOnly(orgId),
+    );
+    expect(res.statusCode).toBe(202);
+
+    const old = await seed();
+    const grantedAt = new Date(NOW.getTime() - 60_000);
+    await db.insert(schema.approvalGrants).values([
+      {
+        id: `grant_${crypto.randomUUID()}`,
+        orgId: old.orgId,
+        planId: old.planId,
+        revision: 1,
+        planHash: old.hash,
+        actorUserId: "user_fin",
+        actorSessionId: "sess_user_fin",
+        roles: ["finance_lead", "support_lead"],
+        grantedAt,
+        expiresAt: new Date(NOW.getTime() + TTL),
+      },
+      {
+        id: `grant_${crypto.randomUUID()}`,
+        orgId: old.orgId,
+        planId: old.planId,
+        revision: 1,
+        planHash: old.hash,
+        actorUserId: "user_sup",
+        actorSessionId: "sess_user_sup",
+        roles: ["support_lead"],
+        grantedAt,
+        expiresAt: new Date(NOW.getTime() + TTL),
+      },
+    ]);
+    const listed = await send(
+      deps(support(old.orgId)),
+      "GET",
+      `/api/plans/${old.planId}/approvals`,
+      undefined,
+      support(old.orgId),
+    );
+    expect(listed.json().approval).toMatchObject({
+      dualRequired: true,
+      satisfied: false,
+      signed: [],
+      needed: [SUPPORT_SEAT, FINANCE_SEAT],
+    });
+    expect(
+      listed.json().grants.every((g: { permissions?: unknown }) => g.permissions == null),
+    ).toBe(true);
+    const refused = await send(
+      deps(financeOnly(old.orgId), later),
+      "POST",
+      `/api/plans/${old.planId}/apply`,
+      { revision: 1, planHash: old.hash },
+      financeOnly(old.orgId),
+    );
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json()).toEqual({ error: "forbidden" });
+    const rows = await db.select().from(schema.runs).where(eq(schema.runs.planId, old.planId));
+    expect(rows).toEqual([]);
   });
 
   it("shows who signed which seat when approvals are listed", async () => {
     const { orgId, planId, hash } = await seed();
     await approve(financeOnly(orgId), planId, hash);
+    const lead = support(orgId);
     const { approval } = (
-      await send(deps(support(orgId)), "GET", `/api/plans/${planId}/approvals`)
+      await send(deps(lead), "GET", `/api/plans/${planId}/approvals`, undefined, lead)
     ).json();
     expect(approval).toMatchObject({
       dualRequired: true,
       satisfied: false,
-      signed: [{ role: "finance_lead", actorUserId: "user_fin" }],
-      needed: ["support_lead"],
+      signed: [{ permission: FINANCE_SEAT, actorUserId: "user_fin" }],
+      needed: [SUPPORT_SEAT],
     });
   });
 
@@ -429,16 +565,18 @@ describe.skipIf(!process.env.DB_TESTS)("two distinct approvers (real Postgres)",
     const { orgId, planId, hash } = await seed();
     await approve(financeOnly(orgId), planId, hash);
     const { grant } = (await approve(support(orgId), planId, hash)).json();
+    const lead = support(orgId);
     const revoked = await send(
-      deps(support(orgId)),
+      deps(lead),
       "POST",
       `/api/plans/${planId}/approvals/${grant.id}/revoke`,
       {},
+      lead,
     );
     expect(revoked.statusCode).toBe(200);
     const res = await apply(financeOnly(orgId), planId, hash);
     expect(res.statusCode).toBe(403);
-    expect(res.json().detail).toMatch(/still needed: support_lead/);
+    expect(res.json()).toEqual({ error: "forbidden" });
   });
 });
 
@@ -449,19 +587,19 @@ describe.skipIf(!process.env.DB_TESTS)("approval and cited precedents (real Post
   beforeAll(() => migrateDb(db));
 
   const AREA = "billing.duplicate_charge";
-  const deps = (me: Reviewer) => ({
+  const deps = (me: Caller) => ({
     approvals: {
       db,
-      reviewer: () => me,
+      iam: fakeIam([me], { now: () => NOW }),
       policies: [POLICY, POLICY_V3],
       now: () => NOW,
       ttlMs: TTL,
     },
   });
-  const approve = (me: Reviewer, planId: string, hash: string) =>
-    send(deps(me), "POST", `/api/plans/${planId}/approvals`, { revision: 1, planHash: hash });
-  const listed = async (me: Reviewer, planId: string) =>
-    (await send(deps(me), "GET", `/api/plans/${planId}/approvals`)).json();
+  const approve = (me: Caller, planId: string, hash: string) =>
+    send(deps(me), "POST", `/api/plans/${planId}/approvals`, { revision: 1, planHash: hash }, me);
+  const listed = async (me: Caller, planId: string) =>
+    (await send(deps(me), "GET", `/api/plans/${planId}/approvals`, undefined, me)).json();
 
   /** Approves, syncs and so activates one version of a precedent, as the sync job would. */
   async function activate(orgId: string, version: number) {

@@ -1,3 +1,4 @@
+import type { CoverageIssue } from "@rehearsal/planner";
 import {
   type CaseGold,
   type CaseKey,
@@ -50,6 +51,7 @@ export interface ModeRun {
   cases: Record<CaseKey, CaseOutcome>;
   /** By case. The same in every mode, since every mode applies one agent's decisions. */
   proposed: Record<CaseKey, Proposed>;
+  coverage?: CoverageIssue[];
   summary: SummaryOutcome;
   /** Writes whose outcome was still unknown when the mode gave up. */
   unresolved: number;
@@ -81,6 +83,7 @@ export interface TaskScore {
   success: boolean;
   problems: Problem[];
   unresolved: number;
+  caughtBeforeApproval: boolean;
 }
 
 const COUNTED = ["refunds", "credits", "notes", "replies"] as const;
@@ -156,9 +159,10 @@ export function scoreRun(task: ScorecardTask, run: ModeRun): TaskScore {
   return {
     taskId: task.id,
     mode: run.mode,
-    success: problems.length === 0 && run.unresolved === 0,
+    success: problems.length === 0 && run.unresolved === 0 && !run.coverage?.length,
     problems,
     unresolved: run.unresolved,
+    caughtBeforeApproval: run.mode === "rehearsal" && !!run.coverage?.length,
   };
 }
 
@@ -229,7 +233,14 @@ export function summarize(
       return { tasks: these.length, success: these.filter((s) => s.score.success).length };
     };
     const count = (kind: ProblemKind) =>
-      scores.reduce((n, s) => n + s.score.problems.filter((p) => p.kind === kind).length, 0);
+      scores.reduce(
+        (n, s) =>
+          n +
+          (kind === "wrongful_hold" && s.score.caughtBeforeApproval
+            ? 0
+            : s.score.problems.filter((p) => p.kind === kind).length),
+        0,
+      );
     const sum = (f: (r: ModeRun) => number) => mine.reduce((n, r) => n + f(r), 0);
     return {
       mode,
@@ -309,6 +320,7 @@ export function formatScorecard(tasks: readonly ScorecardTask[], runs: readonly 
         const s = scores.get(m);
         if (!s) return "not run";
         if (s.success) return "ok";
+        if (s.caughtBeforeApproval) return "CAUGHT before approval (incomplete coverage)";
         const codes = s.problems.map((p) => `${PROBLEM_CODE[p.kind]} ${p.caseKey}.${p.field}`);
         if (s.unresolved) codes.push(`UNKNOWN x${s.unresolved}`);
         return [...new Set(codes)].join(", ");

@@ -9,6 +9,7 @@ import {
 import {
   type FakeCharge,
   FakeClock,
+  fakeRunAdmit,
   happyPathBundle,
   MemoryApplyStore,
   MemoryJournal,
@@ -97,6 +98,8 @@ async function replayOf(
     actorUserId: "user_finance",
     actorSessionId: "sess_replay",
     roles: ["support_lead", "finance_lead"],
+    permissions: ["rehearsal:approve:support_step", "rehearsal:approve:finance_step"],
+    authzRule: { id: "rehearsal-authz", version: 1 },
     grantedAt: "2026-10-21T11:00:00.000Z",
     expiresAt: "2026-10-21T13:00:00.000Z",
     revokedAt: null,
@@ -121,6 +124,7 @@ async function replayOf(
     providers,
     worlds,
     policies: [policy as BillingPolicyV1],
+    admit: fakeRunAdmit({ now: () => clock.now() }),
     newId: (prefix: string) => `${prefix}_${++n}`,
     guard: createReadGuard({ providers, worlds, clock }),
   };

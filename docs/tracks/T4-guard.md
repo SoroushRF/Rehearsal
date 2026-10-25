@@ -67,6 +67,12 @@ See [beyond.md](../beyond.md) for scope, parallel work, external gates and the r
 | T4.13 | _Beyond:_ Integrated isolation and recovery acceptance gate | M5 | Real end-to-end isolation/recovery gate passes with full precedent integration. Gate spec: [T4.13-isolation-recovery-gate.md](../acceptance/T4.13-isolation-recovery-gate.md) (not run) | [#175](https://github.com/SoroushRF/Rehearsal/issues/175) | [T3.16](https://github.com/SoroushRF/Rehearsal/issues/170), [T2.20](https://github.com/SoroushRF/Rehearsal/issues/172), [T2.21](https://github.com/SoroushRF/Rehearsal/issues/174), [T4.12](https://github.com/SoroushRF/Rehearsal/issues/173), [T1.8](https://github.com/SoroushRF/Rehearsal/issues/9), [T2.17](https://github.com/SoroushRF/Rehearsal/issues/147) |
 | T4.14 | _Stretch:_ _Killer:_ Held-out incident datasets and independent gold | M5 | Three disjoint incident sets have independently authored hidden gold. **Owner:** @SoroushRF (benchmark task). **Done (fixture):** `evals/held-out` (sets, gold, integrity/gold/separation tests). Era seeding: `evals/held-out/test/era-seed.test.ts`, not run yet | [#179](https://github.com/SoroushRF/Rehearsal/issues/179) | [T1.2](https://github.com/SoroushRF/Rehearsal/issues/3), [T1.19](https://github.com/SoroushRF/Rehearsal/issues/144) |
 
+## Benchmark fixes (Oct 25)
+
+| ID | Task | Milestone | Done when | Issue | Blocked by |
+|---|---|---|---|---|---|
+| T4.27 | Note and reply guards check only the ticket fields they use (benchmark owner: @SoroushRF) | M5 | Appends ignore priority-only drift while retaining identity, ownership, status and refund dependency checks; patches retain the full check. Era scripted scorecard: 27/28, zero invalid allows, duplicates or wrongful holds; T3/T10 pass. Self-reviewed; user waived cross-track review in #289 | [#273](https://github.com/SoroushRF/Rehearsal/issues/273) | — |
+
 ## Decisions
 
 - **2026-10-24.** Authorization is permissions, decided by a separate IAM service and enforced by the API and the executor ([0014](../decisions/0014-iam-permission-based-authorization.md), proposed).
@@ -74,6 +80,10 @@ See [beyond.md](../beyond.md) for scope, parallel work, external gates and the r
 
 ## Handoff log
 
+- **2026-10-25 (skhdemo).** T4.22 is implemented on `t4/T4.22-executor-admit` and not pushed. Before an operational run sends, admission asks IAM `run:admit` on the stored grants. A missing seat, a revoked or expired grant, one person in both seats, or IAM down refuses the run and dispatches nothing.
+- **2026-10-25 (skhdemo).** T4.23 is implemented on `t4/T4.23-member-routes` and not pushed. Invite and role routes ask IAM, then IAM calls Clerk for the organization it verified from the token. Only a role in the rule file can be assigned, and the last owner cannot be demoted.
+- **2026-10-25 (skhdemo).** T4.21 is implemented on `t4/T4.21-grant-permissions` and not pushed. New grants store the approver's permissions and the rule id and version; dual-approval seats are those permissions. A role-only grant fills no seat.
+- **2026-10-25 (skhdemo).** T4.20 on `t4/T4.20-api-enforcement` ([#288](https://github.com/SoroushRF/Rehearsal/pull/288)). Person routes ask IAM over mTLS and send the session token; the API no longer holds the Clerk secret or checks `CLERK_ROLES`. `GET /api/me` uses IAM's identity call. Apply also asks `run:admit` on stored grants, so a role-only grant is not queued. Grant schema and the executor are unchanged (T4.21, T4.22).
 - **2026-10-25 (Claude for @SoroushRF, T4.13).** Wrote the gate spec in [docs/acceptance](../acceptance/T4.13-isolation-recovery-gate.md): checks G1–G4, the existing component tests behind each, and the record it must leave. Nothing ran: T2.19, T3.16, T4.11, T4.12, T2.20, T2.21 and T2.17 are open, so there's no API path to drive. Next: once T2.19 lands, write the operator script and Playwright spec it describes.
 - **2026-10-25 (skhdemo).** T4.19 in progress on `t4/T4.19-iam-service`: IAM listens over mTLS, loads `scenarios/authz/`, and the API and executor refuse to boot without a client certificate. The planner is refused if it has one. Not pushed.
 - **2026-10-25 (skhdemo).** Precedent permissions added to contracts and decision 0014; rule file (T4.17) and engine (T4.18) pick them up.

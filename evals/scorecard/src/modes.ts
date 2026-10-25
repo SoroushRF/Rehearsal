@@ -10,7 +10,7 @@ import {
   renderReply,
   summaryCountKey,
 } from "@rehearsal/core";
-import { FakeClock, MemoryApplyStore, MemoryJournal } from "@rehearsal/testkit";
+import { FakeClock, fakeRunAdmit, MemoryApplyStore, MemoryJournal } from "@rehearsal/testkit";
 import type { HarnessVendor } from "../../providers/src/harness";
 import { type DecidedIntent, type Intent, stepIdOf } from "./agent";
 
@@ -290,6 +290,8 @@ export async function applyPlan(
     actorUserId: "user_scorecard",
     actorSessionId: "sess_scorecard",
     roles,
+    permissions: ["rehearsal:approve:support_step", "rehearsal:approve:finance_step"],
+    authzRule: { id: "rehearsal-authz", version: 1 },
     grantedAt: "2026-10-01T00:00:00.000Z",
     expiresAt: "2099-01-01T00:00:00.000Z",
     revokedAt: null,
@@ -303,6 +305,7 @@ export async function applyPlan(
     providers: ports,
     worlds: ctx,
     policies: [...policies],
+    admit: fakeRunAdmit({ now: () => clock.now() }),
     newId: (p: string) => `${p}_${++n}`,
     guard: createReadGuard({ providers: ports, worlds: ctx, clock }),
   };

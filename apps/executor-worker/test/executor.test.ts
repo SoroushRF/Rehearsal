@@ -9,14 +9,18 @@ import {
   fingerprint,
   operationKey,
   PLAN_LOCKED,
+  type PrecedentRegistryPort,
   type ProviderPort,
   planHash,
+  type RegistrySnapshot,
   RUN_CANCELLED,
   topoOrder,
 } from "@rehearsal/core";
 import {
+  approvedGrant,
   FakeClock,
   type FakeWorld,
+  fakeRunAdmit,
   happyPathBundle,
   MemoryApplyStore,
   MemoryJournal,
@@ -44,24 +48,28 @@ function setup(bundle: ReplayBundle, grantOver: Partial<ApprovalGrant> = {}) {
     approvalId: APPROVAL,
   });
   store.plans.set(`${manifest.planId}@1`, { planHash: hash, manifest });
-  store.grants.set(APPROVAL, {
-    id: APPROVAL,
-    orgId: manifest.orgId,
-    planId: manifest.planId,
-    revision: 1,
-    planHash: hash,
-    actorUserId: "user_finance",
-    actorSessionId: "sess_1",
-    roles: ["support_lead", "finance_lead"],
-    grantedAt: "2026-10-21T11:00:00.000Z",
-    expiresAt: "2026-10-21T13:00:00.000Z",
-    revokedAt: null,
-    ...grantOver,
-  });
+  store.grants.set(
+    APPROVAL,
+    approvedGrant({
+      id: APPROVAL,
+      orgId: manifest.orgId,
+      planId: manifest.planId,
+      revision: 1,
+      planHash: hash,
+      actorUserId: "user_finance",
+      actorSessionId: "sess_1",
+      roles: ["support_lead", "finance_lead"],
+      grantedAt: "2026-10-21T11:00:00.000Z",
+      expiresAt: "2026-10-21T13:00:00.000Z",
+      revokedAt: null,
+      ...grantOver,
+    }),
+  );
   const world = worldFromManifest(manifest.observations);
   const journal = new MemoryJournal();
   let n = 0;
   const sleeps: number[] = [];
+  const admit = fakeRunAdmit({ now: () => clock.now() });
   const deps: ExecutorDeps & { providers: Record<"stripe" | "zendesk", ProviderPort> } = {
     store,
     journal,
@@ -72,6 +80,7 @@ function setup(bundle: ReplayBundle, grantOver: Partial<ApprovalGrant> = {}) {
       zendesk: { world: "operational", tenant: "test" },
     } as const,
     policies: [POLICY],
+    admit,
     newId: (prefix: string) => `${prefix}_${++n}`,
     // Retries sleep instantly in tests; the delays they asked for are recorded.
     sleep: async (ms: number) => {
@@ -94,6 +103,7 @@ function setup(bundle: ReplayBundle, grantOver: Partial<ApprovalGrant> = {}) {
     deps,
     job,
     sleeps,
+    admit,
     run: () => executeRun(job, deps),
   };
 }
@@ -291,10 +301,26 @@ describe("admission refuses and dispatches nothing", () => {
       },
     ],
     [
-      "a grant without the finance role",
+      "a grant missing the finance permission",
       (s) => {
         const g = s.store.grants.get(APPROVAL);
-        if (g) s.store.grants.set(APPROVAL, { ...g, roles: ["support_lead"] });
+        if (g) {
+          s.store.grants.set(APPROVAL, {
+            ...g,
+            roles: ["support_lead"],
+            permissions: ["rehearsal:approve:support_step"],
+          });
+        }
+      },
+    ],
+    [
+      "a role-only grant",
+      (s) => {
+        const g = s.store.grants.get(APPROVAL);
+        if (g) {
+          const { permissions: _permissions, ...roleOnly } = g;
+          s.store.grants.set(APPROVAL, roleOnly);
+        }
       },
     ],
     [
@@ -1947,12 +1973,19 @@ describe("operation keys", () => {
 /** Decision 0011: where policy v3 asks for it, two different users must hold live grants. */
 describe("two distinct approvers (T2.13)", () => {
   const V3 = policyV3 as BillingPolicy;
+  const SUPPORT = "rehearsal:approve:support_step";
+  const FINANCE = "rehearsal:approve:finance_step";
   /** The happy path, citing policy v3: its 125.00 CAD refund is above the dual-approval line. */
   function dual(over: Partial<ApprovalGrant> = {}) {
     const bundle = happyPathBundle();
     const s = setup(
       { ...bundle, manifest: { ...bundle.manifest, policies: [{ id: V3.id, version: 3 }] } },
-      { actorUserId: "user_fin", roles: ["finance_lead"], ...over },
+      {
+        actorUserId: "user_fin",
+        roles: ["finance_lead"],
+        permissions: [FINANCE],
+        ...over,
+      },
     );
     s.deps.policies = [POLICY, V3];
     return s;
@@ -1970,56 +2003,103 @@ describe("two distinct approvers (T2.13)", () => {
     expect(s.journal.attempts.size).toBe(0);
   };
 
-  it("runs once a support lead and a different finance lead both hold live grants", async () => {
+  it("runs once a support permission and a different person's finance permission are both live", async () => {
     const s = dual();
-    grant(s, "grant_2", { actorUserId: "user_sup", roles: ["support_lead"] });
+    grant(s, "grant_2", {
+      actorUserId: "user_sup",
+      roles: ["support_lead"],
+      permissions: [SUPPORT],
+    });
     const result = await s.run();
     expect(result.state).toBe("completed");
     expect(s.world.effects.length).toBeGreaterThan(0);
   });
 
-  it("doesn't let one person holding both roles fill both seats", async () => {
-    await refused(dual({ roles: ["support_lead", "finance_lead"] }), /still needed: support_lead/);
+  it("doesn't let one person holding both permissions fill both seats", async () => {
+    await refused(
+      dual({
+        roles: ["support_lead", "finance_lead"],
+        permissions: [SUPPORT, FINANCE],
+      }),
+      /cannot fill rehearsal:approve:support_step, rehearsal:approve:finance_step/,
+    );
   });
 
-  it("refuses with only the finance seat filled, and says the support seat is open", async () => {
-    await refused(dual(), /still needed: support_lead/);
+  it("refuses with only the finance seat filled", async () => {
+    await refused(
+      dual(),
+      /cannot fill rehearsal:approve:support_step, rehearsal:approve:finance_step/,
+    );
   });
 
-  it("refuses two people who both hold only the same role", async () => {
-    const s = dual({ roles: ["support_lead"] });
-    grant(s, "grant_2", { actorUserId: "user_sup2", roles: ["support_lead"] });
-    await refused(s, /still needed: finance_lead/);
+  it("refuses two people who both hold only the same permission", async () => {
+    const s = dual({ roles: ["support_lead"], permissions: [SUPPORT] });
+    grant(s, "grant_2", {
+      actorUserId: "user_sup2",
+      roles: ["support_lead"],
+      permissions: [SUPPORT],
+    });
+    await refused(s, /cannot fill rehearsal:approve:support_step, rehearsal:approve:finance_step/);
   });
 
   it("refuses the same user signing twice", async () => {
-    const s = dual({ roles: ["finance_lead", "support_lead"] });
-    grant(s, "grant_2", { roles: ["support_lead"], actorSessionId: "sess_other" });
-    await refused(s, /still needed/);
+    const s = dual({
+      roles: ["finance_lead", "support_lead"],
+      permissions: [FINANCE, SUPPORT],
+    });
+    grant(s, "grant_2", {
+      roles: ["support_lead"],
+      permissions: [SUPPORT],
+      actorSessionId: "sess_other",
+    });
+    await refused(s, /cannot fill/);
+  });
+
+  it("does not treat role-only grants as filling either seat", async () => {
+    const s = dual({ roles: ["finance_lead", "support_lead"], permissions: undefined });
+    grant(s, "grant_2", {
+      actorUserId: "user_sup",
+      roles: ["support_lead"],
+      permissions: undefined,
+    });
+    await refused(s, /cannot fill rehearsal:approve:support_step, rehearsal:approve:finance_step/);
   });
 
   it.each<[string, Partial<ApprovalGrant>, RegExp]>([
-    ["is revoked", { revokedAt: "2026-10-21T11:30:00.000Z" }, /still needed: support_lead/],
-    ["has expired", { expiresAt: "2026-10-21T11:59:59.000Z" }, /still needed: support_lead/],
-    ["is dated in the future", { grantedAt: "2026-10-21T12:00:01.000Z" }, /still needed/],
-    ["is for another plan hash", { planHash: "f".repeat(64) }, /still needed/],
-    ["is for another revision", { revision: 2 }, /still needed/],
-    ["is for another org", { orgId: "org_other" }, /still needed/],
+    ["is revoked", { revokedAt: "2026-10-21T11:30:00.000Z" }, /cannot fill/],
+    ["has expired", { expiresAt: "2026-10-21T11:59:59.000Z" }, /cannot fill/],
+    ["is dated in the future", { grantedAt: "2026-10-21T12:00:01.000Z" }, /cannot fill/],
+    ["is for another plan hash", { planHash: "f".repeat(64) }, /cannot fill/],
+    ["is for another revision", { revision: 2 }, /cannot fill/],
+    ["is for another org", { orgId: "org_other" }, /cannot fill/],
   ])("doesn't count a second grant that %s", async (_label, over, detail) => {
     const s = dual();
-    grant(s, "grant_2", { actorUserId: "user_sup", roles: ["support_lead"], ...over });
+    grant(s, "grant_2", {
+      actorUserId: "user_sup",
+      roles: ["support_lead"],
+      permissions: [SUPPORT],
+      ...over,
+    });
     await refused(s, detail);
   });
 
   it("is blocked when the primary grant is revoked even though the other seat is filled", async () => {
     const s = dual({ revokedAt: "2026-10-21T11:30:00.000Z" });
-    grant(s, "grant_2", { actorUserId: "user_sup", roles: ["support_lead"] });
+    grant(s, "grant_2", {
+      actorUserId: "user_sup",
+      roles: ["support_lead"],
+      permissions: [SUPPORT],
+    });
     await refused(s, /revoked/);
   });
 
   it("fails closed when the store can't list grants", async () => {
     const s = dual();
-    grant(s, "grant_2", { actorUserId: "user_sup", roles: ["support_lead"] });
+    grant(s, "grant_2", {
+      actorUserId: "user_sup",
+      roles: ["support_lead"],
+      permissions: [SUPPORT],
+    });
     (s.store as { loadGrantsForPlanHash?: unknown }).loadGrantsForPlanHash = undefined;
     await refused(s, /can't list grants/);
   });
@@ -2028,5 +2108,247 @@ describe("two distinct approvers (T2.13)", () => {
     const s = setup(happyPathBundle());
     s.deps.policies = [POLICY, V3];
     expect((await s.run()).state).toBe("completed");
+  });
+});
+
+/** #234: a plan that cites precedents is only admitted while the registry still backs them. */
+describe("precedent citations at admission (#234)", () => {
+  const AREA = "billing.duplicate_charge";
+  const digest = "d".repeat(64);
+  const basis = {
+    citations: [
+      {
+        id: "dup-refund",
+        version: 2,
+        digest,
+        appliesTo: AREA,
+        factIds: ["fact_1"],
+        traceId: "trace_1",
+      },
+    ],
+    epochs: { [AREA]: 3 },
+  };
+  const inForce: RegistrySnapshot = {
+    active: new Map([["dup-refund", { version: 2, digest }]]),
+    epochs: new Map([[AREA, 3]]),
+  };
+  /** The happy path whose plan cites `dup-refund` v2 at epoch 3. */
+  function citing(snapshot?: RegistrySnapshot | Error) {
+    const bundle = happyPathBundle();
+    const s = setup({ ...bundle, manifest: { ...bundle.manifest, precedentBasis: basis } });
+    if (snapshot !== undefined) {
+      const reads: string[] = [];
+      const registry: PrecedentRegistryPort = {
+        snapshot: async (orgId) => {
+          reads.push(orgId);
+          if (snapshot instanceof Error) throw snapshot;
+          return snapshot;
+        },
+      };
+      s.deps.precedents = registry;
+      return { ...s, reads };
+    }
+    return { ...s, reads: [] as string[] };
+  }
+  const refused = async (s: ReturnType<typeof citing>, detail: RegExp) => {
+    const result = await s.run();
+    expect(result.state).toBe("failed");
+    expect(result.refusal).toMatch(detail);
+    expect(s.world.effects).toEqual([]);
+    expect(s.journal.attempts.size).toBe(0);
+  };
+
+  it("applies a plan whose cited precedent is still in force, reading the registry for its org", async () => {
+    const s = citing(inForce);
+    expect((await s.run()).state).toBe("completed");
+    expect(s.reads).toEqual([s.manifest.orgId]);
+  });
+
+  it.each<[string, RegistrySnapshot, RegExp]>([
+    [
+      "a newer version replaced it",
+      {
+        active: new Map([["dup-refund", { version: 3, digest }]]),
+        epochs: new Map([[AREA, 4]]),
+      },
+      /precedent changed since approval: dup-refund v2 is superseded \(v3 in force\) \(\+1 more\)/,
+    ],
+    [
+      "it was withdrawn",
+      { active: new Map(), epochs: new Map([[AREA, 4]]) },
+      /dup-refund v2 is withdrawn \(none in force\)/,
+    ],
+    [
+      "its content changed under the same version",
+      {
+        active: new Map([["dup-refund", { version: 2, digest: "e".repeat(64) }]]),
+        epochs: new Map([[AREA, 3]]),
+      },
+      /dup-refund v2 is content changed/,
+    ],
+    [
+      "something else in its area changed, even if the cited version didn't",
+      { active: inForce.active, epochs: new Map([[AREA, 4]]) },
+      new RegExp(`precedents in ${AREA} changed since planning \\(set 3, now 4\\)`),
+    ],
+  ])("refuses and sends nothing when %s", async (_label, snapshot, detail) => {
+    await refused(citing(snapshot), detail);
+  });
+
+  it("fails closed when no registry is configured, or it can't be read", async () => {
+    await refused(citing(), /no precedent registry is configured/);
+    await refused(
+      citing(new Error("connection refused")),
+      /registry unavailable: connection refused/,
+    );
+  });
+
+  it("never reads the registry for a plan that cites nothing", async () => {
+    const s = setup(happyPathBundle());
+    let reads = 0;
+    s.deps.precedents = {
+      snapshot: async () => {
+        reads += 1;
+        throw new Error("must not be read");
+      },
+    };
+    expect((await s.run()).state).toBe("completed");
+    expect(reads).toBe(0);
+  });
+
+  it("is part of what was approved: dropping the basis is a different plan hash", () => {
+    const bundle = happyPathBundle();
+    expect(planHash({ ...bundle.manifest, precedentBasis: basis })).not.toBe(
+      planHash(bundle.manifest),
+    );
+  });
+});
+
+/** T4.22: operational admission asks IAM `run:admit` and fails closed. */
+describe("run:admit before any send (T4.22)", () => {
+  const SUPPORT = "rehearsal:approve:support_step";
+  const FINANCE = "rehearsal:approve:finance_step";
+  const V3 = policyV3 as BillingPolicy;
+
+  const refused = async (s: ReturnType<typeof setup>) => {
+    const result = await s.run();
+    expect(result.state).toBe("failed");
+    expect(result.refusal).not.toBeNull();
+    expect(s.world.effects).toEqual([]);
+    expect(s.journal.attempts.size).toBe(0);
+    expect(s.journal.events).toContainEqual(
+      expect.objectContaining({ type: "run.refused", payload: { detail: result.refusal } }),
+    );
+    return result;
+  };
+
+  it("asks once, with the stored grants and no amounts or token, then sends", async () => {
+    const s = setup(happyPathBundle());
+    const result = await s.run();
+    expect(result.state).toBe("completed");
+    expect(s.admit.requests).toHaveLength(1);
+    const request = s.admit.requests[0];
+    expect(request).toMatchObject({
+      action: "run:admit",
+      rule: { id: "rehearsal-authz", version: 1 },
+      mode: { kind: "grants" },
+    });
+    expect(request?.resource).toMatchObject({
+      orgId: s.manifest.orgId,
+      planHash: s.hash,
+      revision: 1,
+      dualRequired: false,
+      requiredPermissions: [FINANCE, SUPPORT],
+    });
+    const grants = request?.resource.grants as Record<string, unknown>[];
+    expect(grants).toEqual([
+      {
+        orgId: s.manifest.orgId,
+        planHash: s.hash,
+        revision: 1,
+        revokedAt: null,
+        grantedAt: "2026-10-21T11:00:00.000Z",
+        expiresAt: "2026-10-21T13:00:00.000Z",
+        actorUserId: "user_finance",
+        permissions: [SUPPORT, FINANCE],
+      },
+    ]);
+    expect(JSON.stringify(request)).not.toContain("amountMinor");
+    expect(JSON.stringify(request)).not.toContain("sess_");
+    expect(JSON.stringify(request)).not.toContain("roles");
+  });
+
+  it("refuses a missing seat and dispatches nothing", async () => {
+    const s = setup(happyPathBundle(), { permissions: [SUPPORT] });
+    const result = await refused(s);
+    expect(result.refusal).toMatch(/deny|!=|does not cover|no item/i);
+    expect(s.admit.requests).toHaveLength(1);
+  });
+
+  it("refuses a revoked grant and dispatches nothing", async () => {
+    const s = setup(happyPathBundle(), { revokedAt: "2026-10-21T11:30:00.000Z" });
+    const result = await refused(s);
+    expect(result.refusal).toMatch(/revoked/);
+    expect(s.admit.requests).toHaveLength(0);
+  });
+
+  it("refuses an expired grant and dispatches nothing", async () => {
+    const s = setup(happyPathBundle(), { expiresAt: "2026-10-21T11:59:59.000Z" });
+    const result = await refused(s);
+    expect(result.refusal).toMatch(/expired/);
+    expect(s.admit.requests).toHaveLength(0);
+  });
+
+  it("refuses one person holding both seats and dispatches nothing", async () => {
+    const bundle = happyPathBundle();
+    const s = setup(
+      { ...bundle, manifest: { ...bundle.manifest, policies: [{ id: V3.id, version: 3 }] } },
+      { permissions: [SUPPORT, FINANCE] },
+    );
+    s.deps.policies = [POLICY, V3];
+    const result = await refused(s);
+    expect(result.refusal).toMatch(/cannot fill/);
+    expect(s.admit.requests).toHaveLength(1);
+  });
+
+  it("refuses when IAM is down and records run.refused", async () => {
+    const s = setup(happyPathBundle());
+    s.deps.admit = fakeRunAdmit({ down: true, now: () => s.deps.clock.now() });
+    const result = await s.run();
+    expect(result).toMatchObject({ state: "failed", refusal: "IAM is unavailable" });
+    expect(s.world.effects).toEqual([]);
+    expect(s.journal.attempts.size).toBe(0);
+    expect(s.journal.events).toContainEqual(
+      expect.objectContaining({
+        type: "run.refused",
+        payload: { detail: "IAM is unavailable" },
+      }),
+    );
+  });
+
+  it("refuses when IAM is not configured", async () => {
+    const s = setup(happyPathBundle());
+    s.deps.admit = undefined;
+    const result = await refused(s);
+    expect(result.refusal).toBe("IAM is unavailable");
+  });
+
+  it("refuses a decision that does not echo the facts", async () => {
+    const s = setup(happyPathBundle());
+    s.deps.admit = fakeRunAdmit({
+      now: () => s.deps.clock.now(),
+      warp: (decision) => ({ ...decision, action: "run:other" }),
+    });
+    const result = await refused(s);
+    expect(result.refusal).toBe("IAM is unavailable");
+  });
+
+  it("does not ask IAM on a read-only pass of a cancelled run", async () => {
+    const s = setup(happyPathBundle());
+    s.store.cancelled.add(RUN);
+    const result = await s.run();
+    expect(result.refusal).toBe(RUN_CANCELLED);
+    expect(s.admit.requests).toHaveLength(0);
+    expect(s.world.effects).toEqual([]);
   });
 });
