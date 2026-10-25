@@ -1,6 +1,14 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import type { PlanManifest } from "@rehearsal/contracts";
-import { type BillingPolicy, type ProviderPort, planHash, rehearsalTenant } from "@rehearsal/core";
+import {
+  type BillingPolicy,
+  type ProviderPort,
+  planHash,
+  rehearsalTenant,
+  snapshotDigest,
+  VERIFIER_VERSION,
+  verifyRehearsal,
+} from "@rehearsal/core";
 import {
   createDb,
   listRehearsalStepResults,
@@ -15,6 +23,7 @@ import {
   startQueue,
 } from "@rehearsal/db";
 import {
+  readVerifierEffects,
   STRIPE_CHARGE_PROJECTION,
   stripeWriter,
   type WorldConfig,
@@ -248,6 +257,74 @@ describe.skipIf(!REHEARSAL_ENABLED || !process.env.DB_TESTS)(
         `/v1/refunds?charge=${CASE.chargeIds[1]}&limit=100`,
       ).catch(() => null);
       expect(after).toEqual(before);
+    }, 60_000);
+
+    it("passes when the verifier reads the effects the run left behind", async () => {
+      const manifest = manifestFor(`org_${randomUUID()}`, `plan_${randomUUID()}`);
+      const { id, data } = await requested(manifest);
+      const built = context(id);
+      built.ctx.verify = async ({ manifest: stored, job, results }) => {
+        const reads = await readVerifierEffects({
+          manifest: stored,
+          rehearsalId: job.rehearsalId,
+          scenario: job.scenario,
+          worlds: built.bound,
+        });
+        const judgment = verifyRehearsal({
+          manifest: stored,
+          rehearsalId: job.rehearsalId,
+          planHash: job.plan.planHash,
+          snapshotDigest: job.snapshot.digest,
+          verifierVersion: VERIFIER_VERSION,
+          scenario: job.scenario,
+          results,
+          reads,
+        });
+        return new Map(judgment.steps.map((step) => [step.actionId, step.verification]));
+      };
+      const result = await runRehearsalJob(data, built.ctx);
+      expect(result).toMatchObject({ kind: "ran", state: "completed" });
+      if (result.kind !== "ran") return;
+      expect(result.report?.verdict).toBe("passed");
+      expect(result.report?.versions.verifier).toBe(VERIFIER_VERSION);
+      expect(result.report?.steps.every((step) => step.verification.status === "matched")).toBe(
+        true,
+      );
+    }, 60_000);
+
+    it("fails a confirmed receipt when the seeded charge was not refunded", async () => {
+      const manifest = manifestFor(`org_${randomUUID()}`, `plan_${randomUUID()}`);
+      const id = randomBytes(8).toString("hex");
+      const provisioned = await provisionSnapshot(manifest, id);
+      expect(provisioned.ok).toBe(true);
+      if (!provisioned.ok) return;
+      try {
+        const reads = await readVerifierEffects({
+          manifest,
+          rehearsalId: id,
+          scenario: { id: "clean", version: 1 },
+          worlds: provisioned.worlds,
+        });
+        const judgment = verifyRehearsal({
+          manifest,
+          rehearsalId: id,
+          planHash: planHash(manifest),
+          snapshotDigest: snapshotDigest(manifest),
+          verifierVersion: VERIFIER_VERSION,
+          scenario: { id: "clean", version: 1 },
+          results: manifest.actions.map((action) => ({
+            actionId: action.id,
+            outcome: "confirmed" as const,
+          })),
+          reads,
+        });
+        expect(judgment.verdict).toBe("failed");
+        expect(
+          judgment.steps.find((step) => step.actionId === "refund_001")?.verification.detail,
+        ).toContain("receipt says confirmed");
+      } finally {
+        await teardownSnapshot(id, "failed");
+      }
     }, 60_000);
   },
 );

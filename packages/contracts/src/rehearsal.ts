@@ -173,6 +173,7 @@ export const RehearsalVerification = z.strictObject({
   status: z.enum(["matched", "mismatched", "unverified"]),
   detail: z.string().min(1),
 });
+export type RehearsalVerification = z.infer<typeof RehearsalVerification>;
 
 export const RehearsalStepReport = z.strictObject({
   actionId: z.string().min(1),

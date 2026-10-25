@@ -16,3 +16,4 @@ export * from "./rehearsal";
 export * from "./remedy";
 export * from "./step-guard";
 export * from "./templates";
+export * from "./verifier";

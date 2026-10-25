@@ -304,6 +304,7 @@ async function reportIfMissing(
   if (!found) return;
   const reports = await rehearsalReportsFor(ctx.db, orgId, found.job.plan.planId);
   if (reports.some((r) => r.rehearsalId === id)) return;
+  // No verifier reads here. The tenant may already be gone, and a missing read must not pass.
   const report = rehearsalReport(found.job, found.manifest, outcome?.receipts ?? [], {
     state,
     limitations: [
