@@ -47,7 +47,9 @@ const precedents = apply && {
   syncEnabled: publisherFor !== null,
 };
 if (apply && publisherFor) await startPrecedentWorker(apply.boss, { db: apply.db, publisherFor });
-else console.warn("Agent Memory not configured; promoted precedents will wait for a sync");
+else if (apply) {
+  console.warn("Agent Memory not configured; promoted precedents will wait for a sync");
+}
 const rehearse = apply && {
   db: apply.db,
   boss: apply.boss,
