@@ -126,6 +126,16 @@ export async function primeTokens(worlds: Record<string, WorldConfig>): Promise<
 /** Path of the operator's rehearsal mint route in apps/api. Separate from the workers' route. */
 export const REHEARSAL_TENANT_TOKEN_ROUTE = "/internal/era/rehearsal-tenant-token";
 
+/**
+ * The operator's routes the rehearsal worker calls with REHEARSAL_WORKER_SECRET (T3.16, decision
+ * 0013 §3): seed a claimed rehearsal's tenants from its stored plan, and reset them once it has
+ * ended. The admin token stays in the API; neither route returns a token or a world.
+ */
+export const REHEARSAL_PROVISION_ROUTE = "/internal/rehearsals/:id/provision";
+export const REHEARSAL_TEARDOWN_ROUTE = "/internal/rehearsals/:id/teardown";
+export const rehearsalOperatorPath = (route: string, rehearsalId: string) =>
+  route.replace(":id", encodeURIComponent(rehearsalId));
+
 /** What the operator minted, and for which tenant and container, so the worker can check both. */
 export const RehearsalMintedToken = MintedToken.extend({
   tenant: z.string().min(1),

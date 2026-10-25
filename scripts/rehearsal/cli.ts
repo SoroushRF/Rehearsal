@@ -24,6 +24,8 @@ const ERA_CORE = [
 ];
 const ERA_SLACK = ["slack-planning", "slack-operational"];
 const ENV_FILES = { api: ".env", planner: ".env.planner", executor: ".env.executor" } as const;
+/** Optional: the execution-rehearsal worker (T3.16). Without it, rehearsals stay queued. */
+const REHEARSAL_ENV = ".env.rehearsal";
 const IAM_PORT = 3443;
 const IAM_DEV_CERTS = resolve(ROOT, "infra/iam/dev");
 
@@ -58,7 +60,7 @@ function loadEnv(file: string): Record<string, string> {
 /** Every variable any env file (or the example) defines: none of them is inherited from the shell. */
 function managedKeys(): Set<string> {
   const keys = new Set<string>();
-  for (const f of [...Object.values(ENV_FILES), ".env.example"]) {
+  for (const f of [...Object.values(ENV_FILES), REHEARSAL_ENV, ".env.example"]) {
     for (const k of Object.keys(loadEnv(f))) keys.add(k);
   }
   // The planner must not inherit a way to reach IAM from the shell. `start` adds these only to
@@ -321,6 +323,11 @@ async function startAll(flags: Set<string>): Promise<boolean> {
   if (!flags.has("--no-planner")) {
     launch("planner", ENV_FILES.planner, ["--filter", "@rehearsal/planner-worker", "start"]);
   }
+  if (existsSync(resolve(ROOT, REHEARSAL_ENV))) {
+    launch("rehearsal", REHEARSAL_ENV, ["--filter", "@rehearsal/rehearsal-worker", "start"]);
+  } else {
+    console.log(`No ${REHEARSAL_ENV}: execution rehearsals will stay queued (see .env.example).`);
+  }
   if (flags.has("--web")) launch("web", ENV_FILES.api, ["--filter", "@rehearsal/web", "dev"]);
   console.log(`The app is at http://localhost:${port}/. Ctrl+C stops everything.`);
 
@@ -386,7 +393,7 @@ async function status(): Promise<boolean> {
  */
 const OURS = [
   String.raw`rehearsal[\\/]cli\.ts[" ]+start`,
-  '@rehearsal/(api|executor-worker|planner-worker|iam)[" ]+start',
+  '@rehearsal/(api|executor-worker|planner-worker|rehearsal-worker|iam)[" ]+start',
   String.raw`rehearsal[\\/]node_modules.*tsx.*src[\\/]main\.ts`,
 ].join("|");
 

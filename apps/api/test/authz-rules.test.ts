@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { type AuthzCheck, AuthzRuleFile, PERMISSIONS_V1 } from "@rehearsal/contracts";
 import {
   PLANNER_JOB_ROUTES,
+  REHEARSAL_PROVISION_ROUTE,
+  REHEARSAL_TEARDOWN_ROUTE,
   REHEARSAL_TENANT_TOKEN_ROUTE,
   TENANT_TOKEN_ROUTE,
 } from "@rehearsal/providers";
@@ -15,6 +17,7 @@ import type { ApprovalDeps } from "../src/approvals";
 import type { ExecutionRehearsalDeps } from "../src/execution-rehearsals";
 import type { PlanDeps } from "../src/plans";
 import type { PrecedentDeps } from "../src/precedents";
+import type { RehearsalOperatorDeps } from "../src/rehearsal-operator";
 import type { RehearsalTokenDeps } from "../src/rehearsal-tokens";
 import type { RehearseDeps } from "../src/rehearse";
 import type { RunDeps } from "../src/runs";
@@ -48,6 +51,8 @@ const EXEMPT: Record<string, string> = {
   [`POST ${PLANNER_JOB_ROUTES.fail}`]: "planner worker's machine secret, not a person",
   [`POST ${TENANT_TOKEN_ROUTE}`]: "worker machine secret, not a person",
   [`POST ${REHEARSAL_TENANT_TOKEN_ROUTE}`]: "rehearsal worker's machine secret, not a person",
+  [`POST ${REHEARSAL_PROVISION_ROUTE}`]: "rehearsal worker's machine secret, not a person",
+  [`POST ${REHEARSAL_TEARDOWN_ROUTE}`]: "rehearsal worker's machine secret, not a person",
   "GET /*": "@fastify/static serving the built web app",
 };
 
@@ -71,6 +76,7 @@ async function registeredRoutes() {
       precedents: fake<PrecedentDeps>(),
       tenantTokens: fake<TenantTokenDeps>(),
       rehearsalTokens: fake<RehearsalTokenDeps>(),
+      rehearsalOperator: fake<RehearsalOperatorDeps>(),
     }),
   ]) {
     await app.ready();
