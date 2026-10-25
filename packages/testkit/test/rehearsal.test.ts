@@ -8,6 +8,7 @@ import {
   PlanManifest,
   Receipt,
   RehearsalStepResult,
+  type RehearsalVersions,
 } from "@rehearsal/contracts";
 import {
   planHash,
@@ -105,6 +106,36 @@ describe("execution rehearsal contracts (T1.21)", () => {
     ).toBe(false);
   });
 
+  it("refuses a pass for a step with no recorded result, however it is labelled (#241)", () => {
+    const report = rehearsalReportFixture();
+    const [first, ...rest] = report.steps;
+    if (!first) throw new Error("fixture has no steps");
+    const missing = {
+      ...report,
+      steps: [
+        { ...first, result: null, verification: { status: "matched", detail: "ok" } },
+        ...rest,
+      ],
+    };
+    expect(report.state).toBe("completed");
+    expect(ExecutionRehearsalReport.safeParse(missing).success).toBe(false);
+    // The same report is representable as unknown, and so are a failed or cancelled run's
+    // steps that never ran.
+    expect(ExecutionRehearsalReport.safeParse({ ...missing, verdict: "unknown" }).success).toBe(
+      true,
+    );
+    for (const state of ["failed", "cancelled"] as const) {
+      expect(
+        ExecutionRehearsalReport.safeParse({ ...missing, state, verdict: "unknown" }).success,
+      ).toBe(true);
+    }
+    // An explicit unknown outcome still can't pass.
+    const unknownOutcome = rehearsalReportFixture("unknown");
+    expect(
+      ExecutionRehearsalReport.safeParse({ ...unknownOutcome, verdict: "passed" }).success,
+    ).toBe(false);
+  });
+
   it("refuses a step result from another rehearsal or plan, or with an operational key", () => {
     const report = rehearsalReportFixture();
     const [first, ...rest] = report.steps;
@@ -171,6 +202,33 @@ describe("rehearsal report staleness (T1.21)", () => {
         current,
       ),
     ).toEqual([]);
+  });
+
+  it("ignores the commit on either side, even in a caller's full versions object (#240)", () => {
+    // A caller may pass its whole build object, commit included: same build, current.
+    const full: RehearsalVersions = { ...report.versions };
+    expect(rehearsalStaleness(report, { ...current, versions: full })).toEqual([]);
+    // Only the current commit differs: still current.
+    expect(
+      rehearsalStaleness(report, { ...current, versions: { ...full, commit: "abcdef0" } }),
+    ).toEqual([]);
+  });
+
+  it.each<[string, Partial<RehearsalVersions>]>([
+    ["engine", { engine: "engine-next" }],
+    ["worker", { worker: "worker-next" }],
+    ["verifier", { verifier: "verifier-next" }],
+    ["projections", { projections: { stripe: "stripe.charge.v9" } }],
+    ["images", { images: { stripe: `sha256:${"c".repeat(64)}` } }],
+  ])("is stale when the %s changes, with or without a commit alongside", (_field, change) => {
+    const full: RehearsalVersions = { ...report.versions, ...change };
+    expect(rehearsalStaleness(report, { ...current, versions: full })).toEqual([
+      "versions_changed",
+    ]);
+    const { commit: _c, ...noCommit } = full;
+    expect(rehearsalStaleness(report, { ...current, versions: noCommit })).toEqual([
+      "versions_changed",
+    ]);
   });
 
   it("names each reason a report no longer describes what the reviewer sees", () => {

@@ -79,7 +79,7 @@ describe("geminiMessagesClient", () => {
     expect(config?.systemInstruction).toContain("planning agent");
     expect(config?.maxOutputTokens).toBe(16_000);
     const tools = config?.tools?.[0];
-    expect(tools && "functionDeclarations" in tools && tools.functionDeclarations?.length).toBe(7);
+    expect(tools && "functionDeclarations" in tools && tools.functionDeclarations?.length).toBe(9);
 
     const replay = calls[1]?.contents;
     expect(replay?.[1]).toEqual(modelTurn("sig-1"));

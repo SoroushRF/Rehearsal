@@ -1,4 +1,6 @@
 import {
+  type Action,
+  type PlanManifest,
   type Receipt,
   SlackMessagePostSummary,
   StripeCustomerBalanceCredit,
@@ -9,7 +11,7 @@ import { describe, expect, it } from "vitest";
 import { ActionRow } from "../src/components/ActionRow";
 import { PlanReview } from "../src/components/PlanReview";
 import { fixtureBundles } from "../src/fixtures";
-import { droppedBy, groupByCase, type ReviewAction, type ReviewManifest } from "../src/plan";
+import { droppedBy, groupByCase } from "../src/plan";
 import { explainReceipt } from "../src/runs";
 
 const base = {
@@ -65,7 +67,7 @@ const summary = SlackMessagePostSummary.parse({
   },
 });
 
-const row = (action: ReviewAction, dependsOnLabels: string[] = []) =>
+const row = (action: Action, dependsOnLabels: string[] = []) =>
   renderToStaticMarkup(
     <ul>
       <ActionRow
@@ -107,20 +109,27 @@ describe("public reply row (T2.16)", () => {
 });
 
 describe("excluding a step", () => {
-  const refund = { id: "refund_001", dependsOn: [] as string[] } as ReviewAction;
+  const refund = { id: "refund_001", dependsOn: [] as string[] } as Action;
+  const other = { id: "refund_002", dependsOn: [] as string[] } as Action;
 
-  it("drops the reply that follows it, and the summary that counts it", () => {
-    const steps = [refund, reply, summary];
-    expect([...droppedBy(steps, ["refund_001"])].sort()).toEqual([
+  it("drops the reply that follows it, and keeps the summary while it still counts a step", () => {
+    const steps = [refund, other, reply, summary];
+    expect([...droppedBy(steps, ["refund_001"])].sort()).toEqual(["refund_001", "reply_001"]);
+  });
+
+  it("drops the summary once every step it counts is gone", () => {
+    const steps = [refund, other, reply, summary];
+    expect([...droppedBy(steps, ["refund_001", "refund_002"])].sort()).toEqual([
       "refund_001",
+      "refund_002",
       "reply_001",
       "summary_001",
     ]);
   });
 
-  it("drops the summary but not the refund when the reply is unchecked", () => {
-    const steps = [refund, reply, { ...summary, dependsOn: ["reply_001"] }];
-    expect([...droppedBy(steps, ["reply_001"])].sort()).toEqual(["reply_001", "summary_001"]);
+  it("drops the summary alone when it is unchecked", () => {
+    const steps = [refund, other, reply, summary];
+    expect([...droppedBy(steps, ["summary_001"])]).toEqual(["summary_001"]);
   });
 });
 
@@ -189,7 +198,7 @@ describe("invoice credit (T2.18)", () => {
     },
   });
   // Swap case_001's refund for the credit: one remedy per obligation.
-  const withCredit: ReviewManifest = {
+  const withCredit: PlanManifest = {
     ...manifest,
     actions: [
       credit,

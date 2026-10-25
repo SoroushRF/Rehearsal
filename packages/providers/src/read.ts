@@ -26,10 +26,21 @@ export interface ReadTarget {
   maxPages?: number;
   /** Per-request timeout. Unset, a request waits as long as the world takes. */
   timeoutMs?: number;
+  /**
+   * `native` reads a real Stripe test-mode account (T1.24): plain HTTPS to `config.baseUrl`, with
+   * no Era tenant header. Default `era`. Only operator conformance checks use it.
+   */
+  transport?: "era" | "native";
+  /** Extra request headers, e.g. a pinned `Stripe-Version` for a native read. */
+  headers?: Record<string, string>;
+  /** The fetch a native read uses (tests stand in for Stripe). Defaults to the global one. */
+  fetch?: typeof fetch;
 }
 
 export const STRIPE_CHARGE_PROJECTION = "stripe.charge.v2";
 export const ZENDESK_TICKET_PROJECTION = "zendesk.ticket.v2";
+/** A customer's billing currency, for a balance credit (T1.14). Null until Stripe sets one. */
+export const STRIPE_CUSTOMER_PROJECTION = "stripe.customer.v1";
 
 const ChargeRecord = z.object({
   id: z.string().min(1),
@@ -49,7 +60,27 @@ const TicketRecord = z.object({
   requester_id: TicketId.nullable(),
   external_id: z.string().nullable(),
 });
+const CustomerRecord = z.object({
+  id: z.string().min(1),
+  currency: z
+    .string()
+    .regex(/^[a-z]{3}$/)
+    .nullable()
+    .optional(),
+});
 const ChargePage = z.object({ data: z.array(ChargeRecord), has_more: z.boolean() });
+const BalanceCreditPage = z.object({
+  data: z.array(
+    z.object({
+      id: z.string(),
+      amount: z.number(),
+      currency: z.string(),
+      type: z.string(),
+      metadata: z.record(z.string(), z.string()).nullable().optional(),
+    }),
+  ),
+  has_more: z.boolean(),
+});
 const TicketPage = z.object({
   tickets: z.array(TicketRecord),
   next_page: z.string().min(1).nullable(),
@@ -90,10 +121,14 @@ function assertTarget(target: ReadTarget, ctx: WorldContext) {
 }
 
 async function getJson(target: ReadTarget, path: string): Promise<Record<string, unknown>> {
-  const res = await eraFetch(target.config, path, {
-    headers: { authorization: target.authorization },
+  const init: RequestInit = {
+    headers: { ...target.headers, authorization: target.authorization },
     ...(target.timeoutMs !== undefined && { signal: AbortSignal.timeout(target.timeoutMs) }),
-  });
+  };
+  const res =
+    target.transport === "native"
+      ? await (target.fetch ?? fetch)(`${target.config.baseUrl}${path}`, init)
+      : await eraFetch(target.config, path, init);
   if (!res.ok) throw new Error(`GET ${path} → ${res.status}`);
   return (await res.json()) as Record<string, unknown>;
 }
@@ -144,7 +179,7 @@ function queryObservation(
 const toUnix = (iso: string) => Math.floor(Date.parse(iso) / 1000);
 
 /**
- * Stripe reads: one charge, and every charge of a customer created in [createdGte, createdLt).
+ * Stripe reads: one charge, one customer's currency, and every charge of a customer created in [createdGte, createdLt).
  * `complete` is true only if paging ended with `has_more: false`. A failed page, a cursor that
  * stops moving, or the page cap all leave it false: never proof of absence.
  */
@@ -153,6 +188,23 @@ export function stripeReader(target: ReadTarget): ProviderReader {
     vendor: "stripe",
     async observe(entity, ctx) {
       assertTarget(target, ctx);
+      if (entity.vendor === "stripe" && entity.kind === "customer_balance_transactions") {
+        const listed = await listBalanceCredits(target, entity.id);
+        return observation(target, entity, "stripe.balance_credit.v1", listed);
+      }
+      if (entity.vendor === "stripe" && entity.kind === "customer") {
+        const customer = CustomerRecord.parse(
+          await getJson(target, `/v1/customers/${encodeURIComponent(entity.id)}`),
+        );
+        if (customer.id !== entity.id) {
+          throw new Error(`asked for customer ${entity.id}, got ${customer.id}`);
+        }
+        // Only the currency: the balance moves with every credit, and a plan doesn't depend on it.
+        return observation(target, entity, STRIPE_CUSTOMER_PROJECTION, {
+          id: customer.id,
+          currency: customer.currency ?? null,
+        });
+      }
       if (entity.vendor !== "stripe" || entity.kind !== "charge") {
         throw new Error(`stripe can't observe ${entity.vendor}.${entity.kind}`);
       }
@@ -224,6 +276,70 @@ export function stripeReader(target: ReadTarget): ProviderReader {
       );
     },
   };
+}
+
+/**
+ * Every negative adjustment on the customer's balance: an invoice credit. `complete` is false when
+ * a page is missing, repeated, or the page cap is hit. That is not proof that no credit exists.
+ * A credit names its charge only through `metadata.charge` or `metadata.charge_id`.
+ */
+async function listBalanceCredits(
+  target: ReadTarget,
+  customerId: string,
+): Promise<Record<string, unknown>> {
+  const credits: {
+    id: string;
+    amountMinor: number;
+    currency: string;
+    chargeId: string | null;
+  }[] = [];
+  let after: string | undefined;
+  const seen = new Set<string>();
+  for (let page = 0; page < (target.maxPages ?? 50); page++) {
+    const params = new URLSearchParams({ limit: String(target.pageSize ?? 100) });
+    if (after) params.set("starting_after", after);
+    let body: Record<string, unknown>;
+    try {
+      body = await getJson(
+        target,
+        `/v1/customers/${encodeURIComponent(customerId)}/balance_transactions?${params}`,
+      );
+    } catch {
+      return { complete: false, credits };
+    }
+    const parsed = BalanceCreditPage.safeParse(body);
+    if (!parsed.success) return { complete: false, credits };
+    const { data, has_more } = parsed.data;
+    if (
+      data.some((item) => seen.has(item.id)) ||
+      new Set(data.map((item) => item.id)).size !== data.length
+    ) {
+      return { complete: false, credits };
+    }
+    for (const item of data) {
+      seen.add(item.id);
+      // A manual adjustment or a credit note applied to the balance: either credits the customer.
+      if (item.type !== "adjustment" && item.type !== "credit_note") continue;
+      // A float, a blank id, or a currency we cannot match is not proof that no credit exists.
+      const currency = item.currency.toLowerCase();
+      if (item.id.length === 0 || !Number.isInteger(item.amount) || !/^[a-z]{3}$/.test(currency)) {
+        return { complete: false, credits };
+      }
+      if (item.amount >= 0) continue;
+      const named = item.metadata?.charge ?? item.metadata?.charge_id ?? "";
+      credits.push({
+        id: item.id,
+        amountMinor: -item.amount,
+        currency,
+        chargeId: named.length > 0 ? named : null,
+      });
+    }
+    if (!has_more) return { complete: true, credits };
+    const last = data.at(-1)?.id;
+    if (!last || last === after) return { complete: false, credits };
+    after = last;
+  }
+  return { complete: false, credits };
 }
 
 /**

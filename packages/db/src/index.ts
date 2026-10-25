@@ -6,6 +6,7 @@ import * as schema from "./schema";
 export * from "./apply";
 export * from "./apply-store";
 export * from "./journal";
+export * from "./precedents";
 export * from "./queue";
 export * from "./runs";
 export { schema };

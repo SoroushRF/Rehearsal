@@ -8,7 +8,7 @@ import {
   PROMPT_VERSION,
   SYSTEM_PROMPT,
 } from "./prompt";
-import { type PlanningSession, planningToolDefinitions } from "./tools";
+import type { PlanningSession } from "./tools";
 
 /**
  * T1.5: the bounded tool loop. The model sees only the planning tools, so it has no shell, browser
@@ -74,7 +74,7 @@ export class PlanningLoopError extends Error {
 
 export async function runPlanningLoop(opts: PlanningLoopOptions): Promise<PlanningResult> {
   const limits = { ...LOOP_LIMITS, ...opts.limits };
-  const tools: Anthropic.Tool[] = planningToolDefinitions().map((t) => ({
+  const tools: Anthropic.Tool[] = opts.session.toolDefinitions().map((t) => ({
     ...t,
     input_schema: t.input_schema as Anthropic.Tool.InputSchema,
   }));

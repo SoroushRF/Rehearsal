@@ -9,6 +9,7 @@ import { registerAuditRoute } from "./audit";
 import { type ReviewerResolver, registerMeRoute } from "./auth";
 import { registerCancelRoute } from "./cancel";
 import { type PlanDeps, registerPlanRoutes } from "./plans";
+import { type PrecedentDeps, registerPrecedentRoutes } from "./precedents";
 import { type RehearsalTokenDeps, registerRehearsalTokenRoute } from "./rehearsal-tokens";
 import { type RehearseDeps, registerRehearseRoutes } from "./rehearse";
 import { type RunDeps, registerRunRoutes } from "./runs";
@@ -27,6 +28,7 @@ export function buildApp(
     approvals?: ApprovalDeps;
     runs?: RunDeps;
     rehearse?: RehearseDeps;
+    precedents?: PrecedentDeps;
     /** Clerk-backed in production; without it nobody is signed in. */
     reviewer?: ReviewerResolver;
     tenantTokens?: TenantTokenDeps;
@@ -77,6 +79,13 @@ export function buildApp(
     app.get("/api/runs/:id/events", unavailable);
     app.get("/api/runs/:id/audit", unavailable);
     app.get("/api/plans/:id/runs", unavailable);
+  }
+
+  if (deps.precedents) registerPrecedentRoutes(app, deps.precedents);
+  else {
+    app.post("/api/runs/:id/precedents", unavailable);
+    app.post("/api/precedents/:id/withdraw", unavailable);
+    app.get("/api/precedents", unavailable);
   }
 
   if (deps.rehearse) registerRehearseRoutes(app, deps.rehearse);

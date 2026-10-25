@@ -866,10 +866,15 @@ describe.skipIf(!process.env.DB_TESTS)(
           (await db.select().from(schema.runEvents)).filter(
             (e) => e.runId === job2.runId && e.type === type,
           ).length;
-        /** Sweep until this run shows `type` (another suite's sweep may be the one that does it). */
+        /** Sweep only this run until it shows `type`; other files' sweeps don't touch it (#243). */
         const sweepUntil = async (type: string, count: number) => {
           for (let i = 0; i < 50 && (await eventsOf(type)) < count; i++) {
-            await reapStuckRuns(db, boss, { now: new Date(), staleAfterMs: 10 * 60_000 });
+            await reapStuckRuns(db, boss, {
+              now: new Date(),
+              staleAfterMs: 10 * 60_000,
+              runIds: [job2.runId],
+              waitForLock: true,
+            });
             if ((await eventsOf(type)) < count) await new Promise((res) => setTimeout(res, 50));
           }
           expect(await eventsOf(type)).toBe(count);

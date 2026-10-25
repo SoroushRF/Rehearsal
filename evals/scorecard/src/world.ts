@@ -1,14 +1,17 @@
-import type { ProviderPort } from "@rehearsal/core";
+import { OPERATION_MARKER_PREFIX } from "@rehearsal/contracts";
+import { type ProviderPort, renderReply } from "@rehearsal/core";
 import {
   eraAdmin,
+  slackProviderWriter,
   stripeReader,
   stripeWriter,
   type WorldConfig,
   withWriter,
+  writeOnly,
   zendeskReader,
   zendeskWriter,
 } from "@rehearsal/providers";
-import { incidentRecords, type SeededCase } from "@rehearsal/testkit";
+import { INCIDENT, incidentRecords, type SeededCase } from "@rehearsal/testkit";
 import { seedIncident } from "../../../scripts/seed/incident";
 import {
   adminToken,
@@ -22,7 +25,8 @@ import {
   uniqueTenant,
   zendeskPutTicket,
 } from "../../providers/src/harness";
-import type { CaseOutcome } from "./score";
+import { SUMMARY_CHANNEL } from "./agent";
+import type { CaseOutcome, SummaryOutcome } from "./score";
 import type { CaseKey, Drift, Fault, Priority } from "./tasks";
 
 /**
@@ -42,12 +46,30 @@ export function cohortCase(key: CaseKey): SeededCase {
   return c;
 }
 
-export type Worlds = Record<EraVendor, WorldConfig>;
+/** Slack only for a task with a run summary (it needs `pnpm infra:up:full`). */
+export type Worlds = Record<EraVendor, WorldConfig> & { slack?: WorldConfig };
 
-/** Both vendors' worlds for one tenant, reset and seeded with the incident. */
+/**
+ * The cohort's Stripe customers, billed in the case's currency. Era serves an unknown customer
+ * as 404, and a balance credit checks the customer's currency first (T1.14).
+ */
+const customers = records.cases.map((c) => ({
+  id: c.customerId,
+  object: "customer",
+  currency: c.currency,
+  balance: 0,
+  email: c.email,
+  name: c.name,
+  metadata: {},
+  livemode: false,
+  created: Date.parse(INCIDENT.window.createdGte) / 1000 - 86_400 * 30,
+}));
+
+/** Both vendors' worlds for one tenant, reset and seeded with the incident; Slack if asked. */
 export async function seededWorlds(
   world: "planning" | "operational",
   label: string,
+  opts: { slack?: boolean } = {},
 ): Promise<Worlds> {
   const tenant = uniqueTenant(label);
   const out = {} as Worlds;
@@ -56,12 +78,18 @@ export async function seededWorlds(
     await resetTenant(out[vendor]);
     await seedIncident(vendor, out[vendor]);
   }
+  await ok(eraAdmin(out.stripe, adminToken(), "/inject", { customers }));
+  if (opts.slack) {
+    out.slack = await scratchWorld("slack", world, tenant);
+    await resetTenant(out.slack);
+  }
   return out;
 }
 
-const AUTH: Record<EraVendor, string> = {
+const AUTH = {
   stripe: "Bearer sk_test_rehearsal_scorecard",
   zendesk: "Bearer rehearsal-scorecard",
+  slack: "Bearer xoxb-rehearsal-scorecard",
 };
 
 export function readers(worlds: Worlds, world: "planning" | "operational") {
@@ -75,7 +103,7 @@ export function readers(worlds: Worlds, world: "planning" | "operational") {
 export function operationalPorts(
   worlds: Worlds,
   faults: readonly Fault[],
-): Record<EraVendor, ProviderPort> {
+): { stripe: ProviderPort; zendesk: ProviderPort; slack?: ProviderPort } {
   const target = (vendor: EraVendor) => ({
     world: "operational" as const,
     config: worlds[vendor],
@@ -90,6 +118,15 @@ export function operationalPorts(
       withWriter(zendeskReader(target("zendesk")), zendeskWriter(target("zendesk"))),
       faults,
     ),
+    ...(worlds.slack && {
+      slack: writeOnly(
+        slackProviderWriter({
+          world: "operational",
+          config: worlds.slack,
+          authorization: AUTH.slack,
+        }),
+      ),
+    }),
   };
 }
 
@@ -107,10 +144,16 @@ function withFaults(port: ProviderPort, faults: readonly Fault[]): ProviderPort 
     if (fired.has(fault)) return false;
     if (fault.kind === "throttle_first_refund") return path === "/v1/refunds";
     const c = cohortCase(fault.caseKey);
-    if (fault.kind === "lose_refund_response") {
-      return path === "/v1/refunds" && new URLSearchParams(body).get("charge") === c.chargeIds[1];
+    switch (fault.kind) {
+      case "lose_refund_response":
+        return path === "/v1/refunds" && new URLSearchParams(body).get("charge") === c.chargeIds[1];
+      case "lose_credit_response":
+        return path === `/v1/customers/${c.customerId}/balance_transactions`;
+      case "lose_note_response":
+        return path === `/api/v2/tickets/${c.ticketId}.json` && body.includes('"public":false');
+      case "lose_reply_response":
+        return path === `/api/v2/tickets/${c.ticketId}.json` && body.includes('"public":true');
     }
-    return path === `/api/v2/tickets/${c.ticketId}.json` && body.includes('"comment"');
   };
   return {
     ...port,
@@ -210,29 +253,97 @@ async function ok(pending: Promise<Response>): Promise<void> {
   if (!res.ok) throw new Error(`drift → ${res.status} ${await res.text()}`);
 }
 
-/** Every cohort case's end state: refunds on its charges (injected ones too), priority, new notes. */
+const MARKER = new RegExp(`\\n\\n${escapeRegExp(OPERATION_MARKER_PREFIX)}[^\\]]+\\]$`);
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Every cohort case's end state: refunds on its charges (injected ones too), credits on its
+ * balance, priority, new notes, and our public replies (those carrying an operation marker).
+ * A refund or credit for another amount, or a reply that isn't the approved text, is incorrect.
+ */
 export async function readOutcomes(worlds: Worlds): Promise<Record<CaseKey, CaseOutcome>> {
+  const amounts = new Map(records.stripe.charges.map((ch) => [String(ch.id), Number(ch.amount)]));
   const out: Record<CaseKey, CaseOutcome> = {};
   for (const c of records.cases) {
     let refunds = 0;
+    let incorrect = 0;
+    const duplicateAmount = amounts.get(c.chargeIds[1] ?? "");
     for (const id of [...c.chargeIds, phantomId(c.key), LATE_ID(c.key)]) {
-      const list = await getJson<{ data: unknown[]; has_more: boolean }>(
+      const list = await getJson<{ data: { amount: number }[]; has_more: boolean }>(
         "stripe",
         worlds.stripe,
         `/v1/refunds?charge=${id}&limit=100`,
       );
       if (list.has_more) throw new Error(`more than 100 refunds on ${id}`);
       refunds += list.data.length;
+      const charged = amounts.get(id) ?? duplicateAmount;
+      incorrect += list.data.filter((r) => r.amount !== charged).length;
     }
+    const balance = await getJson<{
+      data: { amount: number; currency: string }[];
+      has_more: boolean;
+    }>("stripe", worlds.stripe, `/v1/customers/${c.customerId}/balance_transactions?limit=100`);
+    if (balance.has_more) throw new Error(`more than 100 balance transactions on ${c.customerId}`);
+    const credits = balance.data.filter((t) => t.amount < 0);
+    incorrect += credits.filter(
+      (t) => t.amount !== -(duplicateAmount ?? 0) || t.currency !== c.currency,
+    ).length;
+
     const ticket = await getTicket(worlds.zendesk, c.ticketId);
     const comments = await getComments(worlds.zendesk, c.ticketId);
+    const ours = comments.filter((x) => x.public && MARKER.test(x.body));
+    const reply = `${renderReply(
+      { id: "refund-issued", version: 1 },
+      { customerName: c.name, amountMinor: duplicateAmount ?? 1 },
+    )}`;
+    incorrect += ours.filter((x) => x.body.replace(MARKER, "") !== reply).length;
     out[c.key] = {
       refunds,
+      credits: credits.length,
       priority: ticket.priority as Priority | null,
       notes: comments.filter((x) => !x.public).length,
+      replies: ours.length,
+      incorrect,
     };
   }
   return out;
+}
+
+/** The run-summary posts in the channel (bot posts carrying a marker), with the refunds each claims. */
+export async function readSummary(worlds: Worlds): Promise<SummaryOutcome> {
+  if (!worlds.slack) return { posts: 0, claimedRefunds: [] };
+  // Era seeds #general with more than a page of messages, so follow the cursor to the end.
+  const messages: { text?: string; bot_id?: string }[] = [];
+  let cursor = "";
+  for (let page = 0; ; page++) {
+    if (page >= 20) throw new Error("Slack history too long to read");
+    const history = await getJson<{
+      ok: boolean;
+      messages: { text?: string; bot_id?: string }[];
+      has_more?: boolean;
+      response_metadata?: { next_cursor?: string };
+    }>(
+      "slack",
+      worlds.slack,
+      `/api/conversations.history?channel=${SUMMARY_CHANNEL}&limit=200${cursor && `&cursor=${encodeURIComponent(cursor)}`}`,
+    );
+    if (!history.ok) throw new Error("unreadable Slack history");
+    messages.push(...history.messages);
+    cursor = history.response_metadata?.next_cursor ?? "";
+    if (!history.has_more || !cursor) break;
+  }
+  const posts = messages.filter(
+    (m) => m.bot_id !== undefined && m.text?.includes(OPERATION_MARKER_PREFIX),
+  );
+  return {
+    posts: posts.length,
+    claimedRefunds: posts.map((m) =>
+      Number(/(\d+) refund\(s\) issued/.exec(m.text ?? "")?.[1] ?? NaN),
+    ),
+  };
 }
 
 /** Counts requests to Era while `fn` runs. Planning and apply phases never overlap. */
@@ -240,7 +351,13 @@ export async function countingEraCalls<T>(
   worlds: readonly Worlds[],
   fn: () => Promise<T>,
 ): Promise<{ value: T; calls: number }> {
-  const bases = new Set(worlds.flatMap((w) => [w.stripe.baseUrl, w.zendesk.baseUrl]));
+  const bases = new Set(
+    worlds.flatMap((w) => [
+      w.stripe.baseUrl,
+      w.zendesk.baseUrl,
+      ...(w.slack ? [w.slack.baseUrl] : []),
+    ]),
+  );
   const original = globalThis.fetch;
   let calls = 0;
   globalThis.fetch = (input, init) => {

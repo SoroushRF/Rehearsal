@@ -130,6 +130,8 @@ function replay(s: Setup, bundle: ReplayBundle, afterFail: () => void = () => {}
     bundle.manifest.actions.find(
       (a) =>
         a.kind !== "stripe.refund.create" &&
+        a.kind !== "stripe.customer.balanceCredit" &&
+        a.kind !== "slack.message.postSummary" &&
         path === `/api/v2/tickets/${a.args.ticketId}.json` &&
         (a.kind === "zendesk.ticket.appendPrivateNote") ===
           (body.includes('"comment"') && !body.includes('"safe_update"')),

@@ -1,4 +1,6 @@
 import { randomBytes } from "node:crypto";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import type { Observation, PlanManifest, QueryObservation } from "@rehearsal/contracts";
 import { fingerprint } from "@rehearsal/core";
 import {
@@ -67,7 +69,10 @@ function plan(observations: Observation[], queryObservations: QueryObservation[]
         copy.args.chargeId = charge.entity.id;
         copy.evidence = [charge.id];
         copy.queryEvidence = [query.id];
-      } else {
+      } else if (
+        copy.kind === "zendesk.ticket.patchFields" ||
+        copy.kind === "zendesk.ticket.appendPrivateNote"
+      ) {
         copy.args.ticketId = ticket.entity.id;
         copy.evidence = [ticket.id];
         copy.queryEvidence = [];
@@ -228,6 +233,117 @@ describe("snapshot support", () => {
     expect(() =>
       rehearsalAdminToken({ ...ENV, REHEARSAL_ERA_ADMIN_TOKEN: ENV.ERA_ADMIN_TOKEN }),
     ).toThrow("must differ");
+  });
+
+  it("refuses a requester page whose count or rows don't add up", async () => {
+    const ticket = records.zendesk.tickets.find((t) => t.id === CASE.ticketId) ?? {};
+    const id = String(ticket.id);
+    const projections = { [id]: zendeskTicketProjection(ticket) };
+    const evidence: Evidence = {
+      actions: [],
+      observations: [],
+      queryObservations: [
+        {
+          id: "q_tickets",
+          world: "planning",
+          vendor: "zendesk",
+          predicate: {
+            kind: "zendesk.tickets.byRequester",
+            requesterId: String(ticket.requester_id),
+          },
+          cutoff: "2026-10-24T00:00:00.000Z",
+          complete: true,
+          matchingIds: [id],
+          projectionVersion: ZENDESK_TICKET_PROJECTION,
+          projections,
+          fingerprint: fingerprint({ matchingIds: [id], projections }),
+          capturedAt: "2026-10-24T00:00:00.000Z",
+        },
+      ],
+    };
+    let page: unknown = {};
+    const server = createServer((_req, res) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify(page));
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    const zendesk = {
+      baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+      tenant: "rh-abcd1234",
+      tenantToken: "signed.jwt",
+    };
+    const verify = async (body: unknown) => {
+      page = body;
+      return verifySnapshot(evidence, { zendesk });
+    };
+    try {
+      expect(await verify({ tickets: [ticket], count: 1, next_page: null })).toEqual({
+        ok: true,
+        mismatches: [],
+      });
+      // Every returned row matches, but the server says there are two.
+      expect(await verify({ tickets: [ticket], count: 2, next_page: null })).toEqual({
+        ok: false,
+        mismatches: ["q_tickets: count is 2 but the page has 1 tickets"],
+      });
+      expect(await verify({ tickets: [ticket, ticket], count: 2, next_page: null })).toEqual({
+        ok: false,
+        mismatches: [`q_tickets: page repeats ${id}`],
+      });
+      expect((await verify({ tickets: [ticket], next_page: null })).ok).toBe(false);
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
+  it("injects only the cited records the reset baseline lacks", async () => {
+    // A fake simulator per vendor: Era's baseline already holds the cited ticket, as it does a
+    // requester's older tickets, and /inject appends without deduping by ID.
+    const fake = async (baseline: string[]) => {
+      const injected: string[] = [];
+      const server = createServer((req, res) => {
+        let body = "";
+        req.on("data", (chunk) => {
+          body += chunk;
+        });
+        req.on("end", () => {
+          const url = req.url ?? "";
+          const reply = (status: number, json: unknown) => {
+            res.writeHead(status, { "content-type": "application/json" });
+            res.end(JSON.stringify(json));
+          };
+          if (url.endsWith("/inject")) {
+            const parsed = JSON.parse(body) as Record<string, { id: unknown }[]>;
+            for (const rows of Object.values(parsed))
+              for (const r of rows) injected.push(String(r.id));
+            return reply(200, {});
+          }
+          if (url.endsWith("/reset")) return reply(200, {});
+          if (req.method === "POST") return reply(200, { access_token: "jwt", expires_in: 3600 });
+          const id = decodeURIComponent(url.split("/").pop() ?? "").replace(/\.json$/, "");
+          return [...baseline, ...injected].includes(id) ? reply(200, { id }) : reply(404, {});
+        });
+      });
+      await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+      const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      return { server, url, injected };
+    };
+    const stripe = await fake([]);
+    const zendesk = await fake([String(CASE.ticketId)]);
+    try {
+      const result = await provisionSnapshot(offlineEvidence(), "abcd1234", {
+        ...ENV,
+        ERA_STRIPE_REHEARSAL_URL: stripe.url,
+        ERA_ZENDESK_REHEARSAL_URL: zendesk.url,
+      });
+      expect(result.ok).toBe(true);
+      expect(stripe.injected.sort()).toEqual(CASE.chargeIds);
+      expect(zendesk.injected).toEqual([]);
+    } finally {
+      for (const { server } of [stripe, zendesk]) {
+        await new Promise<void>((r) => server.close(() => r()));
+      }
+    }
   });
 
   it("tears down only a finished rehearsal", async () => {

@@ -60,14 +60,27 @@ export async function reapStuckRuns(
     staleAfterMs: number;
     /** Called with runs handed to an operator in this sweep (log or alert on them). */
     onHandOff?: (runIds: string[]) => void;
+    /**
+     * Tests only: consider just these runs. The production sweep covers every org; tests sharing a
+     * database would otherwise reap each other's runs and spend each other's reap budget (#243).
+     */
+    runIds?: readonly string[];
+    /** Tests only: wait for another sweep to finish instead of skipping this pass (#243). */
+    waitForLock?: boolean;
   },
 ): Promise<string[]> {
+  const only = opts.runIds;
+  if (only?.length === 0) return [];
   const handedOff: string[] = [];
   const reaped = await db.transaction(async (tx) => {
-    const { rows } = await tx.execute<{ ok: boolean }>(
-      sql`select pg_try_advisory_xact_lock(hashtextextended('rehearsal:reaper', 0)) as ok`,
-    );
-    if (!rows[0]?.ok) return [];
+    if (opts.waitForLock) {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended('rehearsal:reaper', 0))`);
+    } else {
+      const { rows } = await tx.execute<{ ok: boolean }>(
+        sql`select pg_try_advisory_xact_lock(hashtextextended('rehearsal:reaper', 0)) as ok`,
+      );
+      if (!rows[0]?.ok) return [];
+    }
     const cutoff = new Date(opts.now.getTime() - opts.staleAfterMs);
     const stuck = await tx
       .select()
@@ -96,6 +109,7 @@ export async function reapStuckRuns(
             ),
           ),
           lt(runs.updatedAt, cutoff),
+          only ? inArray(runs.id, [...only]) : undefined,
           // Bounded: a run whose job keeps dying or whose read stays inconclusive is handed to an
           // operator after MAX_REAPS re-enqueues.
           sql`(select count(*) from ${runEvents} e
@@ -152,6 +166,14 @@ export async function reapStuckRuns(
           )
         )
         and r.updated_at < ${cutoff}
+        ${
+          only
+            ? sql`and r.id in (${sql.join(
+                only.map((id) => sql`${id}`),
+                sql`, `,
+              )})`
+            : sql``
+        }
         and (select count(*) from ${runEvents} e
               where e.org_id = r.org_id and e.run_id = r.id and e.type = 'run.reaped') >= ${MAX_REAPS}
         and not exists (select 1 from ${runEvents} e

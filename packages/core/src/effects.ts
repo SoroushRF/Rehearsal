@@ -22,7 +22,7 @@ export function refundEffectMatches(
 
 /**
  * What sending needs of a `stripe.customer.balanceCredit` action (contracts'
- * `StripeCustomerBalanceCredit`; not in `Action` until T1.14 adds it).
+ * `StripeCustomerBalanceCredit`, in `Action` since T1.14).
  */
 export interface CreditAction {
   id: string;

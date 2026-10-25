@@ -17,6 +17,8 @@ import {
   type ProviderPort,
   type ReconcileResult,
   type ResolvedBindings,
+  replyCommentFor,
+  summaryTextFor,
 } from "@rehearsal/core";
 
 export interface FakeCharge {
@@ -44,6 +46,23 @@ export interface FakeRefund {
   status: "succeeded";
   operationKey: string;
 }
+/** A negative balance transaction. `chargeId` is null when the credit names no charge. */
+export interface FakeCredit {
+  id: string;
+  customerId: string;
+  amountMinor: number;
+  currency: string;
+  chargeId: string | null;
+  /** Set on a credit a plan wrote (its `metadata[rehearsal_op]`); absent on a teammate's. */
+  operationKey?: string;
+}
+
+export interface FakeMessage {
+  channel: string;
+  ts: string;
+  text: string;
+  bot_id: string;
+}
 
 /** Scripted failure for the next matching dispatch. */
 export type FakeFault =
@@ -53,6 +72,19 @@ export type FakeFault =
   /** Fail before handling, like Era's injected 5xx: no effect, and the outcome reads as unknown. */
   | { kind: "server_error" };
 
+/** A credit as Stripe returns its balance transaction. */
+function creditRecord(credit: FakeCredit) {
+  return {
+    id: credit.id,
+    object: "customer_balance_transaction",
+    amount: -credit.amountMinor,
+    currency: credit.currency,
+    customer: credit.customerId,
+    type: "adjustment",
+    metadata: { charge: credit.chargeId ?? "", rehearsal_op: credit.operationKey ?? "" },
+  };
+}
+
 /**
  * In-memory Stripe + Zendesk "operational world" behind one ProviderPort per vendor. Mirrors the
  * Era behaviors we rely on: Stripe idempotency on path + exact body bytes, Zendesk notes appended.
@@ -61,12 +93,18 @@ export class FakeWorld {
   readonly charges = new Map<string, FakeCharge>();
   readonly tickets = new Map<string, FakeTicket>();
   readonly refunds: FakeRefund[] = [];
+  readonly credits: FakeCredit[] = [];
+  /** A customer's Stripe currency. A credit in another one is refused before it is prepared. */
+  readonly customerCurrencies = new Map<string, string>();
+  /** Slack posts, oldest first. */
+  readonly messages: FakeMessage[] = [];
   /** Every effect actually applied, in order. Tests assert "exactly one refund" on this. */
   readonly effects: { operationKey: string; path: string }[] = [];
   readonly #idempotency = new Map<string, { bodySha: string; response: unknown }>();
   readonly #faults = new Map<string, FakeFault[]>();
   #refundSeq = 0;
   #commentSeq = 0;
+  #messageSeq = 0;
   /** Zendesk-style `updated_at` per ticket: moves on every write, ours or a teammate's. */
   readonly #stamps = new Map<string, number>();
 
@@ -75,6 +113,22 @@ export class FakeWorld {
   }
   #touch(ticketId: string): void {
     this.#stamps.set(ticketId, (this.#stamps.get(ticketId) ?? 0) + 1);
+  }
+
+  /** A balance credit applied outside the plan. It does not change the charge. */
+  teammateCredit(credit: {
+    customerId: string;
+    amountMinor: number;
+    currency: string;
+    chargeId?: string;
+  }): void {
+    this.credits.push({
+      id: `cbtxn_${this.credits.length + 1}`,
+      customerId: credit.customerId,
+      amountMinor: credit.amountMinor,
+      currency: credit.currency,
+      chargeId: credit.chargeId ?? null,
+    });
   }
 
   /** A teammate edits a ticket field directly (outside any plan); it moves the stamp. */
@@ -97,7 +151,7 @@ export class FakeWorld {
     return undefined;
   }
 
-  provider(vendor: Extract<Vendor, "stripe" | "zendesk">): ProviderPort {
+  provider(vendor: Vendor): ProviderPort {
     return {
       vendor,
       observe: async (entity) => this.#observe(entity),
@@ -119,7 +173,19 @@ export class FakeWorld {
         },
       }),
       ...(vendor === "stripe" && {
-        idempotentResend: (action: Action) => action.kind === "stripe.refund.create",
+        idempotentResend: (action: Action) =>
+          action.kind === "stripe.refund.create" || action.kind === "stripe.customer.balanceCredit",
+        // Like the real writer: Stripe refuses a credit in a currency other than the customer's.
+        preconditions: async (action: Action): Promise<Preconditions> => {
+          if (action.kind !== "stripe.customer.balanceCredit") return {};
+          const currency = this.customerCurrencies.get(action.args.customerId);
+          if (currency !== undefined && currency !== action.args.amount.currency) {
+            throw new Error(
+              `customer ${action.args.customerId} is in ${currency}, the credit is in ${action.args.amount.currency}`,
+            );
+          }
+          return {};
+        },
       }),
       prepare: (action, bindings, operationKey, pre) =>
         this.#prepare(action, bindings, operationKey, pre ?? {}),
@@ -151,6 +217,22 @@ export class FakeWorld {
           headers: { "Idempotency-Key": operationKey },
         };
       }
+      case "stripe.customer.balanceCredit": {
+        // The same fixed field order as the real writer.
+        const body = new URLSearchParams([
+          ["amount", String(-action.args.amount.amountMinor)],
+          ["currency", action.args.amount.currency],
+          ["metadata[charge]", action.args.chargeId],
+          ["metadata[rehearsal_op]", operationKey],
+        ]).toString();
+        return {
+          method: "POST",
+          path: `/v1/customers/${encodeURIComponent(action.args.customerId)}/balance_transactions`,
+          encoding: "form",
+          body,
+          headers: { "Idempotency-Key": operationKey },
+        };
+      }
       case "zendesk.ticket.patchFields":
         return {
           method: "PUT",
@@ -173,6 +255,27 @@ export class FakeWorld {
           headers: {},
         };
       }
+      case "zendesk.ticket.appendPublicReply":
+        return {
+          method: "PUT",
+          path: `/api/v2/tickets/${action.args.ticketId}.json`,
+          encoding: "json",
+          body: JSON.stringify({
+            ticket: { comment: { body: replyCommentFor(action, operationKey), public: true } },
+          }),
+          headers: {},
+        };
+      case "slack.message.postSummary":
+        return {
+          method: "POST",
+          path: "/api/chat.postMessage",
+          encoding: "json",
+          body: JSON.stringify({
+            channel: action.args.channelId,
+            text: summaryTextFor(action, bindings, operationKey),
+          }),
+          headers: {},
+        };
     }
   }
 
@@ -251,6 +354,52 @@ export class FakeWorld {
       return { kind: "confirmed", status: 200, body: response };
     }
 
+    const credit = /^\/v1\/customers\/([^/]+)\/balance_transactions$/.exec(req.path);
+    if (credit) {
+      const key = req.headers["Idempotency-Key"];
+      if (!key)
+        return { kind: "rejected", status: 400, body: { error: "missing key" }, retryable: false };
+      const bodySha = fingerprint({ path: req.path, body: req.body });
+      const seen = this.#idempotency.get(key);
+      if (seen) {
+        if (seen.bodySha !== bodySha) {
+          return {
+            kind: "rejected",
+            status: 400,
+            body: { error: "idempotency_error" },
+            retryable: false,
+          };
+        }
+        return { kind: "confirmed", status: 200, body: seen.response };
+      }
+      const form = new URLSearchParams(req.body);
+      const amount = Number(form.get("amount"));
+      const customerId = decodeURIComponent(credit[1] as string);
+      const opKey = form.get("metadata[rehearsal_op]") ?? key;
+      const created: FakeCredit = {
+        id: `cbtxn_${this.credits.length + 1}`,
+        customerId,
+        amountMinor: -amount,
+        currency: form.get("currency") ?? "",
+        chargeId: form.get("metadata[charge]"),
+        operationKey: opKey,
+      };
+      this.credits.push(created);
+      this.effects.push({ operationKey: opKey, path: req.path });
+      const response = creditRecord(created);
+      this.#idempotency.set(key, { bodySha, response });
+      return { kind: "confirmed", status: 200, body: response };
+    }
+
+    if (req.path === "/api/chat.postMessage") {
+      // Slack doesn't deduplicate: every post is a new message.
+      const { channel, text } = JSON.parse(req.body) as { channel: string; text: string };
+      const ts = `1700000000.${String(++this.#messageSeq).padStart(6, "0")}`;
+      this.messages.push({ channel, ts, text, bot_id: "B_REHEARSAL" });
+      this.effects.push({ operationKey: "", path: req.path });
+      return { kind: "confirmed", status: 200, body: { ok: true, channel, ts } };
+    }
+
     const m = /^\/api\/v2\/tickets\/(.+)\.json$/.exec(req.path);
     const ticket = m ? this.tickets.get(m[1] as string) : undefined;
     if (!ticket)
@@ -283,6 +432,41 @@ export class FakeWorld {
   }
 
   #observe(entity: EntityRef): Observation {
+    if (entity.kind === "customer_balance_transactions") {
+      const credits = this.credits
+        .filter((credit) => credit.customerId === entity.id)
+        .map((credit) => ({
+          id: credit.id,
+          amountMinor: credit.amountMinor,
+          currency: credit.currency,
+          chargeId: credit.chargeId,
+        }));
+      const projection = { complete: true, credits };
+      return {
+        id: `obs_${entity.kind}_${entity.id}`,
+        world: "operational",
+        entity,
+        projectionVersion: "stripe.balance_credit.v1",
+        projection,
+        fingerprint: fingerprint(projection),
+        capturedAt: new Date().toISOString(),
+      };
+    }
+    if (entity.kind === "customer") {
+      const projection = {
+        id: entity.id,
+        currency: this.customerCurrencies.get(entity.id) ?? null,
+      };
+      return {
+        id: `obs_${entity.kind}_${entity.id}`,
+        world: "operational",
+        entity,
+        projectionVersion: "stripe.customer.v1",
+        projection,
+        fingerprint: fingerprint(projection),
+        capturedAt: new Date().toISOString(),
+      };
+    }
     const record =
       entity.kind === "charge" ? this.charges.get(entity.id) : this.tickets.get(entity.id);
     if (!record) throw new Error(`no ${entity.kind} ${entity.id}`);
@@ -349,6 +533,37 @@ export class FakeWorld {
           }
         : { kind: "not_applied" };
     }
+    if (action.kind === "stripe.customer.balanceCredit") {
+      const credit = this.credits.find((c) => c.operationKey === attempt.operationKey);
+      if (!credit) return { kind: "not_applied" };
+      const tx = creditRecord(credit);
+      return {
+        kind: "applied",
+        providerRef: { vendor: "stripe", kind: "customer_balance_transaction", id: tx.id },
+        effect: {
+          "credit.id": tx.id,
+          "credit.amount": tx.amount,
+          "credit.type": tx.type,
+          "credit.charge": tx.metadata.charge,
+          customer: tx.customer,
+          currency: tx.currency,
+        },
+      };
+    }
+    if (action.kind === "slack.message.postSummary") {
+      // Like the real reader: ours is the bot post with exactly the journaled text.
+      const sent = (JSON.parse(attempt.request.body) as { text: string }).text;
+      const post = this.messages.find(
+        (m) => m.channel === action.args.channelId && m.bot_id && m.text === sent,
+      );
+      return post
+        ? {
+            kind: "applied",
+            providerRef: { vendor: "slack", kind: "message", id: post.ts },
+            effect: { "message.ts": post.ts, channel: post.channel },
+          }
+        : { kind: "not_applied" };
+    }
     const ticket = this.tickets.get(action.args.ticketId);
     if (!ticket) return { kind: "indeterminate", detail: `no ticket ${action.args.ticketId}` };
     const ref = { vendor: "zendesk", kind: "ticket", id: action.args.ticketId } as const;
@@ -357,6 +572,25 @@ export class FakeWorld {
       return ticket.comments.some((c) => c.body.includes(marker))
         ? { kind: "applied", providerRef: ref, effect: {} }
         : { kind: "not_applied" };
+    }
+    if (action.kind === "zendesk.ticket.appendPublicReply") {
+      // Like the real writer: ours is the public comment with exactly the journaled text.
+      const sent = (JSON.parse(attempt.request.body) as { ticket: { comment: { body: string } } })
+        .ticket.comment.body;
+      const comment = ticket.comments.find((c) =>
+        c.body.includes(operationMarker(attempt.operationKey)),
+      );
+      if (!comment) return { kind: "not_applied" };
+      return comment.public && comment.body === sent
+        ? {
+            kind: "applied",
+            providerRef: ref,
+            effect: { "comment.id": String(comment.id), public: true },
+          }
+        : {
+            kind: "indeterminate",
+            detail: "a comment carries this reply's marker but isn't the public text that was sent",
+          };
     }
     // Patch: our values present → applied; untouched since our read (same stamp) → not applied;
     // anything else (someone else wrote it) can't be told apart → indeterminate.
@@ -385,6 +619,9 @@ export function worldFromManifest(observations: readonly Observation[]): FakeWor
     const p = o.projection as Record<string, unknown>;
     if (o.entity.kind === "charge")
       world.charges.set(o.entity.id, { ...(p as unknown as FakeCharge) });
+    if (o.entity.kind === "customer" && typeof p.currency === "string") {
+      world.customerCurrencies.set(o.entity.id, p.currency);
+    }
     if (o.entity.kind === "ticket") {
       world.tickets.set(o.entity.id, {
         ...(p as unknown as Omit<FakeTicket, "comments">),

@@ -52,10 +52,8 @@ export const StripeRefundCreate = ActionBase.extend({
  * A credit to the customer's Stripe balance, applied to their next invoice, as the remedy for a
  * duplicate charge instead of a refund. Sent as a negative customer balance transaction, so
  * `amount` is the credit and is always positive. The customer's own currency must match: Era
- * accepts any currency here, but Stripe doesn't (docs/capability-matrix.md).
- *
- * Not in `Action` yet, so no plan can carry one. T1.14 adds it once the write adapter (T3.12),
- * the one-remedy guard (T4.10) and the policy (T2.18) handle it.
+ * accepts any currency here, but Stripe doesn't (docs/capability-matrix.md). Plannable since
+ * T1.14, under a policy that allows credits (v2's `creditMaxMinor`).
  */
 export const StripeCustomerBalanceCredit = ActionBase.extend({
   kind: z.literal("stripe.customer.balanceCredit"),
@@ -108,9 +106,6 @@ export const OPERATION_MARKER_PREFIX = "[rehearsal-op:";
  * receipt bindings), and it is part of the plan hash. The executor sends `body` followed by the
  * operation marker. Zendesk has no exactly-once append, so a reply with an unknown outcome is
  * resolved by reading the ticket's comments for that marker and is never re-sent blindly.
- *
- * Not in `Action` yet, so no plan can carry one. T1.13 adds it once the write adapter (T3.11)
- * and the review UI and policy (T2.16) handle it.
  */
 export const ZendeskTicketAppendPublicReply = ActionBase.extend({
   kind: z.literal("zendesk.ticket.appendPublicReply"),
@@ -165,8 +160,8 @@ export const SummaryBinding = z.union([z.string(), z.number(), OutcomeCount]);
  * doesn't deduplicate posts (not even on `client_msg_id`), so a post with an unknown outcome is
  * resolved by reading the channel for that marker and is never re-sent blindly.
  *
- * Not in `Action` yet, so no plan can carry one. T1.7 adds it once the write adapter (T3.10) and
- * the review UI (T2.15) handle it.
+ * It runs after every other step has settled, held or not, so it counts what really happened; a
+ * held or skipped step it counts doesn't skip it.
  */
 export const SlackMessagePostSummary = ActionBase.extend({
   kind: z.literal("slack.message.postSummary"),
@@ -188,8 +183,11 @@ export const SlackMessagePostSummary = ActionBase.extend({
 
 export const Action = z.discriminatedUnion("kind", [
   StripeRefundCreate,
+  StripeCustomerBalanceCredit,
   ZendeskTicketPatchFields,
   ZendeskTicketAppendPrivateNote,
+  ZendeskTicketAppendPublicReply,
+  SlackMessagePostSummary,
 ]);
 export type Action = z.infer<typeof Action>;
 export type ActionKind = Action["kind"];

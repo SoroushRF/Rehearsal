@@ -7,7 +7,8 @@ export interface GraphIssue {
     | "unknown_dependency"
     | "self_dependency"
     | "cycle"
-    | "unbound_result_ref";
+    | "unbound_result_ref"
+    | "depends_on_summary";
   detail: string;
 }
 
@@ -19,11 +20,22 @@ export function validateGraph(actions: readonly Action[]): GraphIssue[] {
     if (ids.has(a.id)) issues.push({ actionId: a.id, problem: "duplicate_id", detail: a.id });
     ids.add(a.id);
   }
+  const summaries = new Set(
+    actions.filter((a) => a.kind === "slack.message.postSummary").map((a) => a.id),
+  );
   for (const a of actions) {
     for (const dep of a.dependsOn) {
       if (dep === a.id) issues.push({ actionId: a.id, problem: "self_dependency", detail: dep });
       else if (!ids.has(dep))
         issues.push({ actionId: a.id, problem: "unknown_dependency", detail: dep });
+      else if (summaries.has(dep) && a.kind !== "slack.message.postSummary") {
+        // A summary runs after every other step, so nothing it reports on can wait for it.
+        issues.push({
+          actionId: a.id,
+          problem: "depends_on_summary",
+          detail: `${dep} is a run summary; only another summary may depend on it`,
+        });
+      }
     }
     // A step may only bind to results of steps it explicitly depends on.
     if (a.kind === "zendesk.ticket.appendPrivateNote") {
@@ -78,9 +90,31 @@ export function dependentsClosure(actions: readonly Action[], ids: Iterable<stri
   return closed;
 }
 
+type Summary = Extract<Action, { kind: "slack.message.postSummary" }>;
+
+/** A summary without the removed steps, or null once a count has no step left to count. */
+function pruneSummary(summary: Summary, removed: ReadonlySet<string>): Summary | null {
+  const bindings: Summary["args"]["bindings"] = {};
+  for (const [name, b] of Object.entries(summary.args.bindings)) {
+    if (typeof b !== "object") {
+      bindings[name] = b;
+      continue;
+    }
+    const stepIds = b.stepIds.filter((id) => !removed.has(id));
+    if (stepIds.length === 0) return null;
+    bindings[name] = { ...b, stepIds };
+  }
+  return {
+    ...summary,
+    dependsOn: summary.dependsOn.filter((id) => !removed.has(id)),
+    args: { ...summary.args, bindings },
+  };
+}
+
 /**
  * Reviewer unchecks actions → a NEW immutable revision without them and their dependents.
- * The original revision is never edited.
+ * The original revision is never edited. A run summary isn't a dependent: it only counts steps, so
+ * an unchecked step leaves its counts, and the summary goes only when a count has nothing left.
  */
 export function excludeActions(manifest: PlanManifest, ids: readonly string[]): PlanManifest {
   const known = new Set(manifest.actions.map((a) => a.id));
@@ -88,12 +122,26 @@ export function excludeActions(manifest: PlanManifest, ids: readonly string[]): 
   if (unknown.length > 0) throw new Error(`unknown action ids: ${unknown.join(", ")}`);
 
   const requested = new Set(ids);
-  const removed = dependentsClosure(manifest.actions, ids);
+  const removed = dependentsClosure(
+    manifest.actions.filter((a) => a.kind !== "slack.message.postSummary" || requested.has(a.id)),
+    ids,
+  );
+  const actions: Action[] = [];
+  for (const a of manifest.actions) {
+    if (removed.has(a.id)) continue;
+    if (a.kind !== "slack.message.postSummary") {
+      actions.push(a);
+      continue;
+    }
+    const pruned = pruneSummary(a, removed);
+    if (pruned) actions.push(pruned);
+    else removed.add(a.id);
+  }
   return {
     ...manifest,
     revision: manifest.revision + 1,
     parentRevision: manifest.revision,
-    actions: manifest.actions.filter((a) => !removed.has(a.id)),
+    actions,
     excluded: [
       ...manifest.excluded,
       ...manifest.actions

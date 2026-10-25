@@ -1,10 +1,12 @@
 import { APPLY_QUEUE, createDb, reapStuckRuns, startQueue } from "@rehearsal/db";
 import {
   primeTokens,
+  slackProviderWriter,
   stripeReader,
   stripeWriter,
   withWriter,
   workerWorlds,
+  writeOnly,
   zendeskReader,
   zendeskWriter,
 } from "@rehearsal/providers";
@@ -36,6 +38,17 @@ const target = (vendor: "stripe" | "zendesk") => ({
   authorization:
     vendor === "stripe" ? "Bearer sk_test_rehearsal_executor" : "Bearer rehearsal-executor",
 });
+// The run summary (T1.7) is optional: without ERA_SLACK_OPERATIONAL_URL admission refuses a plan
+// that posts one, before anything is sent.
+const slack = worlds.slack
+  ? writeOnly(
+      slackProviderWriter({
+        world: "operational",
+        config: worlds.slack,
+        authorization: "Bearer xoxb-rehearsal-executor",
+      }),
+    )
+  : undefined;
 const clock = { now: () => new Date() }; // wall time: the reconcile window depends on it
 
 const ctx: WorkerContext = {
@@ -49,10 +62,12 @@ const ctx: WorkerContext = {
       zendeskReader({ ...target("zendesk"), clock }),
       zendeskWriter(target("zendesk")),
     ),
+    ...(slack && { slack }),
   },
   worlds: {
     stripe: { world: "operational", tenant: worlds.stripe.tenant },
     zendesk: { world: "operational", tenant: worlds.zendesk.tenant },
+    ...(worlds.slack && { slack: { world: "operational", tenant: worlds.slack.tenant } }),
   },
   clock,
   policies: [policyV1, policyV2, policyV3] as WorkerContext["policies"][number][],
@@ -113,5 +128,5 @@ for (const signal of ["SIGTERM", "SIGINT"] as const) {
   });
 }
 console.log(
-  `executor-worker consuming ${APPLY_QUEUE} (stripe=${worlds.stripe.baseUrl}, zendesk=${worlds.zendesk.baseUrl})`,
+  `executor-worker consuming ${APPLY_QUEUE} (stripe=${worlds.stripe.baseUrl}, zendesk=${worlds.zendesk.baseUrl}, slack=${worlds.slack?.baseUrl ?? "off"})`,
 );

@@ -7,6 +7,7 @@ import {
   resolveWorld,
   SHARED_URL_KEYS,
   type WorldConfig,
+  worldEnvKey,
   worldUrl,
 } from "./worlds";
 
@@ -67,18 +68,21 @@ export type WorkerRole = keyof typeof WORKER_ROLES;
 /** Path of the operator's mint route in apps/api. */
 export const TENANT_TOKEN_ROUTE = "/internal/era/tenant-token";
 
-type EraVendor = "stripe" | "zendesk";
+type EraVendor = "stripe" | "zendesk" | "slack";
+/** A rehearsal has no Slack world: the operator's rehearsal mint route refuses it. */
+type RehearsalVendor = "stripe" | "zendesk";
 
 /**
- * A worker's Stripe and Zendesk worlds, each carrying a token source that mints through the
- * operator (the API process, which alone holds ERA_ADMIN_TOKEN). The worker's secret only ever
- * mints tokens for its own world.
+ * A worker's Stripe and Zendesk worlds, plus the executor's Slack world when its URL is set (only
+ * the executor posts the optional run summary), each carrying a token source that mints through the operator (the API
+ * process, which alone holds ERA_ADMIN_TOKEN). The worker's secret only ever mints tokens for its
+ * own world.
  */
 export function workerWorlds(
   role: WorkerRole,
   env: NodeJS.ProcessEnv = process.env,
   options: { clock?: { now(): Date }; fetch?: typeof fetch } = {},
-): Record<EraVendor, WorldConfig> {
+): Record<"stripe" | "zendesk", WorldConfig> & { slack?: WorldConfig } {
   const { world, secretEnv } = WORKER_ROLES[role];
   const apiUrl = env.REHEARSAL_API_URL?.replace(/\/$/, "");
   const secret = env[secretEnv];
@@ -102,7 +106,11 @@ export function workerWorlds(
       tenantToken: new RefreshingTokenSource(mint, options.clock),
     };
   };
-  return { stripe: bind("stripe"), zendesk: bind("zendesk") };
+  return {
+    stripe: bind("stripe"),
+    zendesk: bind("zendesk"),
+    ...(role === "executor" && env[worldEnvKey("slack", world)] ? { slack: bind("slack") } : {}),
+  };
 }
 
 /** Mint every world's token now, so a misconfigured minter fails at startup, not mid-run. */
@@ -163,7 +171,7 @@ export function rehearsalWorkerWorlds(
   rehearsalId: string,
   env: NodeJS.ProcessEnv = process.env,
   options: { clock?: { now(): Date }; fetch?: typeof fetch } = {},
-): Record<EraVendor, WorldConfig> {
+): Record<RehearsalVendor, WorldConfig> {
   const violations = rehearsalWorkerViolations(env);
   if (violations.length > 0) {
     throw new Error(`a rehearsal worker must not hold ${violations.join(", ")}`);
@@ -174,7 +182,7 @@ export function rehearsalWorkerWorlds(
   if (!secret) throw new Error("REHEARSAL_WORKER_SECRET is not set");
   const doFetch = options.fetch ?? fetch;
 
-  const bind = (vendor: EraVendor): WorldConfig => {
+  const bind = (vendor: RehearsalVendor): WorldConfig => {
     const config = resolveRehearsalWorld(vendor, rehearsalId, env);
     const mint = async () => {
       const res = await doFetch(`${apiUrl}${REHEARSAL_TENANT_TOKEN_ROUTE}`, {

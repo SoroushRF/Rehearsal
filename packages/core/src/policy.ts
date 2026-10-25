@@ -32,9 +32,8 @@ export interface BillingPolicyV3 extends Omit<BillingPolicyV2, "version"> {
 export type BillingPolicy = BillingPolicyV1 | BillingPolicyV2 | BillingPolicyV3;
 
 /**
- * A step policy can judge. The balance credit isn't in `Action` yet (T1.14 adds it once this policy
- * handles it), so a plan can't carry one today; policy reads only the fields below, so it is ready
- * for the day it can. Every `StripeCustomerBalanceCredit` fits.
+ * A step policy can judge. `Action` carries the balance credit since T1.14; the narrower shape stays
+ * so callers that hold only these fields can still be judged. Every `StripeCustomerBalanceCredit` fits.
  */
 export type PolicyAction =
   | Action
