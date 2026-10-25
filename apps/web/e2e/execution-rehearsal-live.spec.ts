@@ -214,3 +214,91 @@ test("switching organization shows only that org's rehearsals", async ({ page })
   await expect(page.getByTestId("exec-rehearsal")).toHaveCount(1);
   await expect(page.getByTestId("exec-rehearsal")).toHaveAttribute("data-state", "completed");
 });
+
+/**
+ * T2.21 on real reports: the same report view, but each report is the rehearsal worker's own,
+ * judged by the T4.12 verifier from reads of the disposable Era tenant (`era_integration`).
+ * (An unresolved write can't be produced on demand against a healthy Era, so that view stays
+ * covered by the fixture spec, rehearsal-report.spec.ts.)
+ */
+async function finishedReport(page: Page, scenario: RegExp) {
+  await page.goto("/e2e/live.html");
+  const start = page.getByRole("button", { name: "Rehearse revision 1" });
+  await start.waitFor();
+  await page.getByLabel(scenario).check();
+  await start.click();
+  await expect(page.getByTestId("exec-rehearsal")).toHaveAttribute("data-state", "completed", LONG);
+  await page.getByTestId("exec-report-toggle").click();
+  const view = page.getByTestId("exec-report");
+  await expect(view).toBeVisible(LONG);
+  return view;
+}
+
+async function readOnly(w: Awaited<ReturnType<typeof world>>) {
+  expect(w.sent.some((r) => r.method === "POST" && /approvals|apply/.test(r.path))).toBe(false);
+  expect((await w.api("GET", `/api/plans/${w.plans.org_a}/approvals`)).grants).toEqual([]);
+}
+
+test("real report: the benign control reads back as expected, from Era, and approves nothing", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const w = await world(page);
+  const view = await finishedReport(page, /An unrelated change/);
+  await expect(view).toHaveAttribute("data-verdict", "passed");
+  await expect(view).toHaveAttribute("data-stale", "false");
+  await expect(view).toContainText("Every step read back as expected");
+  await expect(view).toContainText("doesn't approve this plan");
+  const provenance = page.getByTestId("exec-report-provenance");
+  await expect(provenance).toContainText("Era simulator");
+  await expect(provenance).toContainText("revision 1");
+  await expect(provenance).toContainText("benign_nonmatching_change@1");
+  await readOnly(w);
+});
+
+test("real report: a phantom charge holds the refund, and the verifier read it as held", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const w = await world(page);
+  const view = await finishedReport(page, /A new duplicate charge appears/);
+  await expect(view).toHaveAttribute("data-verdict", "passed");
+  const refund = view.locator('[data-action="refund_001"]');
+  await expect(refund).toHaveAttribute("data-verification", "matched");
+  await expect(refund).toContainText("Held");
+  await expect(refund).toContainText("As expected");
+  const note = view.locator('[data-action="note_001"]');
+  await expect(note).toContainText("Skipped");
+  await expect(page.getByTestId("exec-report-provenance")).toContainText("phantom_membership@1");
+  await readOnly(w);
+});
+
+test("real report: a teammate's edit after a refused note is kept, as expected", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const w = await world(page);
+  const view = await finishedReport(page, /A teammate edits a ticket/);
+  await expect(view).toHaveAttribute("data-verdict", "passed");
+  const note = view.locator('[data-action="note_001"]');
+  await expect(note).toContainText("Refused");
+  await expect(note).toHaveAttribute("data-verification", "matched");
+  await expect(view.locator('[data-action="patch_001"]')).toHaveAttribute(
+    "data-verification",
+    "matched",
+  );
+  await readOnly(w);
+});
+
+test("real report: a lost response is recovered by reading, one refund, all as expected", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const w = await world(page);
+  const view = await finishedReport(page, /A lost response and a restart/);
+  await expect(view).toHaveAttribute("data-verdict", "passed");
+  const refund = view.locator('[data-action="refund_001"]');
+  await expect(refund).toContainText("Applied");
+  await expect(refund).toHaveAttribute("data-verification", "matched");
+  await readOnly(w);
+});
