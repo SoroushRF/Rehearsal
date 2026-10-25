@@ -11,7 +11,6 @@
     "seed:plans": "tsx --env-file-if-exists=../../.env scripts/seed-plans.ts"
   },
   "dependencies": {
-    "@clerk/backend": "3.23.2",
     "@fastify/static": "^10.1.6",
     "@rehearsal/contracts": "workspace:*",
     "@rehearsal/iam": "workspace:*",
@@ -24,6 +23,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@rehearsal/authz": "workspace:*",
     "@rehearsal/testkit": "workspace:*"
   }
 }

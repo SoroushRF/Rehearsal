@@ -5,6 +5,8 @@ export interface VerifiedPerson {
   userId: string;
   orgId: string | null;
   orgRole: string | null;
+  /** Clerk's session id, when this verifier has one. Identity refuses a person without it. */
+  sessionId?: string | null;
 }
 
 /** The only way IAM learns who a person is. Tests pass a fake; the process uses Clerk. */
@@ -41,6 +43,7 @@ export function clerkVerifierFromEnv(
         userId: auth.userId,
         orgId: auth.orgId ?? null,
         orgRole: auth.orgRole ?? null,
+        sessionId: auth.sessionId ?? null,
       };
     },
   };

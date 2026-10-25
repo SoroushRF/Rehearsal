@@ -5,19 +5,18 @@ import { billingManifest } from "@rehearsal/testkit";
 import { beforeAll, describe, expect, it } from "vitest";
 import policyJson from "../../../scenarios/billing/policy.v1.json" with { type: "json" };
 import { buildApp } from "../src/app";
-import type { AuthContext } from "../src/apply";
 import { buildAudit } from "../src/audit";
-import type { Reviewer } from "../src/auth";
 import { storePlan } from "../src/plans";
+import { bearer, type Caller, fakeIam, member } from "./fake-iam";
 
 const POLICY = policyJson as BillingPolicyV1;
 const HASH = "a".repeat(64);
 const AT = new Date("2026-10-22T12:00:00.000Z");
 
-async function get(deps: Parameters<typeof buildApp>[0], url: string) {
+async function get(deps: Parameters<typeof buildApp>[0], url: string, person?: Caller | null) {
   const app = buildApp({ webRoot: null, ...deps });
   try {
-    return await app.inject({ method: "GET", url });
+    return await app.inject({ method: "GET", url, headers: person ? bearer(person) : {} });
   } finally {
     await app.close();
   }
@@ -29,7 +28,7 @@ describe("audit route before touching the database", () => {
   });
 
   it("refuses a caller who isn't signed in", async () => {
-    const res = await get({ runs: { db: {} as Db, auth: () => null } }, "/api/runs/r1/audit");
+    const res = await get({ runs: { db: {} as Db, iam: fakeIam([]) } }, "/api/runs/r1/audit");
     expect(res.statusCode).toBe(401);
   });
 });
@@ -112,13 +111,8 @@ describe.skipIf(!process.env.DB_TESTS)("audit route (real Postgres)", () => {
   const url = process.env.DATABASE_URL ?? "postgres://rehearsal:rehearsal@localhost:5432/rehearsal";
   const db = createDb(url);
   beforeAll(() => migrateDb(db));
-  const deps = (auth: AuthContext) => ({ runs: { db, auth: () => auth } });
-  const me = (orgId: string): Reviewer => ({
-    orgId,
-    userId: "user_fin",
-    sessionId: "sess",
-    roles: ["finance_lead", "support_lead"],
-  });
+  const deps = (person: Caller) => ({ runs: { db, iam: fakeIam([person]) } });
+  const me = (orgId: string) => member(orgId, "user_fin");
 
   async function seed() {
     const orgId = `org_${crypto.randomUUID()}`;
@@ -165,7 +159,8 @@ describe.skipIf(!process.env.DB_TESTS)("audit route (real Postgres)", () => {
 
   it("serves the run's own plan, policy, grants and receipts", async () => {
     const { orgId, runId, planHash, grantId } = await seed();
-    const res = await get(deps(me(orgId)), `/api/runs/${runId}/audit`);
+    const person = me(orgId);
+    const res = await get(deps(person), `/api/runs/${runId}/audit`, person);
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.source).toBe("stored_history");
@@ -179,7 +174,8 @@ describe.skipIf(!process.env.DB_TESTS)("audit route (real Postgres)", () => {
 
   it("hides another org's run", async () => {
     const { runId } = await seed();
-    const res = await get(deps(me("org_other")), `/api/runs/${runId}/audit`);
+    const other = me("org_other");
+    const res = await get(deps(other), `/api/runs/${runId}/audit`, other);
     expect(res.statusCode).toBe(404);
   });
 });

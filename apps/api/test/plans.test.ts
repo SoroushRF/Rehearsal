@@ -5,8 +5,8 @@ import { billingManifest } from "@rehearsal/testkit";
 import { and, eq } from "drizzle-orm";
 import { beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app";
-import type { AuthContext } from "../src/apply";
 import { storePlan } from "../src/plans";
+import { bearer, type Caller, fakeIam, support } from "./fake-iam";
 
 const HASH = "a".repeat(64);
 
@@ -15,10 +15,16 @@ async function call(
   method: "GET" | "POST",
   url: string,
   payload?: object,
+  person?: Caller | null,
 ) {
   const app = buildApp({ webRoot: null, ...deps });
   try {
-    return await app.inject({ method, url, ...(payload ? { payload } : {}) });
+    return await app.inject({
+      method,
+      url,
+      headers: person ? bearer(person) : {},
+      ...(payload ? { payload } : {}),
+    });
   } finally {
     await app.close();
   }
@@ -38,15 +44,17 @@ describe("plan routes without a database", () => {
 describe("plan routes before touching the database", () => {
   // Auth and body checks come first, so a stub database is never reached.
   const db = {} as Db;
-  const as = (auth: AuthContext | null) => ({ plans: { db, auth: () => auth } });
-  const user = { orgId: "org_1", userId: "u" };
+  const as = (person: Caller | null) => ({
+    plans: { db, iam: fakeIam(person ? [person] : []) },
+  });
+  const user = support("org_1");
 
   it.each([
     ["GET", "/api/plans"],
     ["GET", "/api/plans/p1"],
     ["POST", "/api/plans/p1/revisions"],
   ] as const)("%s %s refuses an unauthenticated caller", async (method, url) => {
-    const res = await call(as(null), method, url, method === "POST" ? {} : undefined);
+    const res = await call(as(null), method, url, method === "POST" ? {} : undefined, null);
     expect(res.statusCode).toBe(401);
   });
 
@@ -59,13 +67,13 @@ describe("plan routes before touching the database", () => {
       { baseRevision: 1, basePlanHash: HASH, excludeActionIds: ["x"], actions: [] },
     ],
   ])("refuses a revision request with %s", async (_label, body) => {
-    const res = await call(as(user), "POST", "/api/plans/p1/revisions", body);
+    const res = await call(as(user), "POST", "/api/plans/p1/revisions", body, user);
     expect(res.statusCode).toBe(400);
     expect(res.json()).toEqual({ error: "invalid_request" });
   });
 
   it("refuses a malformed revision query", async () => {
-    const res = await call(as(user), "GET", "/api/plans/p1?revision=zero");
+    const res = await call(as(user), "GET", "/api/plans/p1?revision=zero", undefined, user);
     expect(res.statusCode).toBe(400);
   });
 });
@@ -83,15 +91,15 @@ describe.skipIf(!process.env.DB_TESTS)("plan routes (real Postgres)", () => {
     const manifest = PlanManifest.parse({ ...billingManifest(planId), orgId });
     const stored = await storePlan(db, manifest);
     if (!stored) throw new Error("seed failed");
-    return { orgId, planId, manifest, hash: stored.planHash, user: { orgId, userId: "u" } };
+    return { orgId, planId, manifest, hash: stored.planHash, user: support(orgId) };
   }
-  const deps = (auth: AuthContext | null) => ({ plans: { db, auth: () => auth } });
-  const exclude = (auth: AuthContext, planId: string, body: object) =>
-    call(deps(auth), "POST", `/api/plans/${planId}/revisions`, body);
+  const deps = (person: Caller | null) => ({ plans: { db, iam: fakeIam(person ? [person] : []) } });
+  const exclude = (person: Caller, planId: string, body: object) =>
+    call(deps(person), "POST", `/api/plans/${planId}/revisions`, body, person);
 
   it("returns the stored latest revision with its hash", async () => {
     const { planId, manifest, hash, user } = await seed();
-    const res = await call(deps(user), "GET", `/api/plans/${planId}`);
+    const res = await call(deps(user), "GET", `/api/plans/${planId}`, undefined, user);
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body).toMatchObject({ planId, revision: 1, planHash: hash, latestRevision: 1 });
@@ -101,11 +109,8 @@ describe.skipIf(!process.env.DB_TESTS)("plan routes (real Postgres)", () => {
 
   it("hides another org's plan", async () => {
     const { planId } = await seed();
-    const res = await call(
-      deps({ orgId: "org_other", userId: "u" }),
-      "GET",
-      `/api/plans/${planId}`,
-    );
+    const other = support("org_other");
+    const res = await call(deps(other), "GET", `/api/plans/${planId}`, undefined, other);
     expect(res.statusCode).toBe(404);
   });
 
@@ -136,10 +141,12 @@ describe.skipIf(!process.env.DB_TESTS)("plan routes (real Postgres)", () => {
     expect(body.planHash).not.toBe(hash);
 
     // Revision 1 is untouched and still readable; the latest is now 2.
-    const v1 = (await call(deps(user), "GET", `/api/plans/${planId}?revision=1`)).json();
+    const v1 = (
+      await call(deps(user), "GET", `/api/plans/${planId}?revision=1`, undefined, user)
+    ).json();
     expect(v1).toMatchObject({ revision: 1, planHash: hash, latestRevision: 2 });
     expect(v1.manifest).toEqual(manifest);
-    const latest = (await call(deps(user), "GET", `/api/plans/${planId}`)).json();
+    const latest = (await call(deps(user), "GET", `/api/plans/${planId}`, undefined, user)).json();
     expect(latest).toMatchObject({ revision: 2, planHash: body.planHash });
   });
 
@@ -193,7 +200,7 @@ describe.skipIf(!process.env.DB_TESTS)("plan routes (real Postgres)", () => {
             }
           : Reflect.get(target, prop),
     });
-    const app = buildApp({ webRoot: null, plans: { db: watched, auth: () => user } });
+    const app = buildApp({ webRoot: null, plans: { db: watched, iam: fakeIam([user]) } });
     let committedAtSend: boolean | null = null;
     app.addHook("onSend", async () => {
       committedAtSend = committed;
@@ -202,6 +209,7 @@ describe.skipIf(!process.env.DB_TESTS)("plan routes (real Postgres)", () => {
       const res = await app.inject({
         method: "POST",
         url: `/api/plans/${planId}/revisions`,
+        headers: bearer(user),
         payload: { baseRevision: 1, basePlanHash: hash, excludeActionIds: ["patch_001"] },
       });
       expect(res.statusCode).toBe(201);
@@ -230,7 +238,9 @@ describe.skipIf(!process.env.DB_TESTS)("plan routes (real Postgres)", () => {
       .set({ manifest: tampered })
       .where(and(eq(schema.planVersions.orgId, orgId), eq(schema.planVersions.planId, planId)));
 
-    expect((await call(deps(user), "GET", `/api/plans/${planId}`)).statusCode).toBe(500);
+    expect(
+      (await call(deps(user), "GET", `/api/plans/${planId}`, undefined, user)).statusCode,
+    ).toBe(500);
     const res = await exclude(user, planId, {
       baseRevision: 1,
       basePlanHash: hash,
@@ -249,7 +259,7 @@ describe.skipIf(!process.env.DB_TESTS)("plan routes (real Postgres)", () => {
       excludeActionIds: ["patch_001"],
     });
 
-    const { plans } = (await call(deps(user), "GET", "/api/plans")).json();
+    const { plans } = (await call(deps(user), "GET", "/api/plans", undefined, user)).json();
     expect(plans).toHaveLength(2);
     expect(
       plans.map((p: { planId: string; revision: number }) => [p.planId, p.revision]).sort(),

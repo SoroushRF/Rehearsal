@@ -127,7 +127,14 @@ try {
       const t0 = performance.now();
       const applied = await countingEraCalls([op], () =>
         mode === "rehearsal"
-          ? applyPlan(manifest, ports, ctxOf(op), POLICIES)
+          ? agent.value.coverage?.length
+            ? Promise.resolve({
+                unresolved: 0,
+                reviewerActions: 0,
+                promptOpportunities: 0,
+                log: ["caught before approval: incomplete coverage"],
+              })
+            : applyPlan(manifest, ports, ctxOf(op), POLICIES)
           : applyCalls(intents, ports, ctxOf(op), { taskId: task.id, review: mode === "per_call" }),
       );
       const latencyMs = Math.round(performance.now() - t0);
@@ -136,6 +143,7 @@ try {
         mode,
         cases: await readOutcomes(op),
         proposed: proposedByCase(intents, Object.keys(task.gold)),
+        coverage: agent.value.coverage,
         summary: await readSummary(op),
         unresolved: applied.value.unresolved,
         reviewerActions: applied.value.reviewerActions,

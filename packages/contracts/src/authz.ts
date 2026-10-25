@@ -163,3 +163,32 @@ export const AuthzDecision = z.strictObject({
   reason: z.string().min(1),
 });
 export type AuthzDecision = z.infer<typeof AuthzDecision>;
+
+/**
+ * `GET /api/me` has no product rule (decision 0014, point 5). The API sends the session token;
+ * IAM verifies it and reads permissions from the named rule file. This is not an authorization
+ * decision and does not name an action.
+ */
+export const IdentityRequest = z.strictObject({
+  token: z.string().min(1),
+  rule: AuthzRuleRef,
+});
+export type IdentityRequest = z.infer<typeof IdentityRequest>;
+
+export const IdentityResult = z.discriminatedUnion("ok", [
+  z.strictObject({
+    ok: z.literal(true),
+    userId: z.string().min(1),
+    orgId: z.string().min(1),
+    /** Clerk's organization role (`org:finance_lead`), or null when Clerk sent none. */
+    clerkRole: z.string().nullable(),
+    permissions: z.array(PermissionV1),
+    /** Present so a grant can record the session IAM verified. Not returned by `GET /api/me`. */
+    sessionId: z.string().min(1),
+  }),
+  z.strictObject({
+    ok: z.literal(false),
+    error: z.enum(["unauthenticated", "no_active_organization", "unknown_rule"]),
+  }),
+]);
+export type IdentityResult = z.infer<typeof IdentityResult>;

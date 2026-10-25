@@ -67,7 +67,6 @@ async function registeredRoutes() {
       runs: fake<RunDeps>(),
       rehearse: fake<RehearseDeps>(),
       precedents: fake<PrecedentDeps>(),
-      reviewer: () => null,
       tenantTokens: fake<TenantTokenDeps>(),
       rehearsalTokens: fake<RehearsalTokenDeps>(),
     }),

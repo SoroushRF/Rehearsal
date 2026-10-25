@@ -70,6 +70,7 @@ export class PlanningLoopError extends Error {
       | "truncated"
       | "model_mismatch"
       | "empty_plan"
+      | "incomplete_plan"
       | "invalid_plan",
     message: string,
   ) {
@@ -202,6 +203,10 @@ function finish(
     adapters: opts.meta.adapters,
     precedentBasis: opts.meta.precedentBasis,
   });
+  const coverage = opts.session.coverage(opts.brief.customers.map((c) => c.customerId));
+  if (coverage.length > 0) {
+    throw new PlanningLoopError("incomplete_plan", JSON.stringify(coverage));
+  }
   if (manifest.actions.length === 0) {
     throw new PlanningLoopError("empty_plan", "the model finished without proposing any step");
   }
