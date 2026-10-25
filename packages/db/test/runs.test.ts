@@ -29,6 +29,15 @@ describe.skipIf(!process.env.DB_TESTS)("run commands: cancel and reaper (real Po
     await db.$client.end();
   });
 
+  /**
+   * Sweep only these runs and wait for the reaper lock: other files share this database and sweep
+   * too, and must neither reap these runs nor make a pass skip (#243).
+   */
+  const mine = (...runs: { id: string }[]) => ({
+    runIds: runs.map((r) => r.id),
+    waitForLock: true,
+  });
+
   async function run(state: string, updatedAt = new Date()) {
     const orgId = `org_${randomUUID()}`;
     const id = `run_${randomUUID()}`;
@@ -99,12 +108,14 @@ describe.skipIf(!process.env.DB_TESTS)("run commands: cancel and reaper (real Po
     });
     await isLocked;
     let done = false;
-    const sweep = reapStuckRuns(db, boss, { now: new Date(), staleAfterMs: 10 * 60_000 }).then(
-      (ids) => {
-        done = true;
-        return ids;
-      },
-    );
+    const sweep = reapStuckRuns(db, boss, {
+      now: new Date(),
+      staleAfterMs: 10 * 60_000,
+      ...mine(stuck),
+    }).then((ids) => {
+      done = true;
+      return ids;
+    });
     // The sweep must queue behind that writer instead of taking a seq that commits out of order.
     const deadline = Date.now() + 5_000;
     while (!done && !(await waitingOnRunLock(db, stuck.orgId, stuck.id)) && Date.now() < deadline) {
@@ -124,7 +135,8 @@ describe.skipIf(!process.env.DB_TESTS)("run commands: cancel and reaper (real Po
     const finished = await run("partial", old);
     const cancelled = await run("cancelled", old);
     const now = new Date();
-    const reaped = await reapStuckRuns(db, boss, { now, staleAfterMs: 10 * 60_000 });
+    const four = mine(stuck, fresh, finished, cancelled);
+    const reaped = await reapStuckRuns(db, boss, { now, staleAfterMs: 10 * 60_000, ...four });
     expect(reaped).toContain(stuck.id);
     for (const other of [fresh, finished, cancelled]) expect(reaped).not.toContain(other.id);
     expect(await jobsFor(stuck.id)).toBe(1);
@@ -133,6 +145,7 @@ describe.skipIf(!process.env.DB_TESTS)("run commands: cancel and reaper (real Po
     const again = await reapStuckRuns(db, boss, {
       now: new Date(now.getTime() + 60_000),
       staleAfterMs: 10 * 60_000,
+      ...four,
     });
     expect(again).not.toContain(stuck.id);
     expect(await jobsFor(stuck.id)).toBe(1);
@@ -162,7 +175,11 @@ describe.skipIf(!process.env.DB_TESTS)("run commands: cancel and reaper (real Po
       dispatchedAt: old,
     });
     const quiet = await run("cancelled", old);
-    const reaped = await reapStuckRuns(db, boss, { now: new Date(), staleAfterMs: 60_000 });
+    const reaped = await reapStuckRuns(db, boss, {
+      now: new Date(),
+      staleAfterMs: 60_000,
+      ...mine(withSend, quiet),
+    });
     expect(reaped).toContain(withSend.id);
     expect(reaped).not.toContain(quiet.id);
 
@@ -177,7 +194,9 @@ describe.skipIf(!process.env.DB_TESTS)("run commands: cancel and reaper (real Po
     for (let i = 1; i <= MAX_REAPS + 2; i++) {
       const later = new Date(Date.now() + i * 3_600_000);
       if (
-        (await reapStuckRuns(db, boss, { now: later, staleAfterMs: 60_000 })).includes(withSend.id)
+        (
+          await reapStuckRuns(db, boss, { now: later, staleAfterMs: 60_000, ...mine(withSend) })
+        ).includes(withSend.id)
       ) {
         reaps += 1;
       }
@@ -203,6 +222,7 @@ describe.skipIf(!process.env.DB_TESTS)("run commands: cancel and reaper (real Po
       const swept = await reapStuckRuns(db, boss, {
         now: later,
         staleAfterMs: 60_000,
+        ...mine(stuck),
         onHandOff: (ids) => handed.push(...ids.filter((id) => id === stuck.id)),
       });
       if (swept.includes(stuck.id)) {
@@ -251,6 +271,7 @@ describe.skipIf(!process.env.DB_TESTS)("run commands: cancel and reaper (real Po
       await reapStuckRuns(db, boss, {
         now: new Date(Date.now() + i * 3_600_000),
         staleAfterMs: 60_000,
+        ...mine(r),
       });
       await drain();
     }
@@ -262,6 +283,7 @@ describe.skipIf(!process.env.DB_TESTS)("run commands: cancel and reaper (real Po
     await reapStuckRuns(db, boss, {
       now: new Date(Date.now() + (MAX_REAPS + 2) * 3_600_000),
       staleAfterMs: 60_000,
+      ...mine(r),
     });
     const handOffs = await db.execute(
       sql`select 1 from run_events where run_id = ${r.id} and type = 'run.needs_operator'`,
@@ -273,7 +295,10 @@ describe.skipIf(!process.env.DB_TESTS)("run commands: cancel and reaper (real Po
     const stuck = await run("approved", new Date(Date.now() - 3_600_000));
     const now = new Date();
     const results = await Promise.all(
-      Array.from({ length: 4 }, () => reapStuckRuns(db, boss, { now, staleAfterMs: 60_000 })),
+      // No waitForLock here: this checks the production skip-if-busy behaviour.
+      Array.from({ length: 4 }, () =>
+        reapStuckRuns(db, boss, { now, staleAfterMs: 60_000, runIds: [stuck.id] }),
+      ),
     );
     expect(results.filter((r) => r.includes(stuck.id))).toHaveLength(1);
     expect(await jobsFor(stuck.id)).toBe(1);
