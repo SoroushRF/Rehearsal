@@ -44,6 +44,28 @@ export const PLAN_QUEUE_OPTIONS = {
   expireInSeconds: 900,
 } as const;
 
+export const PRECEDENT_QUEUE = "precedent-sync";
+
+/** Which approved precedent version to publish to Agent Memory. The worker loads the record itself. */
+export const PrecedentSyncJob = z.object({
+  orgId: z.string().min(1),
+  precedentId: z.string().min(1),
+  version: z.int().positive(),
+});
+export type PrecedentSyncJob = z.infer<typeof PrecedentSyncJob>;
+
+/**
+ * Publishing is idempotent (writing the stored version again sends nothing), so retry for a good
+ * while: an Agent Memory outage should delay activation, never lose the promotion.
+ */
+export const PRECEDENT_QUEUE_OPTIONS = {
+  retryLimit: 20,
+  retryDelay: 30,
+  retryBackoff: true,
+  retryDelayMax: 900,
+  expireInSeconds: 300,
+} as const;
+
 /** pg-boss keeps its tables in its own `pgboss` schema in the same database. */
 export async function startQueue(url = process.env.DATABASE_URL): Promise<PgBoss> {
   if (!url) throw new Error("DATABASE_URL is not set");
@@ -55,6 +77,8 @@ export async function startQueue(url = process.env.DATABASE_URL): Promise<PgBoss
   await boss.updateQueue(APPLY_QUEUE, APPLY_QUEUE_OPTIONS);
   await boss.createQueue(PLAN_QUEUE, PLAN_QUEUE_OPTIONS);
   await boss.updateQueue(PLAN_QUEUE, PLAN_QUEUE_OPTIONS);
+  await boss.createQueue(PRECEDENT_QUEUE, PRECEDENT_QUEUE_OPTIONS);
+  await boss.updateQueue(PRECEDENT_QUEUE, PRECEDENT_QUEUE_OPTIONS);
   return boss;
 }
 
@@ -68,4 +92,17 @@ export async function enqueueApply(boss: PgBoss, tx: DrizzleTx, job: ApplyJob): 
   const id = await boss.send(APPLY_QUEUE, ApplyJob.parse(job), { db: fromDrizzle(tx, sql) });
   // A suppressed send would leave a run with no job; fail the transaction instead.
   if (!id) throw new Error(`apply job for ${job.runId} was not enqueued`);
+}
+
+/** Enqueue inside the promotion's transaction: the `approved` event and its sync job commit together. */
+export async function enqueuePrecedentSync(
+  boss: PgBoss,
+  tx: DrizzleTx,
+  job: PrecedentSyncJob,
+): Promise<void> {
+  // A suppressed send means a job for this exact version is already queued, which is fine.
+  await boss.send(PRECEDENT_QUEUE, PrecedentSyncJob.parse(job), {
+    db: fromDrizzle(tx, sql),
+    singletonKey: `${job.orgId}:${job.precedentId}:${job.version}`,
+  });
 }
