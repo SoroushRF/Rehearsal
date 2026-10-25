@@ -117,9 +117,9 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T4.2** Injection scripts and demo:phantom / demo:conflict / demo:reset [#26](https://github.com/SoroushRF/Rehearsal/issues/26) | ✅ done |  | T1.6 (T1), T4.3, T4.11 |
 | **T4.3** Wire guards into executor admission [#27](https://github.com/SoroushRF/Rehearsal/issues/27) | ✅ done |  | T4.4 |
 | **T4.4** Conditional compensation on owned fields [#28](https://github.com/SoroushRF/Rehearsal/issues/28) | ✅ done |  | T4.11 |
-| **T4.5** ML smoke test: Qwen3.5-0.8B LoRA on 32 cases [#29](https://github.com/SoroushRF/Rehearsal/issues/29) | ✅ done |  | T4.6 |
-| **T4.6** ML pilot and go/no-go [#30](https://github.com/SoroushRF/Rehearsal/issues/30) | ✅ done |  | T4.7 |
-| **T4.7** Impact service behind ImpactPort (if ML go) [#31](https://github.com/SoroushRF/Rehearsal/issues/31) | ✅ done |  |  |
+| **T4.5** ML smoke test: Qwen3.5-0.8B LoRA on 32 cases _(stretch)_ [#29](https://github.com/SoroushRF/Rehearsal/issues/29) | ✅ done |  |  |
+| **T4.6** ML pilot and go/no-go _(stretch)_ [#30](https://github.com/SoroushRF/Rehearsal/issues/30) | ✅ done |  |  |
+| **T4.7** Impact service behind ImpactPort (if ML go) _(stretch)_ [#31](https://github.com/SoroushRF/Rehearsal/issues/31) | ✅ done |  |  |
 | **T4.10** Guard: one remedy per obligation across refunds and credits [#152](https://github.com/SoroushRF/Rehearsal/issues/152) | ✅ done |  | T1.14 (T1) |
 | **T4.11** Allowlisted rehearsal challenges and controls [#169](https://github.com/SoroushRF/Rehearsal/issues/169) | 🟥 blocked | T1.21 (T1, in review) | T3.16 (T3), T4.12 |
 | **T4.12** Independent verifier for observed rehearsal effects [#173](https://github.com/SoroushRF/Rehearsal/issues/173) | 🟥 blocked | T3.15 (T3, blocked)<br>T4.11 (T4, blocked) | T2.21 (T2), T4.13 |
@@ -208,9 +208,6 @@ flowchart LR
     T4_2["T4.2 Injection scripts and demo:phantom / demo:c"]:::done
     T4_3["T4.3 Wire guards into executor admission"]:::done
     T4_4["T4.4 Conditional compensation on owned fields"]:::done
-    T4_5["T4.5 ML smoke test: Qwen3.5-0.8B LoRA on 32 case"]:::done
-    T4_6["T4.6 ML pilot and go/no-go"]:::done
-    T4_7["T4.7 Impact service behind ImpactPort (if ML go)"]:::done
     T4_10["T4.10 Guard: one remedy per obligation across re"]:::done
     T4_11["T4.11 Allowlisted rehearsal challenges and contr"]:::blocked
     T4_12["T4.12 Independent verifier for observed rehearsa"]:::blocked
@@ -315,8 +312,6 @@ flowchart LR
   T1_9 --> T4_3
   T4_3 --> T4_4
   T3_3 --> T4_4
-  T4_5 --> T4_6
-  T4_6 --> T4_7
   T1_19 --> T4_10
   T1_21 --> T4_11
   T4_2 --> T4_11
