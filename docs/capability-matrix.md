@@ -148,3 +148,9 @@ A public comment keeps its `body` exactly: newlines, double spaces and non-ASCII
 - A comment sent with `html_body` alone is appended with an empty `body`.
 
 So the marker is appended to the plain `body`, after the approved text, the same way as private notes. The customer can see it. The approved text itself (`args.body`) can't contain `[rehearsal-op:`, so a forged marker can't confuse reconciliation.
+
+### 16. A token from another container isn't rejected; it reads that container's `default` tenant
+
+A tenant JWT minted by one container (say `stripe-rehearsal`, for `rh-…`) and sent to another (`stripe-operational`) gets `200`. The request is served as the receiving container's `default` tenant, like an unsigned header (surprise 1); it is not refused. Admin tokens are separate: each container set refuses the other's admin token on `/token` and `/_admin` with `403`. Within one container a signed token reaches only its own tenant.
+
+So a tenant string or token can't keep a misrouted request out of a shared world. The URL has to be right. The operator's rehearsal route resolves the rehearsal URL itself and refuses one that equals a planning or operational URL (loopback spellings folded). It returns the tenant and URL it minted for, and the rehearsal worker refuses a token minted for a tenant or container other than its own (`resolveRehearsalWorld`, `rehearsalWorkerWorlds`, T1.23). Checked 2026-10-24 on the pinned images, `rehearsal-credentials.test.ts`.
