@@ -69,7 +69,10 @@ function plan(observations: Observation[], queryObservations: QueryObservation[]
         copy.args.chargeId = charge.entity.id;
         copy.evidence = [charge.id];
         copy.queryEvidence = [query.id];
-      } else {
+      } else if (
+        copy.kind === "zendesk.ticket.patchFields" ||
+        copy.kind === "zendesk.ticket.appendPrivateNote"
+      ) {
         copy.args.ticketId = ticket.entity.id;
         copy.evidence = [ticket.id];
         copy.queryEvidence = [];
