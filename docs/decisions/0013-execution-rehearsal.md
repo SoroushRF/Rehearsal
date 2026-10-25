@@ -72,7 +72,8 @@ Staleness is computed when the report is read, not stored, so nothing is edited 
   | rehearsal worker | rehearsal tokens for one tenant at a time (via `REHEARSAL_WORKER_SECRET`) | model keys, both admin tokens, planning and operational URLs, other workers' secrets |
   | API (operator) | `ERA_ADMIN_TOKEN`, `REHEARSAL_ERA_ADMIN_TOKEN` | — |
 
-  The executor and planner get `REHEARSAL_*` added to their forbidden lists. The mint route gives the rehearsal secret only rehearsal-world tokens, and only for a tenant of a rehearsal that is currently provisioned. The worker names the rehearsal; the server derives the tenant.
+  The executor and planner add the rehearsal credentials to their forbidden lists by name (`REHEARSAL_ERA_ADMIN_TOKEN`, `REHEARSAL_WORKER_SECRET`, `ERA_*_REHEARSAL_URL`), not by a `REHEARSAL_` prefix, because `REHEARSAL_API_URL` is every worker's way to the API. The mint route gives the rehearsal secret only rehearsal-world tokens, and only for a tenant of a rehearsal that is currently provisioned. The worker names the rehearsal; the server derives the tenant.
+- **Isolation actually achieved (T1.23).** All containers still listen on the same host, so this is credential and routing isolation, not network isolation. The rehearsal containers refuse the operational admin token and the reverse. But Era serves a token from another container as that container's `default` tenant instead of rejecting it ([surprise 16](../capability-matrix.md)). So the operator route checks that the rehearsal URL isn't a shared one, and the worker refuses a token minted for any other tenant or URL. A worker given an operational URL by mistake fails before sending anything.
 - **Admin provisioning stays operator code.** Seeding, reset, faults and teardown use `/_admin` routes with the rehearsal admin token only. They live in an operator module under `scripts/` (with tests), called by the API's operator side, the process that already holds the admin token (decision [0002](0002-era-tenant-token-minting.md)). No worker and no planner code calls `/_admin`.
 - **What isn't claimed.** The boundary is credentials and startup checks, not the network. Locally every container listens on 127.0.0.1, and a tokenless request lands in tenant `default`. So a rehearsal worker given an operational URL by mistake could reach the operational container's `default` tenant. The startup check prevents that, but no network rule does.
   - In a deploy, the rehearsal worker should be on a network that can't reach planning or operational containers. That is a recommendation, untested.
@@ -85,7 +86,7 @@ The snapshot is the **plan's own evidence**: the observations and query projecti
 
 A snapshot is supported only when both of these hold:
 
-- every entity a step reads or writes has an observation with a projection version the seeder knows (`stripe.charge.v1`, `zendesk.ticket.v1`, and the customer balance once T1.14 lands);
+- every entity a step reads or writes has an observation with a projection version the seeder knows (`stripe.charge.v2`, `zendesk.ticket.v2`, and the customer balance once T1.14 lands). The `v1` projections leave out `created`, `invoice` and `external_id`, so a plan citing them is refused;
 - every query the plan cites is complete.
 
 Anything else is refused before provisioning, with the reason, and never partially seeded. The cases refused include:
@@ -95,6 +96,13 @@ Anything else is refused before provisioning, with the reason, and never partial
 - a projection that leaves out a field the simulator needs.
 
 Fields outside the projection take the seeder's fixture defaults. The report lists them as "not from evidence".
+
+The seeder ([`scripts/seed/snapshot.ts`](../../scripts/seed/snapshot.ts), T1.22) reads the tenant back before anything runs. It uses raw reads and the projection functions, not the executor's readers, and compares every observation and every cited query's membership and projections. A mismatch refuses the run. Simulator fidelity limits:
+
+- a prior refund is seeded as `amount_refunded` only; its refund objects aren't in evidence;
+- a ticket gets one public comment, not its real thread (the projection leaves comments out);
+- every tenant starts from Era's seeded baseline, so records the plan never read come from it. The read-back fails if one of them lands in a cited query.
+- a cited record the baseline already has (a requester's older tickets) is kept, not injected again, because Era's `/inject` doesn't dedupe by ID. The read-back checks its projection like any other.
 
 ### 5. Lifecycle and unknown outcomes
 

@@ -29,6 +29,9 @@ export type HarnessVendor = EraVendor | "slack";
 /** The Slack worlds only run with `pnpm infra:up:full`; their suites also need ERA_SLACK=1. */
 export const SLACK_ENABLED = ENABLED && process.env.ERA_SLACK === "1";
 
+/** The execution-rehearsal worlds only run with `pnpm infra:up:rehearsal`; their suites also need ERA_REHEARSAL=1. */
+export const REHEARSAL_ENABLED = ENABLED && process.env.ERA_REHEARSAL === "1";
+
 /** Seeded records (seed 42, day1, 2026-10-01). Suites assert their preconditions first. */
 export const SEED = {
   /** Succeeded USD charge, no refunds, not disputed. */

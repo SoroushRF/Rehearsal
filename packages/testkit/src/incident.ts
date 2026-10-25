@@ -140,9 +140,19 @@ function ticket(template: Record<string, unknown>, c: SeededCase): Record<string
   };
 }
 
+/** Fresh copies of the verbatim inject templates in scenarios/billing/fixtures. */
+export function fixtureTemplates(): {
+  charge: Record<string, unknown>;
+  ticket: Record<string, unknown>;
+} {
+  return {
+    charge: readJson("fixtures/stripe.charge.json"),
+    ticket: readJson("fixtures/zendesk.ticket.json").ticket,
+  };
+}
+
 export function incidentRecords(spec: IncidentSpec = INCIDENT): IncidentRecords {
-  const chargeTemplate = readJson("fixtures/stripe.charge.json");
-  const ticketTemplate = readJson("fixtures/zendesk.ticket.json").ticket;
+  const { charge: chargeTemplate, ticket: ticketTemplate } = fixtureTemplates();
   const cases = spec.cases.map(seeded);
   return {
     cases,
