@@ -69,6 +69,12 @@ See [beyond.md](../beyond.md) for scope, parallel work, external gates and the r
 
 ## Decisions
 
+### Benchmark fixes (Oct 25)
+
+| ID | Task | Milestone | Done when | Issue | Blocked by |
+|---|---|---|---|---|---|
+| T4.27 | Note and reply guards check only the ticket fields they use (benchmark owner: @SoroushRF) | M5 | Appends ignore priority-only drift while retaining identity, ownership, status and refund dependency checks; patches retain the full check. Guard/executor tests pass; Era scorecard and cross-track review pending | [#273](https://github.com/SoroushRF/Rehearsal/issues/273) | — |
+
 - **2026-10-24.** Authorization is permissions, decided by a separate IAM service and enforced by the API and the executor ([0014](../decisions/0014-iam-permission-based-authorization.md), proposed).
 - **2026-10-21.** A missing, incomplete, or mismatched re-check holds the step as `evidence_unavailable`. It is never treated as proof that the approved rows and query membership are unchanged.
 

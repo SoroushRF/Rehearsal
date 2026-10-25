@@ -195,7 +195,7 @@ describe("read guard in the executor", () => {
     expect(result.state).toBe("partial");
   });
 
-  it("holds a ticket step when a teammate changed a planned field before apply", async () => {
+  it("holds the priority patch but records the refund after a teammate's priority edit", async () => {
     const s = setup(happyPathBundle());
     const ticket = s.world.tickets.get("5532");
     if (ticket) ticket.priority = "urgent";
@@ -204,7 +204,7 @@ describe("read guard in the executor", () => {
     expect(outcomes(result.receipts)).toMatchObject({
       refund_002: "confirmed",
       patch_002: "held",
-      note_002: "held",
+      note_002: "confirmed",
     });
     expect(result.receipts.find((r) => r.actionId === "patch_002")?.holdReason).toEqual({
       kind: "row_changed",
