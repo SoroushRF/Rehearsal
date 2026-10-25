@@ -6,16 +6,16 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 
 ## Top blockers
 
-69 of 94 tasks done. These open tasks hold up the most other work:
+70 of 94 tasks done. These open tasks hold up the most other work:
 
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
 | **T4.11** Allowlisted rehearsal challenges and controls [#169](https://github.com/SoroushRF/Rehearsal/issues/169) | @skhdemo | 🟨 ready | 6 |
 | **T2.19** API: request and read an execution rehearsal [#171](https://github.com/SoroushRF/Rehearsal/issues/171) | @parsaabbasian | 🟨 ready | 5 |
-| **T4.20** API as the enforcement point: every route asks IAM with facts from stored rows [#225](https://github.com/SoroushRF/Rehearsal/issues/225) | @skhdemo | 🟨 ready | 5 |
 | **T2.17** Precedent promotion: finance-only route and UI [#147](https://github.com/SoroushRF/Rehearsal/issues/147) | @parsaabbasian | 👀 in review | 4 |
 | **T4.12** Independent verifier for observed rehearsal effects [#173](https://github.com/SoroushRF/Rehearsal/issues/173) | @skhdemo | 🟥 blocked | 4 |
 | **T2.20** Review UI: start a rehearsal and follow its progress [#172](https://github.com/SoroushRF/Rehearsal/issues/172) | @parsaabbasian | 👀 in review | 3 |
+| **T2.21** Review UI: compare expected and observed rehearsal outcomes [#174](https://github.com/SoroushRF/Rehearsal/issues/174) | @parsaabbasian | 👀 in review | 3 |
 
 ## T1 Rehearse
 
@@ -127,13 +127,13 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T4.17** Rule file v1 (`rehearsal-authz@1`): role → permission table, every route and `run:admit` [#222](https://github.com/SoroushRF/Rehearsal/issues/222) | ✅ done |  | T4.19 |
 | **T4.18** Pure PDP engine: permission RBAC, ABAC checks, deny by default [#223](https://github.com/SoroushRF/Rehearsal/issues/223) | ✅ done |  | T4.19 |
 | **T4.19** IAM service: verify Clerk session, map role to permissions, evaluate rules, fail closed [#224](https://github.com/SoroushRF/Rehearsal/issues/224) | ✅ done |  | T4.20, T4.22 |
-| **T4.20** API as the enforcement point: every route asks IAM with facts from stored rows [#225](https://github.com/SoroushRF/Rehearsal/issues/225) | 🟨 ready | — | T4.21, T4.23, T4.24, T4.26 |
-| **T4.21** Approvals store permissions and rule version; two-person rule judged on permissions [#226](https://github.com/SoroushRF/Rehearsal/issues/226) | 🟥 blocked | T4.20 (T4, ready) | T4.22, T4.26 |
-| **T4.22** Executor admission as enforcement point: `run:admit` through IAM, fail closed [#227](https://github.com/SoroushRF/Rehearsal/issues/227) | 🟥 blocked | T4.21 (T4, blocked) | T4.26 |
-| **T4.23** Invites and role changes through our API [#228](https://github.com/SoroushRF/Rehearsal/issues/228) | 🟥 blocked | T4.20 (T4, ready) | T4.24, T4.26 |
-| **T4.24** Web: verified permissions, actions shown by permission, invite UI [#229](https://github.com/SoroushRF/Rehearsal/issues/229) | 🟥 blocked | T4.20 (T4, ready)<br>T4.23 (T4, blocked) | T4.26 |
+| **T4.20** API as the enforcement point: every route asks IAM with facts from stored rows [#225](https://github.com/SoroushRF/Rehearsal/issues/225) | ✅ done |  | T4.21, T4.23, T4.24, T4.26 |
+| **T4.21** Approvals store permissions and rule version; two-person rule judged on permissions [#226](https://github.com/SoroushRF/Rehearsal/issues/226) | 🟨 ready | — | T4.22, T4.26 |
+| **T4.22** Executor admission as enforcement point: `run:admit` through IAM, fail closed [#227](https://github.com/SoroushRF/Rehearsal/issues/227) | 🟥 blocked | T4.21 (T4, ready) | T4.26 |
+| **T4.23** Invites and role changes through our API [#228](https://github.com/SoroushRF/Rehearsal/issues/228) | 🟨 ready | — | T4.24, T4.26 |
+| **T4.24** Web: verified permissions, actions shown by permission, invite UI [#229](https://github.com/SoroushRF/Rehearsal/issues/229) | 🟥 blocked | T4.23 (T4, ready) | T4.26 |
 | **T4.25** Clerk configuration and demo organization [#230](https://github.com/SoroushRF/Rehearsal/issues/230) | 🟨 ready | — | T4.26 |
-| **T4.26** End-to-end authorization acceptance on a real Clerk session [#231](https://github.com/SoroushRF/Rehearsal/issues/231) | 🟥 blocked | T4.20 (T4, ready)<br>T4.21 (T4, blocked)<br>T4.22 (T4, blocked)<br>T4.23 (T4, blocked)<br>T4.24 (T4, blocked)<br>T4.25 (T4, ready) |  |
+| **T4.26** End-to-end authorization acceptance on a real Clerk session [#231](https://github.com/SoroushRF/Rehearsal/issues/231) | 🟥 blocked | T4.21 (T4, ready)<br>T4.22 (T4, blocked)<br>T4.23 (T4, ready)<br>T4.24 (T4, blocked)<br>T4.25 (T4, ready) |  |
 | **T4.11** Allowlisted rehearsal challenges and controls [#169](https://github.com/SoroushRF/Rehearsal/issues/169) | 🟨 ready | — | T3.16 (T3), T4.12 |
 | **T4.12** Independent verifier for observed rehearsal effects [#173](https://github.com/SoroushRF/Rehearsal/issues/173) | 🟥 blocked | T4.11 (T4, ready) | T2.21 (T2), T4.13 |
 | **T4.13** Integrated isolation and recovery acceptance gate [#175](https://github.com/SoroushRF/Rehearsal/issues/175) | 🟥 blocked | T3.16 (T3, in review)<br>T2.20 (T2, in review)<br>T2.21 (T2, in review)<br>T4.12 (T4, blocked)<br>T2.17 (T2, in review) | T1.28 (T1) |
@@ -227,10 +227,10 @@ flowchart LR
     T4_17["T4.17 Rule file v1 (`rehearsal-authz@1`): role →"]:::done
     T4_18["T4.18 Pure PDP engine: permission RBAC, ABAC che"]:::done
     T4_19["T4.19 IAM service: verify Clerk session, map rol"]:::done
-    T4_20["T4.20 API as the enforcement point: every route "]:::ready
-    T4_21["T4.21 Approvals store permissions and rule versi"]:::blocked
+    T4_20["T4.20 API as the enforcement point: every route "]:::done
+    T4_21["T4.21 Approvals store permissions and rule versi"]:::ready
     T4_22["T4.22 Executor admission as enforcement point: `"]:::blocked
-    T4_23["T4.23 Invites and role changes through our API"]:::blocked
+    T4_23["T4.23 Invites and role changes through our API"]:::ready
     T4_24["T4.24 Web: verified permissions, actions shown b"]:::blocked
     T4_25["T4.25 Clerk configuration and demo organization"]:::ready
     T4_26["T4.26 End-to-end authorization acceptance on a r"]:::blocked
