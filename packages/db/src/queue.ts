@@ -66,6 +66,19 @@ export const PRECEDENT_QUEUE_OPTIONS = {
   expireInSeconds: 300,
 } as const;
 
+/**
+ * Execution rehearsals (T3.13). Their own queue, never `apply`: a rehearsal job can't be consumed
+ * by the operational executor. One job per rehearsal; retries resume the same rehearsal's lifecycle.
+ */
+export const REHEARSAL_QUEUE = "rehearsal";
+export const REHEARSAL_QUEUE_OPTIONS = {
+  retryLimit: 5,
+  retryDelay: 15,
+  retryBackoff: true,
+  retryDelayMax: 300,
+  expireInSeconds: 900,
+} as const;
+
 /** pg-boss keeps its tables in its own `pgboss` schema in the same database. */
 export async function startQueue(url = process.env.DATABASE_URL): Promise<PgBoss> {
   if (!url) throw new Error("DATABASE_URL is not set");
@@ -79,6 +92,8 @@ export async function startQueue(url = process.env.DATABASE_URL): Promise<PgBoss
   await boss.updateQueue(PLAN_QUEUE, PLAN_QUEUE_OPTIONS);
   await boss.createQueue(PRECEDENT_QUEUE, PRECEDENT_QUEUE_OPTIONS);
   await boss.updateQueue(PRECEDENT_QUEUE, PRECEDENT_QUEUE_OPTIONS);
+  await boss.createQueue(REHEARSAL_QUEUE, REHEARSAL_QUEUE_OPTIONS);
+  await boss.updateQueue(REHEARSAL_QUEUE, REHEARSAL_QUEUE_OPTIONS);
   return boss;
 }
 
