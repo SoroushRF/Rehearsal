@@ -1,0 +1,24 @@
+{
+  "task": "T3.18",
+  "evidence": "native_stripe_test",
+  "commit": "06b961ac7251c1f884b2c246ebf3089cb88d23ee",
+  "apiVersion": "2024-06-20",
+  "ranAt": "2026-10-25T16:19:42.599Z",
+  "rehearsalId": "t318bmvo19nwq",
+  "charge": "ch_3UU…bE8G",
+  "refunds": [
+    {
+      "id": "re_3UU…dmBK",
+      "status": "succeeded",
+      "amount": 4210,
+      "currency": "cad"
+    }
+  ],
+  "attemptsJournaled": 1,
+  "limits": [
+    "test mode only; no live account or real money",
+    "the response loss is injected by the test transport after Stripe committed the refund",
+    "runs through rehearsal admission: the native sandbox is never an operational world (decision 0013, §7)",
+    "Zendesk is the in-memory stand-in; only Stripe is native"
+  ]
+}
