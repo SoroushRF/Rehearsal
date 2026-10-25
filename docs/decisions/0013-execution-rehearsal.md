@@ -113,7 +113,7 @@ queued → provisioning → running → verifying → completed | failed | cance
 
 All of it is additive and off by default:
 
-- `World` gains `"rehearsal"` (T1.21, contracts);
+- a `"rehearsal"` world in contracts (T1.21). It is its own literal, `RehearsalWorld`, not a third value of `World`: widening `World` would let a plan manifest's evidence or an operational receipt name a rehearsal world;
 - new tables and a new queue;
 - the `rehearsal` compose profile.
 
@@ -127,13 +127,13 @@ A real Stripe account is allowed only as a narrow test-mode target:
 - The key lives in a gitignored `.env.stripe-sandbox`. Only the conformance harness and, later, the rehearsal worker read it. Never the planner, never the operational executor, never a model.
 - It is never an operational world, and it never stands in for one.
 - A run creates its own charges (test payment methods, a run-specific metadata prefix) and refunds only those. Test-mode refunds can't be undone either, so cleanup means leaving them labelled, not deleting them.
-- Evidence from it is labelled `native-stripe-test`, apart from `era_integration` and `fixture`, and states its fidelity limits.
+- Evidence from it is labelled `native_stripe_test`, apart from `era_integration` and `fixture`, and states its fidelity limits.
 
 ## Consequences
 
 - One more container set and one more worker process to run. The demo stack without the `rehearsal` profile is unchanged.
 - A rehearsal with challenges has its container set to itself, from injection to confirmed cleanup, which bounds throughput. That's acceptable for a review step. A set whose cleanup failed stays marked dirty and out of use until an operator clears it. The mark is one small table beside T3.13's.
-- T1.21 adds the contracts: `World` `"rehearsal"`, rehearsal job, scenario reference and report.
+- T1.21 adds the contracts: the `"rehearsal"` world literal, rehearsal request, job, scenario reference, state events, step results and report, plus the tenant, operation-key, snapshot and staleness helpers in `core`.
 - T1.23 adds the third worker's credentials and routing checks.
 - T3.13 and T3.14 build the tables and `admitRehearsal` beside `admit`, without changing it.
 - The isolation claims stay "designed, not tested" until T4.13 passes.
