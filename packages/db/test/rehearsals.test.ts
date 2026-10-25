@@ -395,7 +395,7 @@ describe.skipIf(!process.env.DB_TESTS)("execution rehearsal storage (T3.13, real
         throw new Error("crash after enqueue (injected)");
       },
     } as unknown as PgBoss;
-    const fixed = "abcdef0123456789";
+    const fixed = newId(); // fresh per run: the shared queue keeps old jobs
     await expect(
       requestRehearsal(db, failingAfterSend, {
         orgId: p.orgId,
