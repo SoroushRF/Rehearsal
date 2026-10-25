@@ -32,7 +32,10 @@ if (!iam || (await iam.identify("deployment-smoke-invalid-token")).kind !== "una
 console.log("ok IAM mTLS and unauthenticated refusal");
 const origin = `https://${env.RENDER_EXTERNAL_HOSTNAME}`;
 for (const path of ["/", "/app", "/api/health", "/replays/phantom.json"]) {
-  const response = await fetch(`${origin}${path}`, { signal: AbortSignal.timeout(30_000) });
+  const response = await fetch(`${origin}${path}`, {
+    headers: { accept: path === "/" || path === "/app" ? "text/html" : "application/json" },
+    signal: AbortSignal.timeout(30_000),
+  });
   if (!response.ok) throw new Error(`${path}: ${response.status}`);
   if (path.endsWith(".json")) await response.json();
   console.log(`ok public ${path}`);
