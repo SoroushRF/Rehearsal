@@ -21,6 +21,7 @@ import { explainPrecedentHold, PrecedentCheck } from "../precedent-holds";
 import { RunView } from "../runs";
 import { Segmented } from "./AppShell";
 import { AuditPanel } from "./AuditPanel";
+import { ExecutionRehearsalPanel } from "./ExecutionRehearsalPanel";
 import { PlanReview } from "./PlanReview";
 import { PrecedentPanel } from "./PrecedentPanel";
 import { RehearseBar } from "./Rehearse";
@@ -184,6 +185,12 @@ function LivePlan({ apiFetch, planId }: { apiFetch: ApiFetch; planId: string }) 
             onRunStarted={setShownRun}
           />
         }
+      />
+
+      <ExecutionRehearsalPanel
+        apiFetch={apiFetch}
+        plan={{ planId, revision: plan.data.revision, planHash }}
+        editing={unchecked.size > 0}
       />
 
       <RunSection apiFetch={apiFetch} planId={planId} shownRun={shownRun} onShow={setShownRun} />
