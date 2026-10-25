@@ -6,7 +6,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 
 ## Top blockers
 
-75 of 96 tasks done. These open tasks hold up the most other work:
+76 of 97 tasks done. These open tasks hold up the most other work:
 
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
@@ -84,6 +84,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T2.22** Operator task tests and findings [#177](https://github.com/SoroushRF/Rehearsal/issues/177) | 🟥 blocked | T2.5 (T2, ready) |  |
 | **T2.23** Server-side fresh verification bound to the plan _(stretch)_ [#182](https://github.com/SoroushRF/Rehearsal/issues/182) | 🟨 ready | — | T2.24 |
 | **T2.24** Clerk verification UI _(stretch)_ [#183](https://github.com/SoroushRF/Rehearsal/issues/183) | 🟥 blocked | T2.23 (T2, ready) |  |
+| **T2.25** Distinctive startup demo design for landing and review workspace [#244](https://github.com/SoroushRF/Rehearsal/issues/244) | ✅ done |  |  |
 
 ## T3 Apply
 
@@ -201,6 +202,7 @@ flowchart LR
     T2_20["T2.20 Review UI: start a rehearsal and follow it"]:::blocked
     T2_21["T2.21 Review UI: compare expected and observed r"]:::blocked
     T2_22["T2.22 Operator task tests and findings"]:::blocked
+    T2_25["T2.25 Distinctive startup demo design for landin"]:::done
   end
   subgraph T3[T3 Apply]
     T3_1["T3.1 Drizzle migrations, Postgres journal, pg-bo"]:::done
