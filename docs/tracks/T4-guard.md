@@ -74,6 +74,7 @@ See [beyond.md](../beyond.md) for scope, parallel work, external gates and the r
 
 ## Handoff log
 
+- **2026-10-25 (skhdemo).** T4.19 in progress on `t4/T4.19-iam-service`: IAM listens over mTLS, loads `scenarios/authz/`, and the API and executor refuse to boot without a client certificate. The planner is refused if it has one. Not pushed.
 - **2026-10-25 (skhdemo).** Precedent permissions added to contracts and decision 0014; rule file (T4.17) and engine (T4.18) pick them up.
 - **2026-10-24 (skhdemo).** Decision 0014 is proposed on `t4/T4.15-iam-decision`; no code yet. Next is T4.16.
 - **2026-10-24 (Codex, backlog planning):** Filed 4 owned M5 issues (T4.11 #169, T4.12 #173, T4.13 #175, T4.14 #179) with scope/track labels, acceptance criteria and linked blockers. Added the cross-track dependency map in [beyond.md](../beyond.md); native GitHub dependencies mirror these rows. No feature implementation or live validation is claimed. Next: finish the full prerequisites, then follow the graph; optional killer work stays off the main release path.

@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@rehearsal/contracts": "workspace:*",
+    "@rehearsal/iam": "workspace:*",
     "@rehearsal/core": "workspace:*",
     "@rehearsal/providers": "workspace:*",
     "@rehearsal/db": "workspace:*"
