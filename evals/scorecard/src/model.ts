@@ -1,5 +1,5 @@
 import type { PlanManifest } from "@rehearsal/contracts";
-import type { BillingPolicyV1, WorldContext } from "@rehearsal/core";
+import type { BillingPolicy, WorldContext } from "@rehearsal/core";
 import {
   incidentBrief,
   type MessagesClient,
@@ -7,12 +7,13 @@ import {
   PlanningLoopError,
   type PlanningReader,
   PlanningSession,
+  type PlanningSessionOptions,
   PROMPT_VERSION,
   runPlanningLoop,
   type ToolResult,
 } from "@rehearsal/planner";
 import { INCIDENT, type SeededCase } from "@rehearsal/testkit";
-import type { AgentResult, DecidedIntent, Intent } from "./agent";
+import { type AgentResult, type DecidedIntent, type Intent, stepIdOf } from "./agent";
 import type { Priority, ScorecardTask } from "./tasks";
 
 /**
@@ -77,6 +78,9 @@ export class RecordingSession extends PlanningSession {
   readonly #readers: { stripe: PlanningReader; zendesk: PlanningReader };
   readonly #ctx: WorldContext;
   readonly #caseOf: (customerId: string) => string;
+  readonly #customerOf: (caseKey: string) => string | undefined;
+  readonly #names: PlanningSessionOptions["customerNames"];
+  readonly #summary: PlanningSessionOptions["runSummary"];
 
   constructor(
     opts: ConstructorParameters<typeof PlanningSession>[0],
@@ -88,6 +92,10 @@ export class RecordingSession extends PlanningSession {
     const keys = new Map(cases.map((c) => [c.customerId, c.key]));
     // A customer outside the cohort keeps its own ID; it isn't scored, but direct mode sends it.
     this.#caseOf = (customerId) => keys.get(customerId) ?? customerId;
+    const customers = new Map(cases.map((c) => [c.key, c.customerId]));
+    this.#customerOf = (caseKey) => customers.get(caseKey) ?? caseKey;
+    this.#names = opts.customerNames;
+    this.#summary = opts.runSummary;
   }
 
   override async call(name: string, input: unknown): Promise<ToolResult> {
@@ -131,28 +139,51 @@ export class RecordingSession extends PlanningSession {
           before: { priority: ticket.priority, status: ticket.status },
         };
       }
-      case "propose_refund_note": {
-        const i = input as Extract<Intent, { tool: "propose_refund_note" }>["input"];
-        // The refund it confirms, as the model asked for it. Without one, direct mode skips it.
+      case "propose_balance_credit": {
+        const i = input as Extract<Intent, { tool: "propose_balance_credit" }>["input"];
+        const charge = await this.#charge(i.chargeId);
+        return {
+          caseKey: this.#caseOf(charge.customer),
+          tool: "propose_balance_credit",
+          input: i,
+          customerId: charge.customer,
+          amountMinor: charge.amount,
+          currency: charge.currency,
+        };
+      }
+      case "propose_refund_note":
+      case "propose_customer_reply": {
+        const i = input as { refundStepId: string; ticketId: string };
+        // The refund it follows, as the model asked for it. Without one, direct mode skips it.
         const refund = this.decided.find(
           (d) =>
-            d.intent.tool === "propose_duplicate_refund" &&
-            refundStepId(d.intent) === i.refundStepId,
+            d.intent.tool === "propose_duplicate_refund" && stepIdOf(d.intent) === i.refundStepId,
         )?.intent;
-        if (refund?.tool === "propose_duplicate_refund") {
-          return {
-            caseKey: refund.caseKey,
-            tool: "propose_refund_note",
-            input: i,
-            amountMinor: refund.amountMinor,
-          };
-        }
         const ticket = await this.#ticket(i.ticketId);
+        const caseKey =
+          refund?.caseKey ?? this.#caseOf(ticket.externalId ?? `ticket_${i.ticketId}`);
+        const amountMinor = refund?.tool === "propose_duplicate_refund" ? refund.amountMinor : 0;
+        if (name === "propose_refund_note") {
+          return { caseKey, tool: "propose_refund_note", input: i, amountMinor };
+        }
+        const customer = refund ? this.#customerOf(refund.caseKey) : undefined;
         return {
-          caseKey: this.#caseOf(ticket.externalId ?? `ticket_${i.ticketId}`),
-          tool: "propose_refund_note",
+          caseKey,
+          tool: "propose_customer_reply",
           input: i,
-          amountMinor: 0,
+          customerName: (customer && this.#names?.[customer]) || "customer",
+          amountMinor,
+        };
+      }
+      case "propose_run_summary": {
+        const target = this.#summary;
+        if (!target) throw new Error("no run summary channel is configured");
+        return {
+          caseKey: "run",
+          tool: "propose_run_summary",
+          input: {},
+          channelId: target.channelId,
+          incidentId: target.incidentId,
         };
       }
       default:
@@ -181,10 +212,6 @@ export class RecordingSession extends PlanningSession {
       externalId: typeof p.external_id === "string" ? p.external_id : null,
     };
   }
-}
-
-function refundStepId(intent: Intent): string | undefined {
-  return intent.tool === "propose_duplicate_refund" ? `refund_${intent.input.chargeId}` : undefined;
 }
 
 /** The incident brief limited to the task's scope: the model is asked about those customers only. */
@@ -225,7 +252,9 @@ export interface ModelAgentOptions {
   model: string;
   readers: { stripe: PlanningReader; zendesk: PlanningReader };
   ctx: WorldContext;
-  policy: BillingPolicyV1;
+  policy: BillingPolicy;
+  /** The task's ops, turned on for the session as the server would (T1.27). */
+  ops?: Pick<PlanningSessionOptions, "credits" | "customerNames" | "runSummary">;
   meta: { orgId: string; incidentId: string; planId: string; adapters: Record<string, string> };
   timeoutMs?: number;
   limits?: Parameters<typeof runPlanningLoop>[0]["limits"];
@@ -245,7 +274,13 @@ export async function runModelAgent(
 ): Promise<ModelAgentResult> {
   const brief = scopedBrief(task, cases);
   const session = new RecordingSession(
-    { readers: opts.readers, ctx: opts.ctx, policy: opts.policy, window: brief.window },
+    {
+      readers: opts.readers,
+      ctx: opts.ctx,
+      policy: opts.policy,
+      window: brief.window,
+      ...opts.ops,
+    },
     cases,
   );
   const { client, meter } = meteredClient(opts.client);
