@@ -7,6 +7,8 @@ import {
   AuthzDecision as AuthzDecisionSchema,
   type AuthzRequest,
   IdentityResult as IdentityResultSchema,
+  type MembershipResult,
+  MembershipResult as MembershipResultSchema,
   type PermissionV1,
   type PlanManifest,
   type Role,
@@ -36,6 +38,15 @@ export type IdentityAnswer =
   | { kind: "unauthenticated" }
   | { kind: "unavailable" };
 
+/** A Clerk write the route asks IAM to perform. The organization is not included. */
+export type MembershipWrite =
+  | { kind: "invite"; token: string; email: string; role: string }
+  | { kind: "set_role"; token: string; userId: string; role: string };
+
+export type MembershipAnswer =
+  | { kind: "result"; result: MembershipResult }
+  | { kind: "unavailable" };
+
 /**
  * The only way a route talks to IAM. Production uses mTLS (`createIamClient`); tests pass a fake.
  * A missing, timed-out, malformed, or mismatched answer is `unavailable` — the caller writes nothing.
@@ -43,6 +54,8 @@ export type IdentityAnswer =
 export interface IamClient {
   decide(request: AuthzRequest): Promise<IamAnswer>;
   identify(token: string): Promise<IdentityAnswer>;
+  /** Asks IAM to call Clerk. IAM verifies `token` again and writes only in that organization. */
+  membership(command: MembershipWrite): Promise<MembershipAnswer>;
 }
 
 export type Gate =
@@ -284,6 +297,17 @@ export function createIamClient(options: IamClientOptions): IamClient {
             sessionId: parsed.data.sessionId,
           },
         };
+      } catch {
+        return { kind: "unavailable" };
+      }
+    },
+    async membership(command) {
+      try {
+        const parsed = MembershipResultSchema.safeParse(
+          await post("/v1/members", { ...command, rule: AUTHZ_RULE }),
+        );
+        if (!parsed.success) return { kind: "unavailable" };
+        return { kind: "result", result: parsed.data };
       } catch {
         return { kind: "unavailable" };
       }
