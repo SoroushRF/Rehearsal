@@ -50,7 +50,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T1.25** Competent scripted benchmark baseline _(stretch)_ [#180](https://github.com/SoroushRF/Rehearsal/issues/180) | 🟨 ready | — |  |
 | **T1.26** Precedent reuse across different incidents _(stretch)_ [#181](https://github.com/SoroushRF/Rehearsal/issues/181) | 🟥 blocked | T2.17 (T2, ready) |  |
 | **T1.27** Extend the scorecard to the full operation set [#161](https://github.com/SoroushRF/Rehearsal/issues/161) | ✅ done |  | T1.25, T1.28 |
-| **T1.28** Run and publish versioned benchmark comparisons [#176](https://github.com/SoroushRF/Rehearsal/issues/176) | 🟥 blocked | T4.13 (T4, in review) | T2.7 (T2) |
+| **T1.28** Run and publish versioned benchmark comparisons [#176](https://github.com/SoroushRF/Rehearsal/issues/176) | 🟥 blocked | T4.13 (T4, blocked) | T2.7 (T2) |
 | **T1.29** Plans carry a PrecedentBasis; the review page shows recalled precedents with their trace _(stretch)_ [#235](https://github.com/SoroushRF/Rehearsal/issues/235) | ✅ done |  |  |
 
 ## T2 Review & Approve
@@ -136,7 +136,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T4.26** End-to-end authorization acceptance on a real Clerk session [#231](https://github.com/SoroushRF/Rehearsal/issues/231) | 🟥 blocked | T4.20 (T4, ready)<br>T4.21 (T4, blocked)<br>T4.22 (T4, blocked)<br>T4.23 (T4, blocked)<br>T4.24 (T4, blocked)<br>T4.25 (T4, ready) |  |
 | **T4.11** Allowlisted rehearsal challenges and controls [#169](https://github.com/SoroushRF/Rehearsal/issues/169) | 🟨 ready | — | T3.16 (T3), T4.12 |
 | **T4.12** Independent verifier for observed rehearsal effects [#173](https://github.com/SoroushRF/Rehearsal/issues/173) | 🟥 blocked | T4.11 (T4, ready) | T2.21 (T2), T4.13 |
-| **T4.13** Integrated isolation and recovery acceptance gate [#175](https://github.com/SoroushRF/Rehearsal/issues/175) | 👀 in review [PR #265](https://github.com/SoroushRF/Rehearsal/pull/265) | T3.16 (T3, blocked)<br>T2.20 (T2, blocked)<br>T2.21 (T2, blocked)<br>T4.12 (T4, blocked)<br>T2.17 (T2, ready) | T1.28 (T1) |
+| **T4.13** Integrated isolation and recovery acceptance gate [#175](https://github.com/SoroushRF/Rehearsal/issues/175) | 🟥 blocked | T3.16 (T3, blocked)<br>T2.20 (T2, blocked)<br>T2.21 (T2, blocked)<br>T4.12 (T4, blocked)<br>T2.17 (T2, ready) | T1.28 (T1) |
 | **T4.14** Held-out incident datasets and independent gold _(stretch)_ [#179](https://github.com/SoroushRF/Rehearsal/issues/179) | ✅ done |  | T1.25 (T1), T1.26 (T1) |
 
 ## Task graph
@@ -236,7 +236,7 @@ flowchart LR
     T4_26["T4.26 End-to-end authorization acceptance on a r"]:::blocked
     T4_11["T4.11 Allowlisted rehearsal challenges and contr"]:::ready
     T4_12["T4.12 Independent verifier for observed rehearsa"]:::blocked
-    T4_13["T4.13 Integrated isolation and recovery acceptan"]:::review
+    T4_13["T4.13 Integrated isolation and recovery acceptan"]:::blocked
   end
   T1_1 --> T1_2
   T1_9 --> T1_2
