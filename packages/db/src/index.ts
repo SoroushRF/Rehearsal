@@ -10,6 +10,7 @@ export * from "./precedents";
 export * from "./queue";
 export * from "./rehearsal-lifecycle";
 export * from "./rehearsal-runner";
+export * from "./rehearsal-sets";
 export * from "./rehearsals";
 export * from "./runs";
 export { schema };

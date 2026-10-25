@@ -133,6 +133,7 @@ export const REHEARSAL_TENANT_TOKEN_ROUTE = "/internal/era/rehearsal-tenant-toke
  */
 export const REHEARSAL_PROVISION_ROUTE = "/internal/rehearsals/:id/provision";
 export const REHEARSAL_TEARDOWN_ROUTE = "/internal/rehearsals/:id/teardown";
+export const REHEARSAL_CHALLENGE_ROUTE = "/internal/rehearsals/:id/challenge";
 export const rehearsalOperatorPath = (route: string, rehearsalId: string) =>
   route.replace(":id", encodeURIComponent(rehearsalId));
 

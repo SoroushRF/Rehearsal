@@ -57,6 +57,13 @@
       "when": 1792910331916,
       "tag": "0007_grant_permissions",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792948150907,
+      "tag": "0008_rehearsal_dirty_marks",
+      "breakpoints": true
     }
   ]
 }
