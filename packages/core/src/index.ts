@@ -1,6 +1,7 @@
 export * from "./approvals";
 export * from "./bindings";
 export * from "./canonical";
+export * from "./challenges";
 export * from "./compensation";
 export * from "./dag";
 export * from "./echo";

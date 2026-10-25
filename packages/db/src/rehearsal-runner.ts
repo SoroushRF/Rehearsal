@@ -17,15 +17,18 @@ import {
   type BillingPolicy,
   type Clock,
   type Compensator,
+  challengesDigest,
   planHash as computePlanHash,
   executeRehearsal,
   fingerprint,
   type JournalPort,
+  lookupScenario,
   operationKey,
   type ProviderPort,
   type RetryPolicy,
   type RunOutcome,
   rehearsalOperationKey,
+  resolveScenario,
   type SettleStep,
   snapshotDigest,
   type WorldContext,
@@ -71,12 +74,17 @@ export function rehearsalReport(
   },
 ): ExecutionRehearsalReport {
   const latest = new Map(receipts.map((x) => [x.actionId, x]));
+  const listed = lookupScenario(job.scenario);
+  const bound = listed ? resolveScenario(manifest, job.scenario) : { ok: false as const };
+  const expectedOf = bound.ok
+    ? new Map(bound.scenario.steps.map((step) => [step.actionId, step.outcome]))
+    : null;
   return {
     world: "rehearsal",
     rehearsalId: job.rehearsalId,
     plan: job.plan,
     scenario: job.scenario,
-    challengesDigest: fingerprint([]),
+    challengesDigest: listed ? challengesDigest(listed) : fingerprint([]),
     snapshot: job.snapshot,
     policy: job.policy,
     versions: opts.versions,
@@ -87,7 +95,7 @@ export function rehearsalReport(
       const receipt = latest.get(action.id);
       return {
         actionId: action.id,
-        expected: "confirmed",
+        expected: expectedOf?.get(action.id) ?? "confirmed",
         result: receipt ? toStepResult(job, action, receipt) : null,
         verification: {
           status: "unverified",
@@ -347,6 +355,7 @@ export async function runRehearsalJob(
   ) {
     return { kind: "skipped", reason: "job does not match a stored rehearsal" };
   }
+  const listed = lookupScenario(job.scenario);
   const now = () => ctx.clock.now();
   if (!(await transitionRehearsal(ctx.db, orgId, id, ["queued"], "provisioning", { now: now() }))) {
     return { kind: "skipped", reason: `rehearsal is ${stored.state}` };
@@ -431,8 +440,23 @@ export async function runRehearsalJob(
   if (snapshotDigest(manifest.data) !== r.snapshotDigest) {
     return finish("failed", "the plan's evidence no longer matches the bound snapshot", null, null);
   }
-  if (r.scenarioId !== "clean") {
-    return finish("failed", `scenario ${r.scenarioId} isn't supported until T4.11`, null, null);
+  if (!listed) {
+    return finish(
+      "failed",
+      `scenario ${r.scenarioId}@${r.scenarioVersion} is not on the challenge allowlist`,
+      null,
+      null,
+    );
+  }
+  // T3.16's cancellation and sweeper are in. They do not apply a challenge, so a challenged run
+  // still stops here instead of being queued onto a container it would fault.
+  if (listed.challenges.length > 0) {
+    return finish(
+      "failed",
+      `scenario ${listed.id}@${listed.version} is allowlisted; applying its challenges waits on T3.16`,
+      null,
+      null,
+    );
   }
 
   const provisioned = await ctx.provision(manifest.data, id);

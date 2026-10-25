@@ -25,6 +25,7 @@
     "demo:phantom": "tsx --env-file-if-exists=.env scripts/inject/phantom.ts",
     "demo:conflict": "tsx --env-file-if-exists=.env scripts/inject/conflict.ts",
     "demo:fault": "tsx --env-file-if-exists=.env scripts/inject/fault.ts",
+    "rehearsal:challenge": "tsx --env-file-if-exists=.env scripts/inject/challenge-cli.ts",
     "infra:up:full": "docker compose -f infra/compose.yaml --profile full up -d",
     "infra:up:rehearsal": "docker compose -f infra/compose.yaml --profile rehearsal up -d",
     "infra:down": "docker compose -f infra/compose.yaml down",
