@@ -101,3 +101,48 @@ test("a finance lead withdraws an active precedent, with a second click to confi
   const post = api.requests.find((r) => r.path.endsWith("/withdraw"));
   expect(post?.body).toEqual({ version: 1 });
 });
+
+test("a plan citing a precedent shows its trace, and can be approved while it holds", async ({
+  page,
+}) => {
+  const api = fakeApi({ citesPrecedent: "holds" });
+  await page.route("**/api/**", api.handle);
+  await page.goto("/e2e/live.html");
+
+  const card = page.getByTestId("precedent-basis");
+  await expect(card).toContainText("duplicate-charge-refund v2");
+  await expect(card).toContainText("trace_abc");
+  await expect(card).toContainText("All still in force");
+  await expect(page.getByTestId("precedent-hold")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Approve revision 1" })).toBeEnabled();
+});
+
+test("a plan whose cited precedent was replaced says why and can't be approved", async ({
+  page,
+}) => {
+  const api = fakeApi({ citesPrecedent: "held" });
+  await page.route("**/api/**", api.handle);
+  await page.goto("/e2e/live.html");
+
+  const card = page.getByTestId("precedent-basis");
+  await expect(card).toContainText("Changed since planning");
+  await expect(card.getByTestId("citation")).toHaveAttribute("data-held", "true");
+  await expect(card).toContainText("duplicate-charge-refund v2 was replaced by v3");
+  await expect(card).toContainText("precedents the planner may never have seen");
+
+  await expect(page.getByTestId("precedent-hold")).toContainText("Can't approve yet");
+  await expect(page.getByRole("button", { name: "Approve revision 1" })).toBeDisabled();
+  expect(await violations(page)).toEqual([]);
+  // Nothing was sent to approve it.
+  expect(api.requests.some((r) => r.method === "POST" && r.path.endsWith("/approvals"))).toBe(
+    false,
+  );
+});
+
+test("a plan that cited nothing looks exactly as before", async ({ page }) => {
+  const api = fakeApi();
+  await page.route("**/api/**", api.handle);
+  await page.goto("/e2e/live.html");
+  await expect(page.getByTestId("precedent-basis")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Approve revision 1" })).toBeEnabled();
+});

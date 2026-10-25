@@ -2,8 +2,10 @@ import type { PlanManifest } from "@rehearsal/contracts";
 import { type ReactNode, useCallback, useState } from "react";
 import { formatMoney, roleLabel, shortHash, sumMoney } from "../format";
 import { droppedBy, groupByCase, requiredRoles } from "../plan";
+import type { PrecedentCheck } from "../precedent-holds";
 import { ActionRow } from "./ActionRow";
 import { EvidenceDrawer } from "./EvidenceDrawer";
+import { PrecedentBasisCard } from "./PrecedentBasisCard";
 import { Card, Chip, CopyButton, Icon, Stat } from "./ui";
 
 /**
@@ -18,6 +20,7 @@ export function PlanReview({
   evidence,
   review,
   actions,
+  precedents = null,
 }: {
   manifest: PlanManifest;
   planHash: string;
@@ -25,6 +28,8 @@ export function PlanReview({
   evidence: "fixture" | "era_integration" | null;
   review?: { unchecked: ReadonlySet<string>; onToggle: (actionId: string) => void };
   actions?: ReactNode;
+  /** The registry's verdict on the precedents the plan cites; null when not asked (examples). */
+  precedents?: PrecedentCheck | null;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const dropped = review ? droppedBy(manifest.actions, review.unchecked) : new Set<string>();
@@ -146,6 +151,10 @@ export function PlanReview({
             </ul>
           </Card>
         ))}
+
+        {manifest.precedentBasis && (
+          <PrecedentBasisCard basis={manifest.precedentBasis} check={precedents} />
+        )}
 
         {manifest.excluded.length > 0 && (
           <Card className="border-dashed bg-transparent p-4 shadow-none sm:p-5">

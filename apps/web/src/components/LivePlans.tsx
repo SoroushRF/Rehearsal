@@ -17,6 +17,7 @@ import {
 import { roleLabel, shortHash } from "../format";
 import { useTenantKey } from "../identity";
 import { droppedBy, requiredRoles } from "../plan";
+import { explainPrecedentHold, PrecedentCheck } from "../precedent-holds";
 import { RunView } from "../runs";
 import { Segmented } from "./AppShell";
 import { AuditPanel } from "./AuditPanel";
@@ -30,6 +31,8 @@ const PlanList = z.object({ plans: z.array(PlanSummary) });
 const GrantList = z.object({
   grants: z.array(Grant),
   approval: ApprovalStatus.nullish(),
+  /** Do the precedents the newest revision cites still hold? Absent from older servers. */
+  precedents: PrecedentCheck.nullish(),
 });
 const Approved = z.object({ grant: ApprovalGrant, existing: z.boolean() });
 const RunList = z.object({ runs: z.array(RunView) });
@@ -105,9 +108,19 @@ function PageSkeleton({ what }: { what: string }) {
   );
 }
 
+/** Approvals and their checks for a plan. Shared by the plan page and its approval panel. */
+function useApprovals(apiFetch: ApiFetch, planId: string) {
+  const key = useTenantKey();
+  return useQuery({
+    queryKey: key("grants", planId),
+    queryFn: () => call(apiFetch, GrantList, `${planPath(planId)}/approvals`),
+  });
+}
+
 function LivePlan({ apiFetch, planId }: { apiFetch: ApiFetch; planId: string }) {
   const queryClient = useQueryClient();
   const key = useTenantKey();
+  const approvals = useApprovals(apiFetch, planId);
   const plan = useQuery({
     queryKey: key("plan", planId),
     queryFn: () => call(apiFetch, StoredPlan, planPath(planId)),
@@ -161,6 +174,7 @@ function LivePlan({ apiFetch, planId }: { apiFetch: ApiFetch; planId: string }) 
         planHash={planHash}
         evidence={manifest.versions.planner.model === "fixture" ? "fixture" : null}
         review={{ unchecked, onToggle: toggle }}
+        precedents={approvals.data?.precedents ?? null}
         actions={
           <ApprovalPanel
             apiFetch={apiFetch}
@@ -227,10 +241,9 @@ function ApprovalPanel({
   const queryClient = useQueryClient();
   const key = useTenantKey();
   const body = { revision: plan.revision, planHash: plan.planHash };
-  const grants = useQuery({
-    queryKey: key("grants", plan.planId),
-    queryFn: () => call(apiFetch, GrantList, `${planPath(plan.planId)}/approvals`),
-  });
+  const grants = useApprovals(apiFetch, plan.planId);
+  const heldPrecedents =
+    grants.data?.precedents && !grants.data.precedents.ok ? grants.data.precedents.holds : [];
   const approve = useMutation({
     mutationFn: () => call(apiFetch, Approved, `${planPath(plan.planId)}/approvals`, body),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: key("grants", plan.planId) }),
@@ -326,7 +339,7 @@ function ApprovalPanel({
             icon="check"
             className="mt-4 w-full"
             loading={approve.isPending}
-            disabled={editing}
+            disabled={editing || heldPrecedents.length > 0}
             title={editing ? "Create the revision first, then approve it" : undefined}
             onClick={() => approve.mutate()}
           >
@@ -341,6 +354,13 @@ function ApprovalPanel({
         </>
       )}
 
+      {heldPrecedents.length > 0 && (
+        <Alert tone="warn" className="mt-3" title="Can't approve yet" data-testid="precedent-hold">
+          A precedent this plan rests on has changed.{" "}
+          {heldPrecedents.map(explainPrecedentHold).join(" ")} Rehearse again to plan against what
+          is in force now.
+        </Alert>
+      )}
       {approve.isError && <Alert className="mt-3">{explain(approve.error)}</Alert>}
       {apply.isError && <Alert className="mt-3">{explain(apply.error)}</Alert>}
       {apply.data && (
