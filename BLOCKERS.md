@@ -6,7 +6,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 
 ## Top blockers
 
-81 of 97 tasks done. These open tasks hold up the most other work:
+82 of 97 tasks done. These open tasks hold up the most other work:
 
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
@@ -134,8 +134,8 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T4.22** Executor admission as enforcement point: `run:admit` through IAM, fail closed [#227](https://github.com/SoroushRF/Rehearsal/issues/227) | ✅ done |  | T4.26 |
 | **T4.23** Invites and role changes through our API [#228](https://github.com/SoroushRF/Rehearsal/issues/228) | ✅ done |  | T4.24, T4.26 |
 | **T4.24** Web: verified permissions, actions shown by permission, invite UI [#229](https://github.com/SoroushRF/Rehearsal/issues/229) | ✅ done |  | T4.26 |
-| **T4.25** Clerk configuration and demo organization [#230](https://github.com/SoroushRF/Rehearsal/issues/230) | 👀 in review [PR #304](https://github.com/SoroushRF/Rehearsal/pull/304) | — | T4.26 |
-| **T4.26** End-to-end authorization acceptance on a real Clerk session [#231](https://github.com/SoroushRF/Rehearsal/issues/231) | 🟥 blocked | T4.25 (T4, in review) |  |
+| **T4.25** Clerk configuration and demo organization [#230](https://github.com/SoroushRF/Rehearsal/issues/230) | ✅ done |  | T4.26 |
+| **T4.26** End-to-end authorization acceptance on a real Clerk session [#231](https://github.com/SoroushRF/Rehearsal/issues/231) | 🟨 ready | — |  |
 | **T4.11** Allowlisted rehearsal challenges and controls [#169](https://github.com/SoroushRF/Rehearsal/issues/169) | ✅ done |  | T3.16 (T3), T4.12 |
 | **T4.12** Independent verifier for observed rehearsal effects [#173](https://github.com/SoroushRF/Rehearsal/issues/173) | 🟨 ready | — | T2.21 (T2), T4.13 |
 | **T4.13** Integrated isolation and recovery acceptance gate [#175](https://github.com/SoroushRF/Rehearsal/issues/175) | 🟥 blocked | T3.16 (T3, ready)<br>T2.20 (T2, ready)<br>T2.21 (T2, blocked)<br>T4.12 (T4, ready) | T1.28 (T1) |
@@ -237,8 +237,8 @@ flowchart LR
     T4_22["T4.22 Executor admission as enforcement point: `"]:::done
     T4_23["T4.23 Invites and role changes through our API"]:::done
     T4_24["T4.24 Web: verified permissions, actions shown b"]:::done
-    T4_25["T4.25 Clerk configuration and demo organization"]:::review
-    T4_26["T4.26 End-to-end authorization acceptance on a r"]:::blocked
+    T4_25["T4.25 Clerk configuration and demo organization"]:::done
+    T4_26["T4.26 End-to-end authorization acceptance on a r"]:::ready
     T4_11["T4.11 Allowlisted rehearsal challenges and contr"]:::done
     T4_12["T4.12 Independent verifier for observed rehearsa"]:::ready
     T4_13["T4.13 Integrated isolation and recovery acceptan"]:::blocked
