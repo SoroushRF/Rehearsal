@@ -8,6 +8,7 @@ export * from "./apply-store";
 export * from "./journal";
 export * from "./precedents";
 export * from "./queue";
+export * from "./rehearsal-lifecycle";
 export * from "./rehearsal-runner";
 export * from "./rehearsals";
 export * from "./runs";

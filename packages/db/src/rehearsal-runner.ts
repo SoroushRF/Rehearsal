@@ -42,6 +42,69 @@ import {
 } from "./rehearsals";
 import { planVersions, rehearsalAttempts } from "./schema";
 
+/** The limitation a report carries when a send was still in flight as the run ended. */
+export const IN_FLIGHT_KEPT =
+  "a send's outcome was still unknown when the run ended: the tenant is kept and read again before teardown";
+
+/** This rehearsal's sends still in flight (dispatched, or outcome unknown). A prepared one was never sent. */
+export async function rehearsalInFlight(db: Db, orgId: string, rehearsalId: string) {
+  const rows = await db
+    .select({ id: rehearsalAttempts.id, state: rehearsalAttempts.state })
+    .from(rehearsalAttempts)
+    .where(and(eq(rehearsalAttempts.orgId, orgId), eq(rehearsalAttempts.rehearsalId, rehearsalId)));
+  return rows.filter((r) => r.state === "dispatched" || r.state === "unknown_outcome");
+}
+
+/** The report for a rehearsal that ended: one entry per stored step, from its latest receipt. */
+export function rehearsalReport(
+  job: Pick<ExecutionRehearsalJob, "rehearsalId" | "plan" | "scenario" | "snapshot" | "policy">,
+  manifest: PlanManifest,
+  receipts: readonly Receipt[],
+  opts: {
+    state: "completed" | "failed" | "cancelled";
+    limitations: string[];
+    notFromEvidence: string[];
+    startedAt: string;
+    finishedAt: string;
+    versions: RehearsalVersions;
+    evidence: RehearsalEvidence;
+  },
+): ExecutionRehearsalReport {
+  const latest = new Map(receipts.map((x) => [x.actionId, x]));
+  return {
+    world: "rehearsal",
+    rehearsalId: job.rehearsalId,
+    plan: job.plan,
+    scenario: job.scenario,
+    challengesDigest: fingerprint([]),
+    snapshot: job.snapshot,
+    policy: job.policy,
+    versions: opts.versions,
+    evidence: opts.evidence,
+    state: opts.state,
+    verdict: "unknown",
+    steps: manifest.actions.map((action) => {
+      const receipt = latest.get(action.id);
+      return {
+        actionId: action.id,
+        expected: "confirmed",
+        result: receipt ? toStepResult(job, action, receipt) : null,
+        verification: {
+          status: "unverified",
+          detail: "the independent verifier (T4.12) has not read this step",
+        },
+      };
+    }),
+    notFromEvidence: opts.notFromEvidence,
+    limitations: [
+      "no independent verification yet (T4.12): the verdict stays unknown",
+      ...opts.limitations,
+    ],
+    startedAt: opts.startedAt,
+    finishedAt: opts.finishedAt,
+  };
+}
+
 /**
  * T3.15: run one stored-plan execution rehearsal (decision 0013, §5) through T3.14's
  * `executeRehearsal`, in the rehearsal's own disposable worlds and journal.
@@ -65,6 +128,38 @@ export class RehearsalRunJournal implements JournalPort {
     private readonly orgId: string,
     private readonly rehearsalId: string,
   ) {}
+
+  /**
+   * The rehearsal's journal as its attempts left it, for a read-only pass after its worker stopped
+   * (T3.16). Receipts and bindings lived in the dead worker's memory, so they start empty; the pass
+   * only reads, so it can't send on the strength of a missing one.
+   */
+  static async load(db: Db, orgId: string, rehearsalId: string): Promise<RehearsalRunJournal> {
+    const journal = new RehearsalRunJournal(db, orgId, rehearsalId);
+    const rows = await db
+      .select()
+      .from(rehearsalAttempts)
+      .where(
+        and(eq(rehearsalAttempts.orgId, orgId), eq(rehearsalAttempts.rehearsalId, rehearsalId)),
+      );
+    for (const row of rows) {
+      journal.attempts.set(row.id, {
+        id: row.id,
+        actionId: row.actionId,
+        planHash: row.planHash,
+        operationKey: row.operationKey,
+        attemptNo: row.attemptNo,
+        state: row.state as AttemptState,
+        request: row.request as Attempt["request"],
+        providerStatus: row.providerStatus,
+        error: row.error,
+        preparedAt: row.preparedAt.toISOString(),
+        dispatchedAt: row.dispatchedAt?.toISOString() ?? null,
+        settledAt: row.settledAt?.toISOString() ?? null,
+      });
+    }
+    return journal;
+  }
 
   async prepareAttempt(attempt: Attempt): Promise<void> {
     if (attempt.state !== "prepared") throw new Error("attempt must be inserted as prepared");
@@ -278,41 +373,33 @@ export async function runRehearsalJob(
     }
     const ended = (await loadRehearsal(ctx.db, orgId, id))?.state;
     let report: ExecutionRehearsalReport | null = null;
+    const inFlight = await rehearsalInFlight(ctx.db, orgId, id);
     if (manifest && (ended === "completed" || ended === "failed" || ended === "cancelled")) {
-      const latest = new Map((outcome?.receipts ?? []).map((x) => [x.actionId, x]));
-      report = {
-        world: "rehearsal",
-        rehearsalId: id,
-        plan: job.plan,
-        scenario: job.scenario,
-        challengesDigest: fingerprint([]),
-        snapshot: job.snapshot,
-        policy: job.policy,
-        versions: ctx.versions,
-        evidence: ctx.evidence,
+      report = rehearsalReport(job, manifest, outcome?.receipts ?? [], {
         state: ended,
-        verdict: "unknown",
-        steps: manifest.actions.map((action) => {
-          const receipt = latest.get(action.id);
-          return {
-            actionId: action.id,
-            expected: "confirmed",
-            result: receipt ? toStepResult(job, action, receipt) : null,
-            verification: {
-              status: "unverified",
-              detail: "the independent verifier (T4.12) has not read this step",
-            },
-          };
-        }),
-        notFromEvidence,
         limitations: [
-          "no independent verification yet (T4.12): the verdict stays unknown",
           ...(detail ? [detail] : []),
+          ...(inFlight.length > 0 ? [IN_FLIGHT_KEPT] : []),
         ],
+        notFromEvidence,
         startedAt,
         finishedAt: now().toISOString(),
+        versions: ctx.versions,
+        evidence: ctx.evidence,
+      });
+      // The sweeper may have ended it and reported first (an expired lease); the first one stands.
+      await saveRehearsalReport(ctx.db, orgId, report, now()).catch(() => {
+        report = null;
+      });
+    }
+    // A send whose outcome is unknown keeps the tenant for reads: the sweeper reconciles it and
+    // tears down only once nothing is in flight (or hands it to an operator).
+    if (inFlight.length > 0) {
+      return {
+        kind: "ran",
+        state: (ended as "completed" | "failed" | "cancelled") ?? state,
+        report,
       };
-      await saveRehearsalReport(ctx.db, orgId, report, now());
     }
     await ctx
       .teardown(id, (ended as "completed" | "failed" | "cancelled") ?? state)
@@ -367,8 +454,9 @@ export async function runRehearsalJob(
       {
         plans: {
           loadPlan: async () => ({ planHash: plan.planHash, manifest: plan.manifest }),
+          // Cancelled, or ended by the sweeper (an expired lease): either way no fresh send.
           rehearsalCancelled: async () =>
-            (await loadRehearsal(ctx.db, orgId, id))?.state === "cancelled",
+            (await loadRehearsal(ctx.db, orgId, id))?.state !== "running",
         },
         journal,
         providers: ctx.providers,
@@ -386,6 +474,11 @@ export async function runRehearsalJob(
   }
   if (outcome.refusal) return finish("failed", outcome.refusal, manifest.data, outcome);
 
+  // Ended under it (cancelled, or failed by the sweeper): the report carries what happened.
+  const after = (await loadRehearsal(ctx.db, orgId, id))?.state;
+  if (after !== "running") {
+    return finish(after === "failed" ? "failed" : "cancelled", null, manifest.data, outcome);
+  }
   // One result per step: its latest receipt in this pass.
   const latest = new Map(outcome.receipts.map((x) => [x.actionId, x]));
   for (const action of manifest.data.actions) {
@@ -406,7 +499,7 @@ export async function runRehearsalJob(
 
 /** A receipt from the rehearsal's journal as its step result, under the real plan hash. */
 function toStepResult(
-  job: ExecutionRehearsalJob,
+  job: Pick<ExecutionRehearsalJob, "rehearsalId" | "plan">,
   action: PlanManifest["actions"][number],
   receipt: Receipt,
 ): RehearsalStepResult {
