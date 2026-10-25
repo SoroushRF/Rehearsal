@@ -81,6 +81,7 @@ export function buildApp(
   if (deps.precedents) registerPrecedentRoutes(app, deps.precedents);
   else {
     app.post("/api/runs/:id/precedents", unavailable);
+    app.post("/api/precedents/:id/withdraw", unavailable);
     app.get("/api/precedents", unavailable);
   }
 

@@ -65,3 +65,39 @@ test("a run that hasn't completed offers no form", async ({ page }) => {
   await expect(panel).toContainText("This run hasn't completed");
   await expect(panel.getByRole("button", { name: "Promote to precedent" })).toHaveCount(0);
 });
+
+test("a finance lead withdraws an active precedent, with a second click to confirm", async ({
+  page,
+}) => {
+  const api = fakeApi({ completedRun: true, activePrecedent: true });
+  await page.route("**/api/**", api.handle);
+  await page.goto("/e2e/live.html");
+  await page.getByRole("button", { name: "Approve revision 1" }).click();
+  await page.getByRole("button", { name: "Approve revision 1" }).click();
+  await page.getByRole("button", { name: "Apply to production" }).click();
+
+  const panel = page.getByTestId("precedent-panel");
+  await panel.getByText("Precedents: promote what this run decided").click();
+  const row = panel.getByTestId("precedent");
+  await expect(row).toHaveAttribute("data-status", "active");
+
+  // The first click only asks; nothing is sent until the withdrawal is confirmed.
+  await row.getByRole("button", { name: "Withdraw" }).click();
+  await expect(
+    row.getByRole("group", { name: "Withdraw duplicate-charge-refund v1" }),
+  ).toBeVisible();
+  expect(api.requests.some((r) => r.path.endsWith("/withdraw"))).toBe(false);
+  expect(await violations(page)).toEqual([]);
+  await row.getByRole("button", { name: "Cancel" }).click();
+  await expect(row.getByRole("button", { name: "Withdraw" })).toBeVisible();
+
+  await row.getByRole("button", { name: "Withdraw" }).click();
+  await row.getByRole("button", { name: "Confirm withdrawal" }).click();
+  await expect(row).toHaveAttribute("data-status", "withdrawn");
+  await expect(row).toContainText("Withdrawn");
+  await expect(row.getByRole("button", { name: "Withdraw" })).toHaveCount(0);
+
+  // It names the version the reviewer saw, so a stale page can't withdraw a newer one.
+  const post = api.requests.find((r) => r.path.endsWith("/withdraw"));
+  expect(post?.body).toEqual({ version: 1 });
+});

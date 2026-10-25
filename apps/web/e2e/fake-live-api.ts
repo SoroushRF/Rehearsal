@@ -70,13 +70,32 @@ const json = (route: Route, status: number, body: unknown) =>
 export function fakeApi({
   dual = false,
   completedRun = false,
+  activePrecedent = false,
 }: {
   dual?: boolean;
   /** Serve the applied run as completed, and the precedent routes, instead of the held phantom. */
   completedRun?: boolean;
+  /** Start with one active precedent, so it can be withdrawn. */
+  activePrecedent?: boolean;
 } = {}) {
   const run = () => (completedRun ? { ...RUN, state: "completed" } : RUN);
-  const precedents: object[] = [];
+  const precedents: Record<string, unknown>[] = activePrecedent
+    ? [
+        {
+          id: "duplicate-charge-refund",
+          version: 1,
+          appliesTo: "billing.duplicate_charge",
+          status: "active",
+          statement: "A duplicate charge within 30 days is refunded in full.",
+          conditions: [],
+          exceptions: [],
+          effectiveFrom: "2026-10-01",
+          effectiveUntil: null,
+          author: "user_finance",
+          approvedAt: "2026-10-24T12:00:00.000Z",
+        },
+      ]
+    : [];
   let current = { revision: 1, ...V1 };
   const grants: object[] = [];
   let approvals = 0;
@@ -201,6 +220,12 @@ export function fakeApi({
     if (path === "/api/plans/plan_happy/runs")
       return json(route, 200, { runs: applied ? [run()] : [] });
     if (path === "/api/precedents") return json(route, 200, { precedents, syncEnabled: false });
+    if (path === "/api/precedents/duplicate-charge-refund/withdraw") {
+      const p = precedents.find((x) => x.id === "duplicate-charge-refund");
+      if (p?.status !== "active") return json(route, 409, { error: "not_active" });
+      p.status = "withdrawn";
+      return json(route, 200, { precedent: { id: p.id, version: p.version, status: "withdrawn" } });
+    }
     if (path === "/api/runs/run_1/precedents") {
       const b = body as Record<string, unknown>;
       precedents.push({

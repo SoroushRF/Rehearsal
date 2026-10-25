@@ -29,6 +29,21 @@ export const PrecedentListResponse = z.object({
   syncEnabled: z.boolean(),
 });
 const Promoted = z.object({ precedent: z.object({ id: z.string(), version: z.int() }) });
+const Withdrawn = z.object({ precedent: z.object({ id: z.string(), version: z.int() }) });
+
+/** What finance-only refusals mean here, in words. */
+function refusalText(err: unknown, action: string): string {
+  if (err instanceof RefusedError) {
+    const r = err.refusal;
+    if (r.error === "missing_roles") return `Only a finance lead can ${action}.`;
+    if (r.error === "stale_version") {
+      return `A newer version (v${String(r.activeVersion ?? "?")}) is active now. Reload and look at it first.`;
+    }
+    if (r.error === "not_active")
+      return "That version isn't active, so there is nothing to withdraw.";
+  }
+  return explain(err);
+}
 
 const statusLabel: Record<Status, { text: string; tone: Tone; hint: string }> = {
   waiting: {
@@ -49,7 +64,19 @@ const lines = (text: string) =>
     .filter(Boolean);
 
 /** What the reviewer sees about each version: where it stands, and why nothing uses it yet. */
-export function PrecedentRows({ list }: { list: z.infer<typeof PrecedentListResponse> }) {
+export function PrecedentRows({
+  list,
+  withdraw,
+}: {
+  list: z.infer<typeof PrecedentListResponse>;
+  /** Present when the viewer may try to withdraw; the server still checks the role. */
+  withdraw?: {
+    pending: string | null;
+    error: string | null;
+    onWithdraw: (p: Precedent) => void;
+  };
+}) {
+  const [confirming, setConfirming] = useState<string | null>(null);
   if (list.precedents.length === 0) {
     return <p className="text-sm text-muted">No precedents promoted yet.</p>;
   }
@@ -81,10 +108,24 @@ export function PrecedentRows({ list }: { list: z.infer<typeof PrecedentListResp
                 From {p.effectiveFrom}
                 {p.effectiveUntil ? ` until ${p.effectiveUntil}` : ""}, approved by {p.author}
               </p>
+              {withdraw && p.status === "active" && (
+                <WithdrawControl
+                  label={`${p.id} v${p.version}`}
+                  confirming={confirming === p.id}
+                  pending={withdraw.pending === p.id}
+                  onStart={() => setConfirming(p.id)}
+                  onCancel={() => setConfirming(null)}
+                  onConfirm={() => {
+                    setConfirming(null);
+                    withdraw.onWithdraw(p);
+                  }}
+                />
+              )}
             </li>
           );
         })}
       </ul>
+      {withdraw?.error && <Alert className="mt-2">{withdraw.error}</Alert>}
       {!list.syncEnabled && list.precedents.some((p) => p.status === "waiting") && (
         <p className="mt-2 text-xs text-subtle" data-testid="sync-off">
           Agent Memory isn't set up on this server, so promoted precedents stay waiting and no plan
@@ -92,6 +133,45 @@ export function PrecedentRows({ list }: { list: z.infer<typeof PrecedentListResp
         </p>
       )}
     </>
+  );
+}
+
+/** Withdrawing stops plans relying on a precedent, so it takes a second, explicit click. */
+function WithdrawControl({
+  label,
+  confirming,
+  pending,
+  onStart,
+  onCancel,
+  onConfirm,
+}: {
+  label: string;
+  confirming: boolean;
+  pending: boolean;
+  onStart: () => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  if (!confirming) {
+    return (
+      <Button variant="secondary" size="sm" className="mt-2" loading={pending} onClick={onStart}>
+        Withdraw
+      </Button>
+    );
+  }
+  return (
+    <fieldset
+      aria-label={`Withdraw ${label}`}
+      className="mt-2 flex min-w-0 border-0 flex-wrap items-center gap-2 rounded-lg bg-warn-bg px-3 py-2 text-sm text-ink"
+    >
+      <span>Withdraw {label}? Plans that relied on it will be held. History keeps it.</span>
+      <Button variant="primary" size="sm" onClick={onConfirm}>
+        Confirm withdrawal
+      </Button>
+      <Button variant="ghost" size="sm" onClick={onCancel}>
+        Cancel
+      </Button>
+    </fieldset>
   );
 }
 
@@ -142,6 +222,13 @@ export function PrecedentPanel({
       }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: key("precedents") }),
   });
+  const withdraw = useMutation({
+    mutationFn: (p: Precedent) =>
+      call(apiFetch, Withdrawn, `/api/precedents/${encodeURIComponent(p.id)}/withdraw`, {
+        version: p.version,
+      }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: key("precedents") }),
+  });
   const submit = (e: FormEvent) => {
     e.preventDefault();
     promote.mutate();
@@ -150,12 +237,7 @@ export function PrecedentPanel({
   const field =
     "mt-1 w-full rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm text-ink";
   const label = "block text-xs font-medium text-muted";
-  const refusal =
-    promote.error instanceof RefusedError && promote.error.refusal.error === "missing_roles"
-      ? "Only a finance lead can promote a precedent."
-      : promote.isError
-        ? explain(promote.error)
-        : null;
+  const refusal = promote.isError ? refusalText(promote.error, "promote a precedent") : null;
 
   return (
     <details
@@ -262,7 +344,18 @@ export function PrecedentPanel({
             This organization's precedents
           </h4>
           {list.isError && <Alert>{explain(list.error)}</Alert>}
-          {list.data && <PrecedentRows list={list.data} />}
+          {list.data && (
+            <PrecedentRows
+              list={list.data}
+              withdraw={{
+                pending: withdraw.isPending ? (withdraw.variables?.id ?? null) : null,
+                error: withdraw.isError
+                  ? refusalText(withdraw.error, "withdraw a precedent")
+                  : null,
+                onWithdraw: (p) => withdraw.mutate(p),
+              }}
+            />
+          )}
         </Card>
       </div>
     </details>
