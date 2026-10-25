@@ -16,6 +16,7 @@ import type { IamClient } from "./iam";
 import { registerMemberRoutes } from "./members";
 import { type PlanDeps, registerPlanRoutes } from "./plans";
 import { type PrecedentDeps, registerPrecedentRoutes } from "./precedents";
+import { type RehearsalOperatorDeps, registerRehearsalOperatorRoutes } from "./rehearsal-operator";
 import { type RehearsalTokenDeps, registerRehearsalTokenRoute } from "./rehearsal-tokens";
 import { type RehearseDeps, registerRehearseRoutes } from "./rehearse";
 import { type RunDeps, registerRunRoutes } from "./runs";
@@ -42,6 +43,8 @@ export function buildApp(
     tenantTokens?: TenantTokenDeps;
     /** T1.23: the rehearsal worker's minter, once rehearsals are provisioned here (T3.13). */
     rehearsalTokens?: RehearsalTokenDeps;
+    /** T3.16: provision and reset a rehearsal's tenants for the rehearsal worker. */
+    rehearsalOperator?: RehearsalOperatorDeps;
     webRoot?: string | null;
   } = {},
 ) {
@@ -113,6 +116,7 @@ export function buildApp(
   // Only an API that holds ERA_ADMIN_TOKEN mints tenant tokens for the workers.
   if (deps.tenantTokens) registerTenantTokenRoute(app, deps.tenantTokens);
   if (deps.rehearsalTokens) registerRehearsalTokenRoute(app, deps.rehearsalTokens);
+  if (deps.rehearsalOperator) registerRehearsalOperatorRoutes(app, deps.rehearsalOperator);
 
   // Serve the built web app from the same origin in production.
   const root = deps.webRoot === undefined ? webDist : deps.webRoot;
