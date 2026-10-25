@@ -6,16 +6,16 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 
 ## Top blockers
 
-58 of 93 tasks done. These open tasks hold up the most other work:
+59 of 93 tasks done. These open tasks hold up the most other work:
 
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
-| **T4.15** Decision record 0014: IAM as the policy decision point, permission-based rules [#220](https://github.com/SoroushRF/Rehearsal/issues/220) | @skhdemo | 🟨 ready | 10 |
 | **T3.13** Separate rehearsal persistence and durable jobs [#164](https://github.com/SoroushRF/Rehearsal/issues/164) | @ArtinMe | 👀 in review | 9 |
-| **T4.16** Contracts: permissions, rule file schema, IAM decision request/response; grants gain permissions and rule version [#221](https://github.com/SoroushRF/Rehearsal/issues/221) | @skhdemo | 🟥 blocked | 9 |
+| **T4.16** Contracts: permissions, rule file schema, IAM decision request/response; grants gain permissions and rule version [#221](https://github.com/SoroushRF/Rehearsal/issues/221) | @skhdemo | 🟨 ready | 9 |
 | **T3.14** Share deterministic execution mechanics while preserving admission boundaries [#165](https://github.com/SoroushRF/Rehearsal/issues/165) | @ArtinMe | 🟨 ready | 7 |
 | **T4.17** Rule file v1 (`rehearsal-authz@1`): role → permission table, every route and `run:admit` [#222](https://github.com/SoroushRF/Rehearsal/issues/222) | @skhdemo | 🟥 blocked | 7 |
 | **T4.18** Pure PDP engine: permission RBAC, ABAC checks, deny by default [#223](https://github.com/SoroushRF/Rehearsal/issues/223) | @skhdemo | 🟥 blocked | 7 |
+| **T3.15** Execute a stored plan against disposable worlds [#168](https://github.com/SoroushRF/Rehearsal/issues/168) | @ArtinMe | 🟥 blocked | 6 |
 
 ## T1 Rehearse
 
@@ -121,13 +121,13 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T4.6** ML pilot and go/no-go _(stretch)_ [#30](https://github.com/SoroushRF/Rehearsal/issues/30) | ✅ done |  |  |
 | **T4.7** Impact service behind ImpactPort (if ML go) _(stretch)_ [#31](https://github.com/SoroushRF/Rehearsal/issues/31) | ✅ done |  |  |
 | **T4.10** Guard: one remedy per obligation across refunds and credits [#152](https://github.com/SoroushRF/Rehearsal/issues/152) | ✅ done |  | T1.14 (T1) |
-| **T4.15** Decision record 0014: IAM as the policy decision point, permission-based rules [#220](https://github.com/SoroushRF/Rehearsal/issues/220) | 🟨 ready | — | T4.16 |
-| **T4.16** Contracts: permissions, rule file schema, IAM decision request/response; grants gain permissions and rule version [#221](https://github.com/SoroushRF/Rehearsal/issues/221) | 🟥 blocked | T4.15 (T4, ready) | T4.17, T4.18, T4.21 |
-| **T4.17** Rule file v1 (`rehearsal-authz@1`): role → permission table, every route and `run:admit` [#222](https://github.com/SoroushRF/Rehearsal/issues/222) | 🟥 blocked | T4.16 (T4, blocked) | T4.19 |
-| **T4.18** Pure PDP engine: permission RBAC, ABAC checks, deny by default [#223](https://github.com/SoroushRF/Rehearsal/issues/223) | 🟥 blocked | T4.16 (T4, blocked) | T4.19 |
+| **T4.15** Decision record 0014: IAM as the policy decision point, permission-based rules [#220](https://github.com/SoroushRF/Rehearsal/issues/220) | ✅ done |  | T4.16 |
+| **T4.16** Contracts: permissions, rule file schema, IAM decision request/response; grants gain permissions and rule version [#221](https://github.com/SoroushRF/Rehearsal/issues/221) | 🟨 ready | — | T4.17, T4.18, T4.21 |
+| **T4.17** Rule file v1 (`rehearsal-authz@1`): role → permission table, every route and `run:admit` [#222](https://github.com/SoroushRF/Rehearsal/issues/222) | 🟥 blocked | T4.16 (T4, ready) | T4.19 |
+| **T4.18** Pure PDP engine: permission RBAC, ABAC checks, deny by default [#223](https://github.com/SoroushRF/Rehearsal/issues/223) | 🟥 blocked | T4.16 (T4, ready) | T4.19 |
 | **T4.19** IAM service: verify Clerk session, map role to permissions, evaluate rules, fail closed [#224](https://github.com/SoroushRF/Rehearsal/issues/224) | 🟥 blocked | T4.17 (T4, blocked)<br>T4.18 (T4, blocked) | T4.20, T4.22 |
 | **T4.20** API as the enforcement point: every route asks IAM with facts from stored rows [#225](https://github.com/SoroushRF/Rehearsal/issues/225) | 🟥 blocked | T4.19 (T4, blocked) | T4.21, T4.23, T4.24, T4.26 |
-| **T4.21** Approvals store permissions and rule version; two-person rule judged on permissions [#226](https://github.com/SoroushRF/Rehearsal/issues/226) | 🟥 blocked | T4.16 (T4, blocked)<br>T4.20 (T4, blocked) | T4.22, T4.26 |
+| **T4.21** Approvals store permissions and rule version; two-person rule judged on permissions [#226](https://github.com/SoroushRF/Rehearsal/issues/226) | 🟥 blocked | T4.16 (T4, ready)<br>T4.20 (T4, blocked) | T4.22, T4.26 |
 | **T4.22** Executor admission as enforcement point: `run:admit` through IAM, fail closed [#227](https://github.com/SoroushRF/Rehearsal/issues/227) | 🟥 blocked | T4.19 (T4, blocked)<br>T4.21 (T4, blocked) | T4.26 |
 | **T4.23** Invites and role changes through our API [#228](https://github.com/SoroushRF/Rehearsal/issues/228) | 🟥 blocked | T4.20 (T4, blocked) | T4.24, T4.26 |
 | **T4.24** Web: verified permissions, actions shown by permission, invite UI [#229](https://github.com/SoroushRF/Rehearsal/issues/229) | 🟥 blocked | T4.20 (T4, blocked)<br>T4.23 (T4, blocked) | T4.26 |
@@ -221,8 +221,8 @@ flowchart LR
     T4_3["T4.3 Wire guards into executor admission"]:::done
     T4_4["T4.4 Conditional compensation on owned fields"]:::done
     T4_10["T4.10 Guard: one remedy per obligation across re"]:::done
-    T4_15["T4.15 Decision record 0014: IAM as the policy de"]:::ready
-    T4_16["T4.16 Contracts: permissions, rule file schema, "]:::blocked
+    T4_15["T4.15 Decision record 0014: IAM as the policy de"]:::done
+    T4_16["T4.16 Contracts: permissions, rule file schema, "]:::ready
     T4_17["T4.17 Rule file v1 (`rehearsal-authz@1`): role →"]:::blocked
     T4_18["T4.18 Pure PDP engine: permission RBAC, ABAC che"]:::blocked
     T4_19["T4.19 IAM service: verify Clerk session, map rol"]:::blocked
