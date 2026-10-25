@@ -35,7 +35,8 @@ export type ProviderWriter = Pick<
 
 /** One operational (or planning) world a writer is bound to. Chosen by the server, never a URL from a plan. */
 export interface WriteTarget {
-  world: World;
+  /** `rehearsal` only for an execution rehearsal's own disposable tenant (T3.15). */
+  world: World | "rehearsal";
   config: WorldConfig;
   /** Value for the vendor's Authorization header. The simulators accept any bearer. */
   authorization: string;

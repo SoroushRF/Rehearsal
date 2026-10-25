@@ -9,6 +9,7 @@
   "dependencies": {
     "@rehearsal/contracts": "workspace:*",
     "@rehearsal/core": "workspace:*",
+    "@rehearsal/db": "workspace:*",
     "@rehearsal/planner": "workspace:*",
     "@rehearsal/providers": "workspace:*",
     "@rehearsal/testkit": "workspace:*"
