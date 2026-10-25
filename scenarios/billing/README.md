@@ -12,6 +12,7 @@ Fictional company and authored demo policy. Not a financial or regulatory requir
   - `@rehearsal/testkit`'s `incidentRecords()` builds the inject records from it and from `fixtures/`.
   - `pnpm demo:reset` resets all four worlds, seeds them identically and checks that planning and operational read back the same.
 - `fixtures/`: Era inject templates copied from real GET responses (owner: A). See `fixtures/README.md`.
+- `challenges.v1.json`: the T4.11 allowlist of execution-rehearsal scenarios (phantom membership, teammate edit, lost response and restart, a benign non-matching charge, and the clean control). Generated from `packages/core/src/challenges.ts` by `pnpm fixtures:write`. It names roles in a plan, not record ids, and it carries no fault payload. `equals: "teammate"` is one of those roles: the priority that gets written is on the bound effect, not in this file. The teammate edit is the plan's first patch, and it has to land after that note is rejected and before compensation re-reads the ticket. Evidence is `fixture` until a scenario has run on Era.
 - `expected/`: independent expected results (owner: D). Not created yet.
 - Held-out incidents for evaluation, with hidden gold, live in [`evals/held-out`](../../evals/held-out/README.md). Nothing here may read them.
 

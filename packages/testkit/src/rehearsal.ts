@@ -2,11 +2,20 @@ import type {
   ExecutionRehearsalJob,
   ExecutionRehearsalReport,
   ExecutionRehearsalRequest,
+  RehearsalScenarioId,
   RehearsalStepOutcome,
   RehearsalStepReport,
   RehearsalVersions,
 } from "@rehearsal/contracts";
-import { fingerprint, planHash, rehearsalOperationKey, snapshotDigest } from "@rehearsal/core";
+import {
+  CHALLENGE_CATALOG_VERSION,
+  challengesDigest,
+  lookupScenario,
+  planHash,
+  rehearsalOperationKey,
+  resolveScenario,
+  snapshotDigest,
+} from "@rehearsal/core";
 import { happyPathBundle } from "./bundles";
 
 /**
@@ -46,7 +55,7 @@ export function rehearsalRequestFixture(): ExecutionRehearsalRequest {
     planId: ref.planId,
     revision: ref.revision,
     planHash: ref.planHash,
-    scenario: { id: "clean", version: 1 },
+    scenario: { id: "clean", version: CHALLENGE_CATALOG_VERSION },
   };
 }
 
@@ -56,7 +65,7 @@ export function rehearsalJobFixture(): ExecutionRehearsalJob {
     world: "rehearsal",
     rehearsalId: FIXTURE_REHEARSAL_ID,
     plan: ref,
-    scenario: { id: "clean", version: 1 },
+    scenario: { id: "clean", version: CHALLENGE_CATALOG_VERSION },
     snapshot: { kind: "plan-evidence", digest: snapshotDigest(manifest) },
     policy: manifest.policies[0] ?? { id: "billing-remedy", version: 1 },
     requestedBy: "user_support",
@@ -73,15 +82,23 @@ export function rehearsalReportFixture(
 ): ExecutionRehearsalReport {
   const { manifest, ref } = plan();
   const job = rehearsalJobFixture();
-  const scenario =
+  const scenarioId: RehearsalScenarioId =
     verdict === "passed"
-      ? job.scenario
-      : { id: verdict === "failed" ? "phantom_membership" : "lost_response_restart", version: 1 };
+      ? "clean"
+      : verdict === "failed"
+        ? "phantom_membership"
+        : "lost_response_restart";
+  const scenario = { id: scenarioId, version: CHALLENGE_CATALOG_VERSION };
+  const definition = lookupScenario(scenario);
+  const bound = resolveScenario(manifest, scenario);
+  if (!definition || !bound.ok) throw new Error(bound.ok ? "missing scenario" : bound.reason);
+  const expectedOf = new Map(bound.scenario.steps.map((step) => [step.actionId, step.outcome]));
   const steps = manifest.actions.map((action): RehearsalStepReport => {
-    let expected: RehearsalStepOutcome = "confirmed";
+    const expected: RehearsalStepOutcome = expectedOf.get(action.id) ?? "confirmed";
     let outcome: RehearsalStepOutcome = "confirmed";
-    if (verdict === "failed" && action.caseId === "case_001") {
-      expected = action.kind === "zendesk.ticket.patchFields" ? "confirmed" : "held";
+    // A corrupted run: the phantom's refund and note went out anyway.
+    if (verdict === "failed" && (action.id === "refund_001" || action.id === "note_001")) {
+      outcome = "confirmed";
     }
     if (verdict === "unknown" && action.id === "refund_001") outcome = "unknown_outcome";
     // Its note waits on that refund, so neither can be called right or wrong.
@@ -119,8 +136,8 @@ export function rehearsalReportFixture(
     world: "rehearsal",
     rehearsalId: FIXTURE_REHEARSAL_ID,
     plan: ref,
-    scenario: scenario as ExecutionRehearsalReport["scenario"],
-    challengesDigest: fingerprint({ scenario, challenges: [] }),
+    scenario,
+    challengesDigest: challengesDigest(definition),
     snapshot: job.snapshot,
     policy: job.policy,
     versions: FIXTURE_REHEARSAL_VERSIONS,

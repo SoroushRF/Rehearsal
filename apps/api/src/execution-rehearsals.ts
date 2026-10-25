@@ -51,9 +51,9 @@ export type SnapshotCheck = (
 ) => { ok: true } | { ok: false; refusals: string[] };
 
 /**
- * The scenarios the rehearsal worker can run, by ID and version. `clean` only until T4.11 versions
- * the challenges and the runner executes them; the others are refused here rather than queued to
- * fail.
+ * The scenarios the rehearsal worker can run, by ID and version. T4.11 publishes the rest in the
+ * challenge catalog; the runner still only applies `clean` (T3.16 applies the others). They are
+ * refused here rather than queued to fail.
  */
 export const SUPPORTED_SCENARIOS: readonly RehearsalScenarioRef[] = [{ id: "clean", version: 1 }];
 

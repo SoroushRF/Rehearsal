@@ -78,7 +78,7 @@ export const SCENARIOS: readonly ScenarioInfo[] = [
 export const scenarioInfo = (id: RehearsalScenarioId): ScenarioInfo =>
   SCENARIOS.find((s) => s.id === id) ?? { id, title: id, what: "" };
 
-/** Every scenario starts at version 1 until T4.11 versions its challenges. */
+/** Published catalog version (T4.11). The server still runs only `clean` until T3.16 applies the rest. */
 export const SCENARIO_VERSION = 1;
 
 export type StateCopy = { label: string; say: string };

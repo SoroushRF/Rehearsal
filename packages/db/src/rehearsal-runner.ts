@@ -17,10 +17,12 @@ import {
   type BillingPolicy,
   type Clock,
   type Compensator,
+  challengesDigest,
   planHash as computePlanHash,
   executeRehearsal,
   fingerprint,
   type JournalPort,
+  lookupScenario,
   operationKey,
   type ProviderPort,
   type RetryPolicy,
@@ -252,6 +254,8 @@ export async function runRehearsalJob(
   ) {
     return { kind: "skipped", reason: "job does not match a stored rehearsal" };
   }
+  const listed = lookupScenario(job.scenario);
+  const digest = listed ? challengesDigest(listed) : fingerprint([]);
   const now = () => ctx.clock.now();
   if (!(await transitionRehearsal(ctx.db, orgId, id, ["queued"], "provisioning", { now: now() }))) {
     return { kind: "skipped", reason: `rehearsal is ${stored.state}` };
@@ -285,7 +289,7 @@ export async function runRehearsalJob(
         rehearsalId: id,
         plan: job.plan,
         scenario: job.scenario,
-        challengesDigest: fingerprint([]),
+        challengesDigest: digest,
         snapshot: job.snapshot,
         policy: job.policy,
         versions: ctx.versions,
@@ -344,8 +348,22 @@ export async function runRehearsalJob(
   if (snapshotDigest(manifest.data) !== r.snapshotDigest) {
     return finish("failed", "the plan's evidence no longer matches the bound snapshot", null, null);
   }
-  if (r.scenarioId !== "clean") {
-    return finish("failed", `scenario ${r.scenarioId} isn't supported until T4.11`, null, null);
+  if (!listed) {
+    return finish(
+      "failed",
+      `scenario ${r.scenarioId}@${r.scenarioVersion} is not on the challenge allowlist`,
+      null,
+      null,
+    );
+  }
+  // T4.11 publishes the challenges. Applying them, and the exclusive lock they need, is T3.16.
+  if (listed.challenges.length > 0) {
+    return finish(
+      "failed",
+      `scenario ${listed.id}@${listed.version} is allowlisted; applying its challenges waits on T3.16`,
+      null,
+      null,
+    );
   }
 
   const provisioned = await ctx.provision(manifest.data, id);

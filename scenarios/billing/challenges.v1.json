@@ -1,0 +1,222 @@
+{
+  "schemaVersion": 1,
+  "evidence": "fixture",
+  "catalogVersion": 1,
+  "reading": "equals \"teammate\" is a role, not a Zendesk priority. The bound effect value is the priority the edit writes.",
+  "scenarios": [
+    {
+      "id": "clean",
+      "version": 1,
+      "title": "Nothing changes. Every step confirms.",
+      "containerWide": false,
+      "challenges": [],
+      "expected": {
+        "steps": [],
+        "otherSteps": "confirmed",
+        "effects": [
+          {
+            "kind": "other_refunds_once"
+          }
+        ]
+      }
+    },
+    {
+      "id": "phantom_membership",
+      "version": 1,
+      "title": "An in-window charge joins the cited query. A charge outside it must not.",
+      "containerWide": false,
+      "challenges": [
+        {
+          "kind": "phantom_charge",
+          "refund": {
+            "caseOrdinal": 0,
+            "kind": "stripe.refund.create"
+          },
+          "createdOffsetSec": 2073600
+        },
+        {
+          "kind": "outside_window_charge",
+          "refund": {
+            "caseOrdinal": 0,
+            "kind": "stripe.refund.create"
+          },
+          "createdOffsetFromEndSec": 777600
+        }
+      ],
+      "expected": {
+        "steps": [
+          {
+            "caseOrdinal": 0,
+            "kind": "stripe.refund.create",
+            "outcome": "held",
+            "holdKind": "query_membership_changed"
+          },
+          {
+            "caseOrdinal": 0,
+            "kind": "zendesk.ticket.appendPrivateNote",
+            "outcome": "skipped_dependency"
+          }
+        ],
+        "otherSteps": "confirmed",
+        "effects": [
+          {
+            "kind": "query_membership",
+            "refund": {
+              "caseOrdinal": 0,
+              "kind": "stripe.refund.create"
+            },
+            "role": "phantom",
+            "member": true
+          },
+          {
+            "kind": "query_membership",
+            "refund": {
+              "caseOrdinal": 0,
+              "kind": "stripe.refund.create"
+            },
+            "role": "control",
+            "member": false
+          },
+          {
+            "kind": "refund_count",
+            "refund": {
+              "caseOrdinal": 0,
+              "kind": "stripe.refund.create"
+            },
+            "count": 0
+          },
+          {
+            "kind": "other_refunds_once"
+          }
+        ]
+      }
+    },
+    {
+      "id": "teammate_field_edit",
+      "version": 1,
+      "title": "A note fails, then a teammate sets the patched priority. Their value stays.",
+      "containerWide": false,
+      "challenges": [
+        {
+          "kind": "fail_step",
+          "step": {
+            "caseOrdinal": 0,
+            "kind": "zendesk.ticket.appendPrivateNote"
+          }
+        },
+        {
+          "kind": "teammate_field_edit",
+          "patch": {
+            "caseOrdinal": 0,
+            "kind": "zendesk.ticket.patchFields"
+          },
+          "field": "priority",
+          "value": "urgent",
+          "afterFailedStep": {
+            "caseOrdinal": 0,
+            "kind": "zendesk.ticket.appendPrivateNote"
+          }
+        }
+      ],
+      "expected": {
+        "steps": [
+          {
+            "caseOrdinal": 0,
+            "kind": "zendesk.ticket.appendPrivateNote",
+            "outcome": "rejected"
+          }
+        ],
+        "otherSteps": "confirmed",
+        "effects": [
+          {
+            "kind": "ticket_field",
+            "patch": {
+              "caseOrdinal": 0,
+              "kind": "zendesk.ticket.patchFields"
+            },
+            "field": "priority",
+            "equals": "teammate"
+          },
+          {
+            "kind": "other_refunds_once"
+          }
+        ]
+      }
+    },
+    {
+      "id": "lost_response_restart",
+      "version": 1,
+      "title": "The refund commits, its response is dropped, and a restart reads the one effect back.",
+      "containerWide": false,
+      "challenges": [
+        {
+          "kind": "drop_response_after_commit",
+          "step": {
+            "caseOrdinal": 0,
+            "kind": "stripe.refund.create"
+          },
+          "thenRestart": true
+        }
+      ],
+      "expected": {
+        "steps": [],
+        "otherSteps": "confirmed",
+        "effects": [
+          {
+            "kind": "refund_count",
+            "refund": {
+              "caseOrdinal": 0,
+              "kind": "stripe.refund.create"
+            },
+            "count": 1
+          },
+          {
+            "kind": "other_refunds_once"
+          }
+        ]
+      }
+    },
+    {
+      "id": "benign_nonmatching_change",
+      "version": 1,
+      "title": "A charge for the same customer falls outside the cited window. Nothing is held.",
+      "containerWide": false,
+      "challenges": [
+        {
+          "kind": "outside_window_charge",
+          "refund": {
+            "caseOrdinal": 0,
+            "kind": "stripe.refund.create"
+          },
+          "createdOffsetFromEndSec": 777600
+        }
+      ],
+      "expected": {
+        "steps": [],
+        "otherSteps": "confirmed",
+        "effects": [
+          {
+            "kind": "query_membership",
+            "refund": {
+              "caseOrdinal": 0,
+              "kind": "stripe.refund.create"
+            },
+            "role": "control",
+            "member": false
+          },
+          {
+            "kind": "refund_count",
+            "refund": {
+              "caseOrdinal": 0,
+              "kind": "stripe.refund.create"
+            },
+            "count": 1
+          },
+          {
+            "kind": "other_refunds_once"
+          }
+        ]
+      }
+    }
+  ]
+}
