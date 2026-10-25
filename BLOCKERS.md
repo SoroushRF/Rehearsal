@@ -6,16 +6,16 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 
 ## Top blockers
 
-53 of 81 tasks done. These open tasks hold up the most other work:
+54 of 81 tasks done. These open tasks hold up the most other work:
 
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
-| **T1.21** Contracts: rehearsal jobs, scenario references, and reports [#163](https://github.com/SoroushRF/Rehearsal/issues/163) | @SoroushRF | 👀 in review | 14 |
-| **T3.13** Separate rehearsal persistence and durable jobs [#164](https://github.com/SoroushRF/Rehearsal/issues/164) | @ArtinMe | 🟥 blocked | 9 |
+| **T3.13** Separate rehearsal persistence and durable jobs [#164](https://github.com/SoroushRF/Rehearsal/issues/164) | @ArtinMe | 🟨 ready | 9 |
 | **T1.22** Seed disposable Era worlds from a supported incident snapshot [#166](https://github.com/SoroushRF/Rehearsal/issues/166) | @SoroushRF | 👀 in review | 7 |
 | **T1.23** Scoped rehearsal credentials and world routing [#167](https://github.com/SoroushRF/Rehearsal/issues/167) | @SoroushRF | 👀 in review | 7 |
-| **T3.14** Share deterministic execution mechanics while preserving admission boundaries [#165](https://github.com/SoroushRF/Rehearsal/issues/165) | @ArtinMe | 🟥 blocked | 7 |
+| **T3.14** Share deterministic execution mechanics while preserving admission boundaries [#165](https://github.com/SoroushRF/Rehearsal/issues/165) | @ArtinMe | 🟨 ready | 7 |
 | **T3.15** Execute a stored plan against disposable worlds [#168](https://github.com/SoroushRF/Rehearsal/issues/168) | @ArtinMe | 🟥 blocked | 6 |
+| **T4.11** Allowlisted rehearsal challenges and controls [#169](https://github.com/SoroushRF/Rehearsal/issues/169) | @skhdemo | 🟨 ready | 6 |
 
 ## T1 Rehearse
 
@@ -43,9 +43,9 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T1.18** Contracts: typed op zendesk.ticket.appendPublicReply [#143](https://github.com/SoroushRF/Rehearsal/issues/143) | ✅ done |  | T1.13, T2.16 (T2), T3.11 (T3) |
 | **T1.19** Contracts: typed op stripe.customer.balanceCredit (after an Era semantics check) [#144](https://github.com/SoroushRF/Rehearsal/issues/144) | ✅ done |  | T1.14, T2.18 (T2), T3.12 (T3), T4.10 (T4), T4.14 (T4) |
 | **T1.20** Decision record: executable rehearsal and its trust boundaries [#162](https://github.com/SoroushRF/Rehearsal/issues/162) | ✅ done |  | T1.21, T1.23, T1.24, T3.14 (T3) |
-| **T1.21** Contracts: rehearsal jobs, scenario references, and reports [#163](https://github.com/SoroushRF/Rehearsal/issues/163) | 👀 in review [PR #212](https://github.com/SoroushRF/Rehearsal/pull/212) | — | T1.22, T1.23, T2.19 (T2), T3.13 (T3), T3.14 (T3), T4.11 (T4) |
-| **T1.22** Seed disposable Era worlds from a supported incident snapshot [#166](https://github.com/SoroushRF/Rehearsal/issues/166) | 👀 in review [PR #213](https://github.com/SoroushRF/Rehearsal/pull/213) | T1.21 (T1, in review) | T3.15 (T3) |
-| **T1.23** Scoped rehearsal credentials and world routing [#167](https://github.com/SoroushRF/Rehearsal/issues/167) | 👀 in review [PR #214](https://github.com/SoroushRF/Rehearsal/pull/214) | T1.21 (T1, in review) | T3.15 (T3) |
+| **T1.21** Contracts: rehearsal jobs, scenario references, and reports [#163](https://github.com/SoroushRF/Rehearsal/issues/163) | ✅ done |  | T1.22, T1.23, T2.19 (T2), T3.13 (T3), T3.14 (T3), T4.11 (T4) |
+| **T1.22** Seed disposable Era worlds from a supported incident snapshot [#166](https://github.com/SoroushRF/Rehearsal/issues/166) | 👀 in review [PR #213](https://github.com/SoroushRF/Rehearsal/pull/213) | — | T3.15 (T3) |
+| **T1.23** Scoped rehearsal credentials and world routing [#167](https://github.com/SoroushRF/Rehearsal/issues/167) | 👀 in review [PR #214](https://github.com/SoroushRF/Rehearsal/pull/214) | — | T3.15 (T3) |
 | **T1.24** Native Stripe sandbox setup and read conformance _(stretch)_ [#178](https://github.com/SoroushRF/Rehearsal/issues/178) | 👀 in review [PR #215](https://github.com/SoroushRF/Rehearsal/pull/215) | — | T3.17 (T3) |
 | **T1.25** Competent scripted benchmark baseline _(stretch)_ [#180](https://github.com/SoroushRF/Rehearsal/issues/180) | 🟥 blocked | T1.27 (T1, in review)<br>T4.14 (T4, ready) |  |
 | **T1.26** Precedent reuse across different incidents _(stretch)_ [#181](https://github.com/SoroushRF/Rehearsal/issues/181) | 🟥 blocked | T2.17 (T2, in review)<br>T4.14 (T4, ready) |  |
@@ -76,7 +76,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T2.16** Review UI: show the exact rendered public reply being approved [#146](https://github.com/SoroushRF/Rehearsal/issues/146) | ✅ done |  | T1.13 (T1) |
 | **T2.17** Precedent promotion: finance-only route and UI [#147](https://github.com/SoroushRF/Rehearsal/issues/147) | 👀 in review [PR #239](https://github.com/SoroushRF/Rehearsal/pull/239) | — | T1.26 (T1), T4.13 (T4) |
 | **T2.18** Policy: choose a refund or an invoice credit per obligation [#148](https://github.com/SoroushRF/Rehearsal/issues/148) | ✅ done |  | T1.14 (T1) |
-| **T2.19** API: request and read an execution rehearsal [#171](https://github.com/SoroushRF/Rehearsal/issues/171) | 🟥 blocked | T1.21 (T1, in review)<br>T3.13 (T3, blocked) | T2.20, T2.21 |
+| **T2.19** API: request and read an execution rehearsal [#171](https://github.com/SoroushRF/Rehearsal/issues/171) | 🟥 blocked | T3.13 (T3, ready) | T2.20, T2.21 |
 | **T2.20** Review UI: start a rehearsal and follow its progress [#172](https://github.com/SoroushRF/Rehearsal/issues/172) | 🟥 blocked | T2.19 (T2, blocked) | T4.13 (T4) |
 | **T2.21** Review UI: compare expected and observed rehearsal outcomes [#174](https://github.com/SoroushRF/Rehearsal/issues/174) | 🟥 blocked | T2.19 (T2, blocked)<br>T4.12 (T4, blocked) | T4.13 (T4) |
 | **T2.22** Operator task tests and findings [#177](https://github.com/SoroushRF/Rehearsal/issues/177) | 🟥 blocked | T2.5 (T2, ready) |  |
@@ -100,10 +100,10 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T3.10** Slack write adapter and uncertain-post reconciliation [#149](https://github.com/SoroushRF/Rehearsal/issues/149) | ✅ done |  | T1.7 (T1) |
 | **T3.11** Zendesk public reply write adapter and reconciliation [#150](https://github.com/SoroushRF/Rehearsal/issues/150) | ✅ done |  | T1.13 (T1) |
 | **T3.12** Stripe balance credit write adapter and reconciliation [#151](https://github.com/SoroushRF/Rehearsal/issues/151) | ✅ done |  | T1.14 (T1) |
-| **T3.13** Separate rehearsal persistence and durable jobs [#164](https://github.com/SoroushRF/Rehearsal/issues/164) | 🟥 blocked | T1.21 (T1, in review) | T2.19 (T2), T3.15 |
-| **T3.14** Share deterministic execution mechanics while preserving admission boundaries [#165](https://github.com/SoroushRF/Rehearsal/issues/165) | 🟥 blocked | T1.21 (T1, in review) | T3.15 |
-| **T3.15** Execute a stored plan against disposable worlds [#168](https://github.com/SoroushRF/Rehearsal/issues/168) | 🟥 blocked | T3.13 (T3, blocked)<br>T3.14 (T3, blocked)<br>T1.22 (T1, in review)<br>T1.23 (T1, in review) | T3.16, T4.12 (T4) |
-| **T3.16** Rehearsal worker: restart, cancellation, and cleanup [#170](https://github.com/SoroushRF/Rehearsal/issues/170) | 🟥 blocked | T3.15 (T3, blocked)<br>T4.11 (T4, blocked) | T4.13 (T4) |
+| **T3.13** Separate rehearsal persistence and durable jobs [#164](https://github.com/SoroushRF/Rehearsal/issues/164) | 🟨 ready | — | T2.19 (T2), T3.15 |
+| **T3.14** Share deterministic execution mechanics while preserving admission boundaries [#165](https://github.com/SoroushRF/Rehearsal/issues/165) | 🟨 ready | — | T3.15 |
+| **T3.15** Execute a stored plan against disposable worlds [#168](https://github.com/SoroushRF/Rehearsal/issues/168) | 🟥 blocked | T3.13 (T3, ready)<br>T3.14 (T3, ready)<br>T1.22 (T1, in review)<br>T1.23 (T1, in review) | T3.16, T4.12 (T4) |
+| **T3.16** Rehearsal worker: restart, cancellation, and cleanup [#170](https://github.com/SoroushRF/Rehearsal/issues/170) | 🟥 blocked | T3.15 (T3, blocked)<br>T4.11 (T4, ready) | T4.13 (T4) |
 | **T3.17** Native Stripe sandbox refund writer _(stretch)_ [#184](https://github.com/SoroushRF/Rehearsal/issues/184) | 🟥 blocked | T1.24 (T1, in review) | T3.18 |
 | **T3.18** Native Stripe executor recovery gate _(stretch)_ [#185](https://github.com/SoroushRF/Rehearsal/issues/185) | 🟥 blocked | T3.17 (T3, blocked) |  |
 
@@ -121,8 +121,8 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T4.6** ML pilot and go/no-go _(stretch)_ [#30](https://github.com/SoroushRF/Rehearsal/issues/30) | ✅ done |  |  |
 | **T4.7** Impact service behind ImpactPort (if ML go) _(stretch)_ [#31](https://github.com/SoroushRF/Rehearsal/issues/31) | ✅ done |  |  |
 | **T4.10** Guard: one remedy per obligation across refunds and credits [#152](https://github.com/SoroushRF/Rehearsal/issues/152) | ✅ done |  | T1.14 (T1) |
-| **T4.11** Allowlisted rehearsal challenges and controls [#169](https://github.com/SoroushRF/Rehearsal/issues/169) | 🟥 blocked | T1.21 (T1, in review) | T3.16 (T3), T4.12 |
-| **T4.12** Independent verifier for observed rehearsal effects [#173](https://github.com/SoroushRF/Rehearsal/issues/173) | 🟥 blocked | T3.15 (T3, blocked)<br>T4.11 (T4, blocked) | T2.21 (T2), T4.13 |
+| **T4.11** Allowlisted rehearsal challenges and controls [#169](https://github.com/SoroushRF/Rehearsal/issues/169) | 🟨 ready | — | T3.16 (T3), T4.12 |
+| **T4.12** Independent verifier for observed rehearsal effects [#173](https://github.com/SoroushRF/Rehearsal/issues/173) | 🟥 blocked | T3.15 (T3, blocked)<br>T4.11 (T4, ready) | T2.21 (T2), T4.13 |
 | **T4.13** Integrated isolation and recovery acceptance gate [#175](https://github.com/SoroushRF/Rehearsal/issues/175) | 🟥 blocked | T3.16 (T3, blocked)<br>T2.20 (T2, blocked)<br>T2.21 (T2, blocked)<br>T4.12 (T4, blocked)<br>T2.17 (T2, in review) | T1.28 (T1) |
 | **T4.14** Held-out incident datasets and independent gold _(stretch)_ [#179](https://github.com/SoroushRF/Rehearsal/issues/179) | 🟨 ready | — | T1.25 (T1), T1.26 (T1) |
 
@@ -157,7 +157,7 @@ flowchart LR
     T1_18["T1.18 Contracts: typed op zendesk.ticket.appendP"]:::done
     T1_19["T1.19 Contracts: typed op stripe.customer.balanc"]:::done
     T1_20["T1.20 Decision record: executable rehearsal and "]:::done
-    T1_21["T1.21 Contracts: rehearsal jobs, scenario refere"]:::review
+    T1_21["T1.21 Contracts: rehearsal jobs, scenario refere"]:::done
     T1_22["T1.22 Seed disposable Era worlds from a supporte"]:::review
     T1_23["T1.23 Scoped rehearsal credentials and world rou"]:::review
     T1_27["T1.27 Extend the scorecard to the full operation"]:::review
@@ -198,8 +198,8 @@ flowchart LR
     T3_10["T3.10 Slack write adapter and uncertain-post rec"]:::done
     T3_11["T3.11 Zendesk public reply write adapter and rec"]:::done
     T3_12["T3.12 Stripe balance credit write adapter and re"]:::done
-    T3_13["T3.13 Separate rehearsal persistence and durable"]:::blocked
-    T3_14["T3.14 Share deterministic execution mechanics wh"]:::blocked
+    T3_13["T3.13 Separate rehearsal persistence and durable"]:::ready
+    T3_14["T3.14 Share deterministic execution mechanics wh"]:::ready
     T3_15["T3.15 Execute a stored plan against disposable w"]:::blocked
     T3_16["T3.16 Rehearsal worker: restart, cancellation, a"]:::blocked
   end
@@ -209,7 +209,7 @@ flowchart LR
     T4_3["T4.3 Wire guards into executor admission"]:::done
     T4_4["T4.4 Conditional compensation on owned fields"]:::done
     T4_10["T4.10 Guard: one remedy per obligation across re"]:::done
-    T4_11["T4.11 Allowlisted rehearsal challenges and contr"]:::blocked
+    T4_11["T4.11 Allowlisted rehearsal challenges and contr"]:::ready
     T4_12["T4.12 Independent verifier for observed rehearsa"]:::blocked
     T4_13["T4.13 Integrated isolation and recovery acceptan"]:::blocked
   end
