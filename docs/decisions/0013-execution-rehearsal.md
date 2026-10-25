@@ -85,7 +85,7 @@ The snapshot is the **plan's own evidence**: the observations and query projecti
 
 A snapshot is supported only when both of these hold:
 
-- every entity a step reads or writes has an observation with a projection version the seeder knows (`stripe.charge.v1`, `zendesk.ticket.v1`, and the customer balance once T1.14 lands);
+- every entity a step reads or writes has an observation with a projection version the seeder knows (`stripe.charge.v2`, `zendesk.ticket.v2`, and the customer balance once T1.14 lands). The `v1` projections leave out `created`, `invoice` and `external_id`, so a plan citing them is refused;
 - every query the plan cites is complete.
 
 Anything else is refused before provisioning, with the reason, and never partially seeded. The cases refused include:
@@ -95,6 +95,13 @@ Anything else is refused before provisioning, with the reason, and never partial
 - a projection that leaves out a field the simulator needs.
 
 Fields outside the projection take the seeder's fixture defaults. The report lists them as "not from evidence".
+
+The seeder ([`scripts/seed/snapshot.ts`](../../scripts/seed/snapshot.ts), T1.22) reads the tenant back before anything runs. It uses raw reads and the projection functions, not the executor's readers, and compares every observation and every cited query's membership and projections. A mismatch refuses the run. Simulator fidelity limits:
+
+- a prior refund is seeded as `amount_refunded` only; its refund objects aren't in evidence;
+- a ticket gets one public comment, not its real thread (the projection leaves comments out);
+- every tenant starts from Era's seeded baseline, so records the plan never read come from it. The read-back fails if one of them lands in a cited query.
+- a cited record the baseline already has (a requester's older tickets) is kept, not injected again, because Era's `/inject` doesn't dedupe by ID. The read-back checks its projection like any other.
 
 ### 5. Lifecycle and unknown outcomes
 

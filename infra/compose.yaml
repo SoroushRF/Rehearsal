@@ -11,6 +11,12 @@ x-era-env: &era-env
   SIMCORE_ALLOW_CLIENT_WRITES: "1"
   SIMCORE_ADMIN_TOKEN: ${ERA_ADMIN_TOKEN:-change-me-local-only}
 
+# Execution rehearsal (decision 0013): its own containers, so a rehearsal's container-wide faults
+# never reach a real run, and its own admin token, so it can't mint, reset or fault a real world.
+x-era-rehearsal-env: &era-rehearsal-env
+  <<: *era-env
+  SIMCORE_ADMIN_TOKEN: ${REHEARSAL_ERA_ADMIN_TOKEN:-change-me-rehearsal-local-only}
+
 x-stripe: &stripe
   image: erabyeon/stripe@sha256:2981ee73e05ecd061a5754e87e5a3775d3e857ef29ea2a3b544de038adf0a599
   environment: *era-env
@@ -60,6 +66,23 @@ services:
   slack-operational:
     <<: *slack
     ports: ["127.0.0.1:8122:8080"]
+
+  # `--profile rehearsal`: disposable worlds for execution rehearsals, one rh-<id> tenant each.
+  stripe-rehearsal:
+    <<: *stripe
+    environment: *era-rehearsal-env
+    profiles: [rehearsal]
+    ports: ["127.0.0.1:8103:8080"]
+  zendesk-rehearsal:
+    <<: *zendesk
+    environment: *era-rehearsal-env
+    profiles: [rehearsal]
+    ports: ["127.0.0.1:8113:8080"]
+  slack-rehearsal:
+    <<: *slack
+    environment: *era-rehearsal-env
+    profiles: [rehearsal]
+    ports: ["127.0.0.1:8123:8080"]
 
 volumes:
   pgdata:
