@@ -80,6 +80,7 @@ See [beyond.md](../beyond.md) for scope, parallel work, external gates and the r
 
 ## Handoff log
 
+- **2026-10-25 (skhdemo).** T4.23 is implemented on `t4/T4.23-member-routes` and not pushed. Invite and role routes ask IAM, then IAM calls Clerk for the organization it verified from the token. Only a role in the rule file can be assigned, and the last owner cannot be demoted.
 - **2026-10-25 (skhdemo).** T4.21 is implemented on `t4/T4.21-grant-permissions` and not pushed. New grants store the approver's permissions and the rule id and version; dual-approval seats are those permissions. A role-only grant fills no seat.
 - **2026-10-25 (skhdemo).** T4.20 on `t4/T4.20-api-enforcement` ([#288](https://github.com/SoroushRF/Rehearsal/pull/288)). Person routes ask IAM over mTLS and send the session token; the API no longer holds the Clerk secret or checks `CLERK_ROLES`. `GET /api/me` uses IAM's identity call. Apply also asks `run:admit` on stored grants, so a role-only grant is not queued. Grant schema and the executor are unchanged (T4.21, T4.22).
 - **2026-10-25 (Claude for @SoroushRF, T4.13).** Wrote the gate spec in [docs/acceptance](../acceptance/T4.13-isolation-recovery-gate.md): checks G1–G4, the existing component tests behind each, and the record it must leave. Nothing ran: T2.19, T3.16, T4.11, T4.12, T2.20, T2.21 and T2.17 are open, so there's no API path to drive. Next: once T2.19 lands, write the operator script and Playwright spec it describes.

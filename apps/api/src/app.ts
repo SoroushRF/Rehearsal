@@ -9,6 +9,7 @@ import { registerAuditRoute } from "./audit";
 import { registerMeRoute } from "./auth";
 import { registerCancelRoute } from "./cancel";
 import type { IamClient } from "./iam";
+import { registerMemberRoutes } from "./members";
 import { type PlanDeps, registerPlanRoutes } from "./plans";
 import { type PrecedentDeps, registerPrecedentRoutes } from "./precedents";
 import { type RehearsalTokenDeps, registerRehearsalTokenRoute } from "./rehearsal-tokens";
@@ -49,6 +50,7 @@ export function buildApp(
     }),
   );
   registerMeRoute(app, deps.iam);
+  registerMemberRoutes(app, deps.iam);
 
   // Command routes need Postgres; health stays available without it (core mode with no DB).
   // Without it they say "unavailable", not 404, so clients don't mistake an outage for a missing plan.

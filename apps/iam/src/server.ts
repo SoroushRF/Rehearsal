@@ -2,8 +2,9 @@ import { createServer, type Server } from "node:https";
 import type { TLSSocket } from "node:tls";
 import type { AuthzRuleFile } from "@rehearsal/contracts";
 import { answerRequest } from "./answer";
-import type { ClerkVerifier } from "./clerk";
+import type { ClerkOrgClient, ClerkVerifier } from "./clerk";
 import { answerIdentity } from "./identity";
+import { answerMembership } from "./members";
 
 const BODY_LIMIT = 1_000_000;
 
@@ -16,6 +17,8 @@ export interface IamServerOptions {
   allowedClients: readonly string[];
   files: ReadonlyMap<string, AuthzRuleFile>;
   clerk: ClerkVerifier;
+  /** Clerk organization writes. Without it a membership command fails closed and writes nothing. */
+  orgs?: ClerkOrgClient;
   now?: () => Date;
   log?: (line: unknown) => void;
 }
@@ -81,6 +84,25 @@ export function createIamServer(options: IamServerOptions): Server {
                 : { error: identity.error }),
             });
             const body = JSON.stringify(identity);
+            res.writeHead(200, {
+              "content-type": "application/json",
+              "content-length": Buffer.byteLength(body),
+            });
+            res.end(body);
+            return;
+          }
+          if (path === "/v1/members") {
+            const result = await answerMembership(raw, {
+              files: options.files,
+              clerk: options.clerk,
+              orgs: options.orgs,
+            });
+            log({
+              iam: "membership",
+              ok: result.ok,
+              ...(result.ok ? { kind: result.kind, orgId: result.orgId } : { error: result.error }),
+            });
+            const body = JSON.stringify(result);
             res.writeHead(200, {
               "content-type": "application/json",
               "content-length": Buffer.byteLength(body),

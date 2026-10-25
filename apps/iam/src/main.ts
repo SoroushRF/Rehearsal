@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { iamServerViolations } from "./boot";
-import { clerkVerifierFromEnv } from "./clerk";
+import { clerkFromEnv } from "./clerk";
 import { loadRuleFiles } from "./rules";
 import { createIamServer } from "./server";
 
@@ -25,7 +25,7 @@ try {
   process.exit(1);
 }
 
-const clerk = clerkVerifierFromEnv();
+const clerk = clerkFromEnv();
 if (!clerk) console.warn("Clerk keys not set; every person question will be denied");
 
 const cert = readFileSync(process.env.IAM_TLS_CERT ?? "");
@@ -37,7 +37,8 @@ const server = createIamServer({
   clientCa,
   allowedClients: ["api", "executor"],
   files,
-  clerk: clerk ?? { verify: async () => null },
+  clerk: clerk?.verifier ?? { verify: async () => null },
+  orgs: clerk?.orgs,
 });
 
 const port = Number(process.env.IAM_PORT ?? 3443);
