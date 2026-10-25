@@ -8,9 +8,11 @@ import {
   planHash,
 } from "@rehearsal/core";
 import {
+  approvedGrant,
   type FakeCharge,
   FakeClock,
   type FakeWorld,
+  fakeRunAdmit,
   happyPathBundle,
   MemoryApplyStore,
   MemoryJournal,
@@ -36,19 +38,22 @@ function setup(bundle: ReplayBundle) {
     approvalId: APPROVAL,
   });
   store.plans.set(`${manifest.planId}@1`, { planHash: hash, manifest });
-  store.grants.set(APPROVAL, {
-    id: APPROVAL,
-    orgId: manifest.orgId,
-    planId: manifest.planId,
-    revision: 1,
-    planHash: hash,
-    actorUserId: "user_finance",
-    actorSessionId: "sess_1",
-    roles: ["support_lead", "finance_lead"],
-    grantedAt: "2026-10-21T11:00:00.000Z",
-    expiresAt: "2026-10-21T13:00:00.000Z",
-    revokedAt: null,
-  });
+  store.grants.set(
+    APPROVAL,
+    approvedGrant({
+      id: APPROVAL,
+      orgId: manifest.orgId,
+      planId: manifest.planId,
+      revision: 1,
+      planHash: hash,
+      actorUserId: "user_finance",
+      actorSessionId: "sess_1",
+      roles: ["support_lead", "finance_lead"],
+      grantedAt: "2026-10-21T11:00:00.000Z",
+      expiresAt: "2026-10-21T13:00:00.000Z",
+      revokedAt: null,
+    }),
+  );
   const world = worldFromManifest(manifest.observations);
   const providers: Record<"stripe" | "zendesk", ProviderPort> = {
     stripe: world.provider("stripe"),
@@ -66,6 +71,7 @@ function setup(bundle: ReplayBundle) {
     providers,
     worlds,
     policies: [policy as BillingPolicyV1],
+    admit: fakeRunAdmit({ now: () => clock.now() }),
     newId: (prefix: string) => `${prefix}_${++n}`,
     guard: createReadGuard({ providers, worlds, clock }),
   };

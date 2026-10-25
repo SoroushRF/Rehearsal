@@ -7,7 +7,9 @@ import {
   planHash,
 } from "@rehearsal/core";
 import {
+  approvedGrant,
   FakeClock,
+  fakeRunAdmit,
   happyPathBundle,
   MemoryApplyStore,
   MemoryJournal,
@@ -64,7 +66,7 @@ function setup(opts: { slack?: boolean; caseConcurrency?: number } = {}) {
     approvalId: APPROVAL,
   });
   store.plans.set(`${manifest.planId}@1`, { planHash: hash, manifest });
-  const grant: ApprovalGrant = {
+  const grant: ApprovalGrant = approvedGrant({
     id: APPROVAL,
     orgId: manifest.orgId,
     planId: manifest.planId,
@@ -76,16 +78,17 @@ function setup(opts: { slack?: boolean; caseConcurrency?: number } = {}) {
     grantedAt: "2026-10-21T11:00:00.000Z",
     expiresAt: "2026-10-21T13:00:00.000Z",
     revokedAt: null,
-  };
+  });
   store.grants.set(APPROVAL, grant);
   const world = worldFromManifest(manifest.observations);
   const journal = new MemoryJournal();
+  const clock = new FakeClock("2026-10-21T12:00:00.000Z");
   let n = 0;
   const slack = opts.slack ?? true;
   const deps: ExecutorDeps = {
     store,
     journal,
-    clock: new FakeClock("2026-10-21T12:00:00.000Z"),
+    clock,
     providers: {
       stripe: world.provider("stripe"),
       zendesk: world.provider("zendesk"),
@@ -97,6 +100,7 @@ function setup(opts: { slack?: boolean; caseConcurrency?: number } = {}) {
       ...(slack && { slack: { world: "operational", tenant: "test" } as const }),
     },
     policies: [policy as BillingPolicyV1],
+    admit: fakeRunAdmit({ now: () => clock.now() }),
     newId: (prefix: string) => `${prefix}_${++n}`,
     sleep: async () => {},
     caseConcurrency: opts.caseConcurrency,

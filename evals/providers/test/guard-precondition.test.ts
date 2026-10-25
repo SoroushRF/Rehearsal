@@ -8,6 +8,7 @@ import {
 } from "@rehearsal/providers";
 import {
   billingManifest,
+  fakeRunAdmit,
   incidentRecords,
   MemoryApplyStore,
   MemoryJournal,
@@ -71,6 +72,8 @@ describe.skipIf(!ENABLED)("precondition/guard race on Era", () => {
       actorUserId: "review",
       actorSessionId: "review",
       roles: ["support_lead"],
+      permissions: ["rehearsal:approve:support_step", "rehearsal:approve:finance_step"],
+      authzRule: { id: "rehearsal-authz", version: 1 },
       revokedAt: null,
       grantedAt: new Date(Date.now() - 60_000).toISOString(),
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
@@ -96,6 +99,7 @@ describe.skipIf(!ENABLED)("precondition/guard race on Era", () => {
       policies: [
         { id: "billing-remedy", version: 1, currency: "cad", financeThresholdMinor: 10_000 },
       ],
+      admit: fakeRunAdmit({ now: () => clock.now() }),
       guard: createReadGuard({ providers, worlds, clock }),
     });
     expect(out.receipts[0]).toMatchObject({

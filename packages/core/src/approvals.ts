@@ -1,4 +1,4 @@
-import type { ApprovalGrant, PermissionV1, PlanManifest } from "@rehearsal/contracts";
+import type { ApprovalGrant, PermissionV1, PlanManifest, Role } from "@rehearsal/contracts";
 import { type BillingPolicy, evaluateBillingPolicy } from "./policy";
 
 /** The two seats a plan with dual approval needs filled, by two different people. */
@@ -129,4 +129,50 @@ export function explainShortfall(status: ApprovalStatus): string {
   return `needs two different approvers (${supportSeat} + ${financeSeat}); ${
     who ? `signed: ${who}; ` : ""
   }still needed: ${open}`;
+}
+
+/**
+ * A plan step's seat, as the permission `run:admit` expects. This reads the plan, not a grant:
+ * a grant's `roles` are never turned into permissions.
+ */
+const ROLE_PERMISSION = {
+  support_lead: "rehearsal:approve:support_step",
+  finance_lead: "rehearsal:approve:finance_step",
+} as const satisfies Record<Role, PermissionV1>;
+
+/** The seats a plan's actions name, and whether policy asks for two approvers. No amounts. */
+export function approvalFacts(
+  manifest: PlanManifest,
+  policies: readonly BillingPolicy[],
+): { requiredPermissions: PermissionV1[]; dualRequired: boolean } {
+  const required = new Set<PermissionV1>();
+  for (const action of manifest.actions) required.add(ROLE_PERMISSION[action.requiredRole]);
+  for (const ref of manifest.policies) {
+    const policy = policies.find((p) => p.id === ref.id && p.version === ref.version);
+    if (!policy) continue;
+    for (const role of evaluateBillingPolicy(manifest, policy).requiredRoles) {
+      required.add(ROLE_PERMISSION[role]);
+    }
+  }
+  return {
+    requiredPermissions: [...required].sort(),
+    dualRequired: requiresDualApproval(manifest, policies),
+  };
+}
+
+/**
+ * Facts IAM's `run:admit` rules read. Permissions are copied only when the row has them.
+ * `roles` are not turned into permissions: a role-only grant does not cover the list.
+ */
+export function grantFact(grant: ApprovalGrant): Record<string, unknown> {
+  return {
+    orgId: grant.orgId,
+    planHash: grant.planHash,
+    revision: grant.revision,
+    revokedAt: grant.revokedAt,
+    grantedAt: grant.grantedAt,
+    expiresAt: grant.expiresAt,
+    actorUserId: grant.actorUserId,
+    ...(grant.permissions ? { permissions: grant.permissions } : {}),
+  };
 }
