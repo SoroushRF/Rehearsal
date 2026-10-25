@@ -165,6 +165,16 @@ describe("native Stripe sandbox gate (T1.24)", () => {
     expect(checks.find((c) => !c.ok)?.detail).toBe(`${run.chargeIds[0]} is 4210 usd`);
   });
 
+  it("never follows a redirect with the key", async () => {
+    let redirect: RequestInit["redirect"];
+    const client = sandboxClient(env, async (_url, init) => {
+      redirect = init?.redirect;
+      return new Response(JSON.stringify({ id: "acct_1", livemode: false }));
+    });
+    await client.get("/v1/account");
+    expect(redirect).toBe("error");
+  });
+
   it("binds the refund through its charge, and fails one that refunds another charge", async () => {
     const stripe = fakeStripe();
     const client = sandboxClient(env, stripe.fetch);

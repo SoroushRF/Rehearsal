@@ -7,7 +7,7 @@ import type {
 } from "@rehearsal/contracts";
 import { type Clock, fingerprint, type ProviderPort, type WorldContext } from "@rehearsal/core";
 import { z } from "zod";
-import { eraFetch } from "./era";
+import { eraFetch, NO_REDIRECTS } from "./era";
 import type { WorldConfig } from "./worlds";
 
 /** The read half of a ProviderPort. T3 owns the write half (see write.ts). */
@@ -127,7 +127,10 @@ async function getJson(target: ReadTarget, path: string): Promise<Record<string,
   };
   const res =
     target.transport === "native"
-      ? await (target.fetch ?? fetch)(`${target.config.baseUrl}${path}`, init)
+      ? await (target.fetch ?? fetch)(`${target.config.baseUrl}${path}`, {
+          ...init,
+          ...NO_REDIRECTS,
+        })
       : await eraFetch(target.config, path, init);
   if (!res.ok) throw new Error(`GET ${path} → ${res.status}`);
   return (await res.json()) as Record<string, unknown>;

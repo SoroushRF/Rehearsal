@@ -1,14 +1,15 @@
 import {
-  ExecutionRehearsalId,
   type ExecutionRehearsalState,
   type PlanManifest,
   TERMINAL_REHEARSAL_STATES,
 } from "@rehearsal/contracts";
-import { canonicalize, rehearsalTenant } from "@rehearsal/core";
+import { canonicalize } from "@rehearsal/core";
 import {
   eraAdmin,
   eraFetch,
   mintTenantToken,
+  REHEARSAL_URL_KEYS,
+  resolveRehearsalWorld,
   STRIPE_CHARGE_PROJECTION,
   stripeChargeProjection,
   type WorldConfig,
@@ -259,26 +260,6 @@ function ticket(template: Record<string, unknown>, p: TicketProjection): Record<
 
 // --- Worlds ----------------------------------------------------------------
 
-const REHEARSAL_URL_KEYS: Record<SnapshotVendor, string> = {
-  stripe: "ERA_STRIPE_REHEARSAL_URL",
-  zendesk: "ERA_ZENDESK_REHEARSAL_URL",
-};
-const SHARED_URL_KEYS = [
-  "ERA_STRIPE_PLANNING_URL",
-  "ERA_STRIPE_OPERATIONAL_URL",
-  "ERA_ZENDESK_PLANNING_URL",
-  "ERA_ZENDESK_OPERATIONAL_URL",
-  "ERA_SLACK_PLANNING_URL",
-  "ERA_SLACK_OPERATIONAL_URL",
-];
-
-/** Host and port, with loopback spellings folded together. */
-function endpoint(url: string): string {
-  const u = new URL(url);
-  const host = ["localhost", "[::1]"].includes(u.hostname) ? "127.0.0.1" : u.hostname;
-  return `${host}:${u.port || (u.protocol === "https:" ? "443" : "80")}`;
-}
-
 export function rehearsalAdminToken(env: NodeJS.ProcessEnv = process.env): string {
   const token = env.REHEARSAL_ERA_ADMIN_TOKEN;
   if (!token) throw new Error("REHEARSAL_ERA_ADMIN_TOKEN is not set (copy .env.example to .env)");
@@ -288,28 +269,12 @@ export function rehearsalAdminToken(env: NodeJS.ProcessEnv = process.env): strin
   return token;
 }
 
-/**
- * A rehearsal's tenant in the rehearsal container for one vendor. The tenant is derived from the
- * ID, and a URL that a planning or operational world also uses is refused.
- */
-export function rehearsalWorldConfig(
+/** A rehearsal's tenant in the rehearsal container for one vendor (see resolveRehearsalWorld). */
+export const rehearsalWorldConfig = (
   vendor: SnapshotVendor,
   rehearsalId: string,
   env: NodeJS.ProcessEnv = process.env,
-): WorldConfig {
-  const id = ExecutionRehearsalId.parse(rehearsalId);
-  const key = REHEARSAL_URL_KEYS[vendor];
-  const raw = env[key];
-  if (!raw) throw new Error(`${key} is not set (pnpm infra:up:rehearsal)`);
-  const baseUrl = raw.replace(/\/$/, "");
-  for (const shared of SHARED_URL_KEYS) {
-    const other = env[shared];
-    if (other && endpoint(other) === endpoint(baseUrl)) {
-      throw new Error(`${key} is ${shared}'s world: a rehearsal never runs in a shared world`);
-    }
-  }
-  return { baseUrl, tenant: rehearsalTenant(id) };
-}
+): WorldConfig => resolveRehearsalWorld(vendor, rehearsalId, env);
 
 export type RehearsalWorlds = Partial<Record<SnapshotVendor, WorldConfig>>;
 
