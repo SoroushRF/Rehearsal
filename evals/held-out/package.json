@@ -1,0 +1,21 @@
+{
+  "name": "@rehearsal/evals-held-out",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./gold": "./src/gold.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@rehearsal/contracts": "workspace:*",
+    "@rehearsal/core": "workspace:*",
+    "@rehearsal/planner": "workspace:*",
+    "@rehearsal/providers": "workspace:*",
+    "@rehearsal/testkit": "workspace:*",
+    "zod": "^4.6.7"
+  }
+}

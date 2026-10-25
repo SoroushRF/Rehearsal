@@ -1,0 +1,144 @@
+{
+  "incident": "INC-BILL-0818",
+  "summary": "Between August 10 and August 25 a queue replay re-sent invoice payments for some customers.",
+  "window": {
+    "createdGte": "2026-08-10T00:00:00.000Z",
+    "createdLt": "2026-08-25T00:00:00.000Z"
+  },
+  "ids": { "prefix": "INC0818", "ticketBase": 9400001 },
+  "cases": [
+    {
+      "key": "d01",
+      "kind": "duplicate",
+      "customerId": "cus_TVQiaipEV7Mh0GDm",
+      "name": "Harbourline Ferries",
+      "email": "accounts@harbourline.ca",
+      "requesterId": 2000070,
+      "amountMinor": 1999,
+      "currency": "cad",
+      "chargedAt": "2026-08-10T00:00:00.000Z"
+    },
+    {
+      "key": "d02",
+      "kind": "duplicate",
+      "customerId": "cus_8RAGbw1I32XAzy8x",
+      "name": "Elmstead Pharmacy",
+      "email": "rx@elmsteadpharmacy.ca",
+      "requesterId": 2000071,
+      "amountMinor": 4875,
+      "currency": "cad",
+      "chargedAt": "2026-08-11T10:30:00.000Z"
+    },
+    {
+      "key": "d03",
+      "kind": "duplicate",
+      "customerId": "cus_aOzNdDqnuZPFHdyj",
+      "name": "Copperleaf Architects",
+      "email": "studio@copperleafarchitects.com",
+      "requesterId": 2000072,
+      "amountMinor": 11200,
+      "currency": "cad",
+      "chargedAt": "2026-08-12T15:00:00.000Z"
+    },
+    {
+      "key": "d04",
+      "kind": "duplicate",
+      "customerId": "cus_N39BfHdeHpfEzIFO",
+      "name": "Wren & Thistle",
+      "email": "shop@wrenandthistle.ca",
+      "requesterId": 2000073,
+      "amountMinor": 650,
+      "currency": "cad",
+      "chargedAt": "2026-08-13T09:10:00.000Z"
+    },
+    {
+      "key": "d05",
+      "kind": "triple",
+      "customerId": "cus_2D9cSlhdomHJ1t2F",
+      "name": "Bluegill Swim School",
+      "email": "office@bluegillswim.ca",
+      "requesterId": 2000074,
+      "amountMinor": 2400,
+      "currency": "cad",
+      "chargedAt": "2026-08-15T07:45:00.000Z"
+    },
+    {
+      "key": "d06",
+      "kind": "duplicate",
+      "customerId": "cus_RTyXls0WFk6XJj1e",
+      "name": "Marrowbone Games",
+      "email": "billing@marrowbone.games",
+      "requesterId": 2000075,
+      "amountMinor": 8125,
+      "currency": "cad",
+      "chargedAt": "2026-08-17T18:20:00.000Z"
+    },
+    {
+      "key": "d07",
+      "kind": "duplicate",
+      "customerId": "cus_6smrOPYyHPYKm64C",
+      "name": "Stonechat Consulting",
+      "email": "admin@stonechat.consulting",
+      "requesterId": 2000076,
+      "amountMinor": 3600,
+      "currency": "cad",
+      "chargedAt": "2026-08-18T12:00:00.000Z",
+      "ticketExternalId": "cus_TVQiaipEV7Mh0GDm"
+    },
+    {
+      "key": "d08",
+      "kind": "duplicate",
+      "customerId": "cus_74ODhgsW5xA1nXmO",
+      "name": "Fairhaven Senior Living",
+      "email": "finance@fairhavenliving.ca",
+      "requesterId": 2000077,
+      "amountMinor": 14750,
+      "currency": "cad",
+      "chargedAt": "2026-08-20T08:00:00.000Z"
+    },
+    {
+      "key": "d09",
+      "kind": "duplicate",
+      "customerId": "cus_WnAtex7wdfkmWT7V",
+      "name": "Pippin Toys",
+      "email": "hello@pippintoys.ca",
+      "requesterId": 2000078,
+      "amountMinor": 999,
+      "currency": "cad",
+      "chargedAt": "2026-08-24T23:58:00.000Z"
+    },
+    {
+      "key": "q01",
+      "kind": "control_distinct",
+      "customerId": "cus_EJf65qEOLKdRAo1C",
+      "name": "Glenrock Plumbing",
+      "email": "office@glenrockplumbing.ca",
+      "requesterId": 2000079,
+      "amountMinor": 4300,
+      "currency": "cad",
+      "chargedAt": "2026-08-14T10:00:00.000Z"
+    },
+    {
+      "key": "q02",
+      "kind": "control_outside_window",
+      "customerId": "cus_cJGJ6URloteMbtuS",
+      "name": "Vantage Rowing Club",
+      "email": "treasurer@vantagerowing.ca",
+      "requesterId": 2000080,
+      "amountMinor": 5500,
+      "currency": "cad",
+      "chargedAt": "2026-08-25T00:00:00.000Z"
+    },
+    {
+      "key": "q03",
+      "kind": "control_other_currency",
+      "customerId": "cus_r1s5Rb6cY2ooSbe1",
+      "name": "Delmar Instruments",
+      "email": "ar@delmarinstruments.com",
+      "requesterId": 2000081,
+      "amountMinor": 2100,
+      "currency": "usd",
+      "chargedAt": "2026-08-19T14:30:00.000Z"
+    }
+  ]
+}

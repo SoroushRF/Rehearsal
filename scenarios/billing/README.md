@@ -13,5 +13,6 @@ Fictional company and authored demo policy. Not a financial or regulatory requir
   - `pnpm demo:reset` resets all four worlds, seeds them identically and checks that planning and operational read back the same.
 - `fixtures/`: Era inject templates copied from real GET responses (owner: A). See `fixtures/README.md`.
 - `expected/`: independent expected results (owner: D). Not created yet.
+- Held-out incidents for evaluation, with hidden gold, live in [`evals/held-out`](../../evals/held-out/README.md). Nothing here may read them.
 
 All bundles are `evidence: "fixture"` until they have run against real Era images.

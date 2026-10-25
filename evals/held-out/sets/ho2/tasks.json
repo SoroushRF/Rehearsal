@@ -1,0 +1,45 @@
+{
+  "set": "ho2",
+  "version": 1,
+  "policy": { "id": "billing-remedy", "version": 3 },
+  "ops": { "credits": true, "replies": false, "summary": false },
+  "setup": [
+    { "kind": "refund_charge", "caseKey": "b03", "charge": 1 },
+    { "kind": "balance_credit", "caseKey": "b04", "charge": 1 },
+    { "kind": "refund_charge", "caseKey": "b05", "charge": 0 }
+  ],
+  "precedents": [],
+  "tasks": [
+    {
+      "id": "HO2-1",
+      "title": "Remedy INC-BILL-0715",
+      "scope": "all"
+    },
+    {
+      "id": "HO2-2",
+      "title": "Remedy INC-BILL-0715; Northgate comments and a teammate tags Mossgiel's ticket",
+      "scope": "all",
+      "drift": [
+        { "kind": "public_comment", "caseKey": "b01" },
+        { "kind": "teammate_tag", "caseKey": "b06", "tag": "vip_customer" }
+      ]
+    },
+    {
+      "id": "HO2-3",
+      "title": "Remedy INC-BILL-0715; a teammate refunds Northgate's first payment after approval",
+      "scope": "all",
+      "drift": [{ "kind": "teammate_refund_original", "caseKey": "b01" }]
+    },
+    {
+      "id": "HO2-4",
+      "title": "Remedy INC-BILL-0715; the re-check can't read Aldermoor's charges",
+      "scope": "all",
+      "faults": [{ "kind": "fail_charge_list_read", "caseKey": "b02" }]
+    },
+    {
+      "id": "HO2-5",
+      "title": "Look into Pemberton, Saltmarsh, Granite Peak and Tidewater only",
+      "scope": ["b03", "b04", "b05", "m01"]
+    }
+  ]
+}
