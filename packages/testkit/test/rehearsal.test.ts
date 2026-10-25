@@ -105,6 +105,36 @@ describe("execution rehearsal contracts (T1.21)", () => {
     ).toBe(false);
   });
 
+  it("refuses a pass for a step with no recorded result, however it is labelled (#241)", () => {
+    const report = rehearsalReportFixture();
+    const [first, ...rest] = report.steps;
+    if (!first) throw new Error("fixture has no steps");
+    const missing = {
+      ...report,
+      steps: [
+        { ...first, result: null, verification: { status: "matched", detail: "ok" } },
+        ...rest,
+      ],
+    };
+    expect(report.state).toBe("completed");
+    expect(ExecutionRehearsalReport.safeParse(missing).success).toBe(false);
+    // The same report is representable as unknown, and so are a failed or cancelled run's
+    // steps that never ran.
+    expect(ExecutionRehearsalReport.safeParse({ ...missing, verdict: "unknown" }).success).toBe(
+      true,
+    );
+    for (const state of ["failed", "cancelled"] as const) {
+      expect(
+        ExecutionRehearsalReport.safeParse({ ...missing, state, verdict: "unknown" }).success,
+      ).toBe(true);
+    }
+    // An explicit unknown outcome still can't pass.
+    const unknownOutcome = rehearsalReportFixture("unknown");
+    expect(
+      ExecutionRehearsalReport.safeParse({ ...unknownOutcome, verdict: "passed" }).success,
+    ).toBe(false);
+  });
+
   it("refuses a step result from another rehearsal or plan, or with an operational key", () => {
     const report = rehearsalReportFixture();
     const [first, ...rest] = report.steps;
