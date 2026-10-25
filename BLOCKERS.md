@@ -66,7 +66,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T2.4** Approvals endpoint: hash-bound grant and refusal test matrix [#13](https://github.com/SoroushRF/Rehearsal/issues/13) | ✅ done |  | T2.8, T2.23 |
 | **T2.5** Deploy thin slice and prove cloud workers reach the simulators [#14](https://github.com/SoroushRF/Rehearsal/issues/14) | 🟨 ready | — | T2.7, T2.22 |
 | **T2.6** Run timeline, receipts and held-step views (polling GET /api/runs/:id/events) [#15](https://github.com/SoroushRF/Rehearsal/issues/15) | ✅ done |  | T2.7, T2.22 |
-| **T2.7** Two-minute video script, recording, Devpost page [#16](https://github.com/SoroushRF/Rehearsal/issues/16) | 👀 in review [PR #301](https://github.com/SoroushRF/Rehearsal/pull/301) | T2.5 (T2, ready)<br>T1.28 (T1, blocked) |  |
+| **T2.7** Two-minute video script, recording, Devpost page [#16](https://github.com/SoroushRF/Rehearsal/issues/16) | 🟥 blocked | T2.5 (T2, ready)<br>T1.28 (T1, blocked) |  |
 | **T2.8** Thin Expo approver app on the same API _(stretch)_ [#17](https://github.com/SoroushRF/Rehearsal/issues/17) | 🟨 ready | — |  |
 | **T2.9** Decide currency: align policy.v1.json with the Era seed (USD vs CAD) [#40](https://github.com/SoroushRF/Rehearsal/issues/40) | ✅ done |  | T1.5 (T1) |
 | **T2.10** Rehearse button: start a plan from the review page and follow it [#116](https://github.com/SoroushRF/Rehearsal/issues/116) | ✅ done |  |  |
@@ -187,7 +187,7 @@ flowchart LR
     T2_4["T2.4 Approvals endpoint: hash-bound grant and re"]:::done
     T2_5["T2.5 Deploy thin slice and prove cloud workers r"]:::ready
     T2_6["T2.6 Run timeline, receipts and held-step views "]:::done
-    T2_7["T2.7 Two-minute video script, recording, Devpost"]:::review
+    T2_7["T2.7 Two-minute video script, recording, Devpost"]:::blocked
     T2_9["T2.9 Decide currency: align policy.v1.json with "]:::done
     T2_10["T2.10 Rehearse button: start a plan from the rev"]:::done
     T2_11["T2.11 Saved run replay that opens without signin"]:::done
