@@ -46,7 +46,7 @@ See [beyond.md](../beyond.md) for scope, parallel work, external gates and the r
 | T4.11 | _Beyond:_ Allowlisted rehearsal challenges and controls | M5 | Versioned scoped phantom/conflict/lost-response challenges include benign controls | [#169](https://github.com/SoroushRF/Rehearsal/issues/169) | [T1.21](https://github.com/SoroushRF/Rehearsal/issues/163), [T4.2](https://github.com/SoroushRF/Rehearsal/issues/26), [T4.4](https://github.com/SoroushRF/Rehearsal/issues/28) |
 | T4.12 | _Beyond:_ Independent verifier for observed rehearsal effects | M5 | Provider reads verify full-operation effects independently of receipt labels | [#173](https://github.com/SoroushRF/Rehearsal/issues/173) | [T3.15](https://github.com/SoroushRF/Rehearsal/issues/168), [T4.11](https://github.com/SoroushRF/Rehearsal/issues/169) |
 | T4.13 | _Beyond:_ Integrated isolation and recovery acceptance gate | M5 | Real end-to-end isolation/recovery gate passes with full precedent integration | [#175](https://github.com/SoroushRF/Rehearsal/issues/175) | [T3.16](https://github.com/SoroushRF/Rehearsal/issues/170), [T2.20](https://github.com/SoroushRF/Rehearsal/issues/172), [T2.21](https://github.com/SoroushRF/Rehearsal/issues/174), [T4.12](https://github.com/SoroushRF/Rehearsal/issues/173), [T1.8](https://github.com/SoroushRF/Rehearsal/issues/9), [T2.17](https://github.com/SoroushRF/Rehearsal/issues/147) |
-| T4.14 | _Stretch:_ _Killer:_ Held-out incident datasets and independent gold | M5 | Three disjoint incident sets have independently authored hidden gold. **Owner:** @SoroushRF (benchmark task) | [#179](https://github.com/SoroushRF/Rehearsal/issues/179) | [T1.2](https://github.com/SoroushRF/Rehearsal/issues/3), [T1.19](https://github.com/SoroushRF/Rehearsal/issues/144) |
+| T4.14 | _Stretch:_ _Killer:_ Held-out incident datasets and independent gold | Done | Three disjoint incident sets have independently authored hidden gold. **Fixture:** `scenarios/billing/held-out/` and `packages/testkit/test/held-out.test.ts`. Full-operation runs wait on T1.27. Changed-precedent case omitted until T2.17. | [#179](https://github.com/SoroushRF/Rehearsal/issues/179) | [T1.2](https://github.com/SoroushRF/Rehearsal/issues/3), [T1.19](https://github.com/SoroushRF/Rehearsal/issues/144) |
 
 ## Decisions
 
@@ -57,6 +57,13 @@ See [beyond.md](../beyond.md) for scope, parallel work, external gates and the r
 - **2026-10-24 (Codex, backlog planning):** Filed 4 owned M5 issues (T4.11 #169, T4.12 #173, T4.13 #175, T4.14 #179) with scope/track labels, acceptance criteria and linked blockers. Added the cross-track dependency map in [beyond.md](../beyond.md); native GitHub dependencies mirror these rows. No feature implementation or live validation is claimed. Next: finish the full prerequisites, then follow the graph; optional killer work stays off the main release path.
 
 _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
+
+### 2026-10-24, T4.14 held-out incidents
+
+- **Three fixture sets, gold written with them.** `scenarios/billing/held-out/` is INC-HOLD-A (credit, over-limit credit, already credited), INC-HOLD-B (late charge, public comment, teammate priority, incomplete query), and INC-HOLD-C (wrong owner, already refunded, clean duplicate, outside window, unequal amounts). Ids do not overlap the demo cohort or each other.
+- **The planner cannot import the gold.** `loadHeldOutCatalog` lives in `packages/testkit/src/held-out.ts` and is not on the package index. A test fails if planner, planner-worker, or scorecard source mentions it.
+- **Not in the sets.** A changed precedent needs T2.17. Full-operation runs wait on T1.27. Nothing here was executed on Era.
+- **Next.** T4.11 once T1.21's rehearsal contracts are on main. The scenario files can be drafted before that.
 
 ### 2026-10-24, T4.10 review fixes (PR #199 by @skhdemo, merged with fixes)
 

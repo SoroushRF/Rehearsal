@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "evidence": "fixture",
+  "cases": {
+    "b01": {
+      "decision": "apply_refund",
+      "rule": null,
+      "role": "support_lead",
+      "refunds": 1,
+      "credits": 0,
+      "notes": 1,
+      "priority": "high",
+      "because": "The extra charge is after the window, so it is not a new member of the approved query. Refund the duplicate."
+    },
+    "b02": {
+      "decision": "apply_refund",
+      "rule": null,
+      "role": "support_lead",
+      "refunds": 1,
+      "credits": 0,
+      "notes": 1,
+      "priority": "high",
+      "because": "A public comment is not part of the ticket evidence. The refund and the note still apply."
+    },
+    "b03": {
+      "decision": "apply_refund",
+      "rule": "row_changed",
+      "role": "support_lead",
+      "refunds": 1,
+      "credits": 0,
+      "notes": 0,
+      "priority": "urgent",
+      "because": "The charge is unchanged, so the refund applies. The ticket row changed, so the note is held and the teammate's urgent priority stays."
+    },
+    "b04": {
+      "decision": "hold",
+      "rule": "evidence_unavailable",
+      "role": null,
+      "refunds": 0,
+      "credits": 0,
+      "notes": 0,
+      "priority": null,
+      "because": "The customer's charge list could not be read completely. That is not proof the duplicate is the only extra charge."
+    },
+    "b05": {
+      "decision": "leave",
+      "rule": "not_a_duplicate",
+      "role": null,
+      "refunds": 0,
+      "credits": 0,
+      "notes": 0,
+      "priority": "normal",
+      "because": "Two invoices are not one duplicate. A mode that holds every charge fails this control."
+    }
+  }
+}

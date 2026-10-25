@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "evidence": "fixture",
+  "authoredBeforePlannerRuns": true,
+  "omitted": [
+    {
+      "id": "changed_precedent",
+      "reason": "Precedent promotion (T2.17) is not in place, so a changed precedent cannot be checked. No stand-in case is included."
+    }
+  ],
+  "sets": ["a", "b", "c"]
+}

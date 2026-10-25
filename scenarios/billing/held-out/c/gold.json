@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "evidence": "fixture",
+  "cases": {
+    "c01": {
+      "decision": "leave",
+      "rule": "wrong_owner",
+      "role": null,
+      "refunds": 0,
+      "credits": 0,
+      "notes": 0,
+      "priority": "normal",
+      "because": "The ticket names a different Stripe customer than the charges. Do not refund either side."
+    },
+    "c02": {
+      "decision": "hold",
+      "rule": "R5.remedy_already_completed",
+      "role": null,
+      "refunds": 0,
+      "credits": 0,
+      "notes": 0,
+      "priority": null,
+      "because": "The duplicate charge is already refunded in full. Another refund is a second remedy."
+    },
+    "c03": {
+      "decision": "apply_refund",
+      "rule": null,
+      "role": "support_lead",
+      "refunds": 1,
+      "credits": 0,
+      "notes": 1,
+      "priority": "high",
+      "because": "A CAD duplicate inside the window, under the finance threshold, with no remedy on it yet."
+    },
+    "c04": {
+      "decision": "leave",
+      "rule": "outside_window",
+      "role": null,
+      "refunds": 0,
+      "credits": 0,
+      "notes": 0,
+      "priority": "normal",
+      "because": "Both charges are before the incident window."
+    },
+    "c05": {
+      "decision": "leave",
+      "rule": "not_a_duplicate",
+      "role": null,
+      "refunds": 0,
+      "credits": 0,
+      "notes": 0,
+      "priority": "normal",
+      "because": "Same invoice, different amounts. That is not a duplicate charge."
+    }
+  }
+}
