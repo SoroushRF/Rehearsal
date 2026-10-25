@@ -1,9 +1,8 @@
-import { PrecedentBasis, PrecedentCitation, type Sha256Hex } from "@rehearsal/contracts";
+import { PrecedentBasis, type PrecedentCitation, type Sha256Hex } from "@rehearsal/contracts";
 import type { PrecedentRecall } from "./precedents";
 
-// The wire types live in `@rehearsal/contracts` now (a plan carries them); kept exported here so
-// existing imports keep working.
-export { PrecedentBasis, PrecedentCitation };
+// The wire schemas live in contracts so a PlanManifest can carry them.
+export { PrecedentBasis, PrecedentCitation } from "@rehearsal/contracts";
 
 export function citePrecedents(recall: PrecedentRecall): PrecedentCitation[] {
   return recall.precedents.map((p) => ({

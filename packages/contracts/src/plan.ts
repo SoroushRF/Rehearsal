@@ -34,8 +34,8 @@ export const PlanManifest = z.object({
   /** Actions the reviewer removed (with dependents), for audit. */
   excluded: z.array(z.object({ actionId: z.string(), reason: z.enum(["reviewer", "dependency"]) })),
   /**
-   * The precedents the planner relied on, with the registry epoch of each area it consulted.
-   * Absent for a plan that used none, so every plan made before this field keeps its hash.
+   * The precedents planning relied on, checked against the registry before apply. Optional and
+   * omitted when absent, so a plan that cited none hashes exactly as it did before this field.
    */
   precedentBasis: PrecedentBasis.optional(),
 });

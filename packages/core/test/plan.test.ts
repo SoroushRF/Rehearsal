@@ -1,4 +1,4 @@
-import { type Action, PlanManifest, type PrecedentBasis } from "@rehearsal/contracts";
+import type { Action } from "@rehearsal/contracts";
 import { describe, expect, it } from "vitest";
 import { dependentsClosure, excludeActions, topoOrder, validateGraph } from "../src/dag";
 import { planHash } from "../src/hash";
@@ -27,6 +27,41 @@ describe("planHash", () => {
 
   it("is sensitive to action order", () => {
     expect(planHash(manifest([patch, refund, note]))).not.toBe(planHash(manifest()));
+  });
+
+  it("hashes a plan without a precedent basis exactly as before the field existed", () => {
+    // Pinned before `precedentBasis` was added: approvals of existing plans must stay valid.
+    const golden = "bb07408c6d8e0008a97fa97065c8b670b54d06f2f7a6e4b3fcd6044811b719aa";
+    expect(planHash(manifest())).toBe(golden);
+    expect(planHash({ ...manifest(), precedentBasis: undefined })).toBe(golden);
+  });
+
+  it("covers the precedent basis", () => {
+    const citation = {
+      id: "dup-charge-refund",
+      version: 2,
+      digest: "c".repeat(64),
+      appliesTo: "billing.duplicate_charge",
+      factIds: ["fact_1"],
+      traceId: "trace_1",
+    };
+    const basis = { citations: [citation], epochs: { "billing.duplicate_charge": 3 } };
+    const cited = planHash({ ...manifest(), precedentBasis: basis });
+    expect(cited).not.toBe(planHash(manifest()));
+    expect(
+      planHash({
+        ...manifest(),
+        precedentBasis: { ...basis, epochs: { "billing.duplicate_charge": 4 } },
+      }),
+    ).not.toBe(cited);
+    expect(
+      planHash({
+        ...manifest(),
+        precedentBasis: { ...basis, citations: [{ ...citation, version: 3 }] },
+      }),
+    ).not.toBe(cited);
+    // A citation without its area's epoch can't be approved at all.
+    expect(() => planHash({ ...manifest(), precedentBasis: { ...basis, epochs: {} } })).toThrow();
   });
 });
 
@@ -170,52 +205,5 @@ describe("run summary in the graph (T1.7)", () => {
   it("unchecking the summary itself drops only the summary", () => {
     const next = excludeActions(manifest([refund, patch, note, summary]), ["summary"]);
     expect(next.actions.map((a) => a.id)).toEqual(["refund_1", "patch_1", "note_1"]);
-  });
-});
-
-describe("a plan's precedent basis", () => {
-  const basis: PrecedentBasis = {
-    citations: [
-      {
-        id: "duplicate-charge-refund",
-        version: 2,
-        digest: "d".repeat(64),
-        appliesTo: "billing.duplicate_charge",
-        factIds: ["fact_1", "fact_2"],
-        traceId: "trace_1",
-      },
-    ],
-    epochs: { "billing.duplicate_charge": 3 },
-  };
-
-  it("leaves every plan that has none exactly as it hashed before the field existed", () => {
-    const m = manifest();
-    expect("precedentBasis" in PlanManifest.parse(m)).toBe(false);
-    expect(planHash(PlanManifest.parse(m))).toBe(planHash(m));
-  });
-
-  it("is part of the hash, so changing what a plan cited is a new plan to approve", () => {
-    const m = { ...manifest(), precedentBasis: basis };
-    expect(planHash(PlanManifest.parse(m))).not.toBe(planHash(manifest()));
-    const otherVersion = {
-      ...m,
-      precedentBasis: {
-        ...basis,
-        citations: [{ ...basis.citations[0], version: 3 }],
-      },
-    };
-    expect(planHash(PlanManifest.parse(otherVersion))).not.toBe(planHash(PlanManifest.parse(m)));
-    const otherEpoch = {
-      ...m,
-      precedentBasis: { ...basis, epochs: { "billing.duplicate_charge": 4 } },
-    };
-    expect(planHash(PlanManifest.parse(otherEpoch))).not.toBe(planHash(PlanManifest.parse(m)));
-  });
-
-  it("is kept when a manifest is parsed, and refuses a cited area with no epoch", () => {
-    const m = { ...manifest(), precedentBasis: basis };
-    expect(PlanManifest.parse(m).precedentBasis).toEqual(basis);
-    const noEpoch = { ...m, precedentBasis: { ...basis, epochs: {} } };
-    expect(PlanManifest.safeParse(noEpoch).success).toBe(false);
   });
 });

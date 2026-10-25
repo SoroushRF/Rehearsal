@@ -21,7 +21,7 @@ export type PrecedentCitation = z.infer<typeof PrecedentCitation>;
  * What a plan's precedents rest on: the versions it cited, plus the registry epoch of every
  * area it consulted. The epoch is how a precedent recall never surfaced still holds the plan:
  * activating, changing or withdrawing any precedent in an area bumps its epoch, so the check
- * doesn't depend on recall being complete. Part of the plan hash when present.
+ * doesn't depend on recall being complete.
  */
 export const PrecedentBasis = z
   .strictObject({

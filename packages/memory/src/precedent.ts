@@ -2,7 +2,7 @@ import { PrecedentId, type Sha256Hex } from "@rehearsal/contracts";
 import { canonicalize, fingerprint } from "@rehearsal/core";
 import { z } from "zod";
 
-export { PrecedentId };
+export { PrecedentId } from "@rehearsal/contracts";
 
 const NonBlank = z.string().refine((s) => s.trim().length > 0, "must not be blank");
 
