@@ -20,7 +20,10 @@
       "rehearsal:revoke:own_grant",
       "rehearsal:revoke:any_grant",
       "rehearsal:invite:member",
-      "rehearsal:manage:role"
+      "rehearsal:manage:role",
+      "rehearsal:read:precedent",
+      "rehearsal:promote:precedent",
+      "rehearsal:withdraw:precedent"
     ],
     "finance_lead": [
       "rehearsal:read:plan",
@@ -32,7 +35,10 @@
       "rehearsal:apply:plan",
       "rehearsal:cancel:run",
       "rehearsal:revoke:own_grant",
-      "rehearsal:revoke:any_grant"
+      "rehearsal:revoke:any_grant",
+      "rehearsal:read:precedent",
+      "rehearsal:promote:precedent",
+      "rehearsal:withdraw:precedent"
     ],
     "support_lead": [
       "rehearsal:read:plan",
@@ -42,9 +48,10 @@
       "rehearsal:approve:support_step",
       "rehearsal:apply:plan",
       "rehearsal:cancel:run",
-      "rehearsal:revoke:own_grant"
+      "rehearsal:revoke:own_grant",
+      "rehearsal:read:precedent"
     ],
-    "member": ["rehearsal:read:plan", "rehearsal:read:run"]
+    "member": ["rehearsal:read:plan", "rehearsal:read:run", "rehearsal:read:precedent"]
   },
   "rules": [
     {
@@ -69,7 +76,7 @@
     },
     {
       "action": "GET /api/precedents",
-      "rbac": { "anyOf": ["rehearsal:read:plan"] },
+      "rbac": { "anyOf": ["rehearsal:read:precedent"] },
       "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
     },
     {
@@ -138,12 +145,12 @@
     },
     {
       "action": "POST /api/runs/:id/precedents",
-      "rbac": { "anyOf": ["rehearsal:approve:finance_step"] },
+      "rbac": { "anyOf": ["rehearsal:promote:precedent"] },
       "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
     },
     {
       "action": "POST /api/precedents/:id/withdraw",
-      "rbac": { "anyOf": ["rehearsal:approve:finance_step"] },
+      "rbac": { "anyOf": ["rehearsal:withdraw:precedent"] },
       "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
     },
     {

@@ -116,7 +116,11 @@ describe("rehearsal-authz@1", () => {
       expect(file.roles[role]).toHaveLength(roleSet(role).size);
     }
     expect([...roleSet("owner")].sort()).toEqual([...PERMISSIONS_V1].sort());
-    expect([...roleSet("member")].sort()).toEqual(["rehearsal:read:plan", "rehearsal:read:run"]);
+    expect([...roleSet("member")].sort()).toEqual([
+      "rehearsal:read:plan",
+      "rehearsal:read:precedent",
+      "rehearsal:read:run",
+    ]);
     for (const perm of ["rehearsal:invite:member", "rehearsal:manage:role"] as const) {
       const holders = Object.entries(file.roles).filter(([, perms]) => perms.includes(perm));
       expect(holders.map(([role]) => role)).toEqual(["owner"]);
@@ -155,6 +159,27 @@ describe("rehearsal-authz@1", () => {
     }
     const kinds = admit.flatMap((r) => r.abac.flatMap((c) => Object.keys(c)));
     expect(kinds).toEqual(expect.arrayContaining(["some", "seats"]));
+  });
+
+  it("gates precedent routes on read, promote, and withdraw", () => {
+    const rbac = (action: string) => {
+      const matches = file.rules.filter((rule) => rule.action === action);
+      expect(matches, action).toHaveLength(1);
+      return matches[0]?.rbac;
+    };
+    expect(rbac("GET /api/precedents")).toEqual({ anyOf: ["rehearsal:read:precedent"] });
+    expect(rbac("POST /api/runs/:id/precedents")).toEqual({
+      anyOf: ["rehearsal:promote:precedent"],
+    });
+    expect(rbac("POST /api/precedents/:id/withdraw")).toEqual({
+      anyOf: ["rehearsal:withdraw:precedent"],
+    });
+    for (const perm of ["rehearsal:promote:precedent", "rehearsal:withdraw:precedent"] as const) {
+      expect(file.roles.finance_lead, perm).toContain(perm);
+      expect(file.roles.owner, perm).toContain(perm);
+      expect(file.roles.member, perm).not.toContain(perm);
+      expect(file.roles.support_lead, perm).not.toContain(perm);
+    }
   });
 
   it("has a rule for every registered route that is not exempt", async () => {
