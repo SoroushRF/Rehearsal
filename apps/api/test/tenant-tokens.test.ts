@@ -53,7 +53,9 @@ describe("tenant token minter", () => {
     const { app, mint, post } = setup();
     expect((await post(undefined, { vendor: "stripe" })).statusCode).toBe(401);
     expect((await post("admin", { vendor: "stripe" })).statusCode).toBe(401);
-    expect((await post("planner-secret", { vendor: "slack" })).statusCode).toBe(400);
+    expect((await post("planner-secret", { vendor: "github" })).statusCode).toBe(400);
+    // Slack is optional: without its URL the mint fails closed, and nothing is minted.
+    expect((await post("planner-secret", { vendor: "slack" })).statusCode).toBe(502);
     const res = await post("planner-secret", { vendor: "stripe", world: "operational" });
     expect(res.json().token).toBe("jwt-for-http://stripe-planning");
     expect(mint).toHaveBeenCalledTimes(1);

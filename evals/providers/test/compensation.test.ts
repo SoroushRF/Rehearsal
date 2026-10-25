@@ -112,7 +112,7 @@ async function cohortPlan(
       const copy = structuredClone(a);
       const c = CASES[a.caseId.slice(-3) as "001" | "002"];
       if (copy.kind === "stripe.refund.create") copy.args.chargeId = c.chargeIds[1];
-      else copy.args.ticketId = String(c.ticketId);
+      else if (copy.kind !== "slack.message.postSummary") copy.args.ticketId = String(c.ticketId);
       return copy;
     }),
   };

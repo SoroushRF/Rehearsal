@@ -190,6 +190,7 @@ describe("planning tools", () => {
       "list_requester_tickets",
       "propose_duplicate_refund",
       "propose_refund_note",
+      "propose_run_summary",
       "propose_ticket_priority",
     ]);
     const text = JSON.stringify(defs).toLowerCase();
@@ -343,5 +344,85 @@ describe("planning tools", () => {
     const r = await session.call("get_charge", { chargeId: "ch_missing" });
     expect(r).toMatchObject({ ok: false, error: /read failed: .*404/ });
     expect(session.observations).toEqual([]);
+  });
+});
+
+describe("propose_run_summary (T1.7)", () => {
+  const TARGET = { channelId: "chan-general", incidentId: INCIDENT.incident };
+
+  async function planned(session: PlanningSession) {
+    const c = caseOf("c01");
+    await ok(session, "propose_duplicate_refund", {
+      chargeId: c.chargeIds[1],
+      duplicateOfChargeId: c.chargeIds[0],
+      rationale: "x",
+    });
+    await ok(session, "propose_refund_note", {
+      refundStepId: `refund_${c.chargeIds[1]}`,
+      ticketId: String(c.ticketId),
+    });
+    return c;
+  }
+
+  it("counts every step proposed before it, from a server-chosen channel and incident", async () => {
+    const { session } = world({ runSummary: TARGET });
+    const c = await planned(session);
+    await ok(session, "propose_run_summary", {});
+    const refund = `refund_${c.chargeIds[1]}`;
+    const note = `note_${refund}`;
+    expect(session.actions.at(-1)).toMatchObject({
+      id: "run_summary",
+      kind: "slack.message.postSummary",
+      dependsOn: [refund, note],
+      requiredRole: "support_lead",
+      compensation: "irreversible",
+      args: {
+        channelId: "chan-general",
+        template: { id: "run-summary", version: 1 },
+        bindings: {
+          incidentId: INCIDENT.incident,
+          refunded: { stepIds: [refund], outcomes: ["confirmed"] },
+          held: { stepIds: [refund, note] },
+        },
+      },
+    });
+    const manifest = session.manifest(META);
+    expect(validateGraph(manifest.actions)).toEqual([]);
+    expect(evaluateBillingPolicy(manifest, POLICY).violations).toEqual([]);
+  });
+
+  it("takes no input, so the model can't pick the channel or write the text", async () => {
+    const { session } = world({ runSummary: TARGET });
+    await planned(session);
+    const r = await session.call("propose_run_summary", { channelId: "C_ELSEWHERE" });
+    expect(r.ok).toBe(false);
+  });
+
+  it("must be last, once, and needs a refund and a configured channel", async () => {
+    const off = world();
+    await planned(off.session);
+    expect(await off.session.call("propose_run_summary", {})).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("no run summary channel"),
+    });
+
+    const empty = world({ runSummary: TARGET });
+    expect(await empty.session.call("propose_run_summary", {})).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("no refund"),
+    });
+
+    const { session } = world({ runSummary: TARGET });
+    await planned(session);
+    await ok(session, "propose_run_summary", {});
+    expect((await session.call("propose_run_summary", {})).ok).toBe(false);
+    const late = caseOf("c02");
+    expect(
+      await session.call("propose_duplicate_refund", {
+        chargeId: late.chargeIds[1],
+        duplicateOfChargeId: late.chargeIds[0],
+        rationale: "x",
+      }),
+    ).toMatchObject({ ok: false, error: expect.stringContaining("last step") });
   });
 });

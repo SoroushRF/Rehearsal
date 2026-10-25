@@ -83,7 +83,7 @@ describe.skipIf(!ENABLED)("reconcile lost responses through Era reads", () => {
         .map((a) => {
           const copy = structuredClone(a);
           if (copy.kind === "stripe.refund.create") copy.args.chargeId = CHARGE_ID;
-          else copy.args.ticketId = String(TICKET);
+          else if (copy.kind !== "slack.message.postSummary") copy.args.ticketId = String(TICKET);
           if (copy.kind === "zendesk.ticket.patchFields") {
             copy.args.before = { priority: ticket.priority as "low" };
             copy.args.set = { priority: ticket.priority === "high" ? "urgent" : "high" };

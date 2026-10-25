@@ -17,6 +17,7 @@ import {
   type ProviderPort,
   type ReconcileResult,
   type ResolvedBindings,
+  summaryTextFor,
 } from "@rehearsal/core";
 
 export interface FakeCharge {
@@ -53,6 +54,13 @@ export interface FakeCredit {
   chargeId: string | null;
 }
 
+export interface FakeMessage {
+  channel: string;
+  ts: string;
+  text: string;
+  bot_id: string;
+}
+
 /** Scripted failure for the next matching dispatch. */
 export type FakeFault =
   | { kind: "reject"; status: number; retryable: boolean; retryAfterMs?: number }
@@ -70,12 +78,15 @@ export class FakeWorld {
   readonly tickets = new Map<string, FakeTicket>();
   readonly refunds: FakeRefund[] = [];
   readonly credits: FakeCredit[] = [];
+  /** Slack posts, oldest first. */
+  readonly messages: FakeMessage[] = [];
   /** Every effect actually applied, in order. Tests assert "exactly one refund" on this. */
   readonly effects: { operationKey: string; path: string }[] = [];
   readonly #idempotency = new Map<string, { bodySha: string; response: unknown }>();
   readonly #faults = new Map<string, FakeFault[]>();
   #refundSeq = 0;
   #commentSeq = 0;
+  #messageSeq = 0;
   /** Zendesk-style `updated_at` per ticket: moves on every write, ours or a teammate's. */
   readonly #stamps = new Map<string, number>();
 
@@ -122,7 +133,7 @@ export class FakeWorld {
     return undefined;
   }
 
-  provider(vendor: Extract<Vendor, "stripe" | "zendesk">): ProviderPort {
+  provider(vendor: Vendor): ProviderPort {
     return {
       vendor,
       observe: async (entity) => this.#observe(entity),
@@ -198,6 +209,17 @@ export class FakeWorld {
           headers: {},
         };
       }
+      case "slack.message.postSummary":
+        return {
+          method: "POST",
+          path: "/api/chat.postMessage",
+          encoding: "json",
+          body: JSON.stringify({
+            channel: action.args.channelId,
+            text: summaryTextFor(action, bindings, operationKey),
+          }),
+          headers: {},
+        };
     }
   }
 
@@ -274,6 +296,15 @@ export class FakeWorld {
       };
       this.#idempotency.set(key, { bodySha, response });
       return { kind: "confirmed", status: 200, body: response };
+    }
+
+    if (req.path === "/api/chat.postMessage") {
+      // Slack doesn't deduplicate: every post is a new message.
+      const { channel, text } = JSON.parse(req.body) as { channel: string; text: string };
+      const ts = `1700000000.${String(++this.#messageSeq).padStart(6, "0")}`;
+      this.messages.push({ channel, ts, text, bot_id: "B_REHEARSAL" });
+      this.effects.push({ operationKey: "", path: req.path });
+      return { kind: "confirmed", status: 200, body: { ok: true, channel, ts } };
     }
 
     const m = /^\/api\/v2\/tickets\/(.+)\.json$/.exec(req.path);
@@ -391,6 +422,20 @@ export class FakeWorld {
               charge: refund.charge,
               currency: refund.currency,
             },
+          }
+        : { kind: "not_applied" };
+    }
+    if (action.kind === "slack.message.postSummary") {
+      // Like the real reader: ours is the bot post with exactly the journaled text.
+      const sent = (JSON.parse(attempt.request.body) as { text: string }).text;
+      const post = this.messages.find(
+        (m) => m.channel === action.args.channelId && m.bot_id && m.text === sent,
+      );
+      return post
+        ? {
+            kind: "applied",
+            providerRef: { vendor: "slack", kind: "message", id: post.ts },
+            effect: { "message.ts": post.ts, channel: post.channel },
           }
         : { kind: "not_applied" };
     }
