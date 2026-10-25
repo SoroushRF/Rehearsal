@@ -181,6 +181,27 @@ importers:
         specifier: ^8.3.4
         version: 8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)
 
+  evals/held-out:
+    dependencies:
+      '@rehearsal/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@rehearsal/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@rehearsal/planner':
+        specifier: workspace:*
+        version: link:../../packages/planner
+      '@rehearsal/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
+      '@rehearsal/testkit':
+        specifier: workspace:*
+        version: link:../../packages/testkit
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
+
   evals/providers:
     dependencies:
       '@rehearsal/contracts':

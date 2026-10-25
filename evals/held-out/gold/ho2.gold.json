@@ -1,0 +1,529 @@
+{
+  "set": "ho2",
+  "version": 1,
+  "split": "held-out",
+  "evidence": "authored",
+  "authoredAt": "2026-10-25",
+  "inputs": {
+    "incident": "182736c7fa4728b9db7c4d5353cab142025f5f740d8d8396e9ccb08a4eaa0fd9",
+    "tasks": "57994e2dae93dea27bf30b65cb19ca042df417ac8ca11c0f262dd7987457f9c0",
+    "policy": "2c9c90a2fd2cd6c550c6169d50df30d74e6db9bf93113f493c12e670cd428432"
+  },
+  "ends": {
+    "untouched": {
+      "refunds": 0,
+      "credits": 0,
+      "notesMax": 0,
+      "repliesMax": 0,
+      "priority": "normal"
+    },
+    "refunded": {
+      "refunds": 1,
+      "credits": 0,
+      "notesMax": 1,
+      "repliesMax": 0,
+      "priority": null
+    },
+    "credited": {
+      "refunds": 0,
+      "credits": 1,
+      "notesMax": 1,
+      "repliesMax": 0,
+      "priority": null
+    },
+    "refunded_two": {
+      "refunds": 2,
+      "credits": 0,
+      "notesMax": 2,
+      "repliesMax": 0,
+      "priority": null
+    },
+    "credited_two": {
+      "refunds": 0,
+      "credits": 2,
+      "notesMax": 2,
+      "repliesMax": 0,
+      "priority": null
+    },
+    "refunded_and_credited": {
+      "refunds": 1,
+      "credits": 1,
+      "notesMax": 2,
+      "repliesMax": 0,
+      "priority": null
+    },
+    "already_refunded": {
+      "refunds": 1,
+      "credits": 0,
+      "notesMax": 0,
+      "repliesMax": 0,
+      "priority": null
+    },
+    "already_credited": {
+      "refunds": 0,
+      "credits": 1,
+      "notesMax": 0,
+      "repliesMax": 0,
+      "priority": null
+    },
+    "already_refunded_untouched": {
+      "refunds": 1,
+      "credits": 0,
+      "notesMax": 0,
+      "repliesMax": 0,
+      "priority": "normal"
+    },
+    "already_credited_untouched": {
+      "refunds": 0,
+      "credits": 1,
+      "notesMax": 0,
+      "repliesMax": 0,
+      "priority": "normal"
+    },
+    "held": {
+      "refunds": 0,
+      "credits": 0,
+      "notesMax": 0,
+      "repliesMax": 0,
+      "priority": null
+    }
+  },
+  "tasks": {
+    "HO2-1": {
+      "why": "A two-week window. Policy v3: a remedy of 100.00 CAD or more needs two distinct approvers, support and finance. Three customers were already made whole before planning (a refund of the duplicate, a credit naming the duplicate, a refund of the original); each gets nothing more. Ravenscar's retry landed 30 s after the window closed, so it isn't provably part of this incident.",
+      "summaryPosts": [0],
+      "cases": {
+        "b01": {
+          "accept": ["refunded", "credited"],
+          "why": "99.99 CAD is just under the credit limit."
+        },
+        "b02": {
+          "accept": ["refunded"],
+          "signers": ["support_lead", "finance_lead"],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ]
+        },
+        "b03": {
+          "accept": ["already_refunded"],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "The duplicate payment was refunded before the incident was planned."
+        },
+        "b04": {
+          "accept": ["already_credited"],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A balance credit naming the duplicate payment already settled it."
+        },
+        "b05": {
+          "accept": ["already_refunded"],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "The original payment was refunded instead. The customer has paid the invoice once; refunding the duplicate too would refund it completely."
+        },
+        "b06": {
+          "accept": ["refunded_two", "credited_two", "refunded_and_credited"]
+        },
+        "b07": {
+          "accept": ["held"],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "policy"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "why": "One payment inside the window and its retry 30 s after it closed. Not an in-window duplicate; a person decides."
+        },
+        "m01": {
+          "accept": ["untouched"]
+        },
+        "m02": {
+          "accept": ["untouched"],
+          "why": "July 3 is before this incident's July 6 start."
+        },
+        "m03": {
+          "accept": ["untouched"]
+        },
+        "m04": {
+          "accept": ["untouched"]
+        }
+      }
+    },
+    "HO2-2": {
+      "why": "A customer comment and a teammate's tag change touch no field a remedy relies on. Holding either case would be wrongful.",
+      "summaryPosts": [0],
+      "cases": {
+        "b01": {
+          "accept": ["refunded", "credited"]
+        },
+        "b02": {
+          "accept": ["refunded"],
+          "signers": ["support_lead", "finance_lead"],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ]
+        },
+        "b03": {
+          "accept": ["already_refunded"],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ]
+        },
+        "b04": {
+          "accept": ["already_credited"],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ]
+        },
+        "b05": {
+          "accept": ["already_refunded"],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ]
+        },
+        "b06": {
+          "accept": ["refunded_two", "credited_two", "refunded_and_credited"]
+        },
+        "b07": {
+          "accept": ["held"],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "policy"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ]
+        },
+        "m01": {
+          "accept": ["untouched"]
+        },
+        "m02": {
+          "accept": ["untouched"]
+        },
+        "m03": {
+          "accept": ["untouched"]
+        },
+        "m04": {
+          "accept": ["untouched"]
+        }
+      }
+    },
+    "HO2-3": {
+      "why": "After approval a teammate refunds Northgate's first payment. The customer has their money back, so neither the approved refund nor a credit may follow.",
+      "summaryPosts": [0],
+      "cases": {
+        "b01": {
+          "accept": ["already_refunded"],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ]
+        },
+        "b02": {
+          "accept": ["refunded"],
+          "signers": ["support_lead", "finance_lead"],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ]
+        },
+        "b03": {
+          "accept": ["already_refunded"],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ]
+        },
+        "b04": {
+          "accept": ["already_credited"],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ]
+        },
+        "b05": {
+          "accept": ["already_refunded"],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ]
+        },
+        "b06": {
+          "accept": ["refunded_two", "credited_two", "refunded_and_credited"]
+        },
+        "b07": {
+          "accept": ["held"],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "policy"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ]
+        },
+        "m01": {
+          "accept": ["untouched"]
+        },
+        "m02": {
+          "accept": ["untouched"]
+        },
+        "m03": {
+          "accept": ["untouched"]
+        },
+        "m04": {
+          "accept": ["untouched"]
+        }
+      }
+    },
+    "HO2-4": {
+      "why": "The re-check before Aldermoor's refund can't read their charges. A failed read is not proof that nothing changed, so the refund waits.",
+      "summaryPosts": [0],
+      "cases": {
+        "b01": {
+          "accept": ["refunded", "credited"]
+        },
+        "b02": {
+          "accept": ["held"],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "evidence_unavailable"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "evidence_unavailable"
+            },
+            {
+              "op": "zendesk.ticket.appendPrivateNote",
+              "cause": "evidence_unavailable"
+            }
+          ]
+        },
+        "b03": {
+          "accept": ["already_refunded"],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ]
+        },
+        "b04": {
+          "accept": ["already_credited"],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ]
+        },
+        "b05": {
+          "accept": ["already_refunded"],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ]
+        },
+        "b06": {
+          "accept": ["refunded_two", "credited_two", "refunded_and_credited"]
+        },
+        "b07": {
+          "accept": ["held"],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "policy"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ]
+        },
+        "m01": {
+          "accept": ["untouched"]
+        },
+        "m02": {
+          "accept": ["untouched"]
+        },
+        "m03": {
+          "accept": ["untouched"]
+        },
+        "m04": {
+          "accept": ["untouched"]
+        }
+      }
+    },
+    "HO2-5": {
+      "why": "Every in-scope customer is already settled or a control, so the correct plan does nothing. A mode that remedies anything here fails.",
+      "summaryPosts": [0],
+      "cases": {
+        "b01": {
+          "accept": ["untouched"]
+        },
+        "b02": {
+          "accept": ["untouched"]
+        },
+        "b03": {
+          "accept": ["already_refunded"],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ]
+        },
+        "b04": {
+          "accept": ["already_credited"],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ]
+        },
+        "b05": {
+          "accept": ["already_refunded"],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ]
+        },
+        "b06": {
+          "accept": ["untouched"]
+        },
+        "b07": {
+          "accept": ["untouched"]
+        },
+        "m01": {
+          "accept": ["untouched"]
+        },
+        "m02": {
+          "accept": ["untouched"]
+        },
+        "m03": {
+          "accept": ["untouched"]
+        },
+        "m04": {
+          "accept": ["untouched"]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,132 @@
+{
+  "incident": "INC-BILL-0715",
+  "summary": "A card-network timeout between July 6 and July 20 made our billing service retry captured payments.",
+  "window": {
+    "createdGte": "2026-07-06T00:00:00.000Z",
+    "createdLt": "2026-07-20T00:00:00.000Z"
+  },
+  "ids": { "prefix": "INC0715", "ticketBase": 9300001 },
+  "cases": [
+    {
+      "key": "b01",
+      "kind": "duplicate",
+      "customerId": "cus_WpIkWCqVpRxxPIqT",
+      "name": "Northgate Credit Co-op",
+      "email": "treasury@northgatecoop.ca",
+      "requesterId": 2000031,
+      "amountMinor": 9998,
+      "currency": "cad",
+      "chargedAt": "2026-07-07T08:15:00.000Z"
+    },
+    {
+      "key": "b02",
+      "kind": "duplicate",
+      "customerId": "cus_jHVvjyjlhbfGyg5s",
+      "name": "Aldermoor Hotels",
+      "email": "payables@aldermoorhotels.com",
+      "requesterId": 2000032,
+      "amountMinor": 25000,
+      "currency": "cad",
+      "chargedAt": "2026-07-08T19:30:00.000Z"
+    },
+    {
+      "key": "b03",
+      "kind": "duplicate",
+      "customerId": "cus_NvEbdCmtD1UwNvKR",
+      "name": "Pemberton Bikes",
+      "email": "shop@pembertonbikes.ca",
+      "requesterId": 2000033,
+      "amountMinor": 4100,
+      "currency": "cad",
+      "chargedAt": "2026-07-09T10:05:00.000Z"
+    },
+    {
+      "key": "b04",
+      "kind": "duplicate",
+      "customerId": "cus_te5RpWS86Zgh4bBg",
+      "name": "Saltmarsh Coffee",
+      "email": "hello@saltmarsh.coffee",
+      "requesterId": 2000034,
+      "amountMinor": 5300,
+      "currency": "cad",
+      "chargedAt": "2026-07-11T07:50:00.000Z"
+    },
+    {
+      "key": "b05",
+      "kind": "duplicate",
+      "customerId": "cus_WbMpOOgfIwfTtzuF",
+      "name": "Granite Peak Legal",
+      "email": "office@granitepeaklegal.ca",
+      "requesterId": 2000035,
+      "amountMinor": 3333,
+      "currency": "cad",
+      "chargedAt": "2026-07-12T14:40:00.000Z"
+    },
+    {
+      "key": "b06",
+      "kind": "triple",
+      "customerId": "cus_LRjDsIyYJvxXR3gh",
+      "name": "Mossgiel Bakery",
+      "email": "orders@mossgielbakery.ca",
+      "requesterId": 2000036,
+      "amountMinor": 1250,
+      "currency": "cad",
+      "chargedAt": "2026-07-14T06:20:00.000Z"
+    },
+    {
+      "key": "b07",
+      "kind": "duplicate",
+      "customerId": "cus_zChiHgHZ8Kraznf7",
+      "name": "Ravenscar Print",
+      "email": "jobs@ravenscarprint.com",
+      "requesterId": 2000039,
+      "amountMinor": 7480,
+      "currency": "cad",
+      "chargedAt": "2026-07-19T23:59:00.000Z"
+    },
+    {
+      "key": "m01",
+      "kind": "control_distinct",
+      "customerId": "cus_kpvjQOjOevu4JGk7",
+      "name": "Tidewater Clinics",
+      "email": "ap@tidewaterclinics.ca",
+      "requesterId": 2000044,
+      "amountMinor": 6150,
+      "currency": "cad",
+      "chargedAt": "2026-07-06T09:00:00.000Z"
+    },
+    {
+      "key": "m02",
+      "kind": "control_outside_window",
+      "customerId": "cus_TG6tgiVV0kn28yfc",
+      "name": "Lumen Optics",
+      "email": "accounts@lumenoptics.ca",
+      "requesterId": 2000049,
+      "amountMinor": 2900,
+      "currency": "cad",
+      "chargedAt": "2026-07-03T11:30:00.000Z"
+    },
+    {
+      "key": "m03",
+      "kind": "control_failed_retry",
+      "customerId": "cus_hBtwF3T0ti011cy8",
+      "name": "Ostrander Freight",
+      "email": "billing@ostranderfreight.com",
+      "requesterId": 2000051,
+      "amountMinor": 8800,
+      "currency": "cad",
+      "chargedAt": "2026-07-15T13:15:00.000Z"
+    },
+    {
+      "key": "m04",
+      "kind": "control_other_currency",
+      "customerId": "cus_vQCvqhrfCtUgZaAk",
+      "name": "Kestrel Robotics",
+      "email": "finance@kestrelrobotics.com",
+      "requesterId": 2000052,
+      "amountMinor": 4600,
+      "currency": "usd",
+      "chargedAt": "2026-07-16T16:00:00.000Z"
+    }
+  ]
+}
