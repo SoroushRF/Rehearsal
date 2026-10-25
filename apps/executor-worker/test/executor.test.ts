@@ -9,8 +9,10 @@ import {
   fingerprint,
   operationKey,
   PLAN_LOCKED,
+  type PrecedentRegistryPort,
   type ProviderPort,
   planHash,
+  type RegistrySnapshot,
   RUN_CANCELLED,
   topoOrder,
 } from "@rehearsal/core";
@@ -2106,6 +2108,119 @@ describe("two distinct approvers (T2.13)", () => {
     const s = setup(happyPathBundle());
     s.deps.policies = [POLICY, V3];
     expect((await s.run()).state).toBe("completed");
+  });
+});
+
+/** #234: a plan that cites precedents is only admitted while the registry still backs them. */
+describe("precedent citations at admission (#234)", () => {
+  const AREA = "billing.duplicate_charge";
+  const digest = "d".repeat(64);
+  const basis = {
+    citations: [
+      {
+        id: "dup-refund",
+        version: 2,
+        digest,
+        appliesTo: AREA,
+        factIds: ["fact_1"],
+        traceId: "trace_1",
+      },
+    ],
+    epochs: { [AREA]: 3 },
+  };
+  const inForce: RegistrySnapshot = {
+    active: new Map([["dup-refund", { version: 2, digest }]]),
+    epochs: new Map([[AREA, 3]]),
+  };
+  /** The happy path whose plan cites `dup-refund` v2 at epoch 3. */
+  function citing(snapshot?: RegistrySnapshot | Error) {
+    const bundle = happyPathBundle();
+    const s = setup({ ...bundle, manifest: { ...bundle.manifest, precedentBasis: basis } });
+    if (snapshot !== undefined) {
+      const reads: string[] = [];
+      const registry: PrecedentRegistryPort = {
+        snapshot: async (orgId) => {
+          reads.push(orgId);
+          if (snapshot instanceof Error) throw snapshot;
+          return snapshot;
+        },
+      };
+      s.deps.precedents = registry;
+      return { ...s, reads };
+    }
+    return { ...s, reads: [] as string[] };
+  }
+  const refused = async (s: ReturnType<typeof citing>, detail: RegExp) => {
+    const result = await s.run();
+    expect(result.state).toBe("failed");
+    expect(result.refusal).toMatch(detail);
+    expect(s.world.effects).toEqual([]);
+    expect(s.journal.attempts.size).toBe(0);
+  };
+
+  it("applies a plan whose cited precedent is still in force, reading the registry for its org", async () => {
+    const s = citing(inForce);
+    expect((await s.run()).state).toBe("completed");
+    expect(s.reads).toEqual([s.manifest.orgId]);
+  });
+
+  it.each<[string, RegistrySnapshot, RegExp]>([
+    [
+      "a newer version replaced it",
+      {
+        active: new Map([["dup-refund", { version: 3, digest }]]),
+        epochs: new Map([[AREA, 4]]),
+      },
+      /precedent changed since approval: dup-refund v2 is superseded \(v3 in force\) \(\+1 more\)/,
+    ],
+    [
+      "it was withdrawn",
+      { active: new Map(), epochs: new Map([[AREA, 4]]) },
+      /dup-refund v2 is withdrawn \(none in force\)/,
+    ],
+    [
+      "its content changed under the same version",
+      {
+        active: new Map([["dup-refund", { version: 2, digest: "e".repeat(64) }]]),
+        epochs: new Map([[AREA, 3]]),
+      },
+      /dup-refund v2 is content changed/,
+    ],
+    [
+      "something else in its area changed, even if the cited version didn't",
+      { active: inForce.active, epochs: new Map([[AREA, 4]]) },
+      new RegExp(`precedents in ${AREA} changed since planning \\(set 3, now 4\\)`),
+    ],
+  ])("refuses and sends nothing when %s", async (_label, snapshot, detail) => {
+    await refused(citing(snapshot), detail);
+  });
+
+  it("fails closed when no registry is configured, or it can't be read", async () => {
+    await refused(citing(), /no precedent registry is configured/);
+    await refused(
+      citing(new Error("connection refused")),
+      /registry unavailable: connection refused/,
+    );
+  });
+
+  it("never reads the registry for a plan that cites nothing", async () => {
+    const s = setup(happyPathBundle());
+    let reads = 0;
+    s.deps.precedents = {
+      snapshot: async () => {
+        reads += 1;
+        throw new Error("must not be read");
+      },
+    };
+    expect((await s.run()).state).toBe("completed");
+    expect(reads).toBe(0);
+  });
+
+  it("is part of what was approved: dropping the basis is a different plan hash", () => {
+    const bundle = happyPathBundle();
+    expect(planHash({ ...bundle.manifest, precedentBasis: basis })).not.toBe(
+      planHash(bundle.manifest),
+    );
   });
 });
 

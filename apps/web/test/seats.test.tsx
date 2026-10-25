@@ -13,7 +13,7 @@ describe("approver seats (T2.13)", () => {
       dualRequired: true,
       satisfied: false,
       signed: [],
-      needed: ["support_lead", "finance_lead"],
+      needed: ["rehearsal:approve:support_step", "rehearsal:approve:finance_step"],
     });
     expect(out).toContain('aria-label="Approvers"');
     expect(seat(out, "support_lead")).toContain("Waiting");
@@ -24,10 +24,17 @@ describe("approver seats (T2.13)", () => {
     const out = html({
       dualRequired: true,
       satisfied: false,
-      signed: [{ role: "finance_lead", grantId: "g1", actorUserId: "user_fin" }],
-      needed: ["support_lead"],
+      signed: [
+        {
+          permission: "rehearsal:approve:finance_step",
+          grantId: "g1",
+          actorUserId: "user_fin",
+        },
+      ],
+      needed: ["rehearsal:approve:support_step"],
     });
     expect(seat(out, "finance_lead")).toContain("user_fin");
+    expect(seat(out, "finance_lead")).toContain("rehearsal:approve:finance_step");
     expect(seat(out, "support_lead")).toContain("Waiting");
     expect(out).toContain('data-signed="true"');
     expect(out).toContain('data-signed="false"');
@@ -38,8 +45,16 @@ describe("approver seats (T2.13)", () => {
       dualRequired: true,
       satisfied: true,
       signed: [
-        { role: "support_lead", grantId: "g1", actorUserId: "user_sup" },
-        { role: "finance_lead", grantId: "g2", actorUserId: "user_fin" },
+        {
+          permission: "rehearsal:approve:support_step",
+          grantId: "g1",
+          actorUserId: "user_sup",
+        },
+        {
+          permission: "rehearsal:approve:finance_step",
+          grantId: "g2",
+          actorUserId: "user_fin",
+        },
       ],
       needed: [],
     });
@@ -54,5 +69,13 @@ describe("approver seats (T2.13)", () => {
         .success,
     ).toBe(true);
     expect(ApprovalStatus.safeParse({ dualRequired: true }).success).toBe(false);
+    expect(
+      ApprovalStatus.safeParse({
+        dualRequired: true,
+        satisfied: false,
+        signed: [{ role: "finance_lead", grantId: "g1", actorUserId: "user_fin" }],
+        needed: [],
+      }).success,
+    ).toBe(false);
   });
 });

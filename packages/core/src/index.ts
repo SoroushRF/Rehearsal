@@ -11,6 +11,7 @@ export * from "./guards";
 export * from "./hash";
 export * from "./policy";
 export * from "./ports";
+export * from "./precedents";
 export * from "./rehearsal";
 export * from "./remedy";
 export * from "./step-guard";
