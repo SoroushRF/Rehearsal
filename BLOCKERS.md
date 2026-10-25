@@ -6,7 +6,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 
 ## Top blockers
 
-55 of 81 tasks done. These open tasks hold up the most other work:
+56 of 81 tasks done. These open tasks hold up the most other work:
 
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
@@ -46,7 +46,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T1.21** Contracts: rehearsal jobs, scenario references, and reports [#163](https://github.com/SoroushRF/Rehearsal/issues/163) | ✅ done |  | T1.22, T1.23, T2.19 (T2), T3.13 (T3), T3.14 (T3), T4.11 (T4) |
 | **T1.22** Seed disposable Era worlds from a supported incident snapshot [#166](https://github.com/SoroushRF/Rehearsal/issues/166) | 👀 in review [PR #213](https://github.com/SoroushRF/Rehearsal/pull/213) | — | T3.15 (T3) |
 | **T1.23** Scoped rehearsal credentials and world routing [#167](https://github.com/SoroushRF/Rehearsal/issues/167) | 👀 in review [PR #214](https://github.com/SoroushRF/Rehearsal/pull/214) | — | T3.15 (T3) |
-| **T1.24** Native Stripe sandbox setup and read conformance _(stretch)_ [#178](https://github.com/SoroushRF/Rehearsal/issues/178) | 👀 in review [PR #215](https://github.com/SoroushRF/Rehearsal/pull/215) | — | T3.17 (T3) |
+| **T1.24** Native Stripe sandbox setup and read conformance _(stretch)_ [#178](https://github.com/SoroushRF/Rehearsal/issues/178) | ✅ done |  | T3.17 (T3) |
 | **T1.25** Competent scripted benchmark baseline _(stretch)_ [#180](https://github.com/SoroushRF/Rehearsal/issues/180) | 🟥 blocked | T4.14 (T4, ready) |  |
 | **T1.26** Precedent reuse across different incidents _(stretch)_ [#181](https://github.com/SoroushRF/Rehearsal/issues/181) | 🟥 blocked | T2.17 (T2, ready)<br>T4.14 (T4, ready) |  |
 | **T1.27** Extend the scorecard to the full operation set [#161](https://github.com/SoroushRF/Rehearsal/issues/161) | ✅ done |  | T1.25, T1.28 |
@@ -104,8 +104,8 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T3.14** Share deterministic execution mechanics while preserving admission boundaries [#165](https://github.com/SoroushRF/Rehearsal/issues/165) | 🟨 ready | — | T3.15 |
 | **T3.15** Execute a stored plan against disposable worlds [#168](https://github.com/SoroushRF/Rehearsal/issues/168) | 🟥 blocked | T3.13 (T3, ready)<br>T3.14 (T3, ready)<br>T1.22 (T1, in review)<br>T1.23 (T1, in review) | T3.16, T4.12 (T4) |
 | **T3.16** Rehearsal worker: restart, cancellation, and cleanup [#170](https://github.com/SoroushRF/Rehearsal/issues/170) | 🟥 blocked | T3.15 (T3, blocked)<br>T4.11 (T4, ready) | T4.13 (T4) |
-| **T3.17** Native Stripe sandbox refund writer _(stretch)_ [#184](https://github.com/SoroushRF/Rehearsal/issues/184) | 🟥 blocked | T1.24 (T1, in review) | T3.18 |
-| **T3.18** Native Stripe executor recovery gate _(stretch)_ [#185](https://github.com/SoroushRF/Rehearsal/issues/185) | 🟥 blocked | T3.17 (T3, blocked) |  |
+| **T3.17** Native Stripe sandbox refund writer _(stretch)_ [#184](https://github.com/SoroushRF/Rehearsal/issues/184) | 🟨 ready | — | T3.18 |
+| **T3.18** Native Stripe executor recovery gate _(stretch)_ [#185](https://github.com/SoroushRF/Rehearsal/issues/185) | 🟥 blocked | T3.17 (T3, ready) |  |
 
 ## T4 Guard
 
