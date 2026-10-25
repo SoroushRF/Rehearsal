@@ -1,7 +1,7 @@
-import type { QueryPredicate } from "@rehearsal/contracts";
+import type { Action, PlanManifest, QueryPredicate } from "@rehearsal/contracts";
 import { useEffect, useRef } from "react";
 import { shortHash } from "../format";
-import { evidenceFor, type ReviewAction, type ReviewManifest } from "../plan";
+import { evidenceFor } from "../plan";
 import { Alert, Button, Chip, Icon } from "./ui";
 
 /** What the planner read before proposing this action. Apply re-checks every item listed here. */
@@ -10,8 +10,8 @@ export function EvidenceDrawer({
   action,
   onClose,
 }: {
-  manifest: ReviewManifest;
-  action: ReviewAction;
+  manifest: PlanManifest;
+  action: Action;
   onClose: () => void;
 }) {
   const closeRef = useRef<HTMLButtonElement>(null);

@@ -1,11 +1,10 @@
-import type { CompensationClass, ProtectionLevel } from "@rehearsal/contracts";
+import type { Action, CompensationClass, ProtectionLevel } from "@rehearsal/contracts";
 import { compensationLabel, formatMoney, protectionLabel, roleLabel } from "../format";
-import type { ReviewAction } from "../plan";
 import { outcomeLabel } from "../runs";
 import { Chip, Icon, type IconName, type Tone } from "./ui";
 
 /** Which effect this is, as a colored tile: money moves, a field changes, or a note is added. */
-const KIND: Record<ReviewAction["kind"], { icon: IconName; tile: string; label: string }> = {
+const KIND: Record<Action["kind"], { icon: IconName; tile: string; label: string }> = {
   "stripe.refund.create": { icon: "refund", tile: "bg-accent-soft text-accent", label: "Refund" },
   "zendesk.ticket.patchFields": { icon: "edit", tile: "bg-info-bg text-info", label: "Ticket" },
   "zendesk.ticket.appendPrivateNote": { icon: "note", tile: "bg-sunken text-muted", label: "Note" },
@@ -56,7 +55,7 @@ export function ActionRow({
   include,
   dependsOnLabels = [],
 }: {
-  action: ReviewAction;
+  action: Action;
   selected: boolean;
   onShowEvidence: () => void;
   include?: IncludeControl;
@@ -74,7 +73,7 @@ export function ActionRow({
       data-testid="action-row"
       data-action-id={action.id}
       data-dropped={dropped ? "true" : undefined}
-      className={`group relative flex gap-2.5 px-3 py-4 transition-colors sm:gap-4 sm:px-5 ${
+      className={`ledger-row group relative flex gap-2.5 px-3 transition-colors sm:gap-4 sm:px-5 ${
         selected ? "bg-accent-soft/60" : dropped ? "bg-sunken/70" : "hover:bg-sunken/50"
       }`}
     >
@@ -171,7 +170,7 @@ export function ActionRow({
   );
 }
 
-function Title({ action }: { action: ReviewAction }) {
+function Title({ action }: { action: Action }) {
   switch (action.kind) {
     case "stripe.refund.create":
       return <>Refund the customer</>;
@@ -205,7 +204,7 @@ function Title({ action }: { action: ReviewAction }) {
 }
 
 /** The one line of specifics under the title, in words, with no field paths or template syntax. */
-function Detail({ action }: { action: ReviewAction }) {
+function Detail({ action }: { action: Action }) {
   const line = "flex flex-wrap gap-x-2 text-[13px] leading-5 text-subtle";
   switch (action.kind) {
     case "stripe.refund.create":
@@ -280,7 +279,7 @@ function Detail({ action }: { action: ReviewAction }) {
  * approved word for word: `body` is part of the plan hash. A Slack summary is filled in when the
  * run ends, so the reviewer approves the template, its fixed values and which outcomes it counts.
  */
-function Message({ action, dropped }: { action: ReviewAction; dropped: boolean }) {
+function Message({ action, dropped }: { action: Action; dropped: boolean }) {
   const box = `mt-3 rounded-lg border border-line bg-sunken/60 px-3 py-2.5 ${dropped ? "opacity-60" : ""}`;
   switch (action.kind) {
     case "zendesk.ticket.appendPublicReply":
