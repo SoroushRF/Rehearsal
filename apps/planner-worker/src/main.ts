@@ -1,6 +1,12 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenAI } from "@google/genai";
 import type { BillingPolicyV1, BillingPolicyV2 } from "@rehearsal/core";
+import {
+  AgentMemoryClient,
+  AgentMemoryPrecedents,
+  memoryConfigFromEnv,
+  precedentScope,
+} from "@rehearsal/memory";
 import { DEFAULT_PLANNER_MODEL, PROMPT_VERSION } from "@rehearsal/planner";
 import {
   plannerJobsClient,
@@ -75,6 +81,23 @@ const client = gemini
     )
   : new Anthropic().messages;
 const jobs = plannerJobsClient(apiUrl, secret);
+// Precedent recall (#235), with a read-only Agent Memory key (decision 0012). Without one, an org
+// with active precedents can't be planned for; orgs without any plan as before.
+const memory = memoryConfigFromEnv();
+const recallers = new Map<string, AgentMemoryPrecedents>();
+const precedents =
+  memory &&
+  ((orgId: string) => {
+    let recaller = recallers.get(orgId);
+    if (!recaller) {
+      const { scope, ...client } = memory;
+      recaller = new AgentMemoryPrecedents(new AgentMemoryClient(client), {
+        scope: precedentScope(scope, orgId),
+      });
+      recallers.set(orgId, recaller);
+    }
+    return recaller;
+  });
 const ctx = {
   jobs,
   client,
@@ -87,6 +110,7 @@ const ctx = {
     ? { policy: policyV2 as BillingPolicyV2, balanceCredits: true }
     : { policy: policyV1 as BillingPolicyV1 }),
   adapters: { stripe: STRIPE_CHARGE_PROJECTION, zendesk: ZENDESK_TICKET_PROJECTION },
+  ...(precedents && { precedents }),
   // The run summary's channel (T1.7). The planner only names it; the executor posts.
   summaryChannelId: process.env.RUN_SUMMARY_CHANNEL || undefined,
   // Public replies to customers (T1.13). Off unless CUSTOMER_REPLIES=1.
@@ -105,7 +129,7 @@ for (const signal of ["SIGTERM", "SIGINT"] as const) {
 }
 
 console.log(
-  `planner-worker ready: ${model}, prompt ${PROMPT_VERSION}, planning ${worlds.stripe.baseUrl} + ${worlds.zendesk.baseUrl}`,
+  `planner-worker ready: ${model}, prompt ${PROMPT_VERSION}, planning ${worlds.stripe.baseUrl} + ${worlds.zendesk.baseUrl}, precedents ${memory ? "on" : "off"}`,
 );
 while (!stopping) {
   try {

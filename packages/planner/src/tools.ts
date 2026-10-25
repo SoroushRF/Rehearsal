@@ -3,6 +3,7 @@ import {
   type EntityRef,
   type Observation,
   type PlanManifest,
+  type PrecedentBasis,
   type QueryObservation,
   type Role,
   ZendeskPriority,
@@ -207,6 +208,7 @@ export class PlanningSession {
     model: string;
     promptVersion: string;
     adapters: Record<string, string>;
+    precedentBasis?: PrecedentBasis;
   }): PlanManifest {
     return {
       schemaVersion: 1,
@@ -229,6 +231,7 @@ export class PlanningSession {
       queryObservations: this.queryObservations,
       actions: this.actions,
       excluded: [],
+      ...(meta.precedentBasis && { precedentBasis: meta.precedentBasis }),
     };
   }
 

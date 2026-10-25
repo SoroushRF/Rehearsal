@@ -1,7 +1,18 @@
+import { createHash } from "node:crypto";
 import { AgentMemoryClient, type AgentMemoryConfig } from "./client";
 import { AgentMemoryPrecedents } from "./precedents";
 
 export const DEFAULT_PRECEDENT_SCOPE = "rehearsal/precedents";
+
+/**
+ * One memory scope per organization (decision 0012): a shared scope would let one organization's
+ * planner recall another's precedents. Clerk org IDs are mixed case and the service takes only
+ * lowercase paths, so the scope carries a hash of the ID instead. The sync writes here and the
+ * planner recalls from here, so both must build it this way.
+ */
+export function precedentScope(baseScope: string, orgId: string): string {
+  return `${baseScope}/org-${createHash("sha256").update(orgId).digest("hex").slice(0, 16)}`;
+}
 
 const VARS = [
   "SURREAL_AGENT_MEMORY_URL",
