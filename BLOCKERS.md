@@ -11,7 +11,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
 | **T4.11** Allowlisted rehearsal challenges and controls [#169](https://github.com/SoroushRF/Rehearsal/issues/169) | @skhdemo | 🟨 ready | 6 |
-| **T2.19** API: request and read an execution rehearsal [#171](https://github.com/SoroushRF/Rehearsal/issues/171) | @parsaabbasian | 👀 in review | 5 |
+| **T2.19** API: request and read an execution rehearsal [#171](https://github.com/SoroushRF/Rehearsal/issues/171) | @parsaabbasian | 🟨 ready | 5 |
 | **T4.12** Independent verifier for observed rehearsal effects [#173](https://github.com/SoroushRF/Rehearsal/issues/173) | @skhdemo | 🟥 blocked | 4 |
 | **T2.20** Review UI: start a rehearsal and follow its progress [#172](https://github.com/SoroushRF/Rehearsal/issues/172) | @parsaabbasian | 🟥 blocked | 3 |
 | **T2.21** Review UI: compare expected and observed rehearsal outcomes [#174](https://github.com/SoroushRF/Rehearsal/issues/174) | @parsaabbasian | 🟥 blocked | 3 |
@@ -78,9 +78,9 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T2.16** Review UI: show the exact rendered public reply being approved [#146](https://github.com/SoroushRF/Rehearsal/issues/146) | ✅ done |  | T1.13 (T1) |
 | **T2.17** Precedent promotion: finance-only route and UI [#147](https://github.com/SoroushRF/Rehearsal/issues/147) | ✅ done |  | T1.26 (T1), T1.29 (T1), T4.13 (T4) |
 | **T2.18** Policy: choose a refund or an invoice credit per obligation [#148](https://github.com/SoroushRF/Rehearsal/issues/148) | ✅ done |  | T1.14 (T1) |
-| **T2.19** API: request and read an execution rehearsal [#171](https://github.com/SoroushRF/Rehearsal/issues/171) | 👀 in review [PR #298](https://github.com/SoroushRF/Rehearsal/pull/298) | — | T2.20, T2.21 |
-| **T2.20** Review UI: start a rehearsal and follow its progress [#172](https://github.com/SoroushRF/Rehearsal/issues/172) | 🟥 blocked | T2.19 (T2, in review) | T4.13 (T4) |
-| **T2.21** Review UI: compare expected and observed rehearsal outcomes [#174](https://github.com/SoroushRF/Rehearsal/issues/174) | 🟥 blocked | T2.19 (T2, in review)<br>T4.12 (T4, blocked) | T4.13 (T4) |
+| **T2.19** API: request and read an execution rehearsal [#171](https://github.com/SoroushRF/Rehearsal/issues/171) | 🟨 ready | — | T2.20, T2.21 |
+| **T2.20** Review UI: start a rehearsal and follow its progress [#172](https://github.com/SoroushRF/Rehearsal/issues/172) | 🟥 blocked | T2.19 (T2, ready) | T4.13 (T4) |
+| **T2.21** Review UI: compare expected and observed rehearsal outcomes [#174](https://github.com/SoroushRF/Rehearsal/issues/174) | 🟥 blocked | T2.19 (T2, ready)<br>T4.12 (T4, blocked) | T4.13 (T4) |
 | **T2.22** Operator task tests and findings [#177](https://github.com/SoroushRF/Rehearsal/issues/177) | 🟥 blocked | T2.5 (T2, ready) |  |
 | **T2.23** Server-side fresh verification bound to the plan _(stretch)_ [#182](https://github.com/SoroushRF/Rehearsal/issues/182) | 🟨 ready | — | T2.24 |
 | **T2.24** Clerk verification UI _(stretch)_ [#183](https://github.com/SoroushRF/Rehearsal/issues/183) | 🟥 blocked | T2.23 (T2, ready) |  |
@@ -198,7 +198,7 @@ flowchart LR
     T2_16["T2.16 Review UI: show the exact rendered public "]:::done
     T2_17["T2.17 Precedent promotion: finance-only route an"]:::done
     T2_18["T2.18 Policy: choose a refund or an invoice cred"]:::done
-    T2_19["T2.19 API: request and read an execution rehears"]:::review
+    T2_19["T2.19 API: request and read an execution rehears"]:::ready
     T2_20["T2.20 Review UI: start a rehearsal and follow it"]:::blocked
     T2_21["T2.21 Review UI: compare expected and observed r"]:::blocked
     T2_22["T2.22 Operator task tests and findings"]:::blocked
