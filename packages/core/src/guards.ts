@@ -212,7 +212,10 @@ export function advanceOverlay(
     return next;
   }
 
-  if (action.kind === "zendesk.ticket.appendPrivateNote") {
+  if (
+    action.kind === "zendesk.ticket.appendPrivateNote" ||
+    action.kind === "zendesk.ticket.appendPublicReply"
+  ) {
     const entity = { vendor: "zendesk", kind: "ticket", id: action.args.ticketId } as const;
     return creditUpdatedAt(overlay, entity, receipt);
   }

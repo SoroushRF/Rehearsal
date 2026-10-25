@@ -18,7 +18,7 @@ Team of four on four feature tracks (see [AGENTS.md](../AGENTS.md#tracks)). Date
 
 If M2 isn't met, switch to the trimmed scope:
 - No Slack, SurrealDB, Expo or model serving.
-- The ML experiment still finishes as a report.
+- The ML experiment still finishes as a report. **Withdrawn 2026-10-24:** it does not ([0008](decisions/0008-ml-out-of-hackathon-scope.md)).
 - All four tracks put their remaining time into the acceptance scenarios, deployment and the video.
 
 Trimming removes features, never correctness checks. These must stay:

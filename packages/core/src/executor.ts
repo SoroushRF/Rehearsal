@@ -2,6 +2,7 @@ import {
   type Action,
   type ApprovalGrant,
   type Attempt,
+  type AttemptState,
   type EntityRef,
   type HoldReason,
   type ObjectBinding,
@@ -23,7 +24,7 @@ import {
 } from "./approvals";
 import { bindingKey } from "./bindings";
 import { topoOrder, validateGraph } from "./dag";
-import { refundEffectMatches } from "./effects";
+import { creditEffectMatches, refundEffectMatches } from "./effects";
 import { planHash as computePlanHash, fingerprint, sha256Hex } from "./hash";
 import { type BillingPolicy, evaluateBillingPolicy } from "./policy";
 import type {
@@ -39,6 +40,8 @@ import type {
   SettleTransition,
   WorldContext,
 } from "./ports";
+import { remedyOf } from "./remedy";
+import { replyBodyFor, summaryCountKey } from "./templates";
 
 /** What one `apply` job names. The executor trusts none of it until admission re-checks it. */
 export interface ApplyJobInput {
@@ -80,12 +83,35 @@ export interface ApplyStore {
    * every send: a cancel stops the next admitted action; what already happened keeps its receipt.
    */
   runCancelled?(orgId: string, runId: string): Promise<boolean>;
+  /**
+   * Every refund or credit step for this obligation in any stored plan revision of the org. The
+   * one-remedy guard reads their attempts (decision 0010 item 4); without it, a remedy holds.
+   */
+  remedyStepsFor?(orgId: string, obligationId: string): Promise<RemedyStepRef[]>;
+}
+
+/** A refund or credit step in a stored plan revision. */
+export interface RemedyStepRef {
+  planHash: string;
+  actionId: string;
+}
+
+/** One journaled attempt of another remedy step for the same obligation. */
+export interface PriorRemedy extends RemedyStepRef {
+  attemptId: string;
+  state: AttemptState;
 }
 
 export interface StepGuardContext {
   manifest: PlanManifest;
   /** Every confirmed receipt for this plan hash so far, including earlier runs (own-write overlay). */
   confirmedReceipts: readonly Receipt[];
+  /**
+   * For a refund or credit: every attempt of another remedy step for its obligation, in any plan
+   * or revision of the org (this operation's own attempts excluded). Undefined when the store
+   * can't list them, which the guard treats as unknown, never as none.
+   */
+  priorRemedies?: readonly PriorRemedy[];
 }
 
 /**
@@ -184,16 +210,39 @@ export interface RunOutcome {
 const RESULT_PATHS: ReadonlySet<string> = new Set(ResultPath.options);
 
 export function vendorOf(action: Action): Vendor {
-  return action.kind.startsWith("stripe.") ? "stripe" : "zendesk";
+  if (action.kind.startsWith("stripe.")) return "stripe";
+  return action.kind.startsWith("slack.") ? "slack" : "zendesk";
+}
+
+type SummaryStep = Extract<Action, { kind: "slack.message.postSummary" }>;
+
+/** A run summary: it runs after every other step has settled and counts their outcomes. */
+export function isSummary(action: Action): action is SummaryStep {
+  return action.kind === "slack.message.postSummary";
+}
+
+/**
+ * A money step's read effect is the exact approved one: the refund of that charge, or the credit
+ * to that customer naming that charge, for that amount and currency. Other steps aren't checked.
+ */
+function effectMatches(action: Action, effect: Record<string, unknown>): boolean {
+  if (action.kind === "stripe.refund.create") return refundEffectMatches(action, effect);
+  if (action.kind === "stripe.customer.balanceCredit") return creditEffectMatches(action, effect);
+  return true;
 }
 
 function targetOf(action: Action): EntityRef {
   switch (action.kind) {
     case "stripe.refund.create":
       return { vendor: "stripe", kind: "charge", id: action.args.chargeId };
+    case "stripe.customer.balanceCredit":
+      return { vendor: "stripe", kind: "customer", id: action.args.customerId };
     case "zendesk.ticket.patchFields":
     case "zendesk.ticket.appendPrivateNote":
+    case "zendesk.ticket.appendPublicReply":
       return { vendor: "zendesk", kind: "ticket", id: action.args.ticketId };
+    case "slack.message.postSummary":
+      return { vendor: "slack", kind: "channel", id: action.args.channelId };
   }
 }
 
@@ -248,6 +297,43 @@ function resultsOf(
       providerRef: { vendor: "stripe", kind: "refund", id: b.id },
       results,
       observed,
+    };
+  }
+  if (action.kind === "stripe.customer.balanceCredit") {
+    const b = body as {
+      id?: unknown;
+      amount?: unknown;
+      currency?: unknown;
+      customer?: unknown;
+      type?: unknown;
+      metadata?: { charge?: unknown } | null;
+    } | null;
+    if (typeof b?.id !== "string" || typeof b.amount !== "number") {
+      throw new Error("balance transaction response is missing id or amount");
+    }
+    const observed = {
+      "credit.id": b.id,
+      "credit.amount": b.amount,
+      "credit.type": b.type,
+      "credit.charge": b.metadata?.charge ?? "",
+      customer: b.customer,
+      currency: b.currency,
+    };
+    if (!creditEffectMatches(action, observed))
+      throw new Error("balance credit does not match the approved effect");
+    return {
+      providerRef: { vendor: "stripe", kind: "customer_balance_transaction", id: b.id },
+      results: {},
+      observed,
+    };
+  }
+  if (isSummary(action)) {
+    const b = body as { ok?: unknown; ts?: unknown; channel?: unknown } | null;
+    if (b?.ok !== true || typeof b.ts !== "string") throw new Error("Slack response has no ts");
+    return {
+      providerRef: { vendor: "slack", kind: "message", id: b.ts },
+      results: {},
+      observed: { "message.ts": b.ts, channel: b.channel },
     };
   }
   const ticket = (body as { ticket?: Record<string, unknown> } | null)?.ticket;
@@ -390,7 +476,28 @@ async function admit(
     }
   }
 
+  // A read-only pass resolves what the wired vendors can read; it never needs the rest.
   if (readOnly) return { ok: true, manifest, grant };
+  // Every vendor the plan writes to must be wired, or the run would stop halfway (say, a summary
+  // with no Slack provider after the refunds went out).
+  const unwired = [...new Set(manifest.actions.map(vendorOf))].filter(
+    (v) => !deps.providers[v] || !deps.worlds[v],
+  );
+  if (unwired.length > 0) {
+    return { ok: false, detail: `no operational provider for ${unwired.join(", ")}` };
+  }
+
+  // A public reply must be exactly what its template renders, checked before any step runs; at
+  // send time the refund it announces would already be out.
+  for (const action of manifest.actions) {
+    if (action.kind !== "zendesk.ticket.appendPublicReply") continue;
+    try {
+      replyBodyFor(action);
+    } catch (err) {
+      return { ok: false, detail: `${action.id}: ${(err as Error).message}` };
+    }
+  }
+
   if (grant.revokedAt !== null) return { ok: false, detail: "grant was revoked" };
   const grantedAt = Date.parse(grant.grantedAt);
   const expiresAt = Date.parse(grant.expiresAt);
@@ -706,12 +813,7 @@ async function applyLocked(
     let result: ReconcileResult;
     try {
       result = await provider.reconcile(newest, action, world);
-      if (
-        sameAsNewest &&
-        action.kind === "stripe.refund.create" &&
-        result.kind === "applied" &&
-        !refundEffectMatches(action, result.effect)
-      ) {
+      if (sameAsNewest && result.kind === "applied" && !effectMatches(action, result.effect)) {
         result = {
           kind: "indeterminate",
           detail: "refund read does not match the approved successful effect",
@@ -827,6 +929,23 @@ async function applyLocked(
    * receipt (a crash between 409 rounds): it counts as never sent, so compensation runs again.
    * `read` means the undo was sent and no receipt has settled it, so the ticket has to be read.
    */
+  /** What the step guard sees: own confirmed writes, and for a remedy, every other remedy attempt. */
+  const guardContext = async (action: Action): Promise<StepGuardContext> => {
+    const context = { manifest, confirmedReceipts: [...confirmedByAction.values()] };
+    const remedy = remedyOf(action);
+    if (!remedy || !deps.store.remedyStepsFor) return context;
+    const own = operationKey(job.orgId, job.planId, action);
+    const priorRemedies: PriorRemedy[] = [];
+    for (const step of await deps.store.remedyStepsFor(job.orgId, remedy.obligationId)) {
+      for (const attempt of await journal.attemptsFor(step.planHash, step.actionId)) {
+        // The same operation under another revision is this step's own write, not a second remedy.
+        if (attempt.operationKey === own) continue;
+        priorRemedies.push({ ...step, attemptId: attempt.id, state: attempt.state });
+      }
+    }
+    return { ...context, priorRemedies };
+  };
+
   const sentUndo = async (action: Action) => {
     if (action.kind !== "zendesk.ticket.patchFields") return undefined;
     const attempt = (await journal.attemptsForKey(undoKey(job.orgId, job.planId, action)))
@@ -1124,8 +1243,9 @@ async function applyLocked(
         return { kind: "contradicted", detail: "a read-back doesn't find the effect", read: {} };
       }
       if (
-        action.kind === "stripe.refund.create" &&
-        (!refundEffectMatches(action, result.effect) || result.providerRef.id !== written.id)
+        (action.kind === "stripe.refund.create" ||
+          action.kind === "stripe.customer.balanceCredit") &&
+        (!effectMatches(action, result.effect) || result.providerRef.id !== written.id)
       ) {
         return {
           kind: "contradicted",
@@ -1138,6 +1258,17 @@ async function applyLocked(
       return { kind: "inconclusive", detail: `read failed: ${(err as Error).message}` };
     }
   };
+
+  /** Each outcome count of a summary, from this run's settled outcomes of the steps it lists. */
+  const summaryCounts = (action: SummaryStep): [string, number][] =>
+    Object.entries(action.args.bindings).flatMap(([name, b]): [string, number][] => {
+      if (typeof b !== "object") return [];
+      const counted = b.stepIds.filter((id) => {
+        const outcome = settled.get(id);
+        return outcome !== undefined && b.outcomes.includes(outcome);
+      });
+      return [[summaryCountKey(name), counted.length]];
+    });
 
   /**
    * `recoveryFor` names an undone predecessor this action depends on: the action may only have its
@@ -1160,13 +1291,22 @@ async function applyLocked(
     const vendor = vendorOf(action);
     const provider = deps.providers[vendor];
     const world = deps.worlds[vendor];
-    if (!provider || !world) throw new Error(`no operational provider configured for ${vendor}`);
+    if (!provider || !world) {
+      // Only a read-only pass gets here (admission needs every vendor). A send to a vendor that is
+      // no longer wired can't be read back: it stays in flight, reported unresolved.
+      if (reconcileOnly) return;
+      throw new Error(`no operational provider configured for ${vendor}`);
+    }
 
     const refs = resultRefsOf(action);
     const unresolved = refs.find((r) => !bindings.has(bindingKey(r)));
-    const resolved: ResolvedBindings = new Map(
-      refs.map((r) => [bindingKey(r), bindings.get(bindingKey(r)) as string | number]),
-    );
+    const resolved: ResolvedBindings = new Map([
+      ...refs.map((r): [string, string | number] => [
+        bindingKey(r),
+        bindings.get(bindingKey(r)) as string | number,
+      ]),
+      ...(isSummary(action) ? summaryCounts(action) : []),
+    ]);
 
     /** The request this step would send, given these preconditions. */
     const prepareWith = (pre: Preconditions) => {
@@ -1178,6 +1318,9 @@ async function applyLocked(
      * Our own writes move values like Zendesk's updated_stamp, so a fresh read can't be compared.
      */
     const sameContent = (a: Attempt) => {
+      // Under one plan hash a summary's template and literals are fixed; only its counts can
+      // differ, and they are what that send counted then. It is the same post.
+      if (isSummary(action) && a.planHash === job.planHash) return true;
       try {
         const { req, sha } = prepareWith(provider.preconditionsOf?.(a.request) ?? {});
         return sameRequest(a, req, sha);
@@ -1250,10 +1393,7 @@ async function applyLocked(
       } catch (err) {
         back = { kind: "indeterminate", detail: (err as Error).message };
       }
-      if (
-        back.kind !== "applied" ||
-        (action.kind === "stripe.refund.create" && !refundEffectMatches(action, back.effect))
-      ) {
+      if (back.kind !== "applied" || !effectMatches(action, back.effect)) {
         return hold(action, { kind: "unresolved_outcome", attemptId: latest.id });
       }
       return settle(
@@ -1304,9 +1444,13 @@ async function applyLocked(
       const undo = await sentUndo(action);
       if (undo) return settleFromUndo(action, undo);
       // An earlier revision's write whose read-back contradicted it has no confirmed receipt (and
-      // no bindings): read it back now rather than adopt it (T3.8).
-      const confirmedEarlier = (await journal.receiptsFor(latest.planHash)).some(
-        (r) => r.actionId === action.id && r.outcome === "confirmed",
+      // no bindings), and neither does one whose recorded effect isn't this action's: read it back
+      // now rather than adopt it (T3.8).
+      const confirmedEarlier = (await journal.receiptsFor(latest.planHash)).find(
+        (r) =>
+          r.actionId === action.id &&
+          r.outcome === "confirmed" &&
+          effectMatches(action, r.observedEffect),
       );
       if (!confirmedEarlier) {
         let back: ReconcileResult;
@@ -1315,10 +1459,7 @@ async function applyLocked(
         } catch (err) {
           back = { kind: "indeterminate", detail: (err as Error).message };
         }
-        if (
-          back.kind !== "applied" ||
-          (action.kind === "stripe.refund.create" && !refundEffectMatches(action, back.effect))
-        ) {
+        if (back.kind !== "applied" || !effectMatches(action, back.effect)) {
           return hold(action, { kind: "unresolved_outcome", attemptId: latest.id });
         }
         return settle(
@@ -1333,20 +1474,18 @@ async function applyLocked(
           { results: bindable(back.effect) },
         );
       }
-      // Confirmed under an earlier revision of this plan with the same content: adopt its results.
+      // Confirmed under an earlier revision of this plan with the same content: adopt that receipt's
+      // provider object and observed effect (a credit's balance transaction has no bindings), and
+      // its bindings for later steps.
       const earlier = (await journal.bindings(latest.planHash)).filter(
         (b) => b.ref.stepId === latest.actionId,
       );
       const results = Object.fromEntries(earlier.map((b) => [b.ref.path, b.value]));
-      const refund = results["refund.id"];
       return settle(
         action,
         receiptFor(action, "confirmed", {
-          providerRef:
-            typeof refund === "string"
-              ? { vendor: "stripe", kind: "refund", id: refund }
-              : targetOf(action),
-          observedEffect: results,
+          providerRef: confirmedEarlier.providerRef ?? targetOf(action),
+          observedEffect: confirmedEarlier.observedEffect,
           limitations: [
             `applied by attempt ${latest.id} under plan hash ${latest.planHash}; not re-sent`,
           ],
@@ -1377,9 +1516,7 @@ async function applyLocked(
     }
     // Capture the native stamp before semantic validation. A later read must never forgive
     // a teammate's intervening edit by replacing the stamp after the guard has passed.
-    const guardHold = deps.guard
-      ? await deps.guard(action, { manifest, confirmedReceipts: [...confirmedByAction.values()] })
-      : null;
+    const guardHold = deps.guard ? await deps.guard(action, await guardContext(action)) : null;
     if (guardHold) return hold(action, guardHold);
     const { req: request, sha: bodySha256 } = prepareWith(pre);
 
@@ -1405,17 +1542,47 @@ async function applyLocked(
     /** Attempts in this loop left unknown before an idempotent re-send; reconciled by its replay. */
     const unknownSends: string[] = [];
     const retried = (n: number) => (n > 1 ? [`sent ${n} times with identical bytes`] : []);
+    const replayGuard = async (step: Action, unknownId: string): Promise<HoldReason | null> => {
+      const attempt = (await journal.attemptsForKey(key)).find((a) => a.id === unknownId);
+      let read: ReconcileResult;
+      try {
+        read = attempt
+          ? await provider.reconcile(attempt, step, world)
+          : { kind: "indeterminate", detail: "unknown attempt not in the journal" };
+      } catch (err) {
+        read = { kind: "indeterminate", detail: (err as Error).message };
+      }
+      if (read.kind === "applied" && effectMatches(step, read.effect)) {
+        return null;
+      }
+      return deps.guard ? deps.guard(step, await guardContext(step)) : null;
+    };
 
     for (let n = 1; ; n++) {
       // A definite refusal did nothing. Revalidate before another fresh send after backoff.
       // Unknown sends use only an identical provider-idempotent replay: our earlier effect
       // may already be visible and must be resolved rather than mistaken for external drift.
       if (n > 1 && unknownSends.length === 0 && deps.guard) {
-        const reason = await deps.guard(action, {
-          manifest,
-          confirmedReceipts: [...confirmedByAction.values()],
-        });
+        const reason = await deps.guard(action, await guardContext(action));
         if (reason) return hold(action, reason);
+      }
+      // A replay is only safe without the guard when our earlier send landed. If the read can't
+      // show that, the replay may be the first send to apply, so the world gets re-checked first
+      // (a teammate may have credited the customer during the backoff).
+      if (n > 1 && unknownSends.length > 0 && deps.guard) {
+        const reason = await replayGuard(action, unknownSends.at(-1) as string);
+        if (reason) {
+          return settle(
+            action,
+            receiptFor(action, "unknown_outcome", {
+              holdReason: reason,
+              limitations: [
+                ...retried(n - 1),
+                "earlier send outcome remains unknown; the re-check held it, so it was not re-sent",
+              ],
+            }),
+          );
+        }
       }
       // A cancel stops the next send, including a retry. An earlier send of this step whose
       // outcome is unknown stays unknown (it is reconciled by a later run, never re-sent here).
@@ -1673,7 +1840,10 @@ async function applyLocked(
 
   /** One action, with the dependency, cancel and error handling every case shares. */
   async function runAction(action: Action): Promise<"next" | "stop"> {
-    const blocked = action.dependsOn.find((d) => settled.get(d) !== "confirmed");
+    // A summary counts what happened to its steps, so any settled outcome lets it run.
+    const ready = (d: string) =>
+      isSummary(action) ? settled.has(d) : settled.get(d) === "confirmed";
+    const blocked = action.dependsOn.find((d) => !ready(d));
     try {
       if (reconcileOnly) {
         // Only steps with an earlier send in flight have anything to resolve.
@@ -1682,9 +1852,7 @@ async function applyLocked(
       }
       if (await checkCancelled(`step ${action.id}`)) return "stop";
       // An action already sent keeps its own record even if a predecessor was undone since.
-      const onlyUndone = action.dependsOn
-        .filter((d) => settled.get(d) !== "confirmed")
-        .every((d) => compensated.has(d));
+      const onlyUndone = action.dependsOn.filter((d) => !ready(d)).every((d) => compensated.has(d));
       const recovering = blocked !== undefined && onlyUndone && (await alreadySent(action));
       if (blocked && !recovering) {
         await settle(
@@ -1715,8 +1883,10 @@ async function applyLocked(
   // Each group runs its actions in order; up to `caseConcurrency` groups run at once.
   const requested = deps.caseConcurrency ?? 1;
   const width = Number.isFinite(requested) ? Math.floor(requested) : 1;
+  // Summaries run after the lanes and compensation, so they never join or hold up a case.
+  const steps = manifest.actions.filter((a) => !isSummary(a));
   // One at a time keeps the exact global topological order; otherwise independent groups.
-  const groups = width <= 1 ? [topoOrder(manifest.actions)] : caseGroups(manifest);
+  const groups = width <= 1 ? [topoOrder(steps)] : caseGroups({ ...manifest, actions: steps });
   const limit = Math.max(1, Math.min(width, groups.length));
   let nextGroup = 0;
   const lane = async () => {
@@ -1752,6 +1922,14 @@ async function applyLocked(
     } catch (err) {
       error = `compensation: ${(err as Error).message}`;
       await journal.appendEvent(job.runId, "step.error", { error }).catch(() => {});
+    }
+  }
+
+  // Last, once every step (and any undo) has settled: each summary reports what really happened.
+  // A cancelled or failed run posts none; a read-only pass only resolves an earlier post.
+  if (reconcileOnly || (!cancelled && !stopped && error === null)) {
+    for (const action of topoOrder(manifest.actions).filter(isSummary)) {
+      if ((await runAction(action)) === "stop") break;
     }
   }
 

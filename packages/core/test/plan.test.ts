@@ -1,3 +1,4 @@
+import type { Action } from "@rehearsal/contracts";
 import { describe, expect, it } from "vitest";
 import { dependentsClosure, excludeActions, topoOrder, validateGraph } from "../src/dag";
 import { planHash } from "../src/hash";
@@ -96,5 +97,78 @@ describe("billing policy v1", () => {
     expect(
       evaluateBillingPolicy(manifest([refund, again]), policy).violations.map((v) => v.rule),
     ).toEqual(["R2.single_remedy"]);
+  });
+});
+
+describe("run summary in the graph (T1.7)", () => {
+  const summary = {
+    ...patch,
+    id: "summary",
+    caseId: "run",
+    obligationId: "run_summary",
+    dependsOn: ["refund_1", "patch_1", "note_1"],
+    evidence: [],
+    queryEvidence: [],
+    compensation: "irreversible",
+    protection: "no_atomic_guard",
+    kind: "slack.message.postSummary",
+    args: {
+      channelId: "chan-general",
+      template: { id: "run-summary", version: 1 },
+      bindings: {
+        incidentId: "inc_1",
+        refunded: { $count: "outcomes", stepIds: ["refund_1"], outcomes: ["confirmed"] },
+        held: { $count: "outcomes", stepIds: ["patch_1", "note_1"], outcomes: ["held"] },
+      },
+    },
+  } as const satisfies Action;
+
+  it("lets no step depend on a summary, except another summary", () => {
+    const issues = validateGraph([
+      refund,
+      patch,
+      note,
+      summary,
+      { ...patch, id: "late", dependsOn: ["summary"] },
+    ]);
+    expect(issues).toEqual([
+      expect.objectContaining({ actionId: "late", problem: "depends_on_summary" }),
+    ]);
+    expect(
+      validateGraph([
+        refund,
+        patch,
+        note,
+        summary,
+        { ...summary, id: "again", dependsOn: ["summary"] },
+      ]),
+    ).toEqual([]);
+  });
+
+  it("unchecking a counted step takes it out of the counts, not the summary", () => {
+    const next = excludeActions(manifest([refund, patch, note, summary]), ["patch_1"]);
+    const kept = next.actions.find((a) => a.id === "summary");
+    expect(kept?.dependsOn).toEqual(["refund_1", "note_1"]);
+    expect(kept?.kind === "slack.message.postSummary" && kept.args.bindings.held).toEqual({
+      $count: "outcomes",
+      stepIds: ["note_1"],
+      outcomes: ["held"],
+    });
+    expect(next.excluded).toEqual([{ actionId: "patch_1", reason: "reviewer" }]);
+  });
+
+  it("drops the summary once a count has nothing left to count", () => {
+    const next = excludeActions(manifest([refund, patch, note, summary]), ["refund_1"]);
+    expect(next.actions.map((a) => a.id)).toEqual(["patch_1"]);
+    expect(next.excluded).toEqual([
+      { actionId: "refund_1", reason: "reviewer" },
+      { actionId: "note_1", reason: "dependency" },
+      { actionId: "summary", reason: "dependency" },
+    ]);
+  });
+
+  it("unchecking the summary itself drops only the summary", () => {
+    const next = excludeActions(manifest([refund, patch, note, summary]), ["summary"]);
+    expect(next.actions.map((a) => a.id)).toEqual(["refund_1", "patch_1", "note_1"]);
   });
 });

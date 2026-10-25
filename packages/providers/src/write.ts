@@ -190,11 +190,22 @@ async function findMarkedComment(
  * find the refund.
  */
 export function stripeWriter(target: WriteTarget): ProviderWriter {
+  const credits = stripeCreditWriter(target);
   return {
     vendor: "stripe",
-    // Same key + same bytes either creates the refund once or replays the original response.
-    idempotentResend: (action: Action) => action.kind === "stripe.refund.create",
+    // Same key + same bytes either creates the refund (or credit) once or replays the response.
+    idempotentResend: (action: Action) =>
+      action.kind === "stripe.refund.create" || action.kind === "stripe.customer.balanceCredit",
+    // A credit checks the customer's currency first; Era takes any, Stripe doesn't.
+    async preconditions(action: Action, ctx: WorldContext): Promise<Preconditions> {
+      return action.kind === "stripe.customer.balanceCredit"
+        ? credits.preconditions(action, ctx)
+        : {};
+    },
     prepare(action: Action, _bindings: ResolvedBindings, operationKey: string): PreparedRequest {
+      if (action.kind === "stripe.customer.balanceCredit") {
+        return credits.prepare(action, operationKey);
+      }
       if (action.kind !== "stripe.refund.create") throw new Error(`stripe can't ${action.kind}`);
       const body = new URLSearchParams([
         ["charge", action.args.chargeId],
@@ -222,6 +233,9 @@ export function stripeWriter(target: WriteTarget): ProviderWriter {
     /** Find the refund by the operation key stored in its metadata, among all refunds of the charge. */
     async reconcile(attempt: Attempt, action: Action, ctx: WorldContext): Promise<ReconcileResult> {
       assertTarget(target, ctx);
+      if (action.kind === "stripe.customer.balanceCredit") {
+        return credits.reconcile(attempt, action, ctx);
+      }
       if (action.kind !== "stripe.refund.create") throw new Error(`stripe can't ${action.kind}`);
       let path = `/v1/refunds?charge=${encodeURIComponent(action.args.chargeId)}&limit=100`;
       const seen = new Set<string>();
@@ -294,9 +308,11 @@ function stampIn(body: string): Preconditions {
 /**
  * Zendesk ticket writes over REST. A field patch is guarded with `safe_update` + the
  * `updated_stamp` read just before (a native guard with a documented 1-second limit). A private
- * note always sends `public: false` explicitly, because REST defaults comments to public.
+ * note always sends `public: false` explicitly, because REST defaults comments to public. A public
+ * reply goes through `zendeskReplyWriter`.
  */
 export function zendeskWriter(target: WriteTarget): ProviderWriter {
+  const replies = zendeskReplyWriter(target);
   return {
     vendor: "zendesk",
     async preconditions(action: Action, ctx: WorldContext): Promise<Preconditions> {
@@ -347,6 +363,9 @@ export function zendeskWriter(target: WriteTarget): ProviderWriter {
           headers: {},
         };
       }
+      if (action.kind === "zendesk.ticket.appendPublicReply") {
+        return replies.prepare(action, operationKey);
+      }
       throw new Error(`zendesk can't ${action.kind}`);
     },
     async dispatch(req: PreparedRequest, ctx: WorldContext) {
@@ -355,7 +374,16 @@ export function zendeskWriter(target: WriteTarget): ProviderWriter {
     },
     async reconcile(attempt: Attempt, action: Action, ctx: WorldContext): Promise<ReconcileResult> {
       assertTarget(target, ctx);
-      if (action.kind === "stripe.refund.create") throw new Error(`zendesk can't ${action.kind}`);
+      if (
+        action.kind === "stripe.refund.create" ||
+        action.kind === "stripe.customer.balanceCredit" ||
+        action.kind === "slack.message.postSummary"
+      ) {
+        throw new Error(`zendesk can't ${action.kind}`);
+      }
+      if (action.kind === "zendesk.ticket.appendPublicReply") {
+        return replies.reconcile(attempt, action, ctx);
+      }
       const ref = { vendor: "zendesk", kind: "ticket", id: action.args.ticketId } as const;
       if (action.kind === "zendesk.ticket.appendPrivateNote") {
         // The note carries its operation marker; look for it across every page of comments.
@@ -396,7 +424,7 @@ export function zendeskWriter(target: WriteTarget): ProviderWriter {
   };
 }
 
-/** The write side of `zendesk.ticket.appendPublicReply` (T3.11); `executeRun` takes it once T1.13 adds the op. */
+/** The write side of `zendesk.ticket.appendPublicReply` (T3.11); `zendeskWriter` routes replies here. */
 export interface ZendeskReplyWriter {
   vendor: "zendesk";
   prepare(action: ReplyAction, operationKey: string): PreparedRequest;
@@ -477,7 +505,7 @@ const BalanceTransactionPage = z.object({
   has_more: z.boolean(),
 });
 
-/** The write side of `stripe.customer.balanceCredit` (T3.12); `executeRun` takes it once T1.14 adds the op. */
+/** The write side of `stripe.customer.balanceCredit` (T3.12). `stripeWriter` routes credits here. */
 export interface StripeCreditWriter {
   vendor: "stripe";
   idempotentResend(action: CreditAction): boolean;
@@ -655,7 +683,7 @@ function unescapeSlack(text: string): string {
   return text.replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&");
 }
 
-/** The write side of `slack.message.postSummary` (T3.10); `executeRun` takes it once T1.7 adds the op. */
+/** The write side of `slack.message.postSummary` (T3.10). `slackProviderWriter` wraps it for `executeRun`. */
 export interface SlackWriter {
   vendor: "slack";
   prepare(action: SummaryAction, resolved: ResolvedBindings, operationKey: string): PreparedRequest;
@@ -756,6 +784,22 @@ export function slackWriter(target: WriteTarget): SlackWriter {
       }
       return { kind: "indeterminate", detail: `more than ${MAX_PAGES} pages of Slack history` };
     },
+  };
+}
+
+/** `slackWriter` as the executor's writer: it posts run summaries and refuses anything else. */
+export function slackProviderWriter(target: WriteTarget): ProviderWriter {
+  const slack = slackWriter(target);
+  const summary = (action: Action) => {
+    if (action.kind !== "slack.message.postSummary") throw new Error(`slack can't ${action.kind}`);
+    return action;
+  };
+  return {
+    vendor: "slack",
+    prepare: (action, resolved, operationKey) =>
+      slack.prepare(summary(action), resolved, operationKey),
+    dispatch: (req, ctx) => slack.dispatch(req, ctx),
+    reconcile: (attempt, action, ctx) => slack.reconcile(attempt, summary(action), ctx),
   };
 }
 

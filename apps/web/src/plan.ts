@@ -100,7 +100,9 @@ export function evidenceFor(manifest: ReviewManifest, action: ReviewAction): Act
 
 /**
  * The unchecked actions plus everything that depends on them, for previewing an exclusion before
- * it is sent. Mirrors `dependentsClosure` in `@rehearsal/core`; the server's revision is what counts.
+ * it is sent. Mirrors `excludeActions` in `@rehearsal/core`; the server's revision is what counts.
+ * A run summary only counts steps, so it isn't a dependent: it goes when it is unchecked itself,
+ * or once one of its counts has no step left.
  */
 export function droppedBy(
   actions: readonly ReviewAction[],
@@ -111,11 +113,17 @@ export function droppedBy(
   while (grew) {
     grew = false;
     for (const a of actions) {
+      if (a.kind === "slack.message.postSummary") continue;
       if (!dropped.has(a.id) && a.dependsOn.some((d) => dropped.has(d))) {
         dropped.add(a.id);
         grew = true;
       }
     }
+  }
+  for (const a of actions) {
+    if (a.kind !== "slack.message.postSummary" || dropped.has(a.id)) continue;
+    const counts = Object.values(a.args.bindings).filter((b) => typeof b === "object");
+    if (counts.some((b) => b.stepIds.every((id) => dropped.has(id)))) dropped.add(a.id);
   }
   return dropped;
 }

@@ -6,7 +6,13 @@ import type {
   Receipt,
   RunEvent,
 } from "@rehearsal/contracts";
-import type { ApplyStore, JournalPort, SettleStep, StoredRun } from "@rehearsal/core";
+import type {
+  ApplyStore,
+  JournalPort,
+  RemedyStepRef,
+  SettleStep,
+  StoredRun,
+} from "@rehearsal/core";
 
 /** Same transition table as the Postgres journal, so fakes can't allow what production refuses. */
 const LEGAL: Record<AttemptState, readonly AttemptState[]> = {
@@ -170,6 +176,22 @@ export class MemoryApplyStore implements ApplyStore {
   async loadGrantsForPlanHash(_orgId: string, planHash: string) {
     return [...this.grants.values()].filter((g) => g.planHash === planHash);
   }
+  async remedyStepsFor(orgId: string, obligationId: string): Promise<RemedyStepRef[]> {
+    const steps: RemedyStepRef[] = [];
+    for (const { planHash, manifest } of this.plans.values()) {
+      const plan = manifest as { orgId?: string; actions?: Record<string, unknown>[] };
+      if (plan.orgId !== orgId) continue;
+      for (const action of plan.actions ?? []) {
+        const remedy =
+          action.kind === "stripe.refund.create" || action.kind === "stripe.customer.balanceCredit";
+        if (remedy && action.obligationId === obligationId && typeof action.id === "string") {
+          steps.push({ planHash, actionId: action.id });
+        }
+      }
+    }
+    return steps;
+  }
+
   /** Run IDs a test has cancelled. */
   readonly cancelled = new Set<string>();
   async runCancelled(_orgId: string, runId: string) {
