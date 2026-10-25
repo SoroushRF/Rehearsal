@@ -74,6 +74,33 @@ describe.skipIf(!process.env.DB_TESTS)("PgApplyStore (real Postgres)", () => {
     expect(await store.loadGrant("org_other", s.grantId)).toBeNull();
   });
 
+  it("lists remedy steps for an obligation across plans of the org only", async () => {
+    const s = await seed();
+    const refund = s.manifest.actions.find((a) => a.kind === "stripe.refund.create");
+    if (refund?.kind !== "stripe.refund.create") throw new Error("no refund in the fixture");
+    // A second plan in the same org with the same obligation, and one in another org.
+    const otherPlan = { ...s.manifest, planId: `plan_${randomUUID()}` };
+    const elsewhere = { ...s.manifest, orgId: `org_${randomUUID()}` };
+    for (const m of [otherPlan, elsewhere]) {
+      await db.insert(schema.planVersions).values({
+        orgId: m.orgId,
+        planId: m.planId,
+        revision: 1,
+        planHash: planHash(m),
+        manifest: m,
+      });
+    }
+    const steps = await new PgApplyStore(db).remedyStepsFor(s.orgId, refund.obligationId);
+    expect(steps).toEqual(
+      expect.arrayContaining([
+        { planHash: s.hash, actionId: refund.id },
+        { planHash: planHash(otherPlan), actionId: refund.id },
+      ]),
+    );
+    expect(steps).toHaveLength(2);
+    expect(await new PgApplyStore(db).remedyStepsFor(s.orgId, "obl_none")).toEqual([]);
+  });
+
   it("the plan lock is exclusive across processes, per plan, and released on release()", async () => {
     const s = await seed();
     const a = new PgApplyStore(db);

@@ -23,6 +23,11 @@ export const ENABLED = process.env.ERA_CONFORMANCE === "1";
 if (ENABLED && existsSync(new URL(".env", ROOT))) process.loadEnvFile(new URL(".env", ROOT));
 
 export type EraVendor = "stripe" | "zendesk";
+/** Slack is a full extension: only the helpers its suites use take it. */
+export type HarnessVendor = EraVendor | "slack";
+
+/** The Slack worlds only run with `pnpm infra:up:full`; their suites also need ERA_SLACK=1. */
+export const SLACK_ENABLED = ENABLED && process.env.ERA_SLACK === "1";
 
 /** Seeded records (seed 42, day1, 2026-10-01). Suites assert their preconditions first. */
 export const SEED = {
@@ -42,9 +47,10 @@ export function adminToken(): string {
 }
 
 /** The simulators accept any bearer; Stripe's /_meta advertises the sk_test_ shape. */
-const VENDOR_AUTH: Record<EraVendor, string> = {
+const VENDOR_AUTH: Record<HarnessVendor, string> = {
   stripe: "Bearer sk_test_rehearsal_conformance",
   zendesk: "Bearer rehearsal-conformance",
+  slack: "Bearer xoxb-rehearsal-conformance",
 };
 
 const scratch: WorldConfig[] = [];
@@ -55,7 +61,7 @@ export function uniqueTenant(label: string): string {
 
 /** A world bound to a fresh signed tenant. Reset by {@link resetScratchTenants}. */
 export async function scratchWorld(
-  vendor: EraVendor,
+  vendor: HarnessVendor,
   world: World,
   tenant: string,
 ): Promise<WorldConfig> {
@@ -76,7 +82,7 @@ export async function resetScratchTenants(): Promise<void> {
 }
 
 export function vendorFetch(
-  vendor: EraVendor,
+  vendor: HarnessVendor,
   world: WorldConfig,
   path: string,
   init: RequestInit = {},
@@ -87,7 +93,7 @@ export function vendorFetch(
 }
 
 export async function getJson<T = Record<string, unknown>>(
-  vendor: EraVendor,
+  vendor: HarnessVendor,
   world: WorldConfig,
   path: string,
 ): Promise<T> {

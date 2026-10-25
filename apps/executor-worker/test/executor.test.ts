@@ -1737,6 +1737,184 @@ describe("read-only passes read only the operational world (#121)", () => {
   });
 });
 
+describe("read back each write before confirming it (T3.8)", () => {
+  /** Replace stripe's reconcile for refund_001's reads: the first one, or `times` of them. */
+  function stripeRead(s: ReturnType<typeof setup>, read: ProviderPort["reconcile"], times = 1) {
+    const stripe = s.deps.providers.stripe;
+    let left = times;
+    s.deps.providers.stripe = {
+      ...stripe,
+      reconcile: async (attempt, action, world) => {
+        if (left > 0 && action.id === "refund_001") {
+          left--;
+          return read(attempt, action, world);
+        }
+        return stripe.reconcile(attempt, action, world);
+      },
+    };
+  }
+  const receiptOf = (r: { receipts: { actionId: string }[] }, id: string) =>
+    r.receipts.find((x) => x.actionId === id) as (typeof r.receipts)[number] & {
+      outcome: string;
+      limitations: string[];
+      observedEffect: Record<string, unknown>;
+      holdReason: unknown;
+    };
+
+  it("confirms each write only once a read finds it, and records what was read", async () => {
+    const s = setup(happyPathBundle());
+    const result = await s.run();
+    for (const id of ["refund_001", "patch_001", "note_001", "refund_002"]) {
+      expect(receiptOf(result, id)).toMatchObject({
+        outcome: "confirmed",
+        limitations: ["read back from the provider after the write"],
+      });
+    }
+    expect(receiptOf(result, "refund_001").observedEffect).toMatchObject({
+      "refund.status": "succeeded",
+      "refund.amount": 4210,
+      charge: "ch_fixture_001",
+    });
+    expect(receiptOf(result, "patch_001").observedEffect).toMatchObject({ priority: "high" });
+  });
+
+  it("holds a write the provider confirmed but a read-back can't find; a later run reads it again", async () => {
+    const s = setup(happyPathBundle());
+    stripeRead(s, async () => ({ kind: "not_applied" }));
+    const first = await s.run();
+    expect(receiptOf(first, "refund_001")).toMatchObject({
+      outcome: "held",
+      holdReason: { kind: "unresolved_outcome" },
+      limitations: [expect.stringMatching(/confirmed the write, but a read-back doesn't find/)],
+    });
+    expect(receiptOf(first, "note_001").outcome).toBe("skipped_dependency");
+    expect(first.state).toBe("partial");
+
+    const second = await s.run();
+    expect(outcomes(second.receipts)).toMatchObject({
+      refund_001: "confirmed",
+      note_001: "confirmed",
+    });
+    expect(s.world.refunds.filter((r) => r.charge === "ch_fixture_001")).toHaveLength(1);
+  });
+
+  it("holds a refund whose read-back doesn't match the approved refund", async () => {
+    const s = setup(happyPathBundle());
+    const stripe = s.deps.providers.stripe;
+    stripeRead(s, async (attempt, action, world) => {
+      const real = await stripe.reconcile(attempt, action, world);
+      return real.kind === "applied"
+        ? { ...real, effect: { ...real.effect, "refund.amount": 9999 } }
+        : real;
+    });
+    const result = await s.run();
+    expect(receiptOf(result, "refund_001")).toMatchObject({
+      outcome: "held",
+      observedEffect: { read: { "refund.amount": 9999 } },
+      limitations: [expect.stringMatching(/doesn't match the approved refund/)],
+    });
+  });
+
+  it("an identical re-approved revision reads a contradicted write back; it never adopts it blindly", async () => {
+    const s = setup(happyPathBundle());
+    stripeRead(s, async () => ({ kind: "not_applied" }), 2); // the write's read-back and rev 2's
+    expect(outcomes((await s.run()).receipts).refund_001).toBe("held");
+    const rev2 = addRevision(s);
+    const second = await rev2.run();
+    expect(outcomes(second.receipts)).toMatchObject({
+      refund_001: "held",
+      note_001: "skipped_dependency",
+    });
+    // Once a read finds it, the revision confirms it from that read and binds its refund id.
+    const third = await rev2.run();
+    expect(receiptOf(third, "refund_001")).toMatchObject({
+      outcome: "confirmed",
+      providerRef: { kind: "refund" },
+      limitations: [expect.stringMatching(/read back, not re-sent/)],
+    });
+    expect(receiptOf(third, "note_001").outcome).toBe("confirmed");
+    expect(s.world.refunds.filter((r) => r.charge === "ch_fixture_001")).toHaveLength(1);
+  });
+
+  it("holds a refund the provider's read says contradicts what was sent (Era's shape)", async () => {
+    const s = setup(happyPathBundle());
+    stripeRead(s, async () => ({
+      kind: "indeterminate",
+      detail: "refund read contradicts the journaled operation",
+      contradicts: true,
+    }));
+    const result = await s.run();
+    expect(receiptOf(result, "refund_001")).toMatchObject({
+      outcome: "held",
+      limitations: [expect.stringMatching(/contradicts it: refund read contradicts/)],
+    });
+    expect(receiptOf(result, "note_001").outcome).toBe("skipped_dependency");
+  });
+
+  it("holds a refund whose read-back is another refund", async () => {
+    const s = setup(happyPathBundle());
+    const stripe = s.deps.providers.stripe;
+    stripeRead(s, async (attempt, action, world) => {
+      const real = await stripe.reconcile(attempt, action, world);
+      return real.kind === "applied"
+        ? { ...real, providerRef: { ...real.providerRef, id: "re_someone_else" } }
+        : real;
+    });
+    expect(receiptOf(await s.run(), "refund_001").outcome).toBe("held");
+  });
+
+  it("records the values a read-back saw, not just the write response", async () => {
+    const s = setup(happyPathBundle());
+    const stripe = s.deps.providers.stripe;
+    stripeRead(s, async (attempt, action, world) => {
+      const real = await stripe.reconcile(attempt, action, world);
+      return real.kind === "applied"
+        ? { ...real, effect: { ...real.effect, "refund.read_at": "2026-10-21T12:00:01Z" } }
+        : real;
+    });
+    expect(receiptOf(await s.run(), "refund_001").observedEffect).toMatchObject({
+      "refund.read_at": "2026-10-21T12:00:01Z",
+    });
+  });
+
+  it("keeps a patch confirmed when someone else writes the field before the read-back", async () => {
+    const s = setup(happyPathBundle());
+    const zendesk = s.deps.providers.zendesk;
+    s.deps.providers.zendesk = {
+      ...zendesk,
+      dispatch: async (req, ctx) => {
+        const res = await zendesk.dispatch(req, ctx);
+        if (req.path === "/api/v2/tickets/5531.json" && !req.body.includes('"comment"')) {
+          s.world.teammateEdit("5531", "priority", "urgent"); // lands before our read-back
+        }
+        return res;
+      },
+    };
+    const result = await s.run();
+    expect(receiptOf(result, "patch_001")).toMatchObject({
+      outcome: "confirmed",
+      limitations: [expect.stringMatching(/read-back inconclusive: ticket changed since our read/)],
+    });
+    expect(receiptOf(result, "note_001").outcome).toBe("confirmed");
+    expect(s.world.tickets.get("5531")?.priority).toBe("urgent");
+  });
+
+  it("keeps the write response when the read-back fails, and says so", async () => {
+    const s = setup(happyPathBundle());
+    stripeRead(s, async () => {
+      throw new Error("stripe read unavailable (injected)");
+    });
+    const result = await s.run();
+    expect(receiptOf(result, "refund_001")).toMatchObject({
+      outcome: "confirmed",
+      limitations: [
+        "effect taken from the write response; read-back inconclusive: read failed: stripe read unavailable (injected)",
+      ],
+    });
+    expect(receiptOf(result, "note_001").outcome).toBe("confirmed");
+  });
+});
+
 describe("operation keys", () => {
   it("are stable across revisions, unique per action, and org-scoped", () => {
     const { manifest } = setup(happyPathBundle());

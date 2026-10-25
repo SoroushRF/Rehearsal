@@ -2,6 +2,7 @@ import {
   type Action,
   type ApprovalGrant,
   type Attempt,
+  type AttemptState,
   type EntityRef,
   type HoldReason,
   type ObjectBinding,
@@ -39,6 +40,7 @@ import type {
   SettleTransition,
   WorldContext,
 } from "./ports";
+import { remedyOf } from "./remedy";
 
 /** What one `apply` job names. The executor trusts none of it until admission re-checks it. */
 export interface ApplyJobInput {
@@ -80,12 +82,35 @@ export interface ApplyStore {
    * every send: a cancel stops the next admitted action; what already happened keeps its receipt.
    */
   runCancelled?(orgId: string, runId: string): Promise<boolean>;
+  /**
+   * Every refund or credit step for this obligation in any stored plan revision of the org. The
+   * one-remedy guard reads their attempts (decision 0010 item 4); without it, a remedy holds.
+   */
+  remedyStepsFor?(orgId: string, obligationId: string): Promise<RemedyStepRef[]>;
+}
+
+/** A refund or credit step in a stored plan revision. */
+export interface RemedyStepRef {
+  planHash: string;
+  actionId: string;
+}
+
+/** One journaled attempt of another remedy step for the same obligation. */
+export interface PriorRemedy extends RemedyStepRef {
+  attemptId: string;
+  state: AttemptState;
 }
 
 export interface StepGuardContext {
   manifest: PlanManifest;
   /** Every confirmed receipt for this plan hash so far, including earlier runs (own-write overlay). */
   confirmedReceipts: readonly Receipt[];
+  /**
+   * For a refund or credit: every attempt of another remedy step for its obligation, in any plan
+   * or revision of the org (this operation's own attempts excluded). Undefined when the store
+   * can't list them, which the guard treats as unknown, never as none.
+   */
+  priorRemedies?: readonly PriorRemedy[];
 }
 
 /**
@@ -827,6 +852,23 @@ async function applyLocked(
    * receipt (a crash between 409 rounds): it counts as never sent, so compensation runs again.
    * `read` means the undo was sent and no receipt has settled it, so the ticket has to be read.
    */
+  /** What the step guard sees: own confirmed writes, and for a remedy, every other remedy attempt. */
+  const guardContext = async (action: Action): Promise<StepGuardContext> => {
+    const context = { manifest, confirmedReceipts: [...confirmedByAction.values()] };
+    const remedy = remedyOf(action);
+    if (!remedy || !deps.store.remedyStepsFor) return context;
+    const own = operationKey(job.orgId, job.planId, action);
+    const priorRemedies: PriorRemedy[] = [];
+    for (const step of await deps.store.remedyStepsFor(job.orgId, remedy.obligationId)) {
+      for (const attempt of await journal.attemptsFor(step.planHash, step.actionId)) {
+        // The same operation under another revision is this step's own write, not a second remedy.
+        if (attempt.operationKey === own) continue;
+        priorRemedies.push({ ...step, attemptId: attempt.id, state: attempt.state });
+      }
+    }
+    return { ...context, priorRemedies };
+  };
+
   const sentUndo = async (action: Action) => {
     if (action.kind !== "zendesk.ticket.patchFields") return undefined;
     const attempt = (await journal.attemptsForKey(undoKey(job.orgId, job.planId, action)))
@@ -1089,6 +1131,57 @@ async function applyLocked(
   };
 
   /**
+   * Read a just-confirmed write back from the provider (T3.8): the refund by its operation key,
+   * the note by its marker, the patch's fields. `read` matches the approved effect; `contradicted`
+   * means the provider's records don't show what it just confirmed; `inconclusive` means the read
+   * couldn't tell (it failed, or someone else wrote the field since), so the write response stands.
+   */
+  const readBack = async (
+    action: Action,
+    attemptId: string,
+    provider: ProviderPort,
+    world: WorldContext,
+    written: EntityRef,
+  ): Promise<
+    | { kind: "read"; effect: Record<string, unknown> }
+    | { kind: "contradicted"; detail: string; read: Record<string, unknown> }
+    | { kind: "inconclusive"; detail: string }
+  > => {
+    try {
+      const attempt = (
+        await journal.attemptsForKey(operationKey(job.orgId, job.planId, action))
+      ).find((a) => a.id === attemptId);
+      if (!attempt) return { kind: "inconclusive", detail: "attempt not found in the journal" };
+      const result = await provider.reconcile(attempt, action, world);
+      if (result.kind === "indeterminate") {
+        return result.contradicts
+          ? {
+              kind: "contradicted",
+              detail: `a read-back contradicts it: ${result.detail}`,
+              read: {},
+            }
+          : { kind: "inconclusive", detail: result.detail };
+      }
+      if (result.kind === "not_applied") {
+        return { kind: "contradicted", detail: "a read-back doesn't find the effect", read: {} };
+      }
+      if (
+        action.kind === "stripe.refund.create" &&
+        (!refundEffectMatches(action, result.effect) || result.providerRef.id !== written.id)
+      ) {
+        return {
+          kind: "contradicted",
+          detail: "the refund read back doesn't match the approved refund",
+          read: result.effect,
+        };
+      }
+      return { kind: "read", effect: result.effect };
+    } catch (err) {
+      return { kind: "inconclusive", detail: `read failed: ${(err as Error).message}` };
+    }
+  };
+
+  /**
    * `recoveryFor` names an undone predecessor this action depends on: the action may only have its
    * earlier send recorded (confirmed by a read, or held), never a new one.
    */
@@ -1252,6 +1345,36 @@ async function applyLocked(
     if (latest && latest.state !== "rejected") {
       const undo = await sentUndo(action);
       if (undo) return settleFromUndo(action, undo);
+      // An earlier revision's write whose read-back contradicted it has no confirmed receipt (and
+      // no bindings): read it back now rather than adopt it (T3.8).
+      const confirmedEarlier = (await journal.receiptsFor(latest.planHash)).some(
+        (r) => r.actionId === action.id && r.outcome === "confirmed",
+      );
+      if (!confirmedEarlier) {
+        let back: ReconcileResult;
+        try {
+          back = await provider.reconcile(latest, action, world);
+        } catch (err) {
+          back = { kind: "indeterminate", detail: (err as Error).message };
+        }
+        if (
+          back.kind !== "applied" ||
+          (action.kind === "stripe.refund.create" && !refundEffectMatches(action, back.effect))
+        ) {
+          return hold(action, { kind: "unresolved_outcome", attemptId: latest.id });
+        }
+        return settle(
+          action,
+          receiptFor(action, "confirmed", {
+            providerRef: back.providerRef,
+            observedEffect: back.effect,
+            limitations: [
+              `applied by attempt ${latest.id} under plan hash ${latest.planHash}; read back, not re-sent`,
+            ],
+          }),
+          { results: bindable(back.effect) },
+        );
+      }
       // Confirmed under an earlier revision of this plan with the same content: adopt its results.
       const earlier = (await journal.bindings(latest.planHash)).filter(
         (b) => b.ref.stepId === latest.actionId,
@@ -1296,9 +1419,7 @@ async function applyLocked(
     }
     // Capture the native stamp before semantic validation. A later read must never forgive
     // a teammate's intervening edit by replacing the stamp after the guard has passed.
-    const guardHold = deps.guard
-      ? await deps.guard(action, { manifest, confirmedReceipts: [...confirmedByAction.values()] })
-      : null;
+    const guardHold = deps.guard ? await deps.guard(action, await guardContext(action)) : null;
     if (guardHold) return hold(action, guardHold);
     const { req: request, sha: bodySha256 } = prepareWith(pre);
 
@@ -1324,17 +1445,50 @@ async function applyLocked(
     /** Attempts in this loop left unknown before an idempotent re-send; reconciled by its replay. */
     const unknownSends: string[] = [];
     const retried = (n: number) => (n > 1 ? [`sent ${n} times with identical bytes`] : []);
+    const replayGuard = async (step: Action, unknownId: string): Promise<HoldReason | null> => {
+      const attempt = (await journal.attemptsForKey(key)).find((a) => a.id === unknownId);
+      let read: ReconcileResult;
+      try {
+        read = attempt
+          ? await provider.reconcile(attempt, step, world)
+          : { kind: "indeterminate", detail: "unknown attempt not in the journal" };
+      } catch (err) {
+        read = { kind: "indeterminate", detail: (err as Error).message };
+      }
+      if (
+        read.kind === "applied" &&
+        (step.kind !== "stripe.refund.create" || refundEffectMatches(step, read.effect))
+      ) {
+        return null;
+      }
+      return deps.guard ? deps.guard(step, await guardContext(step)) : null;
+    };
 
     for (let n = 1; ; n++) {
       // A definite refusal did nothing. Revalidate before another fresh send after backoff.
       // Unknown sends use only an identical provider-idempotent replay: our earlier effect
       // may already be visible and must be resolved rather than mistaken for external drift.
       if (n > 1 && unknownSends.length === 0 && deps.guard) {
-        const reason = await deps.guard(action, {
-          manifest,
-          confirmedReceipts: [...confirmedByAction.values()],
-        });
+        const reason = await deps.guard(action, await guardContext(action));
         if (reason) return hold(action, reason);
+      }
+      // A replay is only safe without the guard when our earlier send landed. If the read can't
+      // show that, the replay may be the first send to apply, so the world gets re-checked first
+      // (a teammate may have credited the customer during the backoff).
+      if (n > 1 && unknownSends.length > 0 && deps.guard) {
+        const reason = await replayGuard(action, unknownSends.at(-1) as string);
+        if (reason) {
+          return settle(
+            action,
+            receiptFor(action, "unknown_outcome", {
+              holdReason: reason,
+              limitations: [
+                ...retried(n - 1),
+                "earlier send outcome remains unknown; the re-check held it, so it was not re-sent",
+              ],
+            }),
+          );
+        }
       }
       // A cancel stops the next send, including a retry. An earlier send of this step whose
       // outcome is unknown stays unknown (it is reconciled by a later run, never re-sent here).
@@ -1422,32 +1576,52 @@ async function applyLocked(
         }
         if (parsed && result.kind === "confirmed") {
           const { providerRef, results, observed } = parsed;
+          const transition: SettleTransition = {
+            attemptId: current,
+            from: "dispatched",
+            to: "confirmed",
+            patch: { providerStatus: result.status, settledAt: at() },
+          };
+          const replayed = unknownSends.map((id) => ({
+            attemptId: id,
+            from: "unknown_outcome" as const,
+            to: "reconciled" as const,
+            patch: { settledAt: at() },
+          }));
+          // Read the effect back before the receipt is final (T3.8).
+          const back = await readBack(action, current, provider, world, providerRef);
+          if (back.kind === "contradicted") {
+            // The provider said it worked, but its own records don't show it. Neither side is
+            // assumed: the step is held (dependents wait), nothing is bound, and a later run reads
+            // this confirmed attempt back again before it ever counts.
+            return settle(
+              action,
+              receiptFor(action, "held", {
+                providerRef,
+                observedEffect: { written: observed, read: back.read },
+                holdReason: { kind: "unresolved_outcome", attemptId: current },
+                limitations: [
+                  `the provider confirmed the write, but ${back.detail}`,
+                  ...retried(n),
+                ],
+              }),
+              { transitions: replayed, transition },
+            );
+          }
           return settle(
             action,
             receiptFor(action, "confirmed", {
               providerRef,
-              observedEffect: observed,
+              observedEffect: back.kind === "read" ? { ...observed, ...back.effect } : observed,
               limitations: [
-                "effect taken from the write response; no read-back yet",
+                back.kind === "read"
+                  ? "read back from the provider after the write"
+                  : `effect taken from the write response; read-back inconclusive: ${back.detail}`,
                 ...retried(n),
               ],
             }),
-            {
-              // The replay answered for the earlier unknown sends of the same bytes and key.
-              transitions: unknownSends.map((id) => ({
-                attemptId: id,
-                from: "unknown_outcome" as const,
-                to: "reconciled" as const,
-                patch: { settledAt: at() },
-              })),
-              transition: {
-                attemptId: current,
-                from: "dispatched",
-                to: "confirmed",
-                patch: { providerStatus: result.status, settledAt: at() },
-              },
-              results,
-            },
+            // The replay answered for the earlier unknown sends of the same bytes and key.
+            { transitions: replayed, transition, results },
           );
         }
       }
