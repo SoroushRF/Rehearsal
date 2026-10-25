@@ -65,6 +65,12 @@ See [beyond.md](../beyond.md) for scope, parallel work, external gates and the r
 | T1.28 | _Benchmark:_ Run and publish versioned benchmark comparisons | M5 | Early full baseline plus frozen-head beyond results support every published metric | [#176](https://github.com/SoroushRF/Rehearsal/issues/176) | [T1.27](https://github.com/SoroushRF/Rehearsal/issues/161), [T4.13](https://github.com/SoroushRF/Rehearsal/issues/175) |
 | T1.29 | _Stretch:_ Plans carry a `PrecedentBasis` (contracts + planner; review view is T2) | M5 | Optional `precedentBasis` on `PlanManifest`, in the hash, existing hashes unchanged; the planner recalls in the org scope, keeps only registry-active precedents and records citations with fact and trace IDs. **In progress (fixture):** contracts part (schemas moved from `@rehearsal/memory`, golden-hash test) and planner part (the API puts the org registry on the plan job; the worker recalls in the org scope with `recallBasis`, drops anything not active, shows the model what it keeps and records the basis; the API refuses a basis the job's registry doesn't support) (contracts merged in #252; planner in its PR). The review view and approval check landed in #254 (T2). Not run against the hosted service yet | [#235](https://github.com/SoroushRF/Rehearsal/issues/235) | [T1.8](https://github.com/SoroushRF/Rehearsal/issues/9), [T2.17](https://github.com/SoroushRF/Rehearsal/issues/147) |
 
+## Benchmark fixes (Oct 25)
+
+| ID | Task | Milestone | Done when | Issue | Blocked by |
+|---|---|---|---|---|---|
+| T1.30 | Flag incomplete incident coverage before approval | M5 | A shared recorded-evidence check distinguishes unread/partial queries from eligible duplicates missing a refund or credit; the model loop refuses to store incomplete plans, and scripted F7 is caught before approval without becoming a success. Fixture regressions pass; no UI or repair added | [#274](https://github.com/SoroushRF/Rehearsal/issues/274) | — |
+
 ## Decisions
 
 - **2026-10-22:** The planner worker has no database. It takes `plan` jobs and hands back manifests through `/internal/planner/jobs/*` with its own secret; the API checks each manifest against its job before storing revision 1. See [0006](../decisions/0006-planner-jobs-through-api.md).

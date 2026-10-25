@@ -229,6 +229,22 @@ describe("full-operation scoring (T1.27)", () => {
 });
 
 describe("scoring", () => {
+  it("reports incomplete coverage as caught before approval without counting a success", () => {
+    const task = byId("F7");
+    const score = scoreRun(
+      task,
+      runOf(
+        task,
+        "rehearsal",
+        {},
+        {
+          coverage: [{ kind: "unexamined", customerId: "unread", chargeIds: [] }],
+        },
+      ),
+    );
+    expect(score.success).toBe(false);
+    expect(score.caughtBeforeApproval).toBe(true);
+  });
   it("passes a run that matches gold", () => {
     const task = byId("B1");
     expect(scoreRun(task, runOf(task, "rehearsal"))).toEqual({
@@ -237,6 +253,7 @@ describe("scoring", () => {
       success: true,
       problems: [],
       unresolved: 0,
+      caughtBeforeApproval: false,
     });
   });
 

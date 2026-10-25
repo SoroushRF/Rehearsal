@@ -111,19 +111,21 @@ function model(turns: (Anthropic.Message | Error)[]): MessagesClient {
   };
 }
 
-/** Look up one customer's charges, refund the duplicate, finish. */
+/** Examine every customer and remedy every eligible duplicate before finishing. */
 const refundOneDuplicate = () => [
-  reply([["list_customer_charges", { customerId: duplicate.customerId }]]),
-  reply([
-    [
-      "propose_duplicate_refund",
-      {
-        chargeId: duplicate.chargeIds[1],
-        duplicateOfChargeId: duplicate.chargeIds[0],
-        rationale: "Charged twice for one invoice.",
-      },
-    ],
-  ]),
+  reply(records.cases.map((c) => ["list_customer_charges", { customerId: c.customerId }])),
+  reply(
+    records.cases
+      .filter((c) => c.kind === "duplicate")
+      .map((c) => [
+        "propose_duplicate_refund",
+        {
+          chargeId: c.chargeIds[1],
+          duplicateOfChargeId: c.chargeIds[0],
+          rationale: "Charged twice for one invoice.",
+        },
+      ]),
+  ),
   reply([]),
 ];
 
@@ -172,9 +174,18 @@ describe("plan job", () => {
       incidentId: INCIDENT.incident,
       revision: 1,
     });
-    expect((body?.manifest as PlanManifest | undefined)?.actions).toHaveLength(1);
+    expect((body?.manifest as PlanManifest | undefined)?.actions).toHaveLength(8);
     expect(body?.summary).toBe("Refunded one duplicate.");
-    expect(body?.stats).toMatchObject({ turns: 3, toolCalls: 2 });
+    expect(body?.stats).toMatchObject({ turns: 3, toolCalls: 19 });
+  });
+
+  it("reports incomplete coverage instead of storing a partial plan", async () => {
+    const { jobs, completed, failed } = fakeJobs();
+    const turns = refundOneDuplicate();
+    const result = await handlePlanJob(JOB, deps(model(turns.slice(1)), jobs));
+    expect(result).toMatchObject({ kind: "failed", reason: "incomplete_plan" });
+    expect(completed).toEqual([]);
+    expect(failed[0]?.[1].message).toContain("unexamined");
   });
 
   it("reports a loop failure on the job with its reason", async () => {
