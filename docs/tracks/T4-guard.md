@@ -71,7 +71,7 @@ See [beyond.md](../beyond.md) for scope, parallel work, external gates and the r
 
 | ID | Task | Milestone | Done when | Issue | Blocked by |
 |---|---|---|---|---|---|
-| T4.27 | Note and reply guards check only the ticket fields they use (benchmark owner: @SoroushRF) | M5 | Appends ignore priority-only drift while retaining identity, ownership, status and refund dependency checks; patches retain the full check. Era scripted scorecard: 27/28, zero invalid allows, duplicates or wrongful holds; T3/T10 pass. CI green; cross-track review requested in #289 | [#273](https://github.com/SoroushRF/Rehearsal/issues/273) | — |
+| T4.27 | Note and reply guards check only the ticket fields they use (benchmark owner: @SoroushRF) | M5 | Appends ignore priority-only drift while retaining identity, ownership, status and refund dependency checks; patches retain the full check. Era scripted scorecard: 27/28, zero invalid allows, duplicates or wrongful holds; T3/T10 pass. Self-reviewed; user waived cross-track review in #289 | [#273](https://github.com/SoroushRF/Rehearsal/issues/273) | — |
 
 ## Decisions
 
