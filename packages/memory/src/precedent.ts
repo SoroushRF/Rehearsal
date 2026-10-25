@@ -1,11 +1,8 @@
-import type { Sha256Hex } from "@rehearsal/contracts";
+import { PrecedentId, type Sha256Hex } from "@rehearsal/contracts";
 import { canonicalize, fingerprint } from "@rehearsal/core";
 import { z } from "zod";
 
-/** A stable lowercase slug. The memory entity is named `precedent:<id>`. */
-export const PrecedentId = z
-  .string()
-  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "precedent id must be a lowercase slug");
+export { PrecedentId } from "@rehearsal/contracts";
 
 const NonBlank = z.string().refine((s) => s.trim().length > 0, "must not be blank");
 
