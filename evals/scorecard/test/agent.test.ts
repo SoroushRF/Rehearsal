@@ -46,7 +46,14 @@ describe("scripted agent on the full operation set (T1.27)", () => {
   });
 
   it("leaves an omitted case out without any refusal (F7)", async () => {
-    const { task, intents } = await plan("F7");
+    const { task, intents, coverage } = await plan("F7");
+    expect(coverage).toEqual([
+      {
+        kind: "unexamined",
+        customerId: INCIDENT.cases.find((c) => c.key === "c05")?.customerId,
+        chargeIds: [],
+      },
+    ]);
     expect(intents.filter((i) => !i.accepted)).toEqual([]);
     const proposed = proposedByCase(intents, Object.keys(task.gold));
     expect(proposed.c05).toEqual({ refunds: 0, credits: 0, priority: 0, notes: 0, replies: 0 });

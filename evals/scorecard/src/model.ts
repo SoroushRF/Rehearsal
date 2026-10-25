@@ -328,6 +328,7 @@ export async function runModelAgent(
   }
   return {
     intents: session.decided,
+    coverage: session.coverage(brief.customers.map((c) => c.customerId)),
     manifest,
     outcome,
     model: opts.model,
