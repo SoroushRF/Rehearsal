@@ -7,7 +7,7 @@ import {
   RehearsalStepResult,
   TERMINAL_REHEARSAL_STATES,
 } from "@rehearsal/contracts";
-import { planHash as computePlanHash, snapshotDigest } from "@rehearsal/core";
+import { planHash as computePlanHash, fingerprint, snapshotDigest } from "@rehearsal/core";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { fromDrizzle, type PgBoss } from "pg-boss";
 import type { Db } from "./index";
@@ -42,6 +42,8 @@ export type RehearsalRequestResult =
   | { kind: "accepted"; rehearsalId: string; existing: boolean }
   | { kind: "not_found" }
   | { kind: "hash_mismatch"; detail: string }
+  /** A plan rehearsal storage can't bind faithfully (say, more than one policy). */
+  | { kind: "unsupported"; detail: string }
   | { kind: "idempotency_conflict"; rehearsalId: string };
 
 /** What a request binds: the same key must name the same plan, hash and scenario. */
@@ -106,6 +108,11 @@ export async function requestRehearsal(
       computePlanHash(manifest.data) !== plan.planHash
     ) {
       return { kind: "hash_mismatch", detail: "stored manifest does not match its row or hash" };
+    }
+    // A report binds one policy (`RehearsalPolicyRef`); binding the first of several would make its
+    // staleness ignore the rest, so such a plan isn't rehearsed until the contract names them all.
+    if (manifest.data.policies.length !== 1) {
+      return { kind: "unsupported", detail: "a rehearsal binds exactly one policy" };
     }
     const policy = manifest.data.policies[0];
     if (!policy) return { kind: "hash_mismatch", detail: "stored manifest names no policy" };
@@ -191,7 +198,11 @@ const isTerminal = (state: string) =>
 
 export interface StoredRehearsal {
   rehearsal: typeof rehearsals.$inferSelect;
-  /** Every state change, oldest first. */
+  /**
+   * Every state change, oldest first. There is no lease column: a sweeper (T3.16) treats a
+   * non-terminal rehearsal whose last event is older than its lease as expired, and fails it rather
+   * than resuming it (decision 0013, §5).
+   */
   events: (typeof rehearsalEvents.$inferSelect)[];
   state: ExecutionRehearsalState;
   tornDown: boolean;
@@ -302,8 +313,11 @@ export async function markRehearsalTornDown(
 }
 
 /**
- * Store one step's result for a rehearsal of this org. It must name that rehearsal and its plan
- * hash, and carry an operation key namespaced to it, so it can never pose as an operational receipt.
+ * Store one step's result for a rehearsal of this org, once. It must name that rehearsal, its plan
+ * hash and an action of its stored plan, carry an operation key namespaced to it, and arrive while
+ * the rehearsal is running or verifying. A repeat of the identical result is accepted and writes
+ * nothing; a different result for a step that already has one is refused, so a redelivered or
+ * stale worker can't fork the evidence a report is built from.
  */
 export async function recordRehearsalStepResult(
   db: Db,
@@ -312,21 +326,74 @@ export async function recordRehearsalStepResult(
   id: string,
 ): Promise<void> {
   const result = RehearsalStepResult.parse(input);
-  const stored = await loadRehearsal(db, orgId, result.rehearsalId);
-  if (!stored) throw new Error(`no rehearsal ${result.rehearsalId} in this org`);
-  if (result.planHash !== stored.rehearsal.planHash) {
-    throw new Error("step result names another plan hash than its rehearsal");
-  }
   if (!result.operationKey.startsWith(`rh_${result.rehearsalId}_`)) {
     throw new Error("step result's operation key is not namespaced to its rehearsal");
   }
-  await db.insert(rehearsalStepResults).values({
-    id,
-    orgId,
-    rehearsalId: result.rehearsalId,
-    actionId: result.actionId,
-    result,
-    recordedAt: new Date(result.recordedAt),
+  await db.transaction(async (tx) => {
+    const [row] = await tx
+      .select()
+      .from(rehearsals)
+      .where(and(eq(rehearsals.orgId, orgId), eq(rehearsals.id, result.rehearsalId)))
+      .for("update");
+    if (!row) throw new Error(`no rehearsal ${result.rehearsalId} in this org`);
+    if (result.planHash !== row.planHash) {
+      throw new Error("step result names another plan hash than its rehearsal");
+    }
+    const [last] = await tx
+      .select({ state: rehearsalEvents.state })
+      .from(rehearsalEvents)
+      .where(and(eq(rehearsalEvents.orgId, orgId), eq(rehearsalEvents.rehearsalId, row.id)))
+      .orderBy(desc(rehearsalEvents.seq))
+      .limit(1);
+    if (last?.state !== "running" && last?.state !== "verifying") {
+      throw new Error(`rehearsal ${row.id} is ${last?.state}; it takes no step results`);
+    }
+    const [plan] = await tx
+      .select({ manifest: planVersions.manifest })
+      .from(planVersions)
+      .where(
+        and(
+          eq(planVersions.orgId, orgId),
+          eq(planVersions.planId, row.planId),
+          eq(planVersions.revision, row.revision),
+        ),
+      );
+    const actions = (plan?.manifest as { actions?: { id?: unknown }[] } | undefined)?.actions ?? [];
+    if (!actions.some((a) => a.id === result.actionId)) {
+      throw new Error(`${result.actionId} is not a step of the rehearsed plan`);
+    }
+    const inserted = await tx
+      .insert(rehearsalStepResults)
+      .values({
+        id,
+        orgId,
+        rehearsalId: result.rehearsalId,
+        actionId: result.actionId,
+        result,
+        recordedAt: new Date(result.recordedAt),
+      })
+      .onConflictDoNothing({
+        target: [
+          rehearsalStepResults.orgId,
+          rehearsalStepResults.rehearsalId,
+          rehearsalStepResults.actionId,
+        ],
+      })
+      .returning({ id: rehearsalStepResults.id });
+    if (inserted.length > 0) return;
+    const [existing] = await tx
+      .select({ result: rehearsalStepResults.result })
+      .from(rehearsalStepResults)
+      .where(
+        and(
+          eq(rehearsalStepResults.orgId, orgId),
+          eq(rehearsalStepResults.rehearsalId, result.rehearsalId),
+          eq(rehearsalStepResults.actionId, result.actionId),
+        ),
+      );
+    if (!existing || fingerprint(existing.result) !== fingerprint(result)) {
+      throw new Error(`${result.actionId} already has a different result in this rehearsal`);
+    }
   });
 }
 

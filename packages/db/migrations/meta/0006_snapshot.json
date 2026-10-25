@@ -1,5 +1,5 @@
 {
-  "id": "dfa96c08-dfdf-4e31-9677-c43a78509929",
+  "id": "fa3924e3-8f4d-4860-9576-40b1c1025184",
   "prevId": "f263ae51-ff22-455e-bf42-d5ae00859fcd",
   "version": "7",
   "dialect": "postgresql",
@@ -732,8 +732,8 @@
         }
       },
       "indexes": {
-        "rehearsal_step_results_org_id_rehearsal_id_index": {
-          "name": "rehearsal_step_results_org_id_rehearsal_id_index",
+        "rehearsal_step_results_org_id_rehearsal_id_action_id_index": {
+          "name": "rehearsal_step_results_org_id_rehearsal_id_action_id_index",
           "columns": [
             {
               "expression": "org_id",
@@ -746,9 +746,15 @@
               "isExpression": false,
               "asc": true,
               "nulls": "last"
+            },
+            {
+              "expression": "action_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
             }
           ],
-          "isUnique": false,
+          "isUnique": true,
           "concurrently": false,
           "method": "btree",
           "with": {}

@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import type { ExecutionRehearsalReport } from "@rehearsal/contracts";
+import type { ExecutionRehearsalReport, ExecutionRehearsalState } from "@rehearsal/contracts";
 import { planHash, rehearsalOperationKey, snapshotDigest } from "@rehearsal/core";
 import { happyPathBundle, rehearsalReportFixture } from "@rehearsal/testkit";
 import { and, eq, sql } from "drizzle-orm";
@@ -272,9 +272,27 @@ describe.skipIf(!process.env.DB_TESTS)("execution rehearsal storage (T3.13, real
     expect(await store.loadGrant(p.orgId, id)).toBeNull();
   });
 
+  /** Move a rehearsal along its lifecycle to `state`. */
+  async function advance(
+    p: Awaited<ReturnType<typeof storedPlan>>,
+    id: string,
+    state: "running" | "completed",
+  ) {
+    type Move = readonly [ExecutionRehearsalState, ExecutionRehearsalState];
+    const path: Move[] = [
+      ["queued", "provisioning"],
+      ["provisioning", "running"],
+    ];
+    if (state === "completed") path.push(["running", "verifying"], ["verifying", "completed"]);
+    for (const [from, to] of path) {
+      expect(await transitionRehearsal(db, p.orgId, id, [from], to, { now: NOW })).toBe(true);
+    }
+  }
+
   it("stores step results only for this rehearsal, its hash and its key namespace", async () => {
     const p = await storedPlan();
     const id = accepted(await ask(p));
+    await advance(p, id, "running");
     const base = {
       world: "rehearsal" as const,
       rehearsalId: id,
@@ -309,6 +327,108 @@ describe.skipIf(!process.env.DB_TESTS)("execution rehearsal storage (T3.13, real
     await expect(
       recordRehearsalStepResult(db, `org_${randomUUID()}`, base, `rsr_${randomUUID()}`),
     ).rejects.toThrow(/no rehearsal/);
+  });
+
+  it("records one result per step, only for a step of the plan and only while the rehearsal runs", async () => {
+    const p = await storedPlan();
+    const id = accepted(await ask(p));
+    const base = {
+      world: "rehearsal" as const,
+      rehearsalId: id,
+      actionId: "refund_001",
+      planHash: p.hash,
+      operationKey: rehearsalOperationKey(id, "op_x"),
+      outcome: "confirmed" as const,
+      providerRef: null,
+      observedEffect: {},
+      holdReason: null,
+      limitations: [],
+      recordedAt: NOW.toISOString(),
+    };
+    // Not before it runs.
+    await expect(
+      recordRehearsalStepResult(db, p.orgId, base, `rsr_${randomUUID()}`),
+    ).rejects.toThrow(/takes no step results/);
+    await advance(p, id, "running");
+    await recordRehearsalStepResult(db, p.orgId, base, `rsr_${randomUUID()}`);
+    // A redelivery of the identical result writes nothing; a different one is refused.
+    await recordRehearsalStepResult(db, p.orgId, base, `rsr_${randomUUID()}`);
+    await expect(
+      recordRehearsalStepResult(
+        db,
+        p.orgId,
+        { ...base, outcome: "rejected" },
+        `rsr_${randomUUID()}`,
+      ),
+    ).rejects.toThrow(/already has a different result/);
+    await expect(
+      recordRehearsalStepResult(
+        db,
+        p.orgId,
+        { ...base, actionId: "not_in_plan" },
+        `rsr_${randomUUID()}`,
+      ),
+    ).rejects.toThrow(/not a step of the rehearsed plan/);
+    expect(await listRehearsalStepResults(db, p.orgId, id)).toEqual([base]);
+    // Not after it ends.
+    for (const [from, to] of [
+      ["running", "verifying"],
+      ["verifying", "cancelled"],
+    ] as const) {
+      await transitionRehearsal(db, p.orgId, id, [from], to, { now: NOW });
+    }
+    await expect(
+      recordRehearsalStepResult(
+        db,
+        p.orgId,
+        { ...base, actionId: "refund_002" },
+        `rsr_${randomUUID()}`,
+      ),
+    ).rejects.toThrow(/is cancelled/);
+  });
+
+  it("commits the rows and the job together: a failure after the job is written leaves neither", async () => {
+    const p = await storedPlan();
+    const failingAfterSend = {
+      send: async (...args: Parameters<PgBoss["send"]>) => {
+        await boss.send(...args); // writes the job inside the request's transaction
+        throw new Error("crash after enqueue (injected)");
+      },
+    } as unknown as PgBoss;
+    const fixed = "abcdef0123456789";
+    await expect(
+      requestRehearsal(db, failingAfterSend, {
+        orgId: p.orgId,
+        userId: "u",
+        idempotencyKey: randomUUID(),
+        request: p.request,
+        now: NOW,
+        newId: () => fixed,
+      }),
+    ).rejects.toThrow(/crash after enqueue/);
+    expect(await jobsFor(REHEARSAL_QUEUE, fixed)).toBe(0);
+    expect(
+      await db.select().from(schema.rehearsals).where(eq(schema.rehearsals.orgId, p.orgId)),
+    ).toEqual([]);
+  });
+
+  it("refuses a plan that names more than one policy", async () => {
+    const p = await storedPlan();
+    const policy = p.manifest.policies[0];
+    if (!policy) throw new Error("no policy");
+    const manifest = {
+      ...p.manifest,
+      revision: 2,
+      policies: [policy, { ...policy, version: policy.version + 1 }],
+    };
+    const hash = planHash(manifest);
+    await db
+      .insert(schema.planVersions)
+      .values({ orgId: p.orgId, planId: p.planId, revision: 2, planHash: hash, manifest });
+    expect(await ask(p, randomUUID(), { revision: 2, planHash: hash })).toEqual({
+      kind: "unsupported",
+      detail: "a rehearsal binds exactly one policy",
+    });
   });
 
   /** The fixture report, re-pointed at this rehearsal and plan. */
@@ -353,12 +473,30 @@ describe.skipIf(!process.env.DB_TESTS)("execution rehearsal storage (T3.13, real
       /the rehearsal is queued/,
     );
     await complete(p, first);
+    await expect(
+      saveRehearsalReport(
+        db,
+        p.orgId,
+        { ...(await reportFor(p, first)), state: "failed", verdict: "unknown" },
+        NOW,
+      ),
+    ).rejects.toThrow(/report says failed, the rehearsal is completed/);
     await saveRehearsalReport(db, p.orgId, await reportFor(p, first), NOW);
     await expect(saveRehearsalReport(db, p.orgId, await reportFor(p, first), NOW)).rejects.toThrow(
       /already has a report/,
     );
-    const wrongPlan = { ...(await reportFor(p, first)), plan: { ...early.plan, revision: 2 } };
-    await expect(saveRehearsalReport(db, p.orgId, wrongPlan, NOW)).rejects.toThrow(/doesn't match/);
+    const good = await reportFor(p, first);
+    for (const wrong of [
+      { ...good, plan: { ...good.plan, revision: 2 } },
+      { ...good, plan: { ...good.plan, orgId: "org_other" } },
+      { ...good, policy: { ...good.policy, version: good.policy.version + 1 } },
+      { ...good, snapshot: { ...good.snapshot, digest: "e".repeat(64) } },
+      { ...good, scenario: { ...good.scenario, version: 2 } },
+    ]) {
+      await expect(saveRehearsalReport(db, `${p.orgId}`, wrong, NOW)).rejects.toThrow(
+        /doesn't match/,
+      );
+    }
 
     // A later rehearsal of the same plan adds a report; the earlier one is kept.
     const second = accepted(await ask(p));

@@ -68,7 +68,8 @@ export const PRECEDENT_QUEUE_OPTIONS = {
 
 /**
  * Execution rehearsals (T3.13). Their own queue, never `apply`: a rehearsal job can't be consumed
- * by the operational executor. One job per rehearsal; retries resume the same rehearsal's lifecycle.
+ * by the operational executor. One job per rehearsal. A redelivery never resumes a rehearsal that
+ * got past `queued` (decision 0013, §5): its claim fails, and a retry is a new rehearsal.
  */
 export const REHEARSAL_QUEUE = "rehearsal";
 export const REHEARSAL_QUEUE_OPTIONS = {

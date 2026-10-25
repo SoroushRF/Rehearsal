@@ -73,6 +73,6 @@ CREATE UNIQUE INDEX "rehearsal_attempts_org_id_operation_key_attempt_no_index" O
 CREATE INDEX "rehearsal_attempts_org_id_rehearsal_id_index" ON "rehearsal_attempts" USING btree ("org_id","rehearsal_id");--> statement-breakpoint
 CREATE INDEX "rehearsal_events_org_id_rehearsal_id_index" ON "rehearsal_events" USING btree ("org_id","rehearsal_id");--> statement-breakpoint
 CREATE INDEX "rehearsal_reports_org_id_plan_id_index" ON "rehearsal_reports" USING btree ("org_id","plan_id");--> statement-breakpoint
-CREATE INDEX "rehearsal_step_results_org_id_rehearsal_id_index" ON "rehearsal_step_results" USING btree ("org_id","rehearsal_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "rehearsal_step_results_org_id_rehearsal_id_action_id_index" ON "rehearsal_step_results" USING btree ("org_id","rehearsal_id","action_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "rehearsals_org_id_idempotency_key_index" ON "rehearsals" USING btree ("org_id","idempotency_key");--> statement-breakpoint
 CREATE INDEX "rehearsals_org_id_plan_id_index" ON "rehearsals" USING btree ("org_id","plan_id");

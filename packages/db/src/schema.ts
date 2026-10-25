@@ -251,7 +251,8 @@ export const rehearsalStepResults = pgTable(
     result: jsonb("result").notNull(),
     recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
   },
-  (t) => [index().on(t.orgId, t.rehearsalId)],
+  // One result per step: a redelivered job can't record a second, different one.
+  (t) => [uniqueIndex().on(t.orgId, t.rehearsalId, t.actionId)],
 );
 
 /** The immutable report, one per rehearsal. Kept for history: superseded reports are never deleted. */
