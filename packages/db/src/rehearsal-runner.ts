@@ -9,6 +9,7 @@ import {
   type RehearsalEvidence,
   type RehearsalStepOutcome,
   type RehearsalStepResult,
+  type RehearsalVerification,
   type RehearsalVersions,
   type RunEvent,
   type Vendor,
@@ -31,6 +32,7 @@ import {
   resolveScenario,
   type SettleStep,
   snapshotDigest,
+  VERIFIER_VERSION,
   type WorldContext,
 } from "@rehearsal/core";
 import { and, eq } from "drizzle-orm";
@@ -58,6 +60,28 @@ export async function rehearsalInFlight(db: Db, orgId: string, rehearsalId: stri
   return rows.filter((r) => r.state === "dispatched" || r.state === "unknown_outcome");
 }
 
+/**
+ * `passed` only when the run completed and every step was read as the scenario expects. A
+ * mismatched read is `failed` even if another step could not be read. Anything unresolved,
+ * including a step that never ran, stays `unknown`.
+ */
+function verdictFor(
+  state: "completed" | "failed" | "cancelled",
+  steps: ExecutionRehearsalReport["steps"],
+): ExecutionRehearsalReport["verdict"] {
+  if (steps.some((step) => step.verification.status === "mismatched")) return "failed";
+  const unresolved =
+    state !== "completed" ||
+    steps.length === 0 ||
+    steps.some(
+      (step) =>
+        step.result === null ||
+        step.result.outcome === "unknown_outcome" ||
+        step.verification.status !== "matched",
+    );
+  return unresolved ? "unknown" : "passed";
+}
+
 /** The report for a rehearsal that ended: one entry per stored step, from its latest receipt. */
 export function rehearsalReport(
   job: Pick<ExecutionRehearsalJob, "rehearsalId" | "plan" | "scenario" | "snapshot" | "policy">,
@@ -71,6 +95,12 @@ export function rehearsalReport(
     finishedAt: string;
     versions: RehearsalVersions;
     evidence: RehearsalEvidence;
+    /**
+     * The verifier's judgment, keyed by action. Omitted, every step stays unverified: the sweeper
+     * has no such reads once it is reporting a worker that already stopped, and a missing read
+     * is not a pass.
+     */
+    verifications?: ReadonlyMap<string, RehearsalVerification>;
   },
 ): ExecutionRehearsalReport {
   const latest = new Map(receipts.map((x) => [x.actionId, x]));
@@ -79,6 +109,32 @@ export function rehearsalReport(
   const expectedOf = bound.ok
     ? new Map(bound.scenario.steps.map((step) => [step.actionId, step.outcome]))
     : null;
+  const steps = manifest.actions.map((action) => {
+    const receipt = latest.get(action.id);
+    const result = receipt ? toStepResult(job, action, receipt) : null;
+    const given = opts.verifications?.get(action.id);
+    // A step with no receipt never ran. Nothing read about it counts as verified.
+    const verification: RehearsalVerification = !result
+      ? {
+          status: "unverified",
+          detail: opts.verifications
+            ? "the step never ran, so it cannot be verified"
+            : "the independent verifier (T4.12) has not read this step",
+        }
+      : (given ?? {
+          status: "unverified",
+          detail: opts.verifications
+            ? "the independent verifier returned no read for this step"
+            : "the independent verifier (T4.12) has not read this step",
+        });
+    return {
+      actionId: action.id,
+      expected: expectedOf?.get(action.id) ?? "confirmed",
+      result,
+      verification,
+    };
+  });
+  const unread = steps.some((step) => step.verification.status === "unverified");
   return {
     world: "rehearsal",
     rehearsalId: job.rehearsalId,
@@ -90,22 +146,15 @@ export function rehearsalReport(
     versions: opts.versions,
     evidence: opts.evidence,
     state: opts.state,
-    verdict: "unknown",
-    steps: manifest.actions.map((action) => {
-      const receipt = latest.get(action.id);
-      return {
-        actionId: action.id,
-        expected: expectedOf?.get(action.id) ?? "confirmed",
-        result: receipt ? toStepResult(job, action, receipt) : null,
-        verification: {
-          status: "unverified",
-          detail: "the independent verifier (T4.12) has not read this step",
-        },
-      };
-    }),
+    verdict: verdictFor(opts.state, steps),
+    steps,
     notFromEvidence: opts.notFromEvidence,
     limitations: [
-      "no independent verification yet (T4.12): the verdict stays unknown",
+      ...(opts.verifications
+        ? unread
+          ? ["an independent read could not establish every step"]
+          : []
+        : ["no independent verification yet (T4.12): the verdict stays unknown"]),
       ...opts.limitations,
     ],
     startedAt: opts.startedAt,
@@ -302,6 +351,16 @@ export interface RehearsalRunContext {
   provision: (manifest: PlanManifest, rehearsalId: string) => Promise<Provisioning>;
   /** Operator side: reset the rehearsal's tenants once it has ended. Idempotent. */
   teardown: (rehearsalId: string, state: "completed" | "failed" | "cancelled") => Promise<void>;
+  /**
+   * Independent reads of this rehearsal's tenant (T4.12), called after the run has stopped
+   * sending and before teardown. Absent, the report stays unverified and cannot pass. A throw
+   * is a failed read, not a match.
+   */
+  verify?: (input: {
+    manifest: PlanManifest;
+    job: Pick<ExecutionRehearsalJob, "rehearsalId" | "plan" | "scenario" | "snapshot">;
+    results: readonly { actionId: string; outcome: RehearsalStepOutcome }[];
+  }) => Promise<ReadonlyMap<string, RehearsalVerification>>;
   compensate?: Compensator;
   retry?: Partial<RetryPolicy>;
   sleep?: (ms: number) => Promise<void>;
@@ -384,6 +443,34 @@ export async function runRehearsalJob(
     let report: ExecutionRehearsalReport | null = null;
     const inFlight = await rehearsalInFlight(ctx.db, orgId, id);
     if (manifest && (ended === "completed" || ended === "failed" || ended === "cancelled")) {
+      // Read the tenant before teardown resets it. The sweeper's later report, if this one is
+      // already stored, does not get another chance at these reads.
+      let verifications: ReadonlyMap<string, RehearsalVerification> | undefined;
+      let versions = ctx.versions;
+      if (ctx.verify) {
+        const latest = new Map(
+          (outcome?.receipts ?? []).map((receipt) => [receipt.actionId, receipt]),
+        );
+        const results = manifest.actions.flatMap((action) => {
+          const receipt = latest.get(action.id);
+          if (!receipt) return [];
+          return [{ actionId: action.id, outcome: stepOutcome(receipt).outcome }];
+        });
+        try {
+          verifications = await ctx.verify({ manifest, job, results });
+        } catch (err) {
+          verifications = new Map(
+            manifest.actions.map((action) => [
+              action.id,
+              {
+                status: "unverified" as const,
+                detail: `the independent read failed: ${(err as Error).message}`,
+              },
+            ]),
+          );
+        }
+        versions = { ...ctx.versions, verifier: VERIFIER_VERSION };
+      }
       report = rehearsalReport(job, manifest, outcome?.receipts ?? [], {
         state: ended,
         limitations: [
@@ -393,8 +480,9 @@ export async function runRehearsalJob(
         notFromEvidence,
         startedAt,
         finishedAt: now().toISOString(),
-        versions: ctx.versions,
+        versions,
         evidence: ctx.evidence,
+        verifications,
       });
       // The sweeper may have ended it and reported first (an expired lease); the first one stands.
       await saveRehearsalReport(ctx.db, orgId, report, now()).catch(() => {
