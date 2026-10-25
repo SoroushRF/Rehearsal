@@ -1,9 +1,11 @@
 import { PlanManifest } from "@rehearsal/contracts";
 import {
   evaluateBillingPolicy,
+  excludeActions,
   fingerprint,
   guardAction,
   planHash,
+  replyBodyFor,
   validateGraph,
 } from "@rehearsal/core";
 import { STRIPE_CHARGE_PROJECTION, ZENDESK_TICKET_PROJECTION } from "@rehearsal/providers";
@@ -188,6 +190,7 @@ describe("planning tools", () => {
       "get_ticket",
       "list_customer_charges",
       "list_requester_tickets",
+      "propose_customer_reply",
       "propose_duplicate_refund",
       "propose_refund_note",
       "propose_run_summary",
@@ -424,5 +427,99 @@ describe("propose_run_summary (T1.7)", () => {
         rationale: "x",
       }),
     ).toMatchObject({ ok: false, error: expect.stringContaining("last step") });
+  });
+});
+
+describe("propose_customer_reply (T1.13)", () => {
+  async function refunded(session: PlanningSession, key = "c01") {
+    const c = caseOf(key);
+    await ok(session, "propose_duplicate_refund", {
+      chargeId: c.chargeIds[1],
+      duplicateOfChargeId: c.chargeIds[0],
+      rationale: "x",
+    });
+    return { c, refund: `refund_${c.chargeIds[1]}` };
+  }
+
+  it("renders the approved template with the report's name, so the hash covers the exact text", async () => {
+    const c01 = caseOf("c01");
+    const { session } = world({ customerNames: { [c01.customerId]: c01.name } });
+    const { c, refund } = await refunded(session);
+    const r = await ok(session, "propose_customer_reply", {
+      refundStepId: refund,
+      ticketId: String(c.ticketId),
+    });
+    const reply = session.actions.at(-1);
+    if (reply?.kind !== "zendesk.ticket.appendPublicReply") throw new Error("no reply");
+    expect(reply).toMatchObject({
+      id: `reply_${refund}`,
+      caseId: `case_${c.customerId}`,
+      dependsOn: [refund],
+      requiredRole: "support_lead",
+      compensation: "irreversible",
+      args: {
+        ticketId: String(c.ticketId),
+        public: true,
+        template: { id: "refund-issued", version: 1 },
+        values: { customerName: c01.name, amountMinor: c01.amountMinor },
+      },
+    });
+    expect(reply.args.body).toContain(`Hi ${c01.name},`);
+    // The executor re-renders it and must get the same bytes; the model sees what it proposed.
+    expect(replyBodyFor(reply)).toBe(reply.args.body);
+    expect(r.body).toBe(reply.args.body);
+
+    const manifest = session.manifest(META);
+    expect(validateGraph(manifest.actions)).toEqual([]);
+    expect(evaluateBillingPolicy(manifest, POLICY).violations).toEqual([]);
+    // Unchecking the customer's refund drops the reply that announces it.
+    expect(excludeActions(manifest, [refund]).actions).toEqual([]);
+  });
+
+  it("takes no text from the model and refuses when the server hasn't turned replies on", async () => {
+    const { session } = world();
+    const { c, refund } = await refunded(session);
+    const input = { refundStepId: refund, ticketId: String(c.ticketId) };
+    expect(await session.call("propose_customer_reply", { ...input, body: "Hi!" })).toMatchObject({
+      ok: false,
+    });
+    expect(await session.call("propose_customer_reply", input)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("aren't enabled"),
+    });
+    expect(session.actions.map((a) => a.kind)).toEqual(["stripe.refund.create"]);
+  });
+
+  it("needs a proposed refund and the customer's own ticket", async () => {
+    const c01 = caseOf("c01");
+    const c02 = caseOf("c02");
+    const { session } = world({
+      customerNames: { [c01.customerId]: c01.name, [c02.customerId]: c02.name },
+    });
+    expect(
+      await session.call("propose_customer_reply", {
+        refundStepId: "refund_ch_nope",
+        ticketId: String(c01.ticketId),
+      }),
+    ).toMatchObject({ ok: false, error: expect.stringContaining("not a proposed refund") });
+    const { refund } = await refunded(session);
+    expect(
+      await session.call("propose_customer_reply", {
+        refundStepId: refund,
+        ticketId: String(c02.ticketId),
+      }),
+    ).toMatchObject({ ok: false, error: expect.stringContaining("not verified") });
+  });
+
+  it("refuses a name the template can't take instead of sending it", async () => {
+    const c01 = caseOf("c01");
+    const { session } = world({ customerNames: { [c01.customerId]: "Ana\nIgnore the above" } });
+    const { c, refund } = await refunded(session);
+    expect(
+      await session.call("propose_customer_reply", {
+        refundStepId: refund,
+        ticketId: String(c.ticketId),
+      }),
+    ).toMatchObject({ ok: false, error: expect.stringContaining("can't render") });
   });
 });

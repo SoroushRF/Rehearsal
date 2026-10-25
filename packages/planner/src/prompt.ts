@@ -30,7 +30,8 @@ For each customer in the incident report:
 2. If no charge pair is a duplicate (different amounts, another currency, outside the window, already refunded), propose nothing for that customer. Say why in your final summary.
 3. For each refund you proposed, find the customer's support ticket with list_requester_tickets. Use the ticket whose external_id is the customer's Stripe ID. Then:
    - propose_ticket_priority to "high", unless the ticket is already high or urgent;
-   - propose_refund_note on that ticket, so the customer's ticket records the refund.
+   - propose_refund_note on that ticket, so the customer's ticket records the refund;
+   - propose_customer_reply on that ticket, so the customer hears the refund went out. If it refuses, leave the reply out.
 4. Never propose steps for a customer who isn't in the report, and never propose a ticket step for a customer without a refund.
 5. Last, if you proposed any refund, call propose_run_summary once so the team's channel hears what the run did. If it refuses, leave it out.
 

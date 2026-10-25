@@ -22,6 +22,8 @@ export interface PlanJobContext {
   adapters: Record<string, string>;
   /** Slack channel for the run summary (T1.7); without it the planner proposes none. */
   summaryChannelId?: string;
+  /** Public replies to customers (T1.13), named from the incident report; off unless set. */
+  customerReplies?: boolean;
   /** Hard wall-clock bound on one run, on top of the loop's turn and call limits. */
   timeoutMs?: number;
   log?: (line: string) => void;
@@ -59,6 +61,9 @@ export async function handlePlanJob(
     window: brief.window,
     ...(deps.summaryChannelId && {
       runSummary: { channelId: deps.summaryChannelId, incidentId: brief.incident },
+    }),
+    ...(deps.customerReplies && {
+      customerNames: Object.fromEntries(brief.customers.map((c) => [c.customerId, c.name])),
     }),
   });
   const timeoutMs = deps.timeoutMs ?? DEFAULT_TIMEOUT_MS;

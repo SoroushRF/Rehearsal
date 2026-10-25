@@ -98,7 +98,7 @@ function checkReplyValues(
 
 /**
  * What sending needs of a `zendesk.ticket.appendPublicReply` action (contracts'
- * `ZendeskTicketAppendPublicReply`; not in `Action` until T1.13 adds it).
+ * `ZendeskTicketAppendPublicReply`).
  */
 export interface ReplyAction {
   id: string;
@@ -112,14 +112,25 @@ export interface ReplyAction {
   };
 }
 
-/** The approved reply text, after checking it is exactly what its template renders. */
-export function replyBodyFor(action: ReplyAction): string {
-  const key = `${action.args.template.id}@${action.args.template.version}`;
+/** A reply template rendered with checked values: the text a planner puts in `body` (T1.13). */
+export function renderReply(
+  ref: ReplyAction["args"]["template"],
+  values: Record<string, string | number>,
+): string {
+  const key = `${ref.id}@${ref.version}`;
   const template = REPLY_TEMPLATES[key];
   if (!template) throw new Error(`unknown reply template ${key}`);
-  checkReplyValues(key, template, action.args.values);
-  if (template.render(action.args.values) !== action.args.body) {
-    throw new Error(`reply body doesn't match its approved template ${key}`);
+  checkReplyValues(key, template, values);
+  return template.render(values);
+}
+
+/** The approved reply text, after checking it is exactly what its template renders. */
+export function replyBodyFor(action: ReplyAction): string {
+  const { template } = action.args;
+  if (renderReply(template, action.args.values) !== action.args.body) {
+    throw new Error(
+      `reply body doesn't match its approved template ${template.id}@${template.version}`,
+    );
   }
   if (action.args.body.includes(OPERATION_MARKER_PREFIX)) {
     throw new Error("reply body must not contain an operation marker");

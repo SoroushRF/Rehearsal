@@ -38,6 +38,7 @@ export function remedyOf(action: Action): RemedyStep | null {
       };
     case "zendesk.ticket.patchFields":
     case "zendesk.ticket.appendPrivateNote":
+    case "zendesk.ticket.appendPublicReply":
     case "slack.message.postSummary":
       return null;
     default: {

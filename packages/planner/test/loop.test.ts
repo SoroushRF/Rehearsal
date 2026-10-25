@@ -154,7 +154,7 @@ describe("planning loop", () => {
     );
     expect(first?.messages).toEqual([{ role: "user", content: briefMessage(BRIEF) }]);
     // Every request is the same prefix plus new turns, so the cache keeps hitting.
-    expect(requests.every((r) => r.system === SYSTEM_PROMPT && r.tools?.length === 8)).toBe(true);
+    expect(requests.every((r) => r.system === SYSTEM_PROMPT && r.tools?.length === 9)).toBe(true);
     expect(requests[3]?.messages.slice(0, 5)).toEqual(requests[2]?.messages);
   });
 

@@ -281,6 +281,7 @@ describe("model planner", () => {
         "get_ticket",
         "list_customer_charges",
         "list_requester_tickets",
+        "propose_customer_reply",
         "propose_duplicate_refund",
         "propose_refund_note",
         "propose_run_summary",

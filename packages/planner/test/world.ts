@@ -18,7 +18,7 @@ export const POLICY = {
 export const CTX = { world: "planning", tenant: "t1-4" } as const;
 
 /** In-memory planning world over the seeded cohort, with the real read projections. */
-export function world(opts: Pick<PlanningSessionOptions, "runSummary"> = {}) {
+export function world(opts: Pick<PlanningSessionOptions, "runSummary" | "customerNames"> = {}) {
   const records = incidentRecords();
   const charges = new Map(records.stripe.charges.map((c) => [String(c.id), c]));
   const tickets = new Map(records.zendesk.tickets.map((t) => [String(t.id), t]));

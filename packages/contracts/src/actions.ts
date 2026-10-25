@@ -108,9 +108,6 @@ export const OPERATION_MARKER_PREFIX = "[rehearsal-op:";
  * receipt bindings), and it is part of the plan hash. The executor sends `body` followed by the
  * operation marker. Zendesk has no exactly-once append, so a reply with an unknown outcome is
  * resolved by reading the ticket's comments for that marker and is never re-sent blindly.
- *
- * Not in `Action` yet, so no plan can carry one. T1.13 adds it once the write adapter (T3.11)
- * and the review UI and policy (T2.16) handle it.
  */
 export const ZendeskTicketAppendPublicReply = ActionBase.extend({
   kind: z.literal("zendesk.ticket.appendPublicReply"),
@@ -190,6 +187,7 @@ export const Action = z.discriminatedUnion("kind", [
   StripeRefundCreate,
   ZendeskTicketPatchFields,
   ZendeskTicketAppendPrivateNote,
+  ZendeskTicketAppendPublicReply,
   SlackMessagePostSummary,
 ]);
 export type Action = z.infer<typeof Action>;
