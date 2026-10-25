@@ -15,7 +15,8 @@ export type ProviderReader = Pick<ProviderPort, "vendor" | "observe" | "query">;
 
 /** One world a reader is bound to. Chosen by the server, never a URL from a plan or the model. */
 export interface ReadTarget {
-  world: World;
+  /** `rehearsal` only for an execution rehearsal's own disposable tenant (T3.16). */
+  world: World | "rehearsal";
   config: WorldConfig;
   /** Value for the vendor's Authorization header. The simulators accept any bearer. */
   authorization: string;
@@ -136,6 +137,13 @@ async function getJson(target: ReadTarget, path: string): Promise<Record<string,
   return (await res.json()) as Record<string, unknown>;
 }
 
+/**
+ * A rehearsal's tenant stands where the operational world would: its reads are what the step
+ * guard compares with the plan's evidence, and are never stored or shown as operational data.
+ */
+const observedWorld = (target: ReadTarget): World =>
+  target.world === "rehearsal" ? "operational" : target.world;
+
 function observation(
   target: ReadTarget,
   entity: EntityRef,
@@ -144,7 +152,7 @@ function observation(
 ): Observation {
   return {
     id: `obs_${entity.kind}_${entity.id}`,
-    world: target.world,
+    world: observedWorld(target),
     entity,
     projectionVersion,
     projection,
@@ -166,7 +174,7 @@ function queryObservation(
   const projections = Object.fromEntries(matchingIds.map((id) => [id, records.get(id) ?? {}]));
   return {
     id: `q_${fingerprint(predicate).slice(0, 16)}`,
-    world: target.world,
+    world: observedWorld(target),
     vendor,
     predicate,
     cutoff,

@@ -1,9 +1,22 @@
 import { ExecutionRehearsalId, PlanManifest } from "@rehearsal/contracts";
 import { planHash, snapshotDigest } from "@rehearsal/core";
-import { type Db, loadRehearsal, rehearsalInFlight, rehearsalOrgOf, schema } from "@rehearsal/db";
-import { REHEARSAL_PROVISION_ROUTE, REHEARSAL_TEARDOWN_ROUTE } from "@rehearsal/providers";
+import {
+  type Db,
+  loadRehearsal,
+  rehearsalInFlight,
+  rehearsalMarkedDirty,
+  rehearsalOrgOf,
+  schema,
+} from "@rehearsal/db";
+import {
+  REHEARSAL_CHALLENGE_ROUTE,
+  REHEARSAL_PROVISION_ROUTE,
+  REHEARSAL_TEARDOWN_ROUTE,
+} from "@rehearsal/providers";
 import { and, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
+import { z } from "zod";
+import { applyRehearsalChallenges } from "../../../scripts/inject/challenge";
 import {
   type Provisioned,
   provisionSnapshot,
@@ -21,6 +34,10 @@ import { presents } from "./rehearsal-tokens";
  *   the `rh-<id>` tenants and read back; a mismatch refuses the run (§4). The answer is what was
  *   seeded from outside the evidence, never a token.
  * - teardown: the rehearsal must have ended with no send in flight; its tenants are reset.
+ * - challenge (T3.16): apply its own allowlisted scenario, bound to the stored plan, to its own
+ *   tenant: the inject before the run (claimed, and its set already marked dirty), or the teammate
+ *   edit once the named step has been rejected (running). The caller names a phase and a step,
+ *   never a record, a body or a fault.
  *
  * Everything is derived from the stored rehearsal: the caller can't name a tenant, a plan or a URL.
  */
@@ -30,7 +47,13 @@ export interface RehearsalOperatorDeps {
   secret: string;
   provision?: (manifest: PlanManifest, rehearsalId: string) => Promise<Provisioned>;
   teardown?: (rehearsalId: string, state: "completed" | "failed" | "cancelled") => Promise<unknown>;
+  challenge?: typeof applyRehearsalChallenges;
 }
+
+const ChallengeRequest = z.strictObject({
+  phase: z.enum(["before_run", "after_rejected"]),
+  actionId: z.string().min(1).max(128).optional(),
+});
 
 /** Whether the worker may hold this rehearsal's tenant tokens: claimed, and not yet reset. */
 export async function rehearsalTenantActive(db: Db, rehearsalId: string): Promise<boolean> {
@@ -129,4 +152,88 @@ export function registerRehearsalOperatorRoutes(
       return reply.code(502).send({ error: "teardown_failed" });
     }
   });
+
+  app.post<{ Params: { id: string } }>(REHEARSAL_CHALLENGE_ROUTE, async (req, reply) => {
+    if (!presents(req.headers.authorization, deps.secret)) {
+      return reply.code(401).send({ error: "unauthorized" });
+    }
+    const body = ChallengeRequest.safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: "invalid_request" });
+    const found = await stored(req.params.id);
+    if (!found) return reply.code(404).send({ error: "rehearsal_not_found" });
+    const r = found.rehearsal;
+    const { phase, actionId } = body.data;
+    if (phase === "before_run") {
+      if (found.state !== "provisioning") {
+        return reply.code(409).send({ error: "rehearsal_not_claimed", state: found.state });
+      }
+      // The mark goes down before the first inject, so a crash can't leave a challenged set
+      // looking clean (decision 0013 §3).
+      if (!(await rehearsalMarkedDirty(deps.db, r.id))) {
+        return reply.code(409).send({ error: "container_set_not_marked" });
+      }
+    } else {
+      if (found.state !== "running") {
+        return reply.code(409).send({ error: "rehearsal_not_running", state: found.state });
+      }
+      if (!actionId) return reply.code(400).send({ error: "invalid_request" });
+      // Only once that step was actually rejected in this rehearsal.
+      const attempts = await deps.db
+        .select({ state: schema.rehearsalAttempts.state })
+        .from(schema.rehearsalAttempts)
+        .where(
+          and(
+            eq(schema.rehearsalAttempts.orgId, r.orgId),
+            eq(schema.rehearsalAttempts.rehearsalId, r.id),
+            eq(schema.rehearsalAttempts.actionId, actionId),
+          ),
+        );
+      if (!attempts.some((a) => a.state === "rejected")) {
+        return reply.code(409).send({ error: "step_not_rejected" });
+      }
+    }
+    const plan = await storedPlanOf(deps.db, r);
+    if (!plan) return reply.code(409).send({ error: "plan_does_not_match_rehearsal" });
+    try {
+      const result = await (deps.challenge ?? applyRehearsalChallenges)({
+        rehearsalId: r.id,
+        manifest: plan,
+        scenario: { id: r.scenarioId as never, version: r.scenarioVersion },
+        phase,
+        ...(actionId ? { actionId } : {}),
+      });
+      return { applied: result.applied };
+    } catch (error) {
+      req.log.error({ err: error, rehearsalId: r.id, phase }, "rehearsal challenge failed");
+      return reply.code(502).send({ error: "challenge_failed" });
+    }
+  });
+}
+
+/** The rehearsal's exact stored plan, or null when it no longer matches the rehearsal's bindings. */
+async function storedPlanOf(
+  db: Db,
+  r: { orgId: string; planId: string; revision: number; planHash: string; snapshotDigest: string },
+): Promise<PlanManifest | null> {
+  const [plan] = await db
+    .select()
+    .from(schema.planVersions)
+    .where(
+      and(
+        eq(schema.planVersions.orgId, r.orgId),
+        eq(schema.planVersions.planId, r.planId),
+        eq(schema.planVersions.revision, r.revision),
+      ),
+    );
+  const manifest = PlanManifest.safeParse(plan?.manifest);
+  if (
+    !plan ||
+    !manifest.success ||
+    plan.planHash !== r.planHash ||
+    planHash(manifest.data) !== r.planHash ||
+    snapshotDigest(manifest.data) !== r.snapshotDigest
+  ) {
+    return null;
+  }
+  return manifest.data;
 }

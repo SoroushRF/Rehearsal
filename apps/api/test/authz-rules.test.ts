@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { type AuthzCheck, AuthzRuleFile, PERMISSIONS_V1 } from "@rehearsal/contracts";
 import {
   PLANNER_JOB_ROUTES,
+  REHEARSAL_CHALLENGE_ROUTE,
   REHEARSAL_PROVISION_ROUTE,
   REHEARSAL_TEARDOWN_ROUTE,
   REHEARSAL_TENANT_TOKEN_ROUTE,
@@ -53,6 +54,7 @@ const EXEMPT: Record<string, string> = {
   [`POST ${REHEARSAL_TENANT_TOKEN_ROUTE}`]: "rehearsal worker's machine secret, not a person",
   [`POST ${REHEARSAL_PROVISION_ROUTE}`]: "rehearsal worker's machine secret, not a person",
   [`POST ${REHEARSAL_TEARDOWN_ROUTE}`]: "rehearsal worker's machine secret, not a person",
+  [`POST ${REHEARSAL_CHALLENGE_ROUTE}`]: "rehearsal worker's machine secret, not a person",
   "GET /*": "@fastify/static serving the built web app",
 };
 

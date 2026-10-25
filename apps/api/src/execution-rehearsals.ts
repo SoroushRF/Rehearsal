@@ -8,7 +8,13 @@ import {
   type RehearsalVersions,
   TERMINAL_REHEARSAL_STATES,
 } from "@rehearsal/contracts";
-import { fingerprint, REHEARSAL_REPORT_TTL_MS, rehearsalStaleness } from "@rehearsal/core";
+import {
+  CHALLENGE_CATALOG,
+  CHALLENGE_CATALOG_VERSION,
+  fingerprint,
+  REHEARSAL_REPORT_TTL_MS,
+  rehearsalStaleness,
+} from "@rehearsal/core";
 import {
   type Db,
   listRehearsalsForPlan,
@@ -51,11 +57,12 @@ export type SnapshotCheck = (
 ) => { ok: true } | { ok: false; refusals: string[] };
 
 /**
- * The scenarios the rehearsal worker can run, by ID and version. T4.11 publishes the rest in the
- * challenge catalog; the runner still only applies `clean` (T3.16 applies the others). They are
- * refused here rather than queued to fail.
+ * The scenarios the rehearsal worker can run, by ID and version: the published challenge catalog
+ * (T4.11), which the runner applies (T3.16). Anything else is refused here rather than queued.
  */
-export const SUPPORTED_SCENARIOS: readonly RehearsalScenarioRef[] = [{ id: "clean", version: 1 }];
+export const SUPPORTED_SCENARIOS: readonly RehearsalScenarioRef[] = CHALLENGE_CATALOG.filter(
+  (s) => s.version === CHALLENGE_CATALOG_VERSION && !s.containerWide,
+).map((s) => ({ id: s.id, version: s.version }));
 
 const supported = (s: RehearsalScenarioRef) =>
   SUPPORTED_SCENARIOS.some((x) => x.id === s.id && x.version === s.version);

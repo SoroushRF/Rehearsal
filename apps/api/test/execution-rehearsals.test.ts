@@ -271,7 +271,8 @@ describe.skipIf(!process.env.DB_TESTS)("execution rehearsal routes (real Postgre
     const phantom = await start(s, s.user, {
       revision: 2,
       planHash: nextHash,
-      scenario: { id: "phantom_membership", version: 1 },
+      // Every catalog scenario is runnable now (T3.16); a version the catalog doesn't publish isn't.
+      scenario: { id: "phantom_membership", version: 2 },
     });
     expect(phantom.statusCode).toBe(400);
     expect(phantom.json()).toEqual({ error: "unsupported_scenario" });

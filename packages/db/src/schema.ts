@@ -279,3 +279,22 @@ export const rehearsalReports = pgTable(
   },
   (t) => [index().on(t.orgId, t.planId)],
 );
+
+/**
+ * T3.16: a rehearsal container set marked dirty by a challenged rehearsal (decision 0013 §3). Written
+ * before its first inject and cleared only after confirmed cleanup. While a set has an uncleared
+ * mark, admission refuses every rehearsal on it, whoever holds the set's lock.
+ */
+export const rehearsalDirtyMarks = pgTable(
+  "rehearsal_dirty_marks",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    containerSet: text("container_set").notNull(),
+    orgId: text("org_id").notNull(),
+    rehearsalId: text("rehearsal_id").notNull(),
+    markedAt: timestamp("marked_at", { withTimezone: true }).notNull(),
+    clearedAt: timestamp("cleared_at", { withTimezone: true }),
+    clearedBy: text("cleared_by"),
+  },
+  (t) => [index().on(t.containerSet), uniqueIndex().on(t.rehearsalId)],
+);

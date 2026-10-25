@@ -16,10 +16,13 @@ import {
 } from "@rehearsal/contracts";
 import {
   type BillingPolicy,
+  type ChallengeOperation,
   type Clock,
   type Compensator,
+  challengeOperations,
   challengesDigest,
   planHash as computePlanHash,
+  createCompensator,
   executeRehearsal,
   fingerprint,
   type JournalPort,
@@ -31,6 +34,7 @@ import {
   rehearsalOperationKey,
   resolveScenario,
   type SettleStep,
+  type StepGuard,
   snapshotDigest,
   VERIFIER_VERSION,
   type WorldContext,
@@ -38,6 +42,13 @@ import {
 import { and, eq } from "drizzle-orm";
 import type { Db } from "./index";
 import { isLegalTransition } from "./journal";
+import {
+  clearContainerSetDirty,
+  DEFAULT_CONTAINER_SET,
+  dirtyMarkOn,
+  holdContainerSet,
+  markContainerSetDirty,
+} from "./rehearsal-sets";
 import {
   loadRehearsal,
   markRehearsalTornDown,
@@ -364,6 +375,85 @@ export interface RehearsalRunContext {
   compensate?: Compensator;
   retry?: Partial<RetryPolicy>;
   sleep?: (ms: number) => Promise<void>;
+  /**
+   * T3.16, operator side: apply a resolved, allowlisted challenge to this rehearsal's tenant
+   * (inject before the run, the teammate edit after a named step is rejected). The worker can't
+   * call `/_admin`, so this goes through the API. Absent, a scenario that needs it fails closed.
+   */
+  challenge?: (input: {
+    rehearsalId: string;
+    phase: "before_run" | "after_rejected";
+    actionId?: string;
+  }) => Promise<{ applied: string[] }>;
+  /** Re-reads each write's evidence in the rehearsal's tenant first, as operation's executor does. */
+  guard?: StepGuard;
+  /** The container set this worker's tenants live in (decision 0013 §3). Default `rehearsal`. */
+  containerSet?: string;
+  /** How long to wait for the set's lock before failing as busy. Default 10 minutes. */
+  setWaitMs?: number;
+}
+
+/** The transport modes a scenario names for one step, applied inside the rehearsal's own ports. */
+interface Transport {
+  failKeys: Map<string, string>;
+  drop: { key: string; actionId: string } | null;
+  dropped: boolean;
+  /** While set, a read of the dropped step answers indeterminate: the worker "died" with it. */
+  blockDroppedReads: boolean;
+  fired: Set<string>;
+}
+
+function challengedProviders(
+  providers: Partial<Record<Vendor, ProviderPort>>,
+  t: Transport,
+): Partial<Record<Vendor, ProviderPort>> {
+  const keyIn = (request: unknown, keys: Iterable<string>) => {
+    const text = JSON.stringify(request);
+    for (const key of keys) if (text.includes(key)) return key;
+    return null;
+  };
+  const wrapped: Partial<Record<Vendor, ProviderPort>> = {};
+  for (const [vendor, inner] of Object.entries(providers) as [Vendor, ProviderPort][]) {
+    if (!inner) continue;
+    wrapped[vendor] = {
+      ...inner,
+      dispatch: async (request, world) => {
+        const failed = keyIn(request, t.failKeys.keys());
+        if (failed) {
+          // Answered here, never sent: a definite, non-retryable rejection of that one step.
+          t.fired.add(t.failKeys.get(failed) as string);
+          return {
+            kind: "rejected",
+            status: 422,
+            body: { error: "rehearsal challenge: this step fails" },
+            retryable: false,
+          };
+        }
+        if (t.drop && !t.dropped && keyIn(request, [t.drop.key])) {
+          const result = await inner.dispatch(request, world);
+          if (result.kind !== "confirmed") return result;
+          // Committed, and the answer is lost once: the outcome is unknown to this pass.
+          t.dropped = true;
+          t.fired.add(t.drop.actionId);
+          return { kind: "unknown", error: "response dropped after commit (rehearsal challenge)" };
+        }
+        return inner.dispatch(request, world);
+      },
+      reconcile: async (attempt, action, world) => {
+        if (t.drop && t.blockDroppedReads && attempt.operationKey === t.drop.key) {
+          return {
+            kind: "indeterminate",
+            detail: "the response was dropped; the restart reads it back",
+          };
+        }
+        return inner.reconcile(attempt, action, world);
+      },
+      // The dropped step is recovered by reading, never by a blind re-send.
+      idempotentResend: (action) =>
+        t.drop?.actionId === action.id ? false : (inner.idempotentResend?.(action) ?? false),
+    };
+  }
+  return wrapped;
 }
 
 export type RehearsalRunResult =
@@ -492,6 +582,7 @@ export async function runRehearsalJob(
     // A send whose outcome is unknown keeps the tenant for reads: the sweeper reconciles it and
     // tears down only once nothing is in flight (or hands it to an operator).
     if (inFlight.length > 0) {
+      await releaseSet();
       return {
         kind: "ran",
         state: (ended as "completed" | "failed" | "cancelled") ?? state,
@@ -502,7 +593,28 @@ export async function runRehearsalJob(
       .teardown(id, (ended as "completed" | "failed" | "cancelled") ?? state)
       .then(() => markRehearsalTornDown(ctx.db, orgId, id, now()))
       .catch(() => {}); // a failed teardown leaves the tenant for T3.16's sweeper
+    await releaseSet();
     return { kind: "ran", state: (ended as "completed" | "failed" | "cancelled") ?? state, report };
+  };
+  let setLock: { release: () => Promise<void> } | null = null;
+  let marked = false;
+  /**
+   * Confirmed cleanup, then the set is free. Catalog v1 sets no container-wide fault (a
+   * container-wide scenario is refused before anything is injected), so there is nothing beyond
+   * the tenant to undo, and the mark is cleared as soon as the run has stopped sending.
+   */
+  const releaseSet = async () => {
+    if (marked) {
+      await clearContainerSetDirty(
+        ctx.db,
+        id,
+        "runner: no container-wide fault (catalog v1)",
+        now(),
+      );
+      marked = false;
+    }
+    await setLock?.release();
+    setLock = null;
   };
 
   // The exact stored plan, as bound: never actions from a caller, never a silent revision.
@@ -536,12 +648,39 @@ export async function runRehearsalJob(
       null,
     );
   }
-  // T3.16's cancellation and sweeper are in. They do not apply a challenge, so a challenged run
-  // still stops here instead of being queued onto a container it would fault.
-  if (listed.challenges.length > 0) {
+  // Bind the scenario to this plan: roles become this plan's records, or the run is refused whole.
+  const resolved = resolveScenario(manifest.data, job.scenario);
+  if (!resolved.ok) {
+    return finish("failed", `scenario does not bind to this plan: ${resolved.reason}`, null, null);
+  }
+  const scenario = resolved.scenario;
+  if (scenario.containerWide) {
+    return finish("failed", "a container-wide challenge has no confirmed cleanup yet", null, null);
+  }
+  const ops = challengeOperations(scenario);
+  const challenged = scenario.challenges.length > 0;
+  const operatorOps = ops.filter((o) => o.kind === "inject_records" || o.kind === "vendor_write");
+  if (operatorOps.length > 0 && !ctx.challenge) {
     return finish(
       "failed",
-      `scenario ${listed.id}@${listed.version} is allowlisted; applying its challenges waits on T3.16`,
+      `scenario ${scenario.id}@${scenario.version} needs the operator's challenge route, which this worker doesn't have`,
+      null,
+      null,
+    );
+  }
+  // One challenge per container set at a time; unchallenged runs share it (decision 0013 §3).
+  const set = ctx.containerSet ?? DEFAULT_CONTAINER_SET;
+  setLock = await holdContainerSet(ctx.db, set, challenged ? "exclusive" : "shared", {
+    waitMs: ctx.setWaitMs ?? 10 * 60_000,
+  });
+  if (!setLock) {
+    return finish("failed", `container set ${set} stayed busy`, null, null);
+  }
+  const dirty = await dirtyMarkOn(ctx.db, set, id);
+  if (dirty) {
+    return finish(
+      "failed",
+      `container set ${set} is marked dirty by rehearsal ${dirty.rehearsalId}: its cleanup isn't confirmed`,
       null,
       null,
     );
@@ -552,6 +691,17 @@ export async function runRehearsalJob(
     return finish("failed", `snapshot refused: ${provisioned.refusals.join("; ")}`, null, null);
   }
   notFromEvidence = provisioned.notFromEvidence;
+  if (challenged) {
+    await markContainerSetDirty(ctx.db, { set, orgId, rehearsalId: id, now: now() });
+    marked = true;
+  }
+  if (ops.some((o) => o.kind === "inject_records")) {
+    try {
+      await ctx.challenge?.({ rehearsalId: id, phase: "before_run" });
+    } catch (err) {
+      return finish("failed", `challenge inject failed: ${(err as Error).message}`, null, null);
+    }
+  }
   if (
     !(await transitionRehearsal(ctx.db, orgId, id, ["provisioning"], "running", { now: now() }))
   ) {
@@ -559,9 +709,50 @@ export async function runRehearsalJob(
   }
 
   const journal = new RehearsalRunJournal(ctx.db, orgId, id);
-  let outcome: RunOutcome;
-  try {
-    outcome = await executeRehearsal(
+  const keyOf = (actionId: string) => {
+    const action = manifest.data.actions.find((a) => a.id === actionId);
+    return action ? rehearsalOperationKey(id, operationKey(orgId, r.planId, action)) : null;
+  };
+  const transport: Transport = {
+    failKeys: new Map(),
+    drop: null,
+    dropped: false,
+    blockDroppedReads: true,
+    fired: new Set(),
+  };
+  for (const op of ops) {
+    if (op.kind !== "runner_transport") continue;
+    const key = keyOf(op.actionId);
+    if (!key) return finish("failed", `challenge names no step ${op.actionId}`, null, null);
+    if (op.mode === "fail_step") transport.failKeys.set(key, op.actionId);
+    else transport.drop = { key, actionId: op.actionId };
+  }
+  const providers = challenged ? challengedProviders(ctx.providers, transport) : ctx.providers;
+  const base =
+    ctx.compensate ??
+    (providers.zendesk
+      ? createCompensator({ providers, worlds: ctx.worlds, clock: ctx.clock })
+      : undefined);
+  const edit = ops.find(
+    (o): o is Extract<ChallengeOperation, { kind: "vendor_write" }> => o.kind === "vendor_write",
+  );
+  let editApplied = false;
+  // The teammate edit lands after its step is rejected and before compensation re-reads the ticket.
+  const compensate: Compensator | undefined = edit
+    ? async (cctx) => {
+        if (!editApplied && cctx.outcomes.get(edit.when.afterActionId) === "rejected") {
+          await ctx.challenge?.({
+            rehearsalId: id,
+            phase: "after_rejected",
+            actionId: edit.when.afterActionId,
+          });
+          editApplied = true;
+        }
+        await base?.(cctx);
+      }
+    : base;
+  const pass = () =>
+    executeRehearsal(
       { orgId, rehearsalId: id, planId: r.planId, revision: r.revision, planHash: r.planHash },
       {
         plans: {
@@ -571,20 +762,44 @@ export async function runRehearsalJob(
             (await loadRehearsal(ctx.db, orgId, id))?.state !== "running",
         },
         journal,
-        providers: ctx.providers,
+        providers,
         worlds: ctx.worlds,
         clock: ctx.clock,
         policies: ctx.policies,
         newId: ctx.newId,
-        compensate: ctx.compensate,
+        guard: ctx.guard,
+        compensate,
         retry: ctx.retry,
         sleep: ctx.sleep,
       },
     );
+  let outcome: RunOutcome;
+  try {
+    outcome = await pass();
+    if (transport.drop && transport.dropped && !outcome.refusal) {
+      // The controlled restart: the same journal, reads allowed again. The dropped step is
+      // reconciled by reading the one effect, and the steps it held go on. Nothing is re-sent.
+      transport.blockDroppedReads = false;
+      const restart = await pass();
+      outcome = { ...restart, receipts: [...journal.receipts] };
+    }
   } catch (err) {
     return finish("failed", `rehearsal stopped: ${(err as Error).message}`, manifest.data, null);
   }
+  const missed = [
+    ...[...transport.failKeys.values()].filter((a) => !transport.fired.has(a)),
+    ...(transport.drop && !transport.dropped ? [transport.drop.actionId] : []),
+    ...(edit && !editApplied ? [`teammate edit after ${edit.when.afterActionId}`] : []),
+  ];
   if (outcome.refusal) return finish("failed", outcome.refusal, manifest.data, outcome);
+  if (missed.length > 0 && outcome.state !== "cancelled") {
+    return finish(
+      "failed",
+      `the scenario's challenge never applied: ${missed.join(", ")}`,
+      manifest.data,
+      outcome,
+    );
+  }
 
   // Ended under it (cancelled, or failed by the sweeper): the report carries what happened.
   const after = (await loadRehearsal(ctx.db, orgId, id))?.state;

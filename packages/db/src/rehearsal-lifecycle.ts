@@ -8,6 +8,7 @@ import {
 import {
   type BillingPolicy,
   type Clock,
+  lookupScenario,
   type ProviderPort,
   type RunOutcome,
   reconcileRehearsal,
@@ -26,6 +27,7 @@ import {
   rehearsalReport,
   runRehearsalJob,
 } from "./rehearsal-runner";
+import { clearContainerSetDirty } from "./rehearsal-sets";
 import {
   loadRehearsal,
   markRehearsalTornDown,
@@ -201,6 +203,18 @@ async function sweepOne(ctx: RehearsalSweepContext, row: Row, out: RehearsalSwee
     endedAt = now;
   }
   const ended = state as Ended;
+  // A challenged run that stopped leaves its set marked dirty. Catalog v1 sets no container-wide
+  // fault (a container-wide scenario is refused before any inject), so once it has ended there is
+  // nothing beyond its own tenant to clean, and cleanup is confirmed (decision 0013 §3).
+  const listed = await scenarioOf(db, orgId, id);
+  if (listed && !listed.containerWide) {
+    await clearContainerSetDirty(
+      db,
+      id,
+      "sweeper: ended, no container-wide fault (catalog v1)",
+      now,
+    );
+  }
 
   let outcome: RunOutcome | null = null;
   if ((await rehearsalInFlight(db, orgId, id)).length > 0) {
@@ -318,4 +332,10 @@ async function reportIfMissing(
     evidence: ctx.evidence,
   });
   await saveRehearsalReport(ctx.db, orgId, report, ctx.now).catch(() => {});
+}
+
+async function scenarioOf(db: Db, orgId: string, id: string) {
+  const stored = await loadRehearsal(db, orgId, id);
+  const r = stored?.rehearsal;
+  return r ? lookupScenario({ id: r.scenarioId, version: r.scenarioVersion }) : undefined;
 }

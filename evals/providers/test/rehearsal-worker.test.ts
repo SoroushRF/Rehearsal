@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
-import type { PlanManifest } from "@rehearsal/contracts";
+import type { PlanManifest, RehearsalScenarioId } from "@rehearsal/contracts";
 import { type BillingPolicy, planHash } from "@rehearsal/core";
 import {
   createDb,
@@ -15,11 +15,13 @@ import {
   startQueue,
 } from "@rehearsal/db";
 import {
+  eraFetch,
   REHEARSAL_PROVISION_ROUTE,
   REHEARSAL_TEARDOWN_ROUTE,
   REHEARSAL_TENANT_TOKEN_ROUTE,
   REHEARSAL_URL_KEYS,
   rehearsalOperatorPath,
+  rehearsalWorkerWorlds,
 } from "@rehearsal/providers";
 import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -98,7 +100,7 @@ describe.skipIf(!REHEARSAL_ENABLED || !process.env.DB_TESTS)(
       };
     }
 
-    async function requested(manifest: PlanManifest) {
+    async function requested(manifest: PlanManifest, scenario: RehearsalScenarioId = "clean") {
       const hash = planHash(manifest);
       await db.insert(schema.planVersions).values({
         orgId: manifest.orgId,
@@ -115,7 +117,7 @@ describe.skipIf(!REHEARSAL_ENABLED || !process.env.DB_TESTS)(
           planId: manifest.planId,
           revision: manifest.revision,
           planHash: hash,
-          scenario: { id: "clean", version: 1 },
+          scenario: { id: scenario, version: 1 },
         },
         now: new Date(),
         newId: () => randomBytes(8).toString("hex"),
@@ -188,6 +190,86 @@ describe.skipIf(!REHEARSAL_ENABLED || !process.env.DB_TESTS)(
       for (const table of [schema.stepAttempts, schema.stepReceipts, schema.objectBindings]) {
         expect(await db.select().from(table).where(eq(table.orgId, manifest.orgId))).toEqual([]);
       }
+    }, 90_000);
+
+    /** Refunds of one charge in this rehearsal's own Stripe tenant, read just before teardown. */
+    function countingRefunds(id: string, chargeId: string) {
+      const ctx = runContext(id, config());
+      const seen: number[] = [];
+      const teardown = ctx.teardown;
+      ctx.teardown = async (rid, state) => {
+        const world = rehearsalWorkerWorlds(rid, workerEnv()).stripe;
+        const res = await eraFetch(
+          world,
+          `/v1/refunds?charge=${encodeURIComponent(chargeId)}&limit=100`,
+          { headers: { authorization: "Bearer sk_test_rehearsal_check" } },
+        );
+        const body = (await res.json()) as { data: unknown[] };
+        seen.push(body.data.length);
+        await teardown(rid, state);
+      };
+      return { ctx, seen };
+    }
+
+    it("phantom_membership on Era: the operator injects, the guard holds the refund, no refund lands", async () => {
+      const manifest = manifestFor(`org_${randomUUID()}`, `plan_${randomUUID()}`);
+      const { id, data } = await requested(manifest, "phantom_membership");
+      const result = await runRehearsalJob(data, runContext(id, config()));
+      expect(result).toMatchObject({ kind: "ran", state: "completed" });
+      const report = result.kind === "ran" ? result.report : null;
+      if (!report) throw new Error("no report");
+      for (const step of report.steps) {
+        expect({ step: step.actionId, got: step.result?.outcome }).toEqual({
+          step: step.actionId,
+          got: step.expected,
+        });
+      }
+      const refund = report.steps.find((x) => x.actionId === "refund_001");
+      expect(refund?.result?.holdReason?.kind).toBe("query_membership_changed");
+      const attempts = await db
+        .select()
+        .from(schema.rehearsalAttempts)
+        .where(eq(schema.rehearsalAttempts.rehearsalId, id));
+      expect(attempts.some((a) => a.actionId === "refund_001")).toBe(false);
+      const [mark] = await db
+        .select()
+        .from(schema.rehearsalDirtyMarks)
+        .where(eq(schema.rehearsalDirtyMarks.rehearsalId, id));
+      expect(mark?.clearedAt).not.toBeNull();
+      expect((await loadRehearsal(db, manifest.orgId, id))?.tornDown).toBe(true);
+      for (const table of [schema.stepAttempts, schema.stepReceipts, schema.objectBindings]) {
+        expect(await db.select().from(table).where(eq(table.orgId, manifest.orgId))).toEqual([]);
+      }
+    }, 90_000);
+
+    it("lost_response_restart on Era: the refund commits once, the restart reads it back", async () => {
+      const manifest = manifestFor(`org_${randomUUID()}`, `plan_${randomUUID()}`);
+      const { id, data } = await requested(manifest, "lost_response_restart");
+      const refund = manifest.actions.find((a) => a.id === "refund_001");
+      const chargeId = refund?.kind === "stripe.refund.create" ? refund.args.chargeId : "";
+      const { ctx, seen } = countingRefunds(id, chargeId);
+      const result = await runRehearsalJob(data, ctx);
+      expect(result).toMatchObject({ kind: "ran", state: "completed" });
+      const report = result.kind === "ran" ? result.report : null;
+      if (!report) throw new Error("no report");
+      // Exactly one refund in the tenant, read from Stripe itself before it was reset.
+      expect(seen).toEqual([1]);
+      expect(report.steps.map((x) => [x.actionId, x.result?.outcome]).sort()).toEqual([
+        ["note_001", "confirmed"],
+        ["patch_001", "confirmed"],
+        ["refund_001", "confirmed"],
+      ]);
+      const refundAttempts = (
+        await db
+          .select()
+          .from(schema.rehearsalAttempts)
+          .where(eq(schema.rehearsalAttempts.rehearsalId, id))
+      ).filter((a) => a.actionId === "refund_001");
+      // One attempt, sent once; the restart settled it by reading Stripe.
+      expect(refundAttempts.map((a) => a.state)).toEqual(["reconciled"]);
+      const refundStep = report.steps.find((x) => x.actionId === "refund_001");
+      expect(refundStep?.result?.providerRef).toMatchObject({ vendor: "stripe", kind: "refund" });
+      expect((await loadRehearsal(db, manifest.orgId, id))?.tornDown).toBe(true);
     }, 90_000);
   },
 );

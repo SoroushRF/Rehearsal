@@ -45,6 +45,9 @@ describe.skipIf(!process.env.DB_TESTS)(
     const url =
       process.env.DATABASE_URL ?? "postgres://rehearsal:rehearsal@localhost:5432/rehearsal";
     const db = createDb(url);
+    // Workers run on their own pool: a "dead" one never gives its connection (and the container
+    // set lock on it) back, which a crashed process does only by dying. Its close isn't awaited.
+    const workerDb = createDb(url);
     let boss: PgBoss;
     beforeAll(async () => {
       await migrateDb(db);
@@ -53,6 +56,7 @@ describe.skipIf(!process.env.DB_TESTS)(
     afterAll(async () => {
       await boss?.stop({ graceful: false });
       await db.$client.end();
+      void workerDb.$client.end().catch(() => {});
     });
 
     /** A stored plan in a fresh org, a queued rehearsal of it, and its job payload. */
@@ -103,7 +107,9 @@ describe.skipIf(!process.env.DB_TESTS)(
       };
       const tenant = rehearsalTenant(id);
       const ctx: RehearsalRunContext = {
-        db,
+        db: workerDb,
+        // Its own set, so a dead worker's shared hold never makes another file's challenge wait.
+        containerSet: `set_${randomUUID()}`,
         providers: { stripe: wrap("stripe"), zendesk: wrap("zendesk") },
         worlds: { stripe: { world: "rehearsal", tenant }, zendesk: { world: "rehearsal", tenant } },
         clock: new FakeClock(START),

@@ -1,16 +1,25 @@
 import type { RehearsalEvidence, RehearsalVersions } from "@rehearsal/contracts";
-import type { BillingPolicy, Clock, ProviderPort, WorldContext } from "@rehearsal/core";
+import {
+  type BillingPolicy,
+  type Clock,
+  createReadGuard,
+  type ProviderPort,
+  type WorldContext,
+} from "@rehearsal/core";
 import type { Db, Provisioning, RehearsalRunContext, RehearsalSweepContext } from "@rehearsal/db";
 import {
+  REHEARSAL_CHALLENGE_ROUTE,
   REHEARSAL_PROVISION_ROUTE,
   REHEARSAL_TEARDOWN_ROUTE,
   rehearsalOperatorPath,
   rehearsalWorkerViolations,
   rehearsalWorkerWorlds,
   STRIPE_CHARGE_PROJECTION,
+  stripeReader,
   stripeWriter,
-  writeOnly,
+  withWriter,
   ZENDESK_TICKET_PROJECTION,
+  zendeskReader,
   zendeskWriter,
 } from "@rehearsal/providers";
 import { z } from "zod";
@@ -74,6 +83,26 @@ export function operatorClient(env: NodeJS.ProcessEnv, doFetch: typeof fetch = f
       }
       return ProvisionAnswer.parse(await res.json());
     },
+    async challenge(input: {
+      rehearsalId: string;
+      phase: "before_run" | "after_rejected";
+      actionId?: string;
+    }): Promise<{ applied: string[] }> {
+      const res = await doFetch(
+        `${apiUrl}${rehearsalOperatorPath(REHEARSAL_CHALLENGE_ROUTE, input.rehearsalId)}`,
+        {
+          method: "POST",
+          headers: { authorization: `Bearer ${secret}`, "content-type": "application/json" },
+          body: JSON.stringify({
+            phase: input.phase,
+            ...(input.actionId ? { actionId: input.actionId } : {}),
+          }),
+          redirect: "error",
+        },
+      );
+      if (res.status !== 200) throw new Error(`operator challenge answered ${res.status}`);
+      return z.object({ applied: z.array(z.string()) }).parse(await res.json());
+    },
     async teardown(rehearsalId: string): Promise<void> {
       const res = await post(REHEARSAL_TEARDOWN_ROUTE, rehearsalId);
       if (res.status !== 200) throw new Error(`operator teardown answered ${res.status}`);
@@ -94,8 +123,15 @@ function bound(rehearsalId: string, config: RehearsalWorkerConfig) {
       vendor === "stripe" ? "Bearer sk_test_rehearsal_worker" : "Bearer rehearsal-worker",
   });
   const providers: Partial<Record<"stripe" | "zendesk", ProviderPort>> = {
-    stripe: writeOnly(stripeWriter(target("stripe"))),
-    zendesk: writeOnly(zendeskWriter(target("zendesk"))),
+    // Readers too: the step guard re-reads each write's evidence in this tenant first.
+    stripe: withWriter(
+      stripeReader({ ...target("stripe"), clock: config.clock }),
+      stripeWriter(target("stripe")),
+    ),
+    zendesk: withWriter(
+      zendeskReader({ ...target("zendesk"), clock: config.clock }),
+      zendeskWriter(target("zendesk")),
+    ),
   };
   const contexts: Partial<Record<"stripe" | "zendesk", WorldContext>> = {
     stripe: { world: "rehearsal", tenant: worlds.stripe.tenant },
@@ -110,9 +146,10 @@ export function runContext(
   config: RehearsalWorkerConfig,
 ): RehearsalRunContext {
   const operator = operatorClient(config.env, config.fetch);
+  const tenant = bound(rehearsalId, config);
   return {
     db: config.db,
-    ...bound(rehearsalId, config),
+    ...tenant,
     clock: config.clock,
     policies: config.policies,
     newId: config.newId,
@@ -120,6 +157,8 @@ export function runContext(
     evidence: config.evidence,
     provision: (_manifest, id) => operator.provision(id),
     teardown: (id) => operator.teardown(id),
+    challenge: (input) => operator.challenge(input),
+    guard: createReadGuard({ ...tenant, clock: config.clock }),
   };
 }
 
