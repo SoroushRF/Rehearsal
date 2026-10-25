@@ -13,9 +13,9 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T4.11** Allowlisted rehearsal challenges and controls [#169](https://github.com/SoroushRF/Rehearsal/issues/169) | @skhdemo | 🟨 ready | 6 |
 | **T2.19** API: request and read an execution rehearsal [#171](https://github.com/SoroushRF/Rehearsal/issues/171) | @parsaabbasian | 🟨 ready | 5 |
 | **T4.20** API as the enforcement point: every route asks IAM with facts from stored rows [#225](https://github.com/SoroushRF/Rehearsal/issues/225) | @skhdemo | 🟨 ready | 5 |
-| **T2.17** Precedent promotion: finance-only route and UI [#147](https://github.com/SoroushRF/Rehearsal/issues/147) | @parsaabbasian | 🟨 ready | 4 |
+| **T2.17** Precedent promotion: finance-only route and UI [#147](https://github.com/SoroushRF/Rehearsal/issues/147) | @parsaabbasian | 👀 in review | 4 |
 | **T4.12** Independent verifier for observed rehearsal effects [#173](https://github.com/SoroushRF/Rehearsal/issues/173) | @skhdemo | 🟥 blocked | 4 |
-| **T2.20** Review UI: start a rehearsal and follow its progress [#172](https://github.com/SoroushRF/Rehearsal/issues/172) | @parsaabbasian | 🟥 blocked | 3 |
+| **T2.20** Review UI: start a rehearsal and follow its progress [#172](https://github.com/SoroushRF/Rehearsal/issues/172) | @parsaabbasian | 👀 in review | 3 |
 
 ## T1 Rehearse
 
@@ -48,7 +48,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T1.23** Scoped rehearsal credentials and world routing [#167](https://github.com/SoroushRF/Rehearsal/issues/167) | ✅ done |  | T3.15 (T3) |
 | **T1.24** Native Stripe sandbox setup and read conformance _(stretch)_ [#178](https://github.com/SoroushRF/Rehearsal/issues/178) | ✅ done |  | T3.17 (T3) |
 | **T1.25** Competent scripted benchmark baseline _(stretch)_ [#180](https://github.com/SoroushRF/Rehearsal/issues/180) | 🟨 ready | — |  |
-| **T1.26** Precedent reuse across different incidents _(stretch)_ [#181](https://github.com/SoroushRF/Rehearsal/issues/181) | 🟥 blocked | T2.17 (T2, ready) |  |
+| **T1.26** Precedent reuse across different incidents _(stretch)_ [#181](https://github.com/SoroushRF/Rehearsal/issues/181) | 🟥 blocked | T2.17 (T2, in review) |  |
 | **T1.27** Extend the scorecard to the full operation set [#161](https://github.com/SoroushRF/Rehearsal/issues/161) | ✅ done |  | T1.25, T1.28 |
 | **T1.28** Run and publish versioned benchmark comparisons [#176](https://github.com/SoroushRF/Rehearsal/issues/176) | 🟥 blocked | T4.13 (T4, blocked) | T2.7 (T2) |
 | **T1.29** Plans carry a PrecedentBasis; the review page shows recalled precedents with their trace _(stretch)_ [#235](https://github.com/SoroushRF/Rehearsal/issues/235) | ✅ done |  |  |
@@ -75,11 +75,11 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T2.14** Historical audit view: the exact plan and policy as approved [#138](https://github.com/SoroushRF/Rehearsal/issues/138) | ✅ done |  | T2.19 |
 | **T2.15** Review UI: show the Slack summary step and its exact text [#145](https://github.com/SoroushRF/Rehearsal/issues/145) | ✅ done |  | T1.7 (T1) |
 | **T2.16** Review UI: show the exact rendered public reply being approved [#146](https://github.com/SoroushRF/Rehearsal/issues/146) | ✅ done |  | T1.13 (T1) |
-| **T2.17** Precedent promotion: finance-only route and UI [#147](https://github.com/SoroushRF/Rehearsal/issues/147) | 🟨 ready | — | T1.26 (T1), T1.29 (T1), T4.13 (T4) |
+| **T2.17** Precedent promotion: finance-only route and UI [#147](https://github.com/SoroushRF/Rehearsal/issues/147) | 👀 in review [PR #269](https://github.com/SoroushRF/Rehearsal/pull/269) | — | T1.26 (T1), T1.29 (T1), T4.13 (T4) |
 | **T2.18** Policy: choose a refund or an invoice credit per obligation [#148](https://github.com/SoroushRF/Rehearsal/issues/148) | ✅ done |  | T1.14 (T1) |
 | **T2.19** API: request and read an execution rehearsal [#171](https://github.com/SoroushRF/Rehearsal/issues/171) | 🟨 ready | — | T2.20, T2.21 |
-| **T2.20** Review UI: start a rehearsal and follow its progress [#172](https://github.com/SoroushRF/Rehearsal/issues/172) | 🟥 blocked | T2.19 (T2, ready) | T4.13 (T4) |
-| **T2.21** Review UI: compare expected and observed rehearsal outcomes [#174](https://github.com/SoroushRF/Rehearsal/issues/174) | 🟥 blocked | T2.19 (T2, ready)<br>T4.12 (T4, blocked) | T4.13 (T4) |
+| **T2.20** Review UI: start a rehearsal and follow its progress [#172](https://github.com/SoroushRF/Rehearsal/issues/172) | 👀 in review [PR #270](https://github.com/SoroushRF/Rehearsal/pull/270) | T2.19 (T2, ready) | T4.13 (T4) |
+| **T2.21** Review UI: compare expected and observed rehearsal outcomes [#174](https://github.com/SoroushRF/Rehearsal/issues/174) | 👀 in review [PR #272](https://github.com/SoroushRF/Rehearsal/pull/272) | T2.19 (T2, ready)<br>T4.12 (T4, blocked) | T4.13 (T4) |
 | **T2.22** Operator task tests and findings [#177](https://github.com/SoroushRF/Rehearsal/issues/177) | 🟥 blocked | T2.5 (T2, ready) |  |
 | **T2.23** Server-side fresh verification bound to the plan _(stretch)_ [#182](https://github.com/SoroushRF/Rehearsal/issues/182) | 🟨 ready | — | T2.24 |
 | **T2.24** Clerk verification UI _(stretch)_ [#183](https://github.com/SoroushRF/Rehearsal/issues/183) | 🟥 blocked | T2.23 (T2, ready) |  |
@@ -104,7 +104,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T3.13** Separate rehearsal persistence and durable jobs [#164](https://github.com/SoroushRF/Rehearsal/issues/164) | ✅ done |  | T2.19 (T2), T3.15 |
 | **T3.14** Share deterministic execution mechanics while preserving admission boundaries [#165](https://github.com/SoroushRF/Rehearsal/issues/165) | ✅ done |  | T3.15 |
 | **T3.15** Execute a stored plan against disposable worlds [#168](https://github.com/SoroushRF/Rehearsal/issues/168) | ✅ done |  | T3.16, T4.12 (T4) |
-| **T3.16** Rehearsal worker: restart, cancellation, and cleanup [#170](https://github.com/SoroushRF/Rehearsal/issues/170) | 🟥 blocked | T4.11 (T4, ready) | T4.13 (T4) |
+| **T3.16** Rehearsal worker: restart, cancellation, and cleanup [#170](https://github.com/SoroushRF/Rehearsal/issues/170) | 👀 in review [PR #271](https://github.com/SoroushRF/Rehearsal/pull/271) | T4.11 (T4, ready) | T4.13 (T4) |
 | **T3.17** Native Stripe sandbox refund writer _(stretch)_ [#184](https://github.com/SoroushRF/Rehearsal/issues/184) | ✅ done |  | T3.18 |
 | **T3.18** Native Stripe executor recovery gate _(stretch)_ [#185](https://github.com/SoroushRF/Rehearsal/issues/185) | 🟨 ready | — |  |
 
@@ -136,7 +136,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T4.26** End-to-end authorization acceptance on a real Clerk session [#231](https://github.com/SoroushRF/Rehearsal/issues/231) | 🟥 blocked | T4.20 (T4, ready)<br>T4.21 (T4, blocked)<br>T4.22 (T4, blocked)<br>T4.23 (T4, blocked)<br>T4.24 (T4, blocked)<br>T4.25 (T4, ready) |  |
 | **T4.11** Allowlisted rehearsal challenges and controls [#169](https://github.com/SoroushRF/Rehearsal/issues/169) | 🟨 ready | — | T3.16 (T3), T4.12 |
 | **T4.12** Independent verifier for observed rehearsal effects [#173](https://github.com/SoroushRF/Rehearsal/issues/173) | 🟥 blocked | T4.11 (T4, ready) | T2.21 (T2), T4.13 |
-| **T4.13** Integrated isolation and recovery acceptance gate [#175](https://github.com/SoroushRF/Rehearsal/issues/175) | 🟥 blocked | T3.16 (T3, blocked)<br>T2.20 (T2, blocked)<br>T2.21 (T2, blocked)<br>T4.12 (T4, blocked)<br>T2.17 (T2, ready) | T1.28 (T1) |
+| **T4.13** Integrated isolation and recovery acceptance gate [#175](https://github.com/SoroushRF/Rehearsal/issues/175) | 🟥 blocked | T3.16 (T3, in review)<br>T2.20 (T2, in review)<br>T2.21 (T2, in review)<br>T4.12 (T4, blocked)<br>T2.17 (T2, in review) | T1.28 (T1) |
 | **T4.14** Held-out incident datasets and independent gold _(stretch)_ [#179](https://github.com/SoroushRF/Rehearsal/issues/179) | ✅ done |  | T1.25 (T1), T1.26 (T1) |
 
 ## Task graph
@@ -192,11 +192,11 @@ flowchart LR
     T2_14["T2.14 Historical audit view: the exact plan and "]:::done
     T2_15["T2.15 Review UI: show the Slack summary step and"]:::done
     T2_16["T2.16 Review UI: show the exact rendered public "]:::done
-    T2_17["T2.17 Precedent promotion: finance-only route an"]:::ready
+    T2_17["T2.17 Precedent promotion: finance-only route an"]:::review
     T2_18["T2.18 Policy: choose a refund or an invoice cred"]:::done
     T2_19["T2.19 API: request and read an execution rehears"]:::ready
-    T2_20["T2.20 Review UI: start a rehearsal and follow it"]:::blocked
-    T2_21["T2.21 Review UI: compare expected and observed r"]:::blocked
+    T2_20["T2.20 Review UI: start a rehearsal and follow it"]:::review
+    T2_21["T2.21 Review UI: compare expected and observed r"]:::review
     T2_22["T2.22 Operator task tests and findings"]:::blocked
   end
   subgraph T3[T3 Apply]
@@ -214,7 +214,7 @@ flowchart LR
     T3_13["T3.13 Separate rehearsal persistence and durable"]:::done
     T3_14["T3.14 Share deterministic execution mechanics wh"]:::done
     T3_15["T3.15 Execute a stored plan against disposable w"]:::done
-    T3_16["T3.16 Rehearsal worker: restart, cancellation, a"]:::blocked
+    T3_16["T3.16 Rehearsal worker: restart, cancellation, a"]:::review
   end
   subgraph T4[T4 Guard]
     T4_1["T4.1 Pure guards: observation compare, query-mem"]:::done
