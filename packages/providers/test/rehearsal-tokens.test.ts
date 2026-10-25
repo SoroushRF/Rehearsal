@@ -70,6 +70,29 @@ describe("rehearsal worker worlds (T1.23)", () => {
     await expect(token(misrouted.stripe)).rejects.toThrow(
       "minted for http://127.0.0.1:8103, but configured for http://localhost:8102",
     );
+    // Same endpoint, another world behind a path prefix or another scheme: still refused.
+    const base = "http://127.0.0.1:8103";
+    for (const [configured, minted] of [
+      [`${base}/operational`, `${base}/rehearsal`],
+      [base, `${base}/rehearsal`],
+      ["https://127.0.0.1:8103", base],
+    ]) {
+      const prefixed = rehearsalWorkerWorlds(
+        ID,
+        { ...env, ERA_STRIPE_REHEARSAL_URL: configured },
+        { clock, fetch: operator(clock, () => ({ baseUrl: minted })) },
+      );
+      await expect(token(prefixed.stripe)).rejects.toThrow(
+        `minted for ${minted}, but configured for ${configured}`,
+      );
+    }
+    // Loopback spellings and a trailing slash are the same world.
+    const folded = rehearsalWorkerWorlds(
+      ID,
+      { ...env, ERA_STRIPE_REHEARSAL_URL: "http://localhost:8103/rehearsal/" },
+      { clock, fetch: operator(clock, () => ({ baseUrl: `${base}/rehearsal` })) },
+    );
+    expect(await token(folded.stripe)).toBe("jwt-stripe");
     const unparsed = rehearsalWorkerWorlds(ID, env, {
       clock,
       fetch: operator(clock, () => ({ baseUrl: undefined })),
@@ -124,10 +147,24 @@ describe("resolveRehearsalWorld", () => {
       ERA_STRIPE_OPERATIONAL_URL: "http://127.0.0.1:8102",
     };
     expect(resolveRehearsalWorld("stripe", ID, operatorEnv).tenant).toBe(`rh-${ID}`);
-    for (const url of ["http://localhost:8102/", "http://[::1]:8101", "http://127.0.0.1:8102"]) {
+    for (const url of [
+      "http://localhost:8102/",
+      "http://[::1]:8101",
+      "http://127.0.0.1:8102",
+      "http://127.0.0.1:8102/rehearsal",
+    ]) {
       expect(() =>
         resolveRehearsalWorld("stripe", ID, { ...operatorEnv, ERA_STRIPE_REHEARSAL_URL: url }),
       ).toThrow("a rehearsal never runs in a shared world");
+    }
+    for (const url of [
+      "http://user:pw@127.0.0.1:8103",
+      "http://127.0.0.1:8103?world=rehearsal",
+      "ftp://127.0.0.1:8103",
+    ]) {
+      expect(() =>
+        resolveRehearsalWorld("stripe", ID, { ...operatorEnv, ERA_STRIPE_REHEARSAL_URL: url }),
+      ).toThrow("a world URL is http(s) with no credentials, query or fragment");
     }
     expect(() => resolveRehearsalWorld("slack", ID, operatorEnv)).toThrow(
       /ERA_SLACK_REHEARSAL_URL is not set/,

@@ -41,12 +41,16 @@ export function rehearsalTokenDepsFromEnv(
   const adminToken = env.REHEARSAL_ERA_ADMIN_TOKEN;
   const secret = env.REHEARSAL_WORKER_SECRET;
   if (!adminToken || !secret) return undefined;
-  if (adminToken === env.ERA_ADMIN_TOKEN) {
-    throw new Error("REHEARSAL_ERA_ADMIN_TOKEN must differ from ERA_ADMIN_TOKEN");
+  const workerSecrets = Object.values(WORKER_ROLES).map(({ secretEnv }) => secretEnv);
+  // A secret equal to an admin token would be that admin token under an allowed name, and the
+  // worker's startup check only sees names.
+  for (const name of ["ERA_ADMIN_TOKEN", "REHEARSAL_ERA_ADMIN_TOKEN", ...workerSecrets]) {
+    if (env[name] === secret) throw new Error(`REHEARSAL_WORKER_SECRET must differ from ${name}`);
   }
-  for (const { secretEnv } of Object.values(WORKER_ROLES)) {
-    if (env[secretEnv] === secret)
-      throw new Error(`REHEARSAL_WORKER_SECRET must differ from ${secretEnv}`);
+  for (const name of ["ERA_ADMIN_TOKEN", ...workerSecrets]) {
+    if (env[name] === adminToken) {
+      throw new Error(`REHEARSAL_ERA_ADMIN_TOKEN must differ from ${name}`);
+    }
   }
   return { adminToken, secret, active, env };
 }

@@ -57,6 +57,19 @@ export function worldEndpoint(url: string): string {
 }
 
 /**
+ * The whole routing URL: scheme, endpoint and base path, without a trailing slash. Two worlds can
+ * share an endpoint behind a proxy and differ only by path, so host and port can't prove that two
+ * URLs reach the same world. Credentials, a query or a fragment are refused.
+ */
+export function worldUrl(url: string): string {
+  const u = new URL(url);
+  if (!["http:", "https:"].includes(u.protocol) || u.username || u.password || u.search || u.hash) {
+    throw new Error("a world URL is http(s) with no credentials, query or fragment");
+  }
+  return `${u.protocol}//${worldEndpoint(url)}${u.pathname.replace(/\/+$/, "")}`;
+}
+
+/**
  * One rehearsal's tenant in the rehearsal container for a vendor. The tenant is derived from a
  * validated ID, never taken from a caller. A URL that a planning or operational world in the same
  * environment also uses is refused: Era serves a token minted by another container as that
@@ -73,6 +86,8 @@ export function resolveRehearsalWorld(
   const raw = env[key];
   if (!raw) throw new Error(`${key} is not set (pnpm infra:up:rehearsal)`);
   const baseUrl = raw.replace(/\/$/, "");
+  worldUrl(baseUrl);
+  // By endpoint, not full URL: a shared world on the same endpoint under another path is still shared.
   for (const shared of SHARED_URL_KEYS) {
     const other = env[shared];
     if (other && worldEndpoint(other) === worldEndpoint(baseUrl)) {

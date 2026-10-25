@@ -72,6 +72,11 @@ describe("tenant token minter", () => {
     expect(() =>
       tenantTokenDepsFromEnv({ ...env, EXECUTOR_WORKER_SECRET: "planner-secret" }),
     ).toThrow(/must differ/);
+    for (const name of ["PLANNER_WORKER_SECRET", "EXECUTOR_WORKER_SECRET"]) {
+      expect(() => tenantTokenDepsFromEnv({ ...env, [name]: "admin" })).toThrow(
+        `${name} must differ from ERA_ADMIN_TOKEN`,
+      );
+    }
     const app = buildApp();
     const res = await app.inject({ method: "POST", url: "/internal/era/tenant-token" });
     expect(res.statusCode).toBe(404);

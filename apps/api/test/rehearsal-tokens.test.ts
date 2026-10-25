@@ -129,5 +129,22 @@ describe("rehearsal token minter (T1.23)", () => {
         rehearsalTokenDepsFromEnv(active, { ...env, REHEARSAL_WORKER_SECRET: shared }),
       ).toThrow("REHEARSAL_WORKER_SECRET must differ");
     }
+    // An admin token under the worker's allowed name would pass the worker's own startup check.
+    for (const [admin, name] of [
+      ["admin", "ERA_ADMIN_TOKEN"],
+      ["rehearsal-admin", "REHEARSAL_ERA_ADMIN_TOKEN"],
+    ]) {
+      expect(() =>
+        rehearsalTokenDepsFromEnv(active, { ...env, REHEARSAL_WORKER_SECRET: admin }),
+      ).toThrow(`REHEARSAL_WORKER_SECRET must differ from ${name}`);
+    }
+    for (const [secret, name] of [
+      ["planner-secret", "PLANNER_WORKER_SECRET"],
+      ["executor-secret", "EXECUTOR_WORKER_SECRET"],
+    ]) {
+      expect(() =>
+        rehearsalTokenDepsFromEnv(active, { ...env, REHEARSAL_ERA_ADMIN_TOKEN: secret }),
+      ).toThrow(`REHEARSAL_ERA_ADMIN_TOKEN must differ from ${name}`);
+    }
   });
 });

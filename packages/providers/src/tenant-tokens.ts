@@ -6,7 +6,7 @@ import {
   resolveWorld,
   SHARED_URL_KEYS,
   type WorldConfig,
-  worldEndpoint,
+  worldUrl,
 } from "./worlds";
 
 /** A signed tenant token and when it stops working (epoch ms). */
@@ -185,7 +185,7 @@ export function rehearsalWorkerWorlds(
       if (minted.tenant !== config.tenant) {
         throw new Error(`minted for ${minted.tenant}, not ${config.tenant}`);
       }
-      if (worldEndpoint(minted.baseUrl) !== worldEndpoint(config.baseUrl)) {
+      if (worldUrl(minted.baseUrl) !== worldUrl(config.baseUrl)) {
         throw new Error(`minted for ${minted.baseUrl}, but configured for ${config.baseUrl}`);
       }
       return { token: minted.token, expiresAt: minted.expiresAt };
