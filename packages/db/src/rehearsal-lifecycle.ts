@@ -136,6 +136,8 @@ type Row = {
   last_at: Date;
   ended_at: Date | null;
   handed_off: boolean;
+  claimed: boolean;
+  reported: boolean;
 };
 
 /**
@@ -159,7 +161,12 @@ export async function sweepRehearsals(ctx: RehearsalSweepContext): Promise<Rehea
           (array_agg(state order by seq desc))[1] as state,
           (array_agg(at order by seq desc))[1] as last_at,
           min(at) filter (where state in ('completed', 'failed', 'cancelled')) as ended_at,
-          coalesce(bool_or(detail like ${`${HAND_OFF}%`}), false) as handed_off
+          coalesce(bool_or(detail like ${`${HAND_OFF}%`}), false) as handed_off,
+          bool_or(state = 'provisioning') as claimed,
+          exists (
+            select 1 from rehearsal_reports r
+            where r.org_id = rehearsal_events.org_id and r.rehearsal_id = rehearsal_events.rehearsal_id
+          ) as reported
         from rehearsal_events
         where ${ctx.orgIds ? (ctx.orgIds.length > 0 ? sql`org_id in ${[...ctx.orgIds]}` : sql`false`) : sql`true`}
         group by org_id, rehearsal_id
@@ -201,6 +208,15 @@ async function sweepOne(ctx: RehearsalSweepContext, row: Row, out: RehearsalSwee
     out.expired.push(id);
     state = "failed";
     endedAt = now;
+  } else if (
+    row.claimed &&
+    !row.reported &&
+    endedAt &&
+    now.getTime() - endedAt.getTime() < ctx.leaseMs
+  ) {
+    // Cancelled under a live worker: it may still be reading back its last send, and its report
+    // has the steps it ran. Within the lease that report is the worker's to write, not ours.
+    return;
   }
   const ended = state as Ended;
   // A challenged run that stopped leaves its set marked dirty. Catalog v1 sets no container-wide

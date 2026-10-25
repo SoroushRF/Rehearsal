@@ -267,20 +267,28 @@ describe.skipIf(!process.env.DB_TESTS)(
       const r = await requested();
       const world = worldFromManifest(r.manifest.observations);
       let sends = 0;
+      const early = sweeper(r.orgId, world, at(2));
       const w = worker(r.id, world, async () => {
         if (++sends === 1) {
           expect(await cancelRehearsal(db, r.orgId, r.id, { now: at(1) })).toBe("cancelled");
+          // A sweep while that send is still on the wire leaves it to the live worker.
+          expect(await early.run()).toMatchObject({ tornDown: [], retained: [] });
         }
         return "send";
       });
       const result = await runRehearsalJob(r.data, w.ctx);
       expect(result).toMatchObject({ kind: "ran", state: "cancelled" });
+      expect(early.torn).toEqual([]);
       // The send already under way finished and was read back; nothing after it was sent.
       expect(world.effects).toHaveLength(1);
       expect((await attempts(r.orgId, r.id)).map((a) => a.state)).toEqual(["confirmed"]);
       const report = result.kind === "ran" ? result.report : null;
       expect(report?.state).toBe("cancelled");
+      expect(report?.steps.filter((x) => x.result !== null).map((x) => x.result?.outcome)).toEqual([
+        "confirmed",
+      ]);
       expect(report?.steps.filter((x) => x.result === null).length).toBeGreaterThan(0);
+      expect(await rehearsalReportsFor(db, r.orgId, r.planId)).toEqual([report]);
       expect(w.torn).toEqual([r.id]);
       expect((await loadRehearsal(db, r.orgId, r.id))?.tornDown).toBe(true);
       expect(await cancelRehearsal(db, r.orgId, r.id, { now: at(2) })).toBe("ended");
