@@ -8,6 +8,10 @@ import { type ApprovalDeps, registerApprovalRoutes } from "./approvals";
 import { registerAuditRoute } from "./audit";
 import { registerMeRoute } from "./auth";
 import { registerCancelRoute } from "./cancel";
+import {
+  type ExecutionRehearsalDeps,
+  registerExecutionRehearsalRoutes,
+} from "./execution-rehearsals";
 import type { IamClient } from "./iam";
 import { registerMemberRoutes } from "./members";
 import { type PlanDeps, registerPlanRoutes } from "./plans";
@@ -30,6 +34,8 @@ export function buildApp(
     approvals?: ApprovalDeps;
     runs?: RunDeps;
     rehearse?: RehearseDeps;
+    /** T2.19: request and read an execution rehearsal of a stored plan. */
+    executionRehearsals?: ExecutionRehearsalDeps;
     precedents?: PrecedentDeps;
     /** mTLS client for IAM. Without it a person cannot be verified. */
     iam?: IamClient;
@@ -95,6 +101,13 @@ export function buildApp(
   else {
     app.post("/api/incidents/:id/rehearse", unavailable);
     app.get("/api/rehearsals/:id", unavailable);
+  }
+
+  if (deps.executionRehearsals) registerExecutionRehearsalRoutes(app, deps.executionRehearsals);
+  else {
+    app.get("/api/plans/:id/execution-rehearsals", unavailable);
+    app.post("/api/plans/:id/execution-rehearsals", unavailable);
+    app.get("/api/execution-rehearsals/:id/report", unavailable);
   }
 
   // Only an API that holds ERA_ADMIN_TOKEN mints tenant tokens for the workers.
