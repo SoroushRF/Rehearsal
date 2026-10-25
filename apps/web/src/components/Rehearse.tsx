@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { z } from "zod";
-import { type ApiFetch, call, explain } from "../api";
+import { type ApiFetch, call, explain, RefusedError } from "../api";
 import { useTenantKey } from "../identity";
 import { Alert, Button, Card, Icon, Spinner } from "./ui";
 
@@ -44,9 +44,12 @@ const reached = (s: Rehearsal["state"]) => (s === "queued" ? 0 : s === "stored" 
 export function RehearseBar({
   apiFetch,
   onStored,
+  allowed = true,
 }: {
   apiFetch: ApiFetch;
   onStored: (planId: string) => void;
+  /** False when the signed-in person lacks `rehearsal:rehearse:incident`. */
+  allowed?: boolean;
 }) {
   const queryClient = useQueryClient();
   const key = useTenantKey();
@@ -93,6 +96,8 @@ export function RehearseBar({
           variant="primary"
           icon="play"
           loading={running}
+          disabled={!allowed}
+          title={allowed ? undefined : "You don't have permission to rehearse an incident"}
           onClick={() => {
             setRehearsalId(null);
             start.mutate();
@@ -102,7 +107,12 @@ export function RehearseBar({
         </Button>
       </div>
 
-      {start.isError && <Alert className="mt-4">{explain(start.error)}</Alert>}
+      {!allowed && (
+        <p className="mt-3 text-sm text-muted">
+          You don't have permission to rehearse an incident.
+        </p>
+      )}
+      {start.isError && <Alert className="mt-4">{rehearseRefusal(start.error)}</Alert>}
       {status.isError && <Alert className="mt-4">{explain(status.error)}</Alert>}
 
       {r && (
@@ -170,6 +180,19 @@ function Steps({ state }: { state: Rehearsal["state"] }) {
       })}
     </ol>
   );
+}
+
+/** A 403 on starting a rehearsal stays the sentence the review page already shows. */
+function rehearseRefusal(err: unknown): string {
+  if (
+    err instanceof RefusedError &&
+    (err.status === 403 ||
+      err.refusal.error === "forbidden" ||
+      err.refusal.error === "missing_roles")
+  ) {
+    return "Your role can read plans but not ask for a rehearsal.";
+  }
+  return explain(err);
 }
 
 function failure(r: Rehearsal) {

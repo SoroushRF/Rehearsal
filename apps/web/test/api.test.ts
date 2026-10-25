@@ -57,7 +57,15 @@ describe("explain", () => {
       { error: "policy_violation", violations: [{ rule: "R3.finance_threshold", detail: "d" }] },
       "Breaks policy: R3.finance_threshold (d)",
     ],
-    [{ error: "forbidden" }, "Your role can read plans but not ask for a rehearsal."],
+    [{ error: "forbidden" }, "You don't have permission to do that."],
+    [
+      { error: "invalid_role" },
+      "That role can't be assigned. Choose owner, finance lead, support lead, or member.",
+    ],
+    [
+      { error: "last_owner" },
+      "This organization still needs an owner, so that role change was refused.",
+    ],
     [{ error: "incident_not_found" }, "This deployment can't rehearse that incident."],
     [{ error: "not_enqueued" }, "The planner queue didn't accept the request. Try again."],
     [{ error: "something_new" }, "Refused: something_new."],
@@ -67,5 +75,11 @@ describe("explain", () => {
 
   it("doesn't leak a raw error", () => {
     expect(explain(new TypeError("Failed to fetch"))).toBe("Something went wrong. Try again.");
+  });
+
+  it("explains a 403 in plain words", () => {
+    expect(explain(new RefusedError(403, { error: "http_403" }))).toBe(
+      "You don't have permission to do that.",
+    );
   });
 });

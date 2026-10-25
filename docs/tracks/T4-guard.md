@@ -80,6 +80,7 @@ See [beyond.md](../beyond.md) for scope, parallel work, external gates and the r
 
 ## Handoff log
 
+- **2026-10-25 (skhdemo).** T4.24 is implemented on `t4/T4.24-web-permissions` and not pushed. The review UI reads `GET /api/me` (`clerkRole` and `permissions`) and offers approve, apply, cancel, revoke, rehearse, and invite only when the caller holds that permission. An owner can invite or change a role. Approval seats display the permission the API returns.
 - **2026-10-25 (skhdemo).** T4.22 is implemented on `t4/T4.22-executor-admit` and not pushed. Before an operational run sends, admission asks IAM `run:admit` on the stored grants. A missing seat, a revoked or expired grant, one person in both seats, or IAM down refuses the run and dispatches nothing.
 - **2026-10-25 (skhdemo).** T4.23 is implemented on `t4/T4.23-member-routes` and not pushed. Invite and role routes ask IAM, then IAM calls Clerk for the organization it verified from the token. Only a role in the rule file can be assigned, and the last owner cannot be demoted.
 - **2026-10-25 (skhdemo).** T4.21 is implemented on `t4/T4.21-grant-permissions` and not pushed. New grants store the approver's permissions and the rule id and version; dual-approval seats are those permissions. A role-only grant fills no seat.
