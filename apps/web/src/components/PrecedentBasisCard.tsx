@@ -68,6 +68,18 @@ export function PrecedentBasisCard({
                   Found by trace <code className="font-mono">{c.traceId ?? "none recorded"}</code> ·{" "}
                   {c.factIds.length} stored fact{c.factIds.length === 1 ? "" : "s"}
                 </p>
+                {c.factIds.length > 0 && (
+                  <ul
+                    aria-label={`Fact IDs for ${c.id}`}
+                    className="mt-1 flex flex-wrap gap-1 text-xs text-subtle"
+                  >
+                    {c.factIds.map((f) => (
+                      <li key={f}>
+                        <code className="rounded bg-sunken px-1.5 py-0.5 font-mono">{f}</code>
+                      </li>
+                    ))}
+                  </ul>
+                )}
                 {mine.map((h) => (
                   <p key={explainPrecedentHold(h)} className="mt-1 text-sm text-warn">
                     {explainPrecedentHold(h)}
