@@ -110,7 +110,7 @@ describe.skipIf(!ENABLED)("one remedy per obligation on Era", () => {
         const copy = structuredClone(action);
         const c = CASES[action.caseId.slice(-3) as "001" | "002"];
         if (copy.kind === "stripe.refund.create") copy.args.chargeId = c.chargeIds[1];
-        else if (copy.kind !== "slack.message.postSummary") copy.args.ticketId = String(c.ticketId);
+        else if ("ticketId" in copy.args) copy.args.ticketId = String(c.ticketId);
         return copy;
       }),
     };

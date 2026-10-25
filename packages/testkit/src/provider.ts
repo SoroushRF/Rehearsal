@@ -53,6 +53,8 @@ export interface FakeCredit {
   amountMinor: number;
   currency: string;
   chargeId: string | null;
+  /** Set on a credit a plan wrote (its `metadata[rehearsal_op]`); absent on a teammate's. */
+  operationKey?: string;
 }
 
 export interface FakeMessage {
@@ -70,6 +72,19 @@ export type FakeFault =
   /** Fail before handling, like Era's injected 5xx: no effect, and the outcome reads as unknown. */
   | { kind: "server_error" };
 
+/** A credit as Stripe returns its balance transaction. */
+function creditRecord(credit: FakeCredit) {
+  return {
+    id: credit.id,
+    object: "customer_balance_transaction",
+    amount: -credit.amountMinor,
+    currency: credit.currency,
+    customer: credit.customerId,
+    type: "adjustment",
+    metadata: { charge: credit.chargeId ?? "", rehearsal_op: credit.operationKey ?? "" },
+  };
+}
+
 /**
  * In-memory Stripe + Zendesk "operational world" behind one ProviderPort per vendor. Mirrors the
  * Era behaviors we rely on: Stripe idempotency on path + exact body bytes, Zendesk notes appended.
@@ -79,6 +94,8 @@ export class FakeWorld {
   readonly tickets = new Map<string, FakeTicket>();
   readonly refunds: FakeRefund[] = [];
   readonly credits: FakeCredit[] = [];
+  /** A customer's Stripe currency. A credit in another one is refused before it is prepared. */
+  readonly customerCurrencies = new Map<string, string>();
   /** Slack posts, oldest first. */
   readonly messages: FakeMessage[] = [];
   /** Every effect actually applied, in order. Tests assert "exactly one refund" on this. */
@@ -156,7 +173,19 @@ export class FakeWorld {
         },
       }),
       ...(vendor === "stripe" && {
-        idempotentResend: (action: Action) => action.kind === "stripe.refund.create",
+        idempotentResend: (action: Action) =>
+          action.kind === "stripe.refund.create" || action.kind === "stripe.customer.balanceCredit",
+        // Like the real writer: Stripe refuses a credit in a currency other than the customer's.
+        preconditions: async (action: Action): Promise<Preconditions> => {
+          if (action.kind !== "stripe.customer.balanceCredit") return {};
+          const currency = this.customerCurrencies.get(action.args.customerId);
+          if (currency !== undefined && currency !== action.args.amount.currency) {
+            throw new Error(
+              `customer ${action.args.customerId} is in ${currency}, the credit is in ${action.args.amount.currency}`,
+            );
+          }
+          return {};
+        },
       }),
       prepare: (action, bindings, operationKey, pre) =>
         this.#prepare(action, bindings, operationKey, pre ?? {}),
@@ -183,6 +212,22 @@ export class FakeWorld {
         return {
           method: "POST",
           path: "/v1/refunds",
+          encoding: "form",
+          body,
+          headers: { "Idempotency-Key": operationKey },
+        };
+      }
+      case "stripe.customer.balanceCredit": {
+        // The same fixed field order as the real writer.
+        const body = new URLSearchParams([
+          ["amount", String(-action.args.amount.amountMinor)],
+          ["currency", action.args.amount.currency],
+          ["metadata[charge]", action.args.chargeId],
+          ["metadata[rehearsal_op]", operationKey],
+        ]).toString();
+        return {
+          method: "POST",
+          path: `/v1/customers/${encodeURIComponent(action.args.customerId)}/balance_transactions`,
           encoding: "form",
           body,
           headers: { "Idempotency-Key": operationKey },
@@ -309,6 +354,43 @@ export class FakeWorld {
       return { kind: "confirmed", status: 200, body: response };
     }
 
+    const credit = /^\/v1\/customers\/([^/]+)\/balance_transactions$/.exec(req.path);
+    if (credit) {
+      const key = req.headers["Idempotency-Key"];
+      if (!key)
+        return { kind: "rejected", status: 400, body: { error: "missing key" }, retryable: false };
+      const bodySha = fingerprint({ path: req.path, body: req.body });
+      const seen = this.#idempotency.get(key);
+      if (seen) {
+        if (seen.bodySha !== bodySha) {
+          return {
+            kind: "rejected",
+            status: 400,
+            body: { error: "idempotency_error" },
+            retryable: false,
+          };
+        }
+        return { kind: "confirmed", status: 200, body: seen.response };
+      }
+      const form = new URLSearchParams(req.body);
+      const amount = Number(form.get("amount"));
+      const customerId = decodeURIComponent(credit[1] as string);
+      const opKey = form.get("metadata[rehearsal_op]") ?? key;
+      const created: FakeCredit = {
+        id: `cbtxn_${this.credits.length + 1}`,
+        customerId,
+        amountMinor: -amount,
+        currency: form.get("currency") ?? "",
+        chargeId: form.get("metadata[charge]"),
+        operationKey: opKey,
+      };
+      this.credits.push(created);
+      this.effects.push({ operationKey: opKey, path: req.path });
+      const response = creditRecord(created);
+      this.#idempotency.set(key, { bodySha, response });
+      return { kind: "confirmed", status: 200, body: response };
+    }
+
     if (req.path === "/api/chat.postMessage") {
       // Slack doesn't deduplicate: every post is a new message.
       const { channel, text } = JSON.parse(req.body) as { channel: string; text: string };
@@ -365,6 +447,21 @@ export class FakeWorld {
         world: "operational",
         entity,
         projectionVersion: "stripe.balance_credit.v1",
+        projection,
+        fingerprint: fingerprint(projection),
+        capturedAt: new Date().toISOString(),
+      };
+    }
+    if (entity.kind === "customer") {
+      const projection = {
+        id: entity.id,
+        currency: this.customerCurrencies.get(entity.id) ?? null,
+      };
+      return {
+        id: `obs_${entity.kind}_${entity.id}`,
+        world: "operational",
+        entity,
+        projectionVersion: "stripe.customer.v1",
         projection,
         fingerprint: fingerprint(projection),
         capturedAt: new Date().toISOString(),
@@ -436,6 +533,23 @@ export class FakeWorld {
           }
         : { kind: "not_applied" };
     }
+    if (action.kind === "stripe.customer.balanceCredit") {
+      const credit = this.credits.find((c) => c.operationKey === attempt.operationKey);
+      if (!credit) return { kind: "not_applied" };
+      const tx = creditRecord(credit);
+      return {
+        kind: "applied",
+        providerRef: { vendor: "stripe", kind: "customer_balance_transaction", id: tx.id },
+        effect: {
+          "credit.id": tx.id,
+          "credit.amount": tx.amount,
+          "credit.type": tx.type,
+          "credit.charge": tx.metadata.charge,
+          customer: tx.customer,
+          currency: tx.currency,
+        },
+      };
+    }
     if (action.kind === "slack.message.postSummary") {
       // Like the real reader: ours is the bot post with exactly the journaled text.
       const sent = (JSON.parse(attempt.request.body) as { text: string }).text;
@@ -505,6 +619,9 @@ export function worldFromManifest(observations: readonly Observation[]): FakeWor
     const p = o.projection as Record<string, unknown>;
     if (o.entity.kind === "charge")
       world.charges.set(o.entity.id, { ...(p as unknown as FakeCharge) });
+    if (o.entity.kind === "customer" && typeof p.currency === "string") {
+      world.customerCurrencies.set(o.entity.id, p.currency);
+    }
     if (o.entity.kind === "ticket") {
       world.tickets.set(o.entity.id, {
         ...(p as unknown as Omit<FakeTicket, "comments">),

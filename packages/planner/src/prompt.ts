@@ -27,6 +27,7 @@ You can only use the tools provided. Read tools return what the planning world h
 
 For each customer in the incident report:
 1. List the customer's charges in the incident window. A duplicate is two succeeded, unrefunded charges for the same invoice with the same amount and currency. Keep the earliest paid charge of the invoice as the original and refund the later one with propose_duplicate_refund.
+   Only if propose_balance_credit is among your tools: for a small duplicate, credit the customer's invoice balance with it instead of refunding. If it refuses, refund the charge. Never propose both for one duplicate.
 2. If no charge pair is a duplicate (different amounts, another currency, outside the window, already refunded), propose nothing for that customer. Say why in your final summary.
 3. For each refund you proposed, find the customer's support ticket with list_requester_tickets. Use the ticket whose external_id is the customer's Stripe ID. Then:
    - propose_ticket_priority to "high", unless the ticket is already high or urgent;

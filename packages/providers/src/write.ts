@@ -190,11 +190,22 @@ async function findMarkedComment(
  * find the refund.
  */
 export function stripeWriter(target: WriteTarget): ProviderWriter {
+  const credits = stripeCreditWriter(target);
   return {
     vendor: "stripe",
-    // Same key + same bytes either creates the refund once or replays the original response.
-    idempotentResend: (action: Action) => action.kind === "stripe.refund.create",
+    // Same key + same bytes either creates the refund (or credit) once or replays the response.
+    idempotentResend: (action: Action) =>
+      action.kind === "stripe.refund.create" || action.kind === "stripe.customer.balanceCredit",
+    // A credit checks the customer's currency first; Era takes any, Stripe doesn't.
+    async preconditions(action: Action, ctx: WorldContext): Promise<Preconditions> {
+      return action.kind === "stripe.customer.balanceCredit"
+        ? credits.preconditions(action, ctx)
+        : {};
+    },
     prepare(action: Action, _bindings: ResolvedBindings, operationKey: string): PreparedRequest {
+      if (action.kind === "stripe.customer.balanceCredit") {
+        return credits.prepare(action, operationKey);
+      }
       if (action.kind !== "stripe.refund.create") throw new Error(`stripe can't ${action.kind}`);
       const body = new URLSearchParams([
         ["charge", action.args.chargeId],
@@ -222,6 +233,9 @@ export function stripeWriter(target: WriteTarget): ProviderWriter {
     /** Find the refund by the operation key stored in its metadata, among all refunds of the charge. */
     async reconcile(attempt: Attempt, action: Action, ctx: WorldContext): Promise<ReconcileResult> {
       assertTarget(target, ctx);
+      if (action.kind === "stripe.customer.balanceCredit") {
+        return credits.reconcile(attempt, action, ctx);
+      }
       if (action.kind !== "stripe.refund.create") throw new Error(`stripe can't ${action.kind}`);
       let path = `/v1/refunds?charge=${encodeURIComponent(action.args.chargeId)}&limit=100`;
       const seen = new Set<string>();
@@ -360,7 +374,11 @@ export function zendeskWriter(target: WriteTarget): ProviderWriter {
     },
     async reconcile(attempt: Attempt, action: Action, ctx: WorldContext): Promise<ReconcileResult> {
       assertTarget(target, ctx);
-      if (action.kind === "stripe.refund.create" || action.kind === "slack.message.postSummary") {
+      if (
+        action.kind === "stripe.refund.create" ||
+        action.kind === "stripe.customer.balanceCredit" ||
+        action.kind === "slack.message.postSummary"
+      ) {
         throw new Error(`zendesk can't ${action.kind}`);
       }
       if (action.kind === "zendesk.ticket.appendPublicReply") {
@@ -487,7 +505,7 @@ const BalanceTransactionPage = z.object({
   has_more: z.boolean(),
 });
 
-/** The write side of `stripe.customer.balanceCredit` (T3.12); `executeRun` takes it once T1.14 adds the op. */
+/** The write side of `stripe.customer.balanceCredit` (T3.12). `stripeWriter` routes credits here. */
 export interface StripeCreditWriter {
   vendor: "stripe";
   idempotentResend(action: CreditAction): boolean;

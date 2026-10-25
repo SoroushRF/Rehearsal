@@ -68,8 +68,7 @@ describe.skipIf(!ENABLED)("Era write adapters through the executor", () => {
         .map((a) => {
           const copy = structuredClone(a);
           if (copy.kind === "stripe.refund.create") copy.args.chargeId = CHARGE_ID;
-          else if (copy.kind !== "slack.message.postSummary")
-            copy.args.ticketId = String(SEED.ticketId);
+          else if ("ticketId" in copy.args) copy.args.ticketId = String(SEED.ticketId);
           if (copy.kind === "zendesk.ticket.patchFields") {
             copy.args.before = { priority: ticket.priority as "low" };
           }
