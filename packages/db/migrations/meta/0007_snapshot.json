@@ -141,12 +141,7 @@
       "compositePrimaryKeys": {
         "object_bindings_org_id_plan_hash_step_id_path_pk": {
           "name": "object_bindings_org_id_plan_hash_step_id_path_pk",
-          "columns": [
-            "org_id",
-            "plan_hash",
-            "step_id",
-            "path"
-          ]
+          "columns": ["org_id", "plan_hash", "step_id", "path"]
         }
       },
       "uniqueConstraints": {},
@@ -217,11 +212,7 @@
       "compositePrimaryKeys": {
         "plan_versions_org_id_plan_id_revision_pk": {
           "name": "plan_versions_org_id_plan_id_revision_pk",
-          "columns": [
-            "org_id",
-            "plan_id",
-            "revision"
-          ]
+          "columns": ["org_id", "plan_id", "revision"]
         }
       },
       "uniqueConstraints": {},
@@ -555,12 +546,7 @@
       "compositePrimaryKeys": {
         "rehearsal_bindings_org_id_rehearsal_id_step_id_path_pk": {
           "name": "rehearsal_bindings_org_id_rehearsal_id_step_id_path_pk",
-          "columns": [
-            "org_id",
-            "rehearsal_id",
-            "step_id",
-            "path"
-          ]
+          "columns": ["org_id", "rehearsal_id", "step_id", "path"]
         }
       },
       "uniqueConstraints": {},
