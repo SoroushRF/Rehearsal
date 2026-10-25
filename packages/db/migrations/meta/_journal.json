@@ -50,6 +50,13 @@
       "when": 1792901041435,
       "tag": "0006_rehearsals",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792910331916,
+      "tag": "0007_grant_permissions",
+      "breakpoints": true
     }
   ]
 }

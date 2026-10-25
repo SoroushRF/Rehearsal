@@ -1,4 +1,5 @@
-import { PlanManifest } from "@rehearsal/contracts";
+import { permissionsFor } from "@rehearsal/authz";
+import { AuthzRuleFile, PlanManifest } from "@rehearsal/contracts";
 import type { BillingPolicy, BillingPolicyV1 } from "@rehearsal/core";
 import {
   approvePrecedent,
@@ -13,6 +14,7 @@ import {
 import { billingManifest } from "@rehearsal/testkit";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import authzJson from "../../../scenarios/authz/rehearsal-authz.v1.json" with { type: "json" };
 import policyJson from "../../../scenarios/billing/policy.v1.json" with { type: "json" };
 import policyV3Json from "../../../scenarios/billing/policy.v3.json" with { type: "json" };
 import { buildApp } from "../src/app";
@@ -21,6 +23,10 @@ import { bearer, type Caller, fakeIam, finance, owner, support } from "./fake-ia
 
 const POLICY = policyJson as BillingPolicyV1;
 const POLICY_V3 = policyV3Json as BillingPolicy;
+const AUTHZ = AuthzRuleFile.parse(authzJson);
+const FINANCE_PERMISSIONS = permissionsFor(AUTHZ, "org:finance_lead");
+const SUPPORT_SEAT = "rehearsal:approve:support_step";
+const FINANCE_SEAT = "rehearsal:approve:finance_step";
 const NOW = new Date("2026-10-22T12:00:00.000Z");
 const TTL = 60 * 60 * 1000;
 const HASH = "a".repeat(64);
@@ -69,6 +75,10 @@ describe("approval routes before touching the database", () => {
     [
       "action bodies alongside a valid revision and hash",
       { revision: 1, planHash: HASH, actions: [] },
+    ],
+    [
+      "permissions alongside a valid revision and hash",
+      { revision: 1, planHash: HASH, permissions: [FINANCE_SEAT] },
     ],
   ])("refuses a body with %s", async (_label, body) => {
     const person = finance("org_1");
@@ -145,10 +155,16 @@ describe.skipIf(!process.env.DB_TESTS)("approval routes (real Postgres)", () => 
       actorUserId: "user_fin",
       actorSessionId: "sess_user_fin",
       roles: ["finance_lead", "support_lead"],
+      permissions: FINANCE_PERMISSIONS,
+      authzRule: { id: "rehearsal-authz", version: 1 },
       grantedAt: NOW.toISOString(),
       expiresAt: new Date(NOW.getTime() + TTL).toISOString(),
       revokedAt: null,
     });
+    const [row] = await grantsFor(planId);
+    expect(row?.permissions).toEqual(FINANCE_PERMISSIONS);
+    expect(row?.authzRule).toEqual({ id: "rehearsal-authz", version: 1 });
+    expect(row?.roles).toEqual(["finance_lead", "support_lead"]);
 
     const again = await approve(finance(orgId), planId, { revision: 1, planHash: hash });
     expect(again.statusCode).toBe(200);
@@ -198,7 +214,20 @@ describe.skipIf(!process.env.DB_TESTS)("approval routes (real Postgres)", () => 
 
   it("does not queue an apply from a grant that only has roles", async () => {
     const { orgId, planId, hash } = await seed();
-    await approve(finance(orgId), planId, { revision: 1, planHash: hash });
+    // An old row: roles, and neither permissions nor a rule. Granted before now, so the
+    // refusal is the missing permissions, not the clock.
+    await db.insert(schema.approvalGrants).values({
+      id: `grant_${crypto.randomUUID()}`,
+      orgId,
+      planId,
+      revision: 1,
+      planHash: hash,
+      actorUserId: "user_fin",
+      actorSessionId: "sess_user_fin",
+      roles: ["finance_lead", "support_lead"],
+      grantedAt: new Date(NOW.getTime() - 60_000),
+      expiresAt: new Date(NOW.getTime() + TTL),
+    });
     const person = finance(orgId);
     const res = await send(
       deps(person),
@@ -386,7 +415,7 @@ describe.skipIf(!process.env.DB_TESTS)("two distinct approvers (real Postgres)",
 
   const both = (orgId: string) => owner(orgId, "user_boss");
   const financeOnly = (orgId: string) => finance(orgId);
-  const deps = (me: Caller | null) => ({
+  const deps = (me: Caller | null, applyAt = NOW) => ({
     approvals: {
       db,
       iam: fakeIam(me ? [me] : [], { now: () => NOW }),
@@ -397,8 +426,8 @@ describe.skipIf(!process.env.DB_TESTS)("two distinct approvers (real Postgres)",
     apply: {
       db,
       boss,
-      iam: fakeIam(me ? [me] : [], { now: () => NOW }),
-      now: () => NOW,
+      iam: fakeIam(me ? [me] : [], { now: () => applyAt }),
+      now: () => applyAt,
       policies: [POLICY, POLICY_V3],
     },
   });
@@ -424,7 +453,7 @@ describe.skipIf(!process.env.DB_TESTS)("two distinct approvers (real Postgres)",
     expect(res.json().approval).toMatchObject({
       dualRequired: true,
       satisfied: false,
-      needed: ["finance_lead"],
+      needed: [FINANCE_SEAT],
     });
   });
 
@@ -438,15 +467,82 @@ describe.skipIf(!process.env.DB_TESTS)("two distinct approvers (real Postgres)",
     expect(res.json()).toEqual({ error: "forbidden" });
   });
 
-  it("does not queue apply when both seats are signed but the grants have no permissions", async () => {
+  it("fills both permission seats from two people, and a role-only grant fills none", async () => {
     const { orgId, planId, hash } = await seed();
     await approve(financeOnly(orgId), planId, hash);
     const second = await approve(support(orgId), planId, hash);
-    expect(second.json().approval).toMatchObject({ satisfied: true, needed: [] });
-    const res = await apply(financeOnly(orgId), planId, hash);
-    expect(res.statusCode).toBe(403);
-    expect(res.json()).toEqual({ error: "forbidden" });
-    const rows = await db.select().from(schema.runs).where(eq(schema.runs.planId, planId));
+    expect(second.json().approval).toMatchObject({
+      satisfied: true,
+      needed: [],
+      signed: [
+        { permission: SUPPORT_SEAT, actorUserId: "user_sup" },
+        { permission: FINANCE_SEAT, actorUserId: "user_fin" },
+      ],
+    });
+    const later = new Date(NOW.getTime() + 1);
+    const res = await send(
+      deps(financeOnly(orgId), later),
+      "POST",
+      `/api/plans/${planId}/apply`,
+      { revision: 1, planHash: hash },
+      financeOnly(orgId),
+    );
+    expect(res.statusCode).toBe(202);
+
+    const old = await seed();
+    const grantedAt = new Date(NOW.getTime() - 60_000);
+    await db.insert(schema.approvalGrants).values([
+      {
+        id: `grant_${crypto.randomUUID()}`,
+        orgId: old.orgId,
+        planId: old.planId,
+        revision: 1,
+        planHash: old.hash,
+        actorUserId: "user_fin",
+        actorSessionId: "sess_user_fin",
+        roles: ["finance_lead", "support_lead"],
+        grantedAt,
+        expiresAt: new Date(NOW.getTime() + TTL),
+      },
+      {
+        id: `grant_${crypto.randomUUID()}`,
+        orgId: old.orgId,
+        planId: old.planId,
+        revision: 1,
+        planHash: old.hash,
+        actorUserId: "user_sup",
+        actorSessionId: "sess_user_sup",
+        roles: ["support_lead"],
+        grantedAt,
+        expiresAt: new Date(NOW.getTime() + TTL),
+      },
+    ]);
+    const listed = await send(
+      deps(support(old.orgId)),
+      "GET",
+      `/api/plans/${old.planId}/approvals`,
+      undefined,
+      support(old.orgId),
+    );
+    expect(listed.json().approval).toMatchObject({
+      dualRequired: true,
+      satisfied: false,
+      signed: [],
+      needed: [SUPPORT_SEAT, FINANCE_SEAT],
+    });
+    expect(
+      listed.json().grants.every((g: { permissions?: unknown }) => g.permissions == null),
+    ).toBe(true);
+    const refused = await send(
+      deps(financeOnly(old.orgId), later),
+      "POST",
+      `/api/plans/${old.planId}/apply`,
+      { revision: 1, planHash: old.hash },
+      financeOnly(old.orgId),
+    );
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json()).toEqual({ error: "forbidden" });
+    const rows = await db.select().from(schema.runs).where(eq(schema.runs.planId, old.planId));
     expect(rows).toEqual([]);
   });
 
@@ -460,8 +556,8 @@ describe.skipIf(!process.env.DB_TESTS)("two distinct approvers (real Postgres)",
     expect(approval).toMatchObject({
       dualRequired: true,
       satisfied: false,
-      signed: [{ role: "finance_lead", actorUserId: "user_fin" }],
-      needed: ["support_lead"],
+      signed: [{ permission: FINANCE_SEAT, actorUserId: "user_fin" }],
+      needed: [SUPPORT_SEAT],
     });
   });
 

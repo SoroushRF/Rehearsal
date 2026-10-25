@@ -48,6 +48,8 @@ describe("buildAudit: an old run keeps the rules it was approved under (T2.14)",
     expiresAt: new Date(AT.getTime() + 3_600_000),
     revokedAt: null,
     policies: [{ id: POLICY.id, version: POLICY.version, contents: POLICY }],
+    permissions: null,
+    authzRule: null,
     ...over,
   });
   const run = {
