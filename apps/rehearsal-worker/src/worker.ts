@@ -53,6 +53,24 @@ export function rehearsalWorkerConfigViolations(env: NodeJS.ProcessEnv = process
   return problems;
 }
 
+/**
+ * The sweeper's timings. Defaults: sweep every minute, a lease of 15 minutes, hand-off after an
+ * hour. `REHEARSAL_SWEEP_EVERY_MS`, `REHEARSAL_LEASE_MS` and `REHEARSAL_HAND_OFF_AFTER_MS` override
+ * them; a value that isn't a positive whole number of milliseconds is ignored.
+ */
+export function sweepTimings(env: NodeJS.ProcessEnv) {
+  const ms = (key: string, fallback: number) => {
+    const raw = env[key];
+    const n = raw === undefined ? Number.NaN : Number(raw);
+    return Number.isSafeInteger(n) && n > 0 ? n : fallback;
+  };
+  return {
+    SWEEP_EVERY_MS: ms("REHEARSAL_SWEEP_EVERY_MS", 60_000),
+    LEASE_MS: ms("REHEARSAL_LEASE_MS", 15 * 60_000),
+    HAND_OFF_AFTER_MS: ms("REHEARSAL_HAND_OFF_AFTER_MS", 60 * 60_000),
+  };
+}
+
 export const workerVersions = (env: NodeJS.ProcessEnv): RehearsalVersions => ({
   commit: /^[0-9a-f]{7,40}$/.test(env.GIT_COMMIT ?? "") ? (env.GIT_COMMIT as string) : "0000000",
   engine: "executor@1",

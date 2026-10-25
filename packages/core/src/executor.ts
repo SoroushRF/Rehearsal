@@ -610,31 +610,9 @@ async function admit(
       return { ok: false, detail: `policy ${violations[0]?.rule}: ${violations[0]?.detail}` };
     }
   }
-  // A precedent the plan rested on may have been replaced or withdrawn since it was approved. The
-  // registry decides, never recall, so an Agent Memory outage can't block a plan or let one through.
-  if (manifest.precedentBasis) {
-    if (!deps.precedents) {
-      return { ok: false, detail: "plan cites precedents and no precedent registry is configured" };
-    }
-    let verdict: ReturnType<typeof checkPrecedentBasis>;
-    try {
-      verdict = checkPrecedentBasis(
-        manifest.precedentBasis,
-        await deps.precedents.snapshot(manifest.orgId),
-      );
-    } catch (err) {
-      // Can't read the registry: not "nothing changed".
-      return { ok: false, detail: `precedent registry unavailable: ${(err as Error).message}` };
-    }
-    if (!verdict.ok) {
-      const first = verdict.holds[0];
-      const more = verdict.holds.length > 1 ? ` (+${verdict.holds.length - 1} more)` : "";
-      return {
-        ok: false,
-        detail: `precedent changed since approval: ${first ? describePrecedentHold(first) : ""}${more}`,
-      };
-    }
-  }
+  // A precedent the plan rested on may have been replaced or withdrawn since it was approved.
+  const precedent = await precedentRefusal(manifest, deps, "approval");
+  if (precedent) return { ok: false, detail: precedent };
   return { ok: true, manifest, grant };
 }
 
@@ -706,6 +684,33 @@ export async function executeRun(job: ApplyJobInput, deps: ExecutorDeps): Promis
 }
 
 /**
+ * Why a plan's precedents no longer hold, or null. The registry decides, never recall, so an
+ * Agent Memory outage can't block a plan or let one through. Shared by both admissions.
+ */
+async function precedentRefusal(
+  manifest: PlanManifest,
+  deps: Pick<ExecutorDeps, "precedents">,
+  since: "approval" | "planning",
+): Promise<string | null> {
+  if (!manifest.precedentBasis) return null;
+  if (!deps.precedents) return "plan cites precedents and no precedent registry is configured";
+  let verdict: ReturnType<typeof checkPrecedentBasis>;
+  try {
+    verdict = checkPrecedentBasis(
+      manifest.precedentBasis,
+      await deps.precedents.snapshot(manifest.orgId),
+    );
+  } catch (err) {
+    // Can't read the registry: not "nothing changed".
+    return `precedent registry unavailable: ${(err as Error).message}`;
+  }
+  if (verdict.ok) return null;
+  const first = verdict.holds[0];
+  const more = verdict.holds.length > 1 ? ` (+${verdict.holds.length - 1} more)` : "";
+  return `precedent changed since ${since}: ${first ? describePrecedentHold(first) : ""}${more}`;
+}
+
+/**
  * The plan hash a rehearsal's journal rows (attempts, receipts, bindings) are filed under. Never a
  * real plan hash, so no operational lookup by hash can see them; the rehearsal journal maps it back
  * to the real hash for step results and reports.
@@ -750,6 +755,7 @@ export type RehearsalExecutorDeps = Omit<ExecutorDeps, "store"> & { plans: Rehea
 export async function admitRehearsal(
   job: RehearsalRunInput,
   deps: RehearsalExecutorDeps,
+  readOnly = false,
 ): Promise<{ ok: true; manifest: PlanManifest } | { ok: false; detail: string }> {
   const tenant = rehearsalTenant(job.rehearsalId);
   const worlds = Object.entries(deps.worlds);
@@ -784,6 +790,12 @@ export async function admitRehearsal(
     if (violations.length > 0) {
       return { ok: false, detail: `policy ${violations[0]?.rule}: ${violations[0]?.detail}` };
     }
+  }
+  // As operational admission: a plan whose precedents changed is not rehearsed, so the report
+  // can't vouch for a basis that no longer holds. A read-only pass still reads back what it sent.
+  if (!readOnly) {
+    const precedent = await precedentRefusal(manifest, deps, "planning");
+    if (precedent) return { ok: false, detail: precedent };
   }
   return { ok: true, manifest };
 }
@@ -823,7 +835,7 @@ export async function reconcileRehearsal(
   deps: RehearsalExecutorDeps,
 ): Promise<RunOutcome> {
   const { apply, mechanics, authority } = rehearsalMechanics(job, deps);
-  const admission = await admitRehearsal(job, deps);
+  const admission = await admitRehearsal(job, deps, true);
   if (!admission.ok) {
     await deps.journal.appendEvent(job.rehearsalId, "run.refused", { detail: admission.detail });
     return { state: "failed", receipts: [], refusal: admission.detail, error: null };

@@ -16,6 +16,7 @@ import {
   rehearsalStaleness,
 } from "@rehearsal/core";
 import {
+  cancelRehearsal,
   type Db,
   listRehearsalsForPlan,
   loadRehearsal,
@@ -237,6 +238,42 @@ export function registerExecutionRehearsalRoutes(
             .send({ rehearsal: summarize(stored), existing: result.existing });
         }
       }
+    },
+  );
+
+  // Cancel one that hasn't ended. A queued one is never claimed; a running one sends nothing new
+  // and reads back what it already sent, so its report says partial (decision 0013, §5). Final.
+  app.post<{ Params: { id: string } }>(
+    "/api/execution-rehearsals/:id/cancel",
+    async (req, reply) => {
+      const token = bearerToken(req);
+      if (!token) return reply.code(401).send({ error: "unauthenticated" });
+      const orgId = await rehearsalOrgOf(deps.db, req.params.id);
+      if (!orgId) {
+        const person = await requirePerson(deps.iam, token);
+        if (!person.ok) return refuse(reply, person, "rehearsal_not_found");
+        return reply.code(404).send({ error: "rehearsal_not_found" });
+      }
+      const gate = await authorize(deps.iam, token, "POST /api/execution-rehearsals/:id/cancel", {
+        orgId,
+      });
+      if (!gate.ok) return refuse(reply, gate, "rehearsal_not_found");
+      const result = await cancelRehearsal(deps.db, orgId, req.params.id, {
+        now: now(),
+        detail: "Anything it had already sent was read back, not re-sent.",
+      });
+      req.log.info(
+        { rehearsalId: req.params.id, userId: gate.person.userId },
+        "rehearsal cancelled",
+      );
+      const stored = await loadRehearsal(deps.db, orgId, req.params.id);
+      if (result === "not_found" || !stored) {
+        return reply.code(404).send({ error: "rehearsal_not_found" });
+      }
+      if (result === "ended") {
+        return reply.code(409).send({ error: "rehearsal_ended", rehearsal: summarize(stored) });
+      }
+      return { rehearsal: summarize(stored) };
     },
   );
 

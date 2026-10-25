@@ -352,6 +352,39 @@ describe.skipIf(!process.env.DB_TESTS)("execution rehearsal routes (real Postgre
     expect(await count(s)).toBe(1);
   });
 
+  describe("cancel", () => {
+    const cancel = (id: string, person: Caller) =>
+      send(deps([person]), "POST", `/api/execution-rehearsals/${id}/cancel`, { person });
+
+    it("cancels one that hasn't ended, once; a second cancel says it already ended", async () => {
+      const s = await seed();
+      const id = (await start(s, s.user)).json().rehearsal.rehearsalId as string;
+      const res = await cancel(id, s.user);
+      expect(res.statusCode).toBe(200);
+      expect(res.json().rehearsal).toMatchObject({ rehearsalId: id, state: "cancelled" });
+      expect(res.json().rehearsal.detail).toMatch(/read back, not re-sent/);
+      const again = await cancel(id, s.user);
+      expect(again.statusCode).toBe(409);
+      expect(again.json()).toMatchObject({ error: "rehearsal_ended" });
+      // Cancelled is final: an identical request is a new rehearsal, never the cancelled one.
+      const retried = await start(s, s.user);
+      expect(retried.statusCode).toBe(201);
+      expect(retried.json().rehearsal.rehearsalId).not.toBe(id);
+    });
+
+    it("refuses a read-only member, and shows another org the same 404 as a missing one", async () => {
+      const s = await seed();
+      const id = (await start(s, s.user)).json().rehearsal.rehearsalId as string;
+      expect((await cancel(id, s.reader)).statusCode).toBe(403);
+      const outsider = support("org_someone_else");
+      const foreign = await cancel(id, outsider);
+      const missing = await cancel("doesnotexist1", outsider);
+      expect(foreign.statusCode).toBe(404);
+      expect(foreign.json()).toEqual(missing.json());
+      expect((await loadRehearsal(db, s.orgId, id))?.state).toBe("queued");
+    });
+  });
+
   it("never creates an approval or a run", async () => {
     const s = await seed();
     await start(s, s.user);

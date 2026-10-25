@@ -5,6 +5,8 @@ import { type ApiFetch, call, explain } from "../api";
 import {
   activeFor,
   type CurrentPlan,
+  cancelRehearsalPath,
+  ExecutionRehearsalCancelled,
   ExecutionRehearsalList,
   ExecutionRehearsalStarted,
   type ExecutionRehearsalSummary,
@@ -83,6 +85,14 @@ export function ExecutionRehearsalPanel({
       }
       queryClient.invalidateQueries({ queryKey: listKey });
     },
+  });
+
+  const cancel = useMutation({
+    mutationFn: (rehearsalId: string) =>
+      call(apiFetch, ExecutionRehearsalCancelled, cancelRehearsalPath(rehearsalId), {}),
+    onMutate: () => setNote(null),
+    // Already ended is not an error worth showing: the list says how it ended.
+    onSettled: () => queryClient.invalidateQueries({ queryKey: listKey }),
   });
 
   if (list.isPending) {
@@ -186,6 +196,8 @@ export function ExecutionRehearsalPanel({
               current={plan}
               onRetry={() => start.mutate(r.scenario.id)}
               retrying={start.isPending}
+              onCancel={() => cancel.mutate(r.rehearsalId)}
+              cancelling={cancel.isPending && cancel.variables === r.rehearsalId}
               report={
                 isTerminal(r.state) ? (
                   <RehearsalReportToggle
@@ -238,12 +250,16 @@ function RehearsalRow({
   current,
   onRetry,
   retrying,
+  onCancel,
+  cancelling,
   report,
 }: {
   r: ExecutionRehearsalSummary;
   current: CurrentPlan;
   onRetry: () => void;
   retrying: boolean;
+  onCancel: () => void;
+  cancelling: boolean;
   report?: React.ReactNode;
 }) {
   const relation = relationTo(r, current);
@@ -280,6 +296,19 @@ function RehearsalRow({
       </div>
 
       {!isTerminal(r.state) && <Stages state={r.state} />}
+      {!isTerminal(r.state) && (
+        <Button
+          size="sm"
+          variant="ghost"
+          icon="x"
+          className="mt-2"
+          loading={cancelling}
+          onClick={onCancel}
+          data-testid="exec-rehearsal-cancel"
+        >
+          Cancel rehearsal
+        </Button>
+      )}
       <p data-testid="exec-rehearsal-say" className="mt-2 text-sm text-ink">
         {copy.say}
         {r.detail && (r.state === "failed" || r.state === "cancelled") ? ` ${r.detail}` : ""}

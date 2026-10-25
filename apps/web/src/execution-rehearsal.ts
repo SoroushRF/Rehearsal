@@ -21,6 +21,10 @@ import { RefusedError } from "./api";
 export const executionRehearsalsPath = (planId: string) =>
   `/api/plans/${encodeURIComponent(planId)}/execution-rehearsals`;
 
+/** Cancel one that hasn't ended. It sends nothing new and reads back what it already sent. */
+export const cancelRehearsalPath = (rehearsalId: string) =>
+  `/api/execution-rehearsals/${encodeURIComponent(rehearsalId)}/cancel`;
+
 /** One rehearsal as the list shows it. Detail says why it failed or was cancelled. */
 export const ExecutionRehearsalSummary = z.object({
   rehearsalId: ExecutionRehearsalId,
@@ -44,6 +48,8 @@ export const ExecutionRehearsalStarted = z.object({
   existing: z.boolean(),
 });
 export type ExecutionRehearsalStarted = z.infer<typeof ExecutionRehearsalStarted>;
+
+export const ExecutionRehearsalCancelled = z.object({ rehearsal: ExecutionRehearsalSummary });
 
 export type ScenarioInfo = { id: RehearsalScenarioId; title: string; what: string };
 

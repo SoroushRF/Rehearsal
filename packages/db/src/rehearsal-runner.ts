@@ -42,6 +42,7 @@ import {
 import { and, eq } from "drizzle-orm";
 import type { Db } from "./index";
 import { isLegalTransition } from "./journal";
+import { loadRegistry } from "./precedents";
 import {
   clearContainerSetDirty,
   DEFAULT_CONTAINER_SET,
@@ -766,6 +767,8 @@ export async function runRehearsalJob(
         worlds: ctx.worlds,
         clock: ctx.clock,
         policies: ctx.policies,
+        // Postgres, as the executor's: a withdrawn or replaced precedent refuses the rehearsal.
+        precedents: { snapshot: async (o) => (await loadRegistry(ctx.db, o)).snapshot },
         newId: ctx.newId,
         guard: ctx.guard,
         compensate,

@@ -101,6 +101,18 @@ function fakeApi(
       steps.set(created.rehearsalId, 0);
       return json(route, 201, { rehearsal: created, existing: false });
     }
+    const cancel = /^\/api\/execution-rehearsals\/([^/]+)\/cancel$/.exec(path);
+    if (cancel && req.method() === "POST") {
+      const r = mine.find((x) => x.rehearsalId === cancel[1]);
+      if (!r) return json(route, 404, { error: "rehearsal_not_found" });
+      if (["completed", "failed", "cancelled"].includes(r.state)) {
+        return json(route, 409, { error: "rehearsal_ended", rehearsal: r });
+      }
+      steps.delete(r.rehearsalId);
+      r.state = "cancelled";
+      r.detail = "Anything it had already sent was read back, not re-sent.";
+      return json(route, 200, { rehearsal: r });
+    }
     return json(route, 404, { error: "not_found" });
   }
   return { handle, requests };
@@ -136,6 +148,29 @@ test("a reviewer starts one rehearsal, follows it to the end, and nothing is app
     scenario: { id: "phantom_membership", version: 1 },
   });
   // Requesting a rehearsal grants nothing and applies nothing.
+  expect(api.requests.some((r) => /approvals|apply/.test(r.path) && r.method === "POST")).toBe(
+    false,
+  );
+});
+
+test("a running rehearsal can be cancelled; it stops, says so, and can be tried again", async ({
+  page,
+}) => {
+  const api = fakeApi({ walk: ["queued", "running"] });
+  await page.route("**/api/**", api.handle);
+  await page.goto("/e2e/live.html");
+
+  await page.getByRole("button", { name: "Rehearse revision 1" }).click();
+  const item = page.getByTestId("exec-rehearsal");
+  await expect(item).toHaveAttribute("data-state", "running", { timeout: 15_000 });
+  await item.getByRole("button", { name: "Cancel rehearsal" }).click();
+  await expect(item).toHaveAttribute("data-state", "cancelled", { timeout: 15_000 });
+  await expect(page.getByTestId("exec-rehearsal-say")).toContainText("read back, not re-sent");
+  await expect(item.getByRole("button", { name: "Cancel rehearsal" })).toHaveCount(0);
+  await expect(item.getByRole("button", { name: /Try again/ })).toBeVisible();
+
+  const cancels = posts(api).filter((r) => r.path.endsWith("/cancel"));
+  expect(cancels.map((r) => r.path)).toEqual(["/api/execution-rehearsals/rh00000001/cancel"]);
   expect(api.requests.some((r) => /approvals|apply/.test(r.path) && r.method === "POST")).toBe(
     false,
   );
