@@ -6,8 +6,9 @@ import Fastify, { type FastifyReply } from "fastify";
 import { type ApplyDeps, registerApplyRoute } from "./apply";
 import { type ApprovalDeps, registerApprovalRoutes } from "./approvals";
 import { registerAuditRoute } from "./audit";
-import { type ReviewerResolver, registerMeRoute } from "./auth";
+import { registerMeRoute } from "./auth";
 import { registerCancelRoute } from "./cancel";
+import type { IamClient } from "./iam";
 import { type PlanDeps, registerPlanRoutes } from "./plans";
 import { type PrecedentDeps, registerPrecedentRoutes } from "./precedents";
 import { type RehearsalTokenDeps, registerRehearsalTokenRoute } from "./rehearsal-tokens";
@@ -29,8 +30,8 @@ export function buildApp(
     runs?: RunDeps;
     rehearse?: RehearseDeps;
     precedents?: PrecedentDeps;
-    /** Clerk-backed in production; without it nobody is signed in. */
-    reviewer?: ReviewerResolver;
+    /** mTLS client for IAM. Without it a person cannot be verified. */
+    iam?: IamClient;
     tenantTokens?: TenantTokenDeps;
     /** T1.23: the rehearsal worker's minter, once rehearsals are provisioned here (T3.13). */
     rehearsalTokens?: RehearsalTokenDeps;
@@ -47,7 +48,7 @@ export function buildApp(
       contractsVersion: CONTRACTS_VERSION,
     }),
   );
-  registerMeRoute(app, deps.reviewer ?? (() => null));
+  registerMeRoute(app, deps.iam);
 
   // Command routes need Postgres; health stays available without it (core mode with no DB).
   // Without it they say "unavailable", not 404, so clients don't mistake an outage for a missing plan.

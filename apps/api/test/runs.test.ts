@@ -1,12 +1,12 @@
 import { createDb, type Db, migrateDb, schema } from "@rehearsal/db";
 import { beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app";
-import type { AuthContext } from "../src/apply";
+import { bearer, type Caller, fakeIam, member } from "./fake-iam";
 
-async function get(deps: Parameters<typeof buildApp>[0], url: string) {
+async function get(deps: Parameters<typeof buildApp>[0], url: string, person?: Caller | null) {
   const app = buildApp({ webRoot: null, ...deps });
   try {
-    return await app.inject({ method: "GET", url });
+    return await app.inject({ method: "GET", url, headers: person ? bearer(person) : {} });
   } finally {
     await app.close();
   }
@@ -19,14 +19,15 @@ describe("run routes before touching the database", () => {
   });
 
   it("refuse a caller who isn't signed in", async () => {
-    const deps = { runs: { db: {} as Db, auth: () => null } };
+    const deps = { runs: { db: {} as Db, iam: fakeIam([]) } };
     expect((await get(deps, "/api/runs/r1/events")).statusCode).toBe(401);
     expect((await get(deps, "/api/plans/p1/runs")).statusCode).toBe(401);
   });
 
   it("refuses a malformed cursor", async () => {
-    const deps = { runs: { db: {} as Db, auth: () => ({ orgId: "o", userId: "u" }) } };
-    expect((await get(deps, "/api/runs/r1/events?after=-1")).statusCode).toBe(400);
+    const person = member("o");
+    const deps = { runs: { db: {} as Db, iam: fakeIam([person]) } };
+    expect((await get(deps, "/api/runs/r1/events?after=-1", person)).statusCode).toBe(400);
   });
 });
 
@@ -35,7 +36,7 @@ describe.skipIf(!process.env.DB_TESTS)("run routes (real Postgres)", () => {
   const url = process.env.DATABASE_URL ?? "postgres://rehearsal:rehearsal@localhost:5432/rehearsal";
   const db = createDb(url);
   beforeAll(() => migrateDb(db));
-  const deps = (auth: AuthContext) => ({ runs: { db, auth: () => auth } });
+  const deps = (person: Caller) => ({ runs: { db, iam: fakeIam([person]) } });
 
   /** A held run with three events, as the executor would write them. */
   async function seed() {
@@ -60,12 +61,12 @@ describe.skipIf(!process.env.DB_TESTS)("run routes (real Postgres)", () => {
         { orgId, runId, type: "run.finished", payload: { state: "held", error: null } },
       ])
       .returning({ seq: schema.runEvents.seq });
-    return { orgId, planId, runId, seqs: events.map((e) => e.seq), user: { orgId, userId: "u" } };
+    return { orgId, planId, runId, seqs: events.map((e) => e.seq), user: member(orgId) };
   }
 
   it("returns the run and its events in order", async () => {
     const { runId, planId, seqs, user } = await seed();
-    const res = await get(deps(user), `/api/runs/${runId}/events`);
+    const res = await get(deps(user), `/api/runs/${runId}/events`, user);
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.run).toMatchObject({ id: runId, planId, state: "held", approvalId: "grant_1" });
@@ -80,20 +81,20 @@ describe.skipIf(!process.env.DB_TESTS)("run routes (real Postgres)", () => {
 
   it("returns only events after the cursor", async () => {
     const { runId, seqs, user } = await seed();
-    const body = (await get(deps(user), `/api/runs/${runId}/events?after=${seqs[1]}`)).json();
+    const body = (await get(deps(user), `/api/runs/${runId}/events?after=${seqs[1]}`, user)).json();
     expect(body.events.map((e: { type: string }) => e.type)).toEqual(["run.finished"]);
   });
 
   it("hides another org's run", async () => {
     const { runId, planId } = await seed();
-    const other = { orgId: "org_other", userId: "u" };
-    expect((await get(deps(other), `/api/runs/${runId}/events`)).statusCode).toBe(404);
-    expect((await get(deps(other), `/api/plans/${planId}/runs`)).json()).toEqual({ runs: [] });
+    const other = member("org_other");
+    expect((await get(deps(other), `/api/runs/${runId}/events`, other)).statusCode).toBe(404);
+    expect((await get(deps(other), `/api/plans/${planId}/runs`, other)).statusCode).toBe(404);
   });
 
   it("lists a plan's runs", async () => {
     const { runId, planId, user } = await seed();
-    const body = (await get(deps(user), `/api/plans/${planId}/runs`)).json();
+    const body = (await get(deps(user), `/api/plans/${planId}/runs`, user)).json();
     expect(body.runs.map((r: { id: string }) => r.id)).toEqual([runId]);
   });
 });

@@ -74,6 +74,7 @@ See [beyond.md](../beyond.md) for scope, parallel work, external gates and the r
 
 ## Handoff log
 
+- **2026-10-25 (skhdemo).** T4.20 on `t4/T4.20-api-enforcement` ([#288](https://github.com/SoroushRF/Rehearsal/pull/288)). Person routes ask IAM over mTLS and send the session token; the API no longer holds the Clerk secret or checks `CLERK_ROLES`. `GET /api/me` uses IAM's identity call. Apply also asks `run:admit` on stored grants, so a role-only grant is not queued. Grant schema and the executor are unchanged (T4.21, T4.22).
 - **2026-10-25 (Claude for @SoroushRF, T4.13).** Wrote the gate spec in [docs/acceptance](../acceptance/T4.13-isolation-recovery-gate.md): checks G1–G4, the existing component tests behind each, and the record it must leave. Nothing ran: T2.19, T3.16, T4.11, T4.12, T2.20, T2.21 and T2.17 are open, so there's no API path to drive. Next: once T2.19 lands, write the operator script and Playwright spec it describes.
 - **2026-10-25 (skhdemo).** T4.19 in progress on `t4/T4.19-iam-service`: IAM listens over mTLS, loads `scenarios/authz/`, and the API and executor refuse to boot without a client certificate. The planner is refused if it has one. Not pushed.
 - **2026-10-25 (skhdemo).** Precedent permissions added to contracts and decision 0014; rule file (T4.17) and engine (T4.18) pick them up.

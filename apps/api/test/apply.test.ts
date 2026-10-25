@@ -12,7 +12,7 @@ import { billingManifest } from "@rehearsal/testkit";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app";
-import { type AuthContext, noAuth } from "../src/apply";
+import { bearer, type Caller, fakeIam, support } from "./fake-iam";
 
 const NOW = new Date("2026-10-21T12:00:00.000Z");
 const HOUR = 3_600_000;
@@ -58,15 +58,18 @@ describe.skipIf(!process.env.DB_TESTS)("POST /api/plans/:id/apply (real Postgres
     return { orgId, planId, hash };
   }
 
-  function appFor(auth: AuthContext | null) {
-    return buildApp({ apply: { db, boss, auth: () => auth, now: () => NOW } });
+  function appFor(person: Caller | null) {
+    return buildApp({
+      apply: { db, boss, iam: fakeIam(person ? [person] : []), now: () => NOW },
+    });
   }
 
-  async function apply(auth: AuthContext | null, planId: string, body: unknown) {
-    const app = appFor(auth);
+  async function apply(person: Caller | null, planId: string, body: unknown) {
+    const app = appFor(person);
     const res = await app.inject({
       method: "POST",
       url: `/api/plans/${planId}/apply`,
+      headers: person ? bearer(person) : {},
       payload: body as object,
     });
     await app.close();
@@ -75,7 +78,7 @@ describe.skipIf(!process.env.DB_TESTS)("POST /api/plans/:id/apply (real Postgres
 
   it("refuses an unauthenticated request (the default until Clerk lands)", async () => {
     const { planId, hash } = await seed();
-    const app = buildApp({ apply: { db, boss, auth: noAuth } });
+    const app = buildApp({ apply: { db, boss, iam: fakeIam([]) } });
     const res = await app.inject({
       method: "POST",
       url: `/api/plans/${planId}/apply`,
@@ -95,13 +98,13 @@ describe.skipIf(!process.env.DB_TESTS)("POST /api/plans/:id/apply (real Postgres
 
   it("refuses a malformed body", async () => {
     const { orgId, planId } = await seed();
-    const res = await apply({ orgId, userId: "u" }, planId, { revision: "one" });
+    const res = await apply(support(orgId), planId, { revision: "one" });
     expect(res.statusCode).toBe(400);
   });
 
   it("refuses action bodies from the browser even alongside a valid revision and hash", async () => {
     const { orgId, planId, hash } = await seed();
-    const res = await apply({ orgId, userId: "u" }, planId, {
+    const res = await apply(support(orgId), planId, {
       revision: 1,
       planHash: hash,
       actions: [],
@@ -112,7 +115,7 @@ describe.skipIf(!process.env.DB_TESTS)("POST /api/plans/:id/apply (real Postgres
 
   it("returns 404 for an unknown plan", async () => {
     const { orgId } = await seed();
-    const res = await apply({ orgId, userId: "u" }, "plan_missing", {
+    const res = await apply(support(orgId), "plan_missing", {
       revision: 1,
       planHash: "a".repeat(64),
     });
@@ -121,7 +124,7 @@ describe.skipIf(!process.env.DB_TESTS)("POST /api/plans/:id/apply (real Postgres
 
   it("returns 404 for another org's plan", async () => {
     const { planId, hash } = await seed();
-    const res = await apply({ orgId: "org_other", userId: "u" }, planId, {
+    const res = await apply(support("org_other"), planId, {
       revision: 1,
       planHash: hash,
     });
@@ -130,7 +133,7 @@ describe.skipIf(!process.env.DB_TESTS)("POST /api/plans/:id/apply (real Postgres
 
   it("refuses a changed hash", async () => {
     const { orgId, planId } = await seed();
-    const res = await apply({ orgId, userId: "u" }, planId, {
+    const res = await apply(support(orgId), planId, {
       revision: 1,
       planHash: "f".repeat(64),
     });
@@ -144,72 +147,66 @@ describe.skipIf(!process.env.DB_TESTS)("POST /api/plans/:id/apply (real Postgres
     ["a grant dated in the future", { grantedAt: new Date(NOW.getTime() + 1) }],
   ])("refuses %s and enqueues nothing", async (_label, grant) => {
     const { orgId, planId, hash } = await seed(grant);
-    const res = await apply({ orgId, userId: "u" }, planId, { revision: 1, planHash: hash });
+    const res = await apply(support(orgId), planId, { revision: 1, planHash: hash });
     expect(res.statusCode).toBe(403);
     const rows = await db.select().from(schema.runs).where(eq(schema.runs.planId, planId));
     expect(rows).toEqual([]);
     expect(await jobsFor(hash)).toEqual([]);
   });
 
-  it("accepts a live grant, creates one run and enqueues one valid job", async () => {
-    const { orgId, planId, hash } = await seed();
-    const first = await apply({ orgId, userId: "u" }, planId, { revision: 1, planHash: hash });
-    expect(first.statusCode).toBe(202);
-    const { runId, existing, state } = first.json();
-    expect({ existing, state }).toEqual({ existing: false, state: "approved" });
+  async function seedRun(orgId: string, planId: string, hash: string, state: string) {
+    const id = `run_${crypto.randomUUID()}`;
+    await db.insert(schema.runs).values({
+      id,
+      orgId,
+      planId,
+      revision: 1,
+      planHash: hash,
+      approvalId: "grant_existing",
+      requestedBy: "user_sup",
+      state,
+    });
+    return id;
+  }
 
-    const again = await apply({ orgId, userId: "u" }, planId, { revision: 1, planHash: hash });
-    expect(again.json()).toEqual({ runId, state: "approved", existing: true });
-
-    expect(await jobsFor(hash)).toEqual([{ orgId, runId, planId, revision: 1, planHash: hash }]);
-    const [run] = await db.select().from(schema.runs).where(eq(schema.runs.id, runId));
-    expect(run?.requestedBy).toBe("u");
-  });
-
-  it("creates exactly one run under concurrent requests", async () => {
+  it("does not queue a role-only grant, even under concurrent clicks", async () => {
     const { orgId, planId, hash } = await seed();
     const results = await Promise.all(
       Array.from({ length: 10 }, () =>
-        apply({ orgId, userId: "u" }, planId, { revision: 1, planHash: hash }),
+        apply(support(orgId), planId, { revision: 1, planHash: hash }),
       ),
     );
-    const runIds = new Set(results.map((r) => r.json().runId));
-    expect(runIds.size).toBe(1);
-    expect(results.filter((r) => r.json().existing === false)).toHaveLength(1);
-    expect(await jobsFor(hash)).toHaveLength(1);
+    expect(results.every((r) => r.statusCode === 403)).toBe(true);
+    const rows = await db.select().from(schema.runs).where(eq(schema.runs.planId, planId));
+    expect(rows).toEqual([]);
+    expect(await jobsFor(hash)).toEqual([]);
   });
 
-  it("starts a new run after a held run, so the plan can be resumed", async () => {
+  it("does not resume a held run from a role-only grant", async () => {
     const { orgId, planId, hash } = await seed();
-    const first = (
-      await apply({ orgId, userId: "u" }, planId, { revision: 1, planHash: hash })
-    ).json();
-    await db.update(schema.runs).set({ state: "held" }).where(eq(schema.runs.id, first.runId));
-
-    const second = await apply({ orgId, userId: "u" }, planId, { revision: 1, planHash: hash });
-    expect(second.statusCode).toBe(202);
-    expect(second.json().runId).not.toBe(first.runId);
-    expect(await jobsFor(hash)).toHaveLength(2);
+    const held = await seedRun(orgId, planId, hash, "held");
+    const second = await apply(support(orgId), planId, { revision: 1, planHash: hash });
+    expect(second.statusCode).toBe(403);
+    const rows = await db.select().from(schema.runs).where(eq(schema.runs.planId, planId));
+    expect(rows.map((r) => r.id)).toEqual([held]);
+    expect(await jobsFor(hash)).toEqual([]);
   });
 
   it("returns a cancelled run instead of restarting it", async () => {
     const { orgId, planId, hash } = await seed();
-    const first = (
-      await apply({ orgId, userId: "u" }, planId, { revision: 1, planHash: hash })
-    ).json();
-    await db.update(schema.runs).set({ state: "cancelled" }).where(eq(schema.runs.id, first.runId));
-    const again = await apply({ orgId, userId: "u" }, planId, { revision: 1, planHash: hash });
-    expect(again.json()).toEqual({ runId: first.runId, state: "cancelled", existing: true });
-    expect(await jobsFor(hash)).toHaveLength(1);
+    const runId = await seedRun(orgId, planId, hash, "cancelled");
+    const again = await apply(support(orgId), planId, { revision: 1, planHash: hash });
+    expect(again.statusCode).toBe(202);
+    expect(again.json()).toEqual({ runId, state: "cancelled", existing: true });
+    expect(await jobsFor(hash)).toEqual([]);
   });
 
   it("returns a completed run instead of starting another", async () => {
     const { orgId, planId, hash } = await seed();
-    const first = (
-      await apply({ orgId, userId: "u" }, planId, { revision: 1, planHash: hash })
-    ).json();
-    await db.update(schema.runs).set({ state: "completed" }).where(eq(schema.runs.id, first.runId));
-    const again = await apply({ orgId, userId: "u" }, planId, { revision: 1, planHash: hash });
-    expect(again.json()).toEqual({ runId: first.runId, state: "completed", existing: true });
+    const runId = await seedRun(orgId, planId, hash, "completed");
+    const again = await apply(support(orgId), planId, { revision: 1, planHash: hash });
+    expect(again.statusCode).toBe(202);
+    expect(again.json()).toEqual({ runId, state: "completed", existing: true });
+    expect(await jobsFor(hash)).toEqual([]);
   });
 });

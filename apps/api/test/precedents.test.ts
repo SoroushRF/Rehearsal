@@ -11,20 +11,11 @@ import type { PrecedentRecord } from "@rehearsal/memory";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app";
-import type { Reviewer } from "../src/auth";
 import { precedentScope, syncPrecedent } from "../src/precedent-sync";
 import { PromoteRequest } from "../src/precedents";
+import { bearer, type Caller, fakeIam, finance, support } from "./fake-iam";
 
 const NOW = new Date("2026-10-24T12:00:00.000Z");
-const reviewer = (orgId: string, roles: Reviewer["roles"], userId = "user_fin"): Reviewer => ({
-  orgId,
-  userId,
-  sessionId: `sess_${userId}`,
-  roles,
-});
-const finance = (orgId: string) => reviewer(orgId, ["finance_lead", "support_lead"]);
-const support = (orgId: string) => reviewer(orgId, ["support_lead"], "user_sup");
-
 const content = {
   id: "dup-refund",
   appliesTo: "billing.duplicate_charge",
@@ -40,21 +31,27 @@ async function send(
   method: "GET" | "POST",
   url: string,
   payload?: object,
+  person?: Caller | null,
 ) {
   const app = buildApp({ webRoot: null, ...deps });
   try {
-    return await app.inject({ method, url, ...(payload ? { payload } : {}) });
+    return await app.inject({
+      method,
+      url,
+      headers: person ? bearer(person) : {},
+      ...(payload ? { payload } : {}),
+    });
   } finally {
     await app.close();
   }
 }
 
 describe("promoting a precedent, before touching the database", () => {
-  const as = (me: Reviewer | null) => ({
+  const as = (me: Caller | null) => ({
     precedents: {
       db: {} as Db,
       boss: {} as PgBoss,
-      reviewer: () => me,
+      iam: fakeIam(me ? [me] : []),
       syncEnabled: false,
     },
   });
@@ -65,14 +62,53 @@ describe("promoting a precedent, before touching the database", () => {
   });
 
   it("refuses a caller who isn't signed in", async () => {
-    expect((await send(as(null), "POST", "/api/runs/r1/precedents", content)).statusCode).toBe(401);
-    expect((await send(as(null), "GET", "/api/precedents")).statusCode).toBe(401);
+    expect(
+      (await send(as(null), "POST", "/api/runs/r1/precedents", content, null)).statusCode,
+    ).toBe(401);
+    expect((await send(as(null), "GET", "/api/precedents", undefined, null)).statusCode).toBe(401);
   });
 
-  it("refuses a support lead: promotion is finance only", async () => {
-    const res = await send(as(support("org_1")), "POST", "/api/runs/r1/precedents", content);
+  it("refuses a support lead: promotion needs rehearsal:promote:precedent", async () => {
+    const lead = support("org_1");
+    let wrote = false;
+    const db = {
+      select() {
+        const chain = {
+          from() {
+            return chain;
+          },
+          where() {
+            return chain;
+          },
+          // biome-ignore lint/suspicious/noThenProperty: the stub is the thenable Drizzle returns
+          then(ok: (rows: unknown[]) => unknown) {
+            return Promise.resolve([{ id: "r1", orgId: "org_1", state: "completed" }]).then(ok);
+          },
+        };
+        return chain;
+      },
+      transaction() {
+        wrote = true;
+        return Promise.reject(new Error("wrote"));
+      },
+    };
+    const res = await send(
+      {
+        precedents: {
+          db: db as unknown as Db,
+          boss: {} as PgBoss,
+          iam: fakeIam([lead]),
+          syncEnabled: false,
+        },
+      },
+      "POST",
+      "/api/runs/r1/precedents",
+      content,
+      lead,
+    );
     expect(res.statusCode).toBe(403);
-    expect(res.json()).toMatchObject({ error: "missing_roles", missing: ["finance_lead"] });
+    expect(res.json()).toEqual({ error: "forbidden" });
+    expect(wrote).toBe(false);
   });
 
   it.each([
@@ -90,26 +126,73 @@ describe("promoting a precedent, before touching the database", () => {
     ["an area that isn't dotted lowercase", { ...content, appliesTo: "Billing" }],
     ["a malformed date", { ...content, effectiveFrom: "tomorrow" }],
   ])("refuses a body with %s", async (_label, body) => {
-    const res = await send(as(finance("org_1")), "POST", "/api/runs/r1/precedents", body);
+    const person = finance("org_1");
+    const res = await send(as(person), "POST", "/api/runs/r1/precedents", body, person);
     expect(res.statusCode).toBe(400);
   });
 });
 
 describe("withdrawing a precedent, before touching the database", () => {
-  const as = (me: Reviewer | null) => ({
-    precedents: { db: {} as Db, boss: {} as PgBoss, reviewer: () => me, syncEnabled: false },
+  const as = (me: Caller | null) => ({
+    precedents: {
+      db: {} as Db,
+      boss: {} as PgBoss,
+      iam: fakeIam(me ? [me] : []),
+      syncEnabled: false,
+    },
   });
-  const withdraw = (me: Reviewer | null, body: object = { version: 1 }) =>
-    send(as(me), "POST", "/api/precedents/dup-refund/withdraw", body);
+  const withdraw = (me: Caller | null, body: object = { version: 1 }) =>
+    send(as(me), "POST", "/api/precedents/dup-refund/withdraw", body, me);
 
   it("is unavailable without a database", async () => {
     const res = await send({}, "POST", "/api/precedents/dup-refund/withdraw", { version: 1 });
     expect(res.statusCode).toBe(503);
   });
 
-  it("refuses a caller who isn't signed in, and a support lead", async () => {
+  it("refuses a caller who isn't signed in", async () => {
     expect((await withdraw(null)).statusCode).toBe(401);
-    expect((await withdraw(support("org_1"))).statusCode).toBe(403);
+  });
+
+  it("refuses a support lead without writing", async () => {
+    const lead = support("org_1");
+    let wrote = false;
+    const db = {
+      select() {
+        const chain = {
+          from() {
+            return chain;
+          },
+          where() {
+            return chain;
+          },
+          // biome-ignore lint/suspicious/noThenProperty: the stub is the thenable Drizzle returns
+          then(ok: (rows: unknown[]) => unknown) {
+            return Promise.resolve([{ orgId: "org_1" }]).then(ok);
+          },
+        };
+        return chain;
+      },
+      transaction() {
+        wrote = true;
+        return Promise.reject(new Error("wrote"));
+      },
+    };
+    const res = await send(
+      {
+        precedents: {
+          db: db as unknown as Db,
+          boss: {} as PgBoss,
+          iam: fakeIam([lead]),
+          syncEnabled: false,
+        },
+      },
+      "POST",
+      "/api/precedents/dup-refund/withdraw",
+      { version: 1 },
+      lead,
+    );
+    expect(res.statusCode).toBe(403);
+    expect(wrote).toBe(false);
   });
 
   it.each([
@@ -151,8 +234,8 @@ describe.skipIf(!process.env.DB_TESTS)("promoting a precedent (real Postgres)", 
     await boss?.stop({ graceful: false });
   });
 
-  const deps = (me: Reviewer | null) => ({
-    precedents: { db, boss, reviewer: () => me, syncEnabled: true, now: () => NOW },
+  const deps = (me: Caller | null) => ({
+    precedents: { db, boss, iam: fakeIam(me ? [me] : []), syncEnabled: true, now: () => NOW },
   });
 
   async function seedRun(state = "completed") {
@@ -170,10 +253,10 @@ describe.skipIf(!process.env.DB_TESTS)("promoting a precedent (real Postgres)", 
     });
     return { orgId, runId };
   }
-  const promote = (me: Reviewer, runId: string, body: object = content) =>
-    send(deps(me), "POST", `/api/runs/${runId}/precedents`, body);
-  const list = async (me: Reviewer) =>
-    (await send(deps(me), "GET", "/api/precedents")).json().precedents as {
+  const promote = (me: Caller, runId: string, body: object = content) =>
+    send(deps(me), "POST", `/api/runs/${runId}/precedents`, body, me);
+  const list = async (me: Caller) =>
+    (await send(deps(me), "GET", "/api/precedents", undefined, me)).json().precedents as {
       id: string;
       version: number;
       status: string;
@@ -289,8 +372,8 @@ describe.skipIf(!process.env.DB_TESTS)("promoting a precedent (real Postgres)", 
   });
 
   describe("withdrawing (#233)", () => {
-    const withdraw = (me: Reviewer, id: string, version: number) =>
-      send(deps(me), "POST", `/api/precedents/${id}/withdraw`, { version });
+    const withdraw = (me: Caller, id: string, version: number) =>
+      send(deps(me), "POST", `/api/precedents/${id}/withdraw`, { version }, me);
     async function active() {
       const { orgId, runId } = await seedRun();
       await promote(finance(orgId), runId);
