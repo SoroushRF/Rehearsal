@@ -54,7 +54,7 @@ const grant = {
 
 describe("IAM contracts (T4.16)", () => {
   it("parses each v1 permission and rejects a misspelling, a short name, and a capital", () => {
-    expect(PERMISSIONS_V1).toHaveLength(12);
+    expect(PERMISSIONS_V1).toHaveLength(15);
     for (const permission of PERMISSIONS_V1) {
       expect(Permission.parse(permission)).toBe(permission);
       expect(PermissionV1.parse(permission)).toBe(permission);

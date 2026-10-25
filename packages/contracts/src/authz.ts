@@ -29,6 +29,9 @@ export const PERMISSIONS_V1 = [
   "rehearsal:revoke:any_grant",
   "rehearsal:invite:member",
   "rehearsal:manage:role",
+  "rehearsal:read:precedent",
+  "rehearsal:promote:precedent",
+  "rehearsal:withdraw:precedent",
 ] as const;
 
 export const PermissionV1 = z.enum(PERMISSIONS_V1);
