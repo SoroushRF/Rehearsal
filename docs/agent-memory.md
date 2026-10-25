@@ -17,7 +17,7 @@ One `concept` entity named `precedent:<id>`, in one scope (default `rehearsal/pr
 - **Recall** queries `/query` through the scope's lens and takes the hits only as candidates. Every precedent it returns comes from readback, effective today, with the fact IDs it was read from, the hit IDs and the trace ID. An outage fails recall instead of returning nothing.
 - **Citation check** (`checkPrecedentBasis`) decides from a registry snapshot alone. It holds a plan when a cited precedent was superseded, withdrawn, not yet active or changed, or when the epoch of any area the plan consulted moved. The epoch covers precedents that recall never surfaced.
 
-Not here yet: the Postgres `precedent_registry` and outbox, the finance-only promotion route and UI (T2.17), the planner recording citations in a plan (needs a contracts change), and the executor running the check.
+T2.17 added the Postgres registry (`precedent_events`, derived into a `RegistrySnapshot`), the `precedent-sync` queue that publishes an approved version and only then activates it, the finance-only promotion route and a promote panel ([decision 0012](decisions/0012-precedent-promotion.md)). Each organization gets its own memory scope. Not here yet: running the sync against the hosted service, the planner recording citations in a plan (needs a contracts change), and the executor running the check.
 
 ## Memory gate
 

@@ -128,3 +128,32 @@ export const runEvents = pgTable(
   // The reaper counts a run's events by type on every sweep; the timeline reads by run.
   (t) => [index().on(t.orgId, t.runId, t.type)],
 );
+
+/**
+ * The precedent registry, as append-only events (decision 0012). `approved` carries the full
+ * record; `activated` is written once Agent Memory has stored and read it back; `withdrawn` ends a
+ * precedent. Which version is active, and each area's epoch, are derived from these rows, never
+ * stored, so there is nothing to edit.
+ */
+export const precedentEvents = pgTable(
+  "precedent_events",
+  {
+    seq: bigserial("seq", { mode: "number" }).primaryKey(),
+    orgId: text("org_id").notNull(),
+    precedentId: text("precedent_id").notNull(),
+    version: integer("version").notNull(),
+    appliesTo: text("applies_to").notNull(),
+    kind: text("kind").$type<"approved" | "activated" | "withdrawn">().notNull(),
+    digest: text("digest").notNull(),
+    /** The approved record, verbatim. Only on `approved`. */
+    record: jsonb("record"),
+    actorUserId: text("actor_user_id"),
+    /** The completed run this was promoted from. Only on `approved`. */
+    sourceRunId: text("source_run_id"),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex().on(t.orgId, t.precedentId, t.version, t.kind),
+    index().on(t.orgId, t.appliesTo),
+  ],
+);

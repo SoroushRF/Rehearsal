@@ -21,6 +21,7 @@ import { RunView } from "../runs";
 import { Segmented } from "./AppShell";
 import { AuditPanel } from "./AuditPanel";
 import { PlanReview } from "./PlanReview";
+import { PrecedentPanel } from "./PrecedentPanel";
 import { RehearseBar } from "./Rehearse";
 import { RunTimeline } from "./RunTimeline";
 import { Alert, Button, Card, Chip, Icon, Skeleton, Spinner } from "./ui";
@@ -435,6 +436,12 @@ function RunSection({
       )}
       <RunTimeline key={runId} apiFetch={apiFetch} runId={runId} />
       <AuditPanel key={`audit-${runId}`} apiFetch={apiFetch} runId={runId} />
+      <PrecedentPanel
+        key={`precedent-${runId}`}
+        apiFetch={apiFetch}
+        runId={runId}
+        completed={all.find((r) => r.id === runId)?.state === "completed"}
+      />
     </section>
   );
 }
