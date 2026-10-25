@@ -1,29 +1,23 @@
 import type { ReactNode } from "react";
+import { Chip, type IconName, type Tone } from "./ui";
 
-const tones = {
-  neutral: "bg-slate-100 text-slate-700 ring-slate-200",
-  good: "bg-emerald-50 text-emerald-800 ring-emerald-200",
-  warn: "bg-amber-50 text-amber-900 ring-amber-200",
-  danger: "bg-rose-50 text-rose-800 ring-rose-200",
-  info: "bg-sky-50 text-sky-800 ring-sky-200",
-} as const;
-export type Tone = keyof typeof tones;
+export type { Tone } from "./ui";
 
+/** Kept for existing callers: the pill is the shared `Chip` now. */
 export function Badge({
   tone,
   hint,
+  icon,
   children,
 }: {
   tone: Tone;
   hint?: string;
+  icon?: IconName;
   children: ReactNode;
 }) {
   return (
-    <span
-      title={hint}
-      className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium ring-1 ring-inset ${tones[tone]}`}
-    >
+    <Chip tone={tone} {...(hint && { hint })} {...(icon && { icon })}>
       {children}
-    </span>
+    </Chip>
   );
 }

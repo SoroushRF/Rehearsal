@@ -1,8 +1,24 @@
 import type { ApprovalGrant, Role, RunState } from "@rehearsal/contracts";
-import type { ApplyStore, StoredRun } from "@rehearsal/core";
-import { and, eq, inArray } from "drizzle-orm";
+import type { ApplyStore, RemedyStepRef, StoredRun } from "@rehearsal/core";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Db } from "./index";
 import { approvalGrants, planVersions, runs } from "./schema";
+
+export function toApprovalGrant(row: typeof approvalGrants.$inferSelect): ApprovalGrant {
+  return {
+    id: row.id,
+    orgId: row.orgId,
+    planId: row.planId,
+    revision: row.revision,
+    planHash: row.planHash,
+    actorUserId: row.actorUserId,
+    actorSessionId: row.actorSessionId,
+    roles: row.roles as Role[],
+    grantedAt: row.grantedAt.toISOString(),
+    expiresAt: row.expiresAt.toISOString(),
+    revokedAt: row.revokedAt?.toISOString() ?? null,
+  };
+}
 
 /**
  * The executor's read access to runs, plans and grants, plus the per-plan apply lock. Every query
@@ -45,20 +61,15 @@ export class PgApplyStore implements ApplyStore {
       .select()
       .from(approvalGrants)
       .where(and(eq(approvalGrants.orgId, orgId), eq(approvalGrants.id, approvalId)));
-    if (!row) return null;
-    return {
-      id: row.id,
-      orgId: row.orgId,
-      planId: row.planId,
-      revision: row.revision,
-      planHash: row.planHash,
-      actorUserId: row.actorUserId,
-      actorSessionId: row.actorSessionId,
-      roles: row.roles as Role[],
-      grantedAt: row.grantedAt.toISOString(),
-      expiresAt: row.expiresAt.toISOString(),
-      revokedAt: row.revokedAt?.toISOString() ?? null,
-    };
+    return row ? toApprovalGrant(row) : null;
+  }
+
+  async loadGrantsForPlanHash(orgId: string, planHash: string): Promise<ApprovalGrant[]> {
+    const rows = await this.db
+      .select()
+      .from(approvalGrants)
+      .where(and(eq(approvalGrants.orgId, orgId), eq(approvalGrants.planHash, planHash)));
+    return rows.map(toApprovalGrant);
   }
 
   /**
@@ -104,6 +115,17 @@ export class PgApplyStore implements ApplyStore {
         giveBack(err as Error);
       }
     };
+  }
+
+  /** Refund and credit steps for this obligation in every stored plan revision of the org. */
+  async remedyStepsFor(orgId: string, obligationId: string): Promise<RemedyStepRef[]> {
+    const { rows } = await this.db.execute<{ plan_hash: string; action_id: string }>(sql`
+      select v.plan_hash, a->>'id' as action_id
+      from ${planVersions} v, jsonb_array_elements(v.manifest->'actions') a
+      where v.org_id = ${orgId}
+        and a->>'obligationId' = ${obligationId}
+        and a->>'kind' in ('stripe.refund.create', 'stripe.customer.balanceCredit')`);
+    return rows.map((r) => ({ planHash: r.plan_hash, actionId: r.action_id }));
   }
 
   async runCancelled(orgId: string, runId: string): Promise<boolean> {

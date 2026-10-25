@@ -1,0 +1,255 @@
+import { createDb, type Db, migrateDb, type PgBoss, schema, startQueue } from "@rehearsal/db";
+import type { PrecedentRecord } from "@rehearsal/memory";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { buildApp } from "../src/app";
+import type { Reviewer } from "../src/auth";
+import { precedentScope, syncPrecedent } from "../src/precedent-sync";
+import { PromoteRequest } from "../src/precedents";
+
+const NOW = new Date("2026-10-24T12:00:00.000Z");
+const reviewer = (orgId: string, roles: Reviewer["roles"], userId = "user_fin"): Reviewer => ({
+  orgId,
+  userId,
+  sessionId: `sess_${userId}`,
+  roles,
+});
+const finance = (orgId: string) => reviewer(orgId, ["finance_lead", "support_lead"]);
+const support = (orgId: string) => reviewer(orgId, ["support_lead"], "user_sup");
+
+const content = {
+  id: "dup-refund",
+  appliesTo: "billing.duplicate_charge",
+  statement: "A duplicate charge found within 30 days is refunded in full.",
+  conditions: ["same amount and customer"],
+  exceptions: ["charges at or above 100.00 CAD go to finance first"],
+  effectiveFrom: "2026-10-01",
+  effectiveUntil: null,
+};
+
+async function send(
+  deps: Parameters<typeof buildApp>[0],
+  method: "GET" | "POST",
+  url: string,
+  payload?: object,
+) {
+  const app = buildApp({ webRoot: null, ...deps });
+  try {
+    return await app.inject({ method, url, ...(payload ? { payload } : {}) });
+  } finally {
+    await app.close();
+  }
+}
+
+describe("promoting a precedent, before touching the database", () => {
+  const as = (me: Reviewer | null) => ({
+    precedents: {
+      db: {} as Db,
+      boss: {} as PgBoss,
+      reviewer: () => me,
+      syncEnabled: false,
+    },
+  });
+
+  it("is unavailable without a database", async () => {
+    expect((await send({}, "POST", "/api/runs/r1/precedents", content)).statusCode).toBe(503);
+    expect((await send({}, "GET", "/api/precedents")).statusCode).toBe(503);
+  });
+
+  it("refuses a caller who isn't signed in", async () => {
+    expect((await send(as(null), "POST", "/api/runs/r1/precedents", content)).statusCode).toBe(401);
+    expect((await send(as(null), "GET", "/api/precedents")).statusCode).toBe(401);
+  });
+
+  it("refuses a support lead: promotion is finance only", async () => {
+    const res = await send(as(support("org_1")), "POST", "/api/runs/r1/precedents", content);
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toMatchObject({ error: "missing_roles", missing: ["finance_lead"] });
+  });
+
+  it.each([
+    [
+      "an author supplied by the browser",
+      { ...content, author: { userId: "x", role: "finance_lead" } },
+    ],
+    ["a version supplied by the browser", { ...content, version: 9 }],
+    [
+      "an approval time supplied by the browser",
+      { ...content, approvedAt: "2026-01-01T00:00:00Z" },
+    ],
+    ["a blank statement", { ...content, statement: "  " }],
+    ["an ID that isn't a slug", { ...content, id: "Dup Refund" }],
+    ["an area that isn't dotted lowercase", { ...content, appliesTo: "Billing" }],
+    ["a malformed date", { ...content, effectiveFrom: "tomorrow" }],
+  ])("refuses a body with %s", async (_label, body) => {
+    const res = await send(as(finance("org_1")), "POST", "/api/runs/r1/precedents", body);
+    expect(res.statusCode).toBe(400);
+  });
+});
+
+describe("the request and the scope", () => {
+  it("accepts exactly the finance lead's content", () => {
+    expect(PromoteRequest.safeParse(content).success).toBe(true);
+    expect(PromoteRequest.safeParse({ ...content, effectiveUntil: "2027-01-01" }).success).toBe(
+      true,
+    );
+  });
+
+  it("gives each organization its own lowercase memory scope", () => {
+    const a = precedentScope("rehearsal/precedents", "org_2AbCdEf");
+    const b = precedentScope("rehearsal/precedents", "org_2abcdef");
+    expect(a).toMatch(/^rehearsal\/precedents\/org-[0-9a-f]{16}$/);
+    expect(a).not.toBe(b);
+    expect(precedentScope("rehearsal/precedents", "org_2AbCdEf")).toBe(a);
+  });
+});
+
+// Needs a real Postgres: `pnpm infra:up` then `DB_TESTS=1 pnpm --filter @rehearsal/api test`.
+describe.skipIf(!process.env.DB_TESTS)("promoting a precedent (real Postgres)", () => {
+  const url = process.env.DATABASE_URL ?? "postgres://rehearsal:rehearsal@localhost:5432/rehearsal";
+  const db = createDb(url);
+  let boss: PgBoss;
+  beforeAll(async () => {
+    await migrateDb(db);
+    boss = await startQueue(url);
+  });
+  afterAll(async () => {
+    await boss?.stop({ graceful: false });
+  });
+
+  const deps = (me: Reviewer | null) => ({
+    precedents: { db, boss, reviewer: () => me, syncEnabled: true, now: () => NOW },
+  });
+
+  async function seedRun(state = "completed") {
+    const orgId = `org_${crypto.randomUUID()}`;
+    const runId = `run_${crypto.randomUUID()}`;
+    await db.insert(schema.runs).values({
+      id: runId,
+      orgId,
+      planId: `plan_${crypto.randomUUID()}`,
+      revision: 1,
+      planHash: crypto.randomUUID().replaceAll("-", "").padEnd(64, "0"),
+      approvalId: "grant_1",
+      requestedBy: "user_fin",
+      state,
+    });
+    return { orgId, runId };
+  }
+  const promote = (me: Reviewer, runId: string, body: object = content) =>
+    send(deps(me), "POST", `/api/runs/${runId}/precedents`, body);
+  const list = async (me: Reviewer) =>
+    (await send(deps(me), "GET", "/api/precedents")).json().precedents as {
+      id: string;
+      version: number;
+      status: string;
+      author: string;
+    }[];
+
+  /** A publisher that stores what it is given, as Agent Memory would after readback. */
+  const published: PrecedentRecord[] = [];
+  const publisherFor = () => ({
+    publish: async (record: PrecedentRecord) => {
+      published.push(record);
+      return {
+        id: record.id,
+        version: record.version,
+        digest: "x".repeat(64) as never,
+        factIds: [],
+        scope: "s",
+        written: true,
+      };
+    },
+  });
+
+  it("records the approved version as waiting, with the author set from the verified user", async () => {
+    const { orgId, runId } = await seedRun();
+    const res = await promote(finance(orgId), runId);
+    expect(res.statusCode).toBe(201);
+    expect(res.json().precedent).toMatchObject({ id: "dup-refund", version: 1, status: "waiting" });
+    expect(await list(finance(orgId))).toMatchObject([
+      { id: "dup-refund", version: 1, status: "waiting", author: "user_fin" },
+    ]);
+  });
+
+  it("refuses a run that hasn't completed, another org's run and an unknown run", async () => {
+    const held = await seedRun("held");
+    expect((await promote(finance(held.orgId), held.runId)).statusCode).toBe(409);
+    const done = await seedRun();
+    expect((await promote(finance("org_other"), done.runId)).statusCode).toBe(404);
+    expect((await promote(finance(done.orgId), "run_nope")).statusCode).toBe(404);
+    expect(await list(finance(held.orgId))).toEqual([]);
+  });
+
+  it("refuses a record the memory package would refuse (an end date before the start)", async () => {
+    const { orgId, runId } = await seedRun();
+    const res = await promote(finance(orgId), runId, {
+      ...content,
+      effectiveUntil: "2026-09-01",
+    });
+    expect(res.statusCode).toBe(422);
+    expect(await list(finance(orgId))).toEqual([]);
+  });
+
+  it("makes a second promotion of the same precedent the next version, in the same area", async () => {
+    const { orgId, runId } = await seedRun();
+    await promote(finance(orgId), runId);
+    const second = await promote(finance(orgId), runId, { ...content, statement: "Changed." });
+    expect(second.json().precedent).toMatchObject({ version: 2 });
+    const other = await promote(finance(orgId), runId, { ...content, appliesTo: "billing.other" });
+    expect(other.statusCode).toBe(409);
+    expect(other.json()).toMatchObject({ error: "area_changed" });
+  });
+
+  it("activates only after the sync has published and read it back", async () => {
+    const { orgId, runId } = await seedRun();
+    await promote(finance(orgId), runId);
+    expect((await list(finance(orgId)))[0]?.status).toBe("waiting");
+
+    const failing = {
+      publisherFor: () => ({
+        publish: async () => {
+          throw new Error("Agent Memory is down");
+        },
+      }),
+    };
+    await expect(
+      syncPrecedent({ orgId, precedentId: "dup-refund", version: 1 }, { db, ...failing }),
+    ).rejects.toThrow("down");
+    expect((await list(finance(orgId)))[0]?.status).toBe("waiting");
+
+    const job = { orgId, precedentId: "dup-refund", version: 1 };
+    expect(await syncPrecedent(job, { db, publisherFor })).toBe("activated");
+    expect(published.at(-1)).toMatchObject({
+      id: "dup-refund",
+      version: 1,
+      author: { userId: "user_fin" },
+    });
+    expect((await list(finance(orgId)))[0]?.status).toBe("active");
+    // A retried job changes nothing.
+    expect(await syncPrecedent(job, { db, publisherFor })).toBe("already_active");
+  });
+
+  it("supersedes the old version once the new one syncs", async () => {
+    const { orgId, runId } = await seedRun();
+    await promote(finance(orgId), runId);
+    await syncPrecedent({ orgId, precedentId: "dup-refund", version: 1 }, { db, publisherFor });
+    await promote(finance(orgId), runId, { ...content, statement: "Changed." });
+    await syncPrecedent({ orgId, precedentId: "dup-refund", version: 2 }, { db, publisherFor });
+    expect((await list(finance(orgId))).map((p) => [p.version, p.status]).sort()).toEqual([
+      [1, "superseded"],
+      [2, "active"],
+    ]);
+  });
+
+  it("says no such version for a job whose approval doesn't exist", async () => {
+    const job = { orgId: "org_x", precedentId: "nope", version: 1 };
+    expect(await syncPrecedent(job, { db, publisherFor })).toBe("no_such_version");
+  });
+
+  it("keeps organizations apart", async () => {
+    const a = await seedRun();
+    const b = await seedRun();
+    await promote(finance(a.orgId), a.runId);
+    expect(await list(finance(b.orgId))).toEqual([]);
+  });
+});

@@ -16,6 +16,7 @@
     "@rehearsal/contracts": "workspace:*",
     "@rehearsal/core": "workspace:*",
     "@rehearsal/db": "workspace:*",
+    "@rehearsal/memory": "workspace:*",
     "@rehearsal/providers": "workspace:*",
     "drizzle-orm": "^0.45.4",
     "fastify": "^5.12.7",

@@ -1,0 +1,1 @@
+ALTER TABLE "approval_grants" ADD COLUMN "policies" jsonb;

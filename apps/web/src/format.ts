@@ -57,3 +57,7 @@ export const protectionLabel: Record<ProtectionLevel, { text: string; hint: stri
     hint: "The provider offers no conditional write for this operation.",
   },
 };
+
+/** "happy-path" → "Happy path": ids made readable for labels. */
+export const humanize = (id: string) =>
+  (id[0]?.toUpperCase() ?? "") + id.slice(1).replaceAll("-", " ");

@@ -21,3 +21,13 @@ it("starts with operational URLs and its own secret", () => {
     }),
   ).toEqual([]);
 });
+
+it("refuses Google model credentials too", () => {
+  expect(
+    executorCredentialViolations({
+      GEMINI_API_KEY: "g",
+      GOOGLE_API_KEY: "g",
+      GOOGLE_APPLICATION_CREDENTIALS: "C:/adc.json",
+    }),
+  ).toEqual(["GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_APPLICATION_CREDENTIALS"]);
+});

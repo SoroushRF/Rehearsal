@@ -1,3 +1,4 @@
+export * from "./approvals";
 export * from "./bindings";
 export * from "./canonical";
 export * from "./compensation";
@@ -8,5 +9,6 @@ export * from "./guards";
 export * from "./hash";
 export * from "./policy";
 export * from "./ports";
+export * from "./remedy";
 export * from "./step-guard";
 export * from "./templates";

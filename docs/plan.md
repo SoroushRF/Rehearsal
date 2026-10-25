@@ -14,9 +14,11 @@ Team of four on four feature tracks (see [AGENTS.md](../AGENTS.md#tracks)). Date
 
 ## Trim decision (Oct 21 evening)
 
+> **Reversed on Oct 24** by [decision 0009](decisions/0009-reopen-full-scope.md): the full scope is back, without ML ([0008](decisions/0008-ml-out-of-hackathon-scope.md)). The freeze is lifted, and deploy and the video wait for the full version. The correctness checks below still hold.
+
 If M2 isn't met, switch to the trimmed scope:
 - No Slack, SurrealDB, Expo or model serving.
-- The ML experiment still finishes as a report.
+- The ML experiment still finishes as a report. **Withdrawn 2026-10-24:** it does not ([0008](decisions/0008-ml-out-of-hackathon-scope.md)).
 - All four tracks put their remaining time into the acceptance scenarios, deployment and the video.
 
 Trimming removes features, never correctness checks. These must stay:
@@ -41,6 +43,16 @@ T4 inject scripts──► T1 scorecard traps, T2 demo
 
 Until a dependency lands, build against `@rehearsal/testkit` fixtures and the ports in `packages/core/src/ports.ts`.
 
+## Oct 24 extension plan
+
+After full acceptance, benchmarking, UI and beyond implementation proceed together through the shared contracts. The [beyond delivery map](beyond.md) contains the agreed 25 tasks, owner counts, cross-track handoffs and cut line. The task tables remain the canonical dependency graph.
+
+- **15 beyond:** exact stored-plan execution in disposable worlds, independent reports, review UI and operator task testing.
+- **8 killer:** optional native Stripe sandbox proof, stronger benchmark/precedent evidence and fresh Clerk verification. They do not block the main beyond engineering gate.
+- **2 additional benchmark:** extend the full-operation scorecard and publish an early full baseline plus frozen-head comparisons. Three killer tasks also carry the benchmark label; they are counted within the eight.
+
+T4.13 is the integrated beyond acceptance gate. T1.28 captures the full baseline early, then finishes after that gate; T2.7 now waits for deployment and T1.28 before final recording/submission. Operator recruitment, native sandbox access and real Clerk verification remain separately labelled external gates. No ML training/serving is added.
+
 ## Daily rhythm
 
 - **Morning, 10 minutes:** each owner says yesterday / today / blocked. Pick the integrator of the day.
@@ -51,7 +63,7 @@ Until a dependency lands, build against `@rehearsal/testkit` fixtures and the po
 
 See [decisions/0001](decisions/0001-open-team-decisions.md):
 1. Can the model clear soft holds?
-2. Slack in the trimmed scope?
+2. ~~Slack in the trimmed scope?~~ Settled: in ([0009](decisions/0009-reopen-full-scope.md))
 3. Closing line
 4. Pivot clause
 5. Deploy target

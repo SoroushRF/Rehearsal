@@ -1,10 +1,11 @@
 import { ApprovalGrant } from "@rehearsal/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import {
   type ApiFetch,
   ApplyAccepted,
+  ApprovalStatus,
   call,
   explain,
   Grant,
@@ -17,12 +18,19 @@ import { roleLabel, shortHash } from "../format";
 import { useTenantKey } from "../identity";
 import { droppedBy, requiredRoles } from "../plan";
 import { RunView } from "../runs";
+import { Segmented } from "./AppShell";
+import { AuditPanel } from "./AuditPanel";
 import { PlanReview } from "./PlanReview";
+import { PrecedentPanel } from "./PrecedentPanel";
 import { RehearseBar } from "./Rehearse";
 import { RunTimeline } from "./RunTimeline";
+import { Alert, Button, Card, Chip, Icon, Skeleton, Spinner } from "./ui";
 
 const PlanList = z.object({ plans: z.array(PlanSummary) });
-const GrantList = z.object({ grants: z.array(Grant) });
+const GrantList = z.object({
+  grants: z.array(Grant),
+  approval: ApprovalStatus.nullish(),
+});
 const Approved = z.object({ grant: ApprovalGrant, existing: z.boolean() });
 const RunList = z.object({ runs: z.array(RunView) });
 const planPath = (planId: string) => `/api/plans/${encodeURIComponent(planId)}`;
@@ -39,34 +47,60 @@ export function LivePlans({ apiFetch }: { apiFetch: ApiFetch }) {
   // A freshly stored plan is the one to look at next.
   const showStored = useCallback((id: string) => setChosen(id), []);
 
-  if (plans.isPending) return <p className="mt-6 text-sm text-slate-500">Loading plans…</p>;
-  if (plans.isError) return <Problem>{explain(plans.error)}</Problem>;
-  if (!planId) {
-    return (
-      <div className="mt-6">
-        <RehearseBar apiFetch={apiFetch} onStored={showStored} />
-        <p className="mt-4 text-slate-600">No plans for this organization yet.</p>
-      </div>
-    );
-  }
+  if (plans.isPending) return <PageSkeleton what="plans" />;
+  if (plans.isError) return <Alert className="mt-2">{explain(plans.error)}</Alert>;
 
   return (
-    <div className="mt-6">
+    <div className="flex flex-col gap-6">
       <RehearseBar apiFetch={apiFetch} onStored={showStored} />
-      <nav aria-label="Plans" className="mt-4 flex flex-wrap gap-2">
-        {plans.data.plans.map((p) => (
-          <button
-            key={p.planId}
-            type="button"
-            aria-current={p.planId === planId ? "page" : undefined}
-            onClick={() => setChosen(p.planId)}
-            className="rounded-full border border-slate-300 px-3 py-1 text-sm aria-[current=page]:border-slate-900 aria-[current=page]:bg-slate-900 aria-[current=page]:text-white"
-          >
-            {p.planId} <span className="opacity-70">r{p.revision}</span>
-          </button>
-        ))}
-      </nav>
-      <LivePlan key={planId} apiFetch={apiFetch} planId={planId} />
+
+      {!planId ? (
+        <Card className="flex flex-col items-center gap-3 border-dashed bg-transparent px-6 py-14 text-center shadow-none">
+          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sunken text-subtle">
+            <Icon name="flask" className="h-6 w-6" />
+          </span>
+          <p className="text-base font-semibold text-ink">No plans for this organization yet.</p>
+          <p className="max-w-sm text-sm text-muted">
+            Rehearse the incident above. The agent plans in a copy of the company, and the plan
+            appears here for review.
+          </p>
+        </Card>
+      ) : (
+        <>
+          {plans.data.plans.length > 1 && (
+            <Segmented
+              label="Plans"
+              value={planId}
+              onChange={setChosen}
+              options={plans.data.plans.map((p) => ({
+                id: p.planId,
+                text: `${p.planId} · r${p.revision}`,
+              }))}
+            />
+          )}
+          {plans.data.plans.length === 1 && <h2 className="sr-only">Plans</h2>}
+          <LivePlan key={planId} apiFetch={apiFetch} planId={planId} />
+        </>
+      )}
+    </div>
+  );
+}
+
+function PageSkeleton({ what }: { what: string }) {
+  return (
+    <div aria-busy="true" className="flex flex-col gap-5">
+      <p className="flex items-center gap-2 text-sm text-subtle">
+        <Spinner />
+        Loading {what}…
+      </p>
+      <Skeleton className="h-9 w-64" />
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_21.5rem]">
+        <div className="space-y-5">
+          <Skeleton className="h-64" />
+          <Skeleton className="h-64" />
+        </div>
+        <Skeleton className="h-72" />
+      </div>
     </div>
   );
 }
@@ -80,6 +114,7 @@ function LivePlan({ apiFetch, planId }: { apiFetch: ApiFetch; planId: string }) 
   });
   const [unchecked, setUnchecked] = useState<ReadonlySet<string>>(new Set());
   const [lastRevision, setLastRevision] = useState<NewRevision | null>(null);
+  const [shownRun, setShownRun] = useState<string | null>(null);
 
   const revise = useMutation({
     mutationFn: (base: StoredPlan) =>
@@ -96,8 +131,8 @@ function LivePlan({ apiFetch, planId }: { apiFetch: ApiFetch; planId: string }) 
     },
   });
 
-  if (plan.isPending) return <p className="mt-6 text-sm text-slate-500">Loading plan…</p>;
-  if (plan.isError) return <Problem>{explain(plan.error)}</Problem>;
+  if (plan.isPending) return <PageSkeleton what="plan" />;
+  if (plan.isError) return <Alert>{explain(plan.error)}</Alert>;
   const { manifest, planHash } = plan.data;
   const dropped = [...droppedBy(manifest.actions, unchecked)];
 
@@ -109,19 +144,16 @@ function LivePlan({ apiFetch, planId }: { apiFetch: ApiFetch; planId: string }) 
     });
 
   return (
-    <div className="mt-4">
+    <div className="enter flex flex-col gap-6">
       {lastRevision && (
-        <p
-          role="status"
-          className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900"
-        >
+        <Alert tone="good">
           Revision {lastRevision.revision} created from {lastRevision.parentRevision}. Dropped{" "}
           {lastRevision.dropped
             .map((d) => `${d.actionId} (${d.reason === "reviewer" ? "unchecked" : "dependent"})`)
             .join(", ")}
           . New hash <code className="font-mono">{shortHash(lastRevision.planHash)}</code>; it needs
           its own approval.
-        </p>
+        </Alert>
       )}
 
       <PlanReview
@@ -129,44 +161,52 @@ function LivePlan({ apiFetch, planId }: { apiFetch: ApiFetch; planId: string }) 
         planHash={planHash}
         evidence={manifest.versions.planner.model === "fixture" ? "fixture" : null}
         review={{ unchecked, onToggle: toggle }}
+        actions={
+          <ApprovalPanel
+            apiFetch={apiFetch}
+            plan={plan.data}
+            editing={unchecked.size > 0}
+            onStale={() => queryClient.invalidateQueries({ queryKey: key("plan", planId) })}
+            onRunStarted={setShownRun}
+          />
+        }
       />
+
+      <RunSection apiFetch={apiFetch} planId={planId} shownRun={shownRun} onShow={setShownRun} />
 
       {unchecked.size > 0 && (
-        <div
-          data-testid="exclusion-bar"
-          className="sticky bottom-0 mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-300 bg-white p-3 shadow"
-        >
-          <p className="text-sm">
-            Excluding {dropped.length} action{dropped.length === 1 ? "" : "s"}:{" "}
-            <span className="font-mono text-xs">{dropped.join(", ")}</span>
-          </p>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setUnchecked(new Set())}
-              className="rounded border border-slate-300 px-3 py-1.5 text-sm"
+        // Floats over the page, lined up under the steps (not the approval panel) on wide screens.
+        <div className="pointer-events-none fixed inset-x-0 bottom-4 z-30 px-3 sm:px-6">
+          <div className="mx-auto max-w-6xl">
+            <div
+              data-testid="exclusion-bar"
+              className="enter pointer-events-auto flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line-strong bg-surface p-3 pl-4 shadow-raised lg:w-[calc(100%-23.5rem)]"
             >
-              Cancel
-            </button>
-            <button
-              type="button"
-              disabled={revise.isPending}
-              onClick={() => revise.mutate(plan.data)}
-              className="rounded bg-slate-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
-            >
-              Create revision {plan.data.revision + 1}
-            </button>
+              <p className="min-w-0 text-sm text-ink">
+                <span className="font-semibold">
+                  Excluding {dropped.length} step{dropped.length === 1 ? "" : "s"}
+                </span>
+                <span className="ml-2 font-mono text-xs break-all text-subtle">
+                  {dropped.join(", ")}
+                </span>
+              </p>
+              <div className="flex shrink-0 gap-2">
+                <Button variant="ghost" onClick={() => setUnchecked(new Set())}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  loading={revise.isPending}
+                  onClick={() => revise.mutate(plan.data)}
+                >
+                  Create revision {plan.data.revision + 1}
+                </Button>
+              </div>
+              {revise.isError && <Alert className="w-full">{explain(revise.error)}</Alert>}
+            </div>
           </div>
-          {revise.isError && <Problem>{explain(revise.error)}</Problem>}
         </div>
       )}
-
-      <ApprovalPanel
-        apiFetch={apiFetch}
-        plan={plan.data}
-        editing={unchecked.size > 0}
-        onStale={() => queryClient.invalidateQueries({ queryKey: key("plan", planId) })}
-      />
     </div>
   );
 }
@@ -176,11 +216,13 @@ function ApprovalPanel({
   plan,
   editing,
   onStale,
+  onRunStarted,
 }: {
   apiFetch: ApiFetch;
   plan: StoredPlan;
   editing: boolean;
   onStale: () => void;
+  onRunStarted: (runId: string) => void;
 }) {
   const queryClient = useQueryClient();
   const key = useTenantKey();
@@ -201,93 +243,205 @@ function ApprovalPanel({
         onStale();
     },
   });
-  const runs = useQuery({
-    queryKey: key("runs", plan.planId),
-    queryFn: () => call(apiFetch, RunList, `${planPath(plan.planId)}/runs`),
-  });
-  const [shownRun, setShownRun] = useState<string | null>(null);
   const apply = useMutation({
     mutationFn: () => call(apiFetch, ApplyAccepted, `${planPath(plan.planId)}/apply`, body),
     onSuccess: (accepted) => {
-      setShownRun(accepted.runId);
+      onRunStarted(accepted.runId);
       queryClient.invalidateQueries({ queryKey: key("runs", plan.planId) });
     },
   });
-  const live = grants.data?.grants.find((g) => g.live && g.planHash === plan.planHash);
-  const runId = shownRun ?? runs.data?.runs[0]?.id ?? null;
+  // Where two different approvers are needed, one person's grant isn't "approved" yet.
+  const seats = grants.data?.approval?.dualRequired ? grants.data.approval : null;
+  const live = grants.data?.grants.find(
+    (g) => g.live && g.planHash === plan.planHash && (!seats || seats.satisfied),
+  );
+  const needs = requiredRoles(plan.manifest)
+    .map((r) => roleLabel[r])
+    .join(" + ");
 
   return (
-    <section aria-label="Approval" className="mt-4 rounded-lg border border-slate-200 bg-white p-4">
-      <h3 className="font-medium">Approval</h3>
-      <p className="mt-1 text-sm text-slate-600">
-        Needs{" "}
-        {requiredRoles(plan.manifest)
-          .map((r) => roleLabel[r])
-          .join(" + ")}
-        . Approving binds to revision {plan.revision}, hash{" "}
-        <code className="font-mono">{shortHash(plan.planHash)}</code>.
-      </p>
+    <Card aria-label="Approval" className="p-5">
+      <div className="flex items-center gap-2">
+        <span
+          className={`flex h-8 w-8 items-center justify-center rounded-lg ${live ? "bg-ok-bg text-ok" : "bg-accent-soft text-accent"}`}
+        >
+          <Icon name="shield" className="h-[18px] w-[18px]" />
+        </span>
+        <h3 className="text-[15px] font-semibold text-ink">Approval</h3>
+        {live && (
+          <Chip tone="good" icon="check">
+            Approved
+          </Chip>
+        )}
+      </div>
+
+      {seats && <Seats status={seats} />}
 
       {live ? (
-        <div className="mt-3 flex flex-wrap items-center gap-3">
-          <p data-testid="live-grant" className="text-sm text-emerald-800">
-            Approved by {live.actorUserId} as {live.roles.map((r) => roleLabel[r]).join(", ")} until{" "}
+        <>
+          <p data-testid="live-grant" className="mt-3 text-sm leading-5 text-muted">
+            {seats ? (
+              <>Approved by {seats.signed.map((s) => s.actorUserId).join(" and ")}, until </>
+            ) : (
+              <>
+                Approved by <span className="font-medium text-ink">{live.actorUserId}</span> as{" "}
+                {live.roles.map((r) => roleLabel[r]).join(", ")} until{" "}
+              </>
+            )}
             {new Date(live.expiresAt).toLocaleTimeString()}.
           </p>
-          <button
-            type="button"
-            disabled={apply.isPending || editing}
+          <Button
+            variant="success"
+            size="md"
+            icon="play"
+            className="mt-4 w-full"
+            loading={apply.isPending}
+            disabled={editing}
             onClick={() => apply.mutate()}
-            className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
           >
             Apply to production
-          </button>
-        </div>
+          </Button>
+          <p className="mt-2 text-xs leading-4 text-subtle">
+            Applies exactly this plan. Before each step the executor re-checks what it relied on and
+            holds anything that changed.
+          </p>
+        </>
       ) : (
-        <button
-          type="button"
-          disabled={approve.isPending || editing}
-          title={editing ? "Create the revision first, then approve it" : undefined}
-          onClick={() => approve.mutate()}
-          className="mt-3 rounded bg-slate-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
-        >
-          Approve revision {plan.revision}
-        </button>
+        <>
+          <p className="mt-3 text-sm leading-5 text-muted">
+            {seats ? (
+              <>
+                Needs <span className="font-medium text-ink">two different people</span>: a support
+                lead and a finance lead. One person can't fill both seats.
+              </>
+            ) : (
+              <>
+                Needs <span className="font-medium text-ink">{needs}</span> to approve revision{" "}
+                {plan.revision}.
+              </>
+            )}
+          </p>
+          <Button
+            variant="primary"
+            icon="check"
+            className="mt-4 w-full"
+            loading={approve.isPending}
+            disabled={editing}
+            title={editing ? "Create the revision first, then approve it" : undefined}
+            onClick={() => approve.mutate()}
+          >
+            {seats && seats.signed.length > 0 ? "Add my approval" : "Approve"} revision{" "}
+            {plan.revision}
+          </Button>
+          {editing && (
+            <p className="mt-2 text-xs leading-4 text-subtle">
+              Create the revision first, then approve it.
+            </p>
+          )}
+        </>
       )}
 
-      {approve.isError && <Problem>{explain(approve.error)}</Problem>}
-      {apply.isError && <Problem>{explain(apply.error)}</Problem>}
+      {approve.isError && <Alert className="mt-3">{explain(approve.error)}</Alert>}
+      {apply.isError && <Alert className="mt-3">{explain(apply.error)}</Alert>}
       {apply.data && (
-        <p role="status" data-testid="run-started" className="mt-3 text-sm">
+        <Alert tone="info" className="mt-3" data-testid="run-started">
           Run <code className="font-mono">{apply.data.runId}</code>{" "}
           {apply.data.existing ? "already exists" : "started"} ({apply.data.state}).
-        </p>
+        </Alert>
       )}
+    </Card>
+  );
+}
 
-      {(runs.data?.runs.length ?? 0) > 1 && (
-        <nav aria-label="Runs" className="mt-4 flex flex-wrap gap-2 text-xs">
-          {runs.data?.runs.map((r) => (
+/** The two seats a large refund needs filled by different people, and who holds each. */
+export function Seats({ status }: { status: ApprovalStatus }) {
+  const seat = (role: "support_lead" | "finance_lead") => {
+    const signer = status.signed.find((s) => s.role === role);
+    return (
+      <li
+        key={role}
+        data-testid="approval-seat"
+        data-seat={role}
+        data-signed={signer ? "true" : "false"}
+        className="flex items-center justify-between gap-3 text-sm"
+      >
+        <span className="text-muted">{roleLabel[role]}</span>
+        {signer ? (
+          <Chip tone="good" icon="check">
+            {signer.actorUserId}
+          </Chip>
+        ) : (
+          <Chip tone="warn" icon="clock">
+            Waiting
+          </Chip>
+        )}
+      </li>
+    );
+  };
+  return (
+    <ul
+      aria-label="Approvers"
+      className="mt-3 space-y-2 rounded-lg border border-line bg-sunken/60 p-3"
+    >
+      {seat("support_lead")}
+      {seat("finance_lead")}
+    </ul>
+  );
+}
+
+/** The plan's runs, newest first, with the chosen one followed live. */
+function RunSection({
+  apiFetch,
+  planId,
+  shownRun,
+  onShow,
+}: {
+  apiFetch: ApiFetch;
+  planId: string;
+  shownRun: string | null;
+  onShow: (id: string) => void;
+}) {
+  const key = useTenantKey();
+  const runs = useQuery({
+    queryKey: key("runs", planId),
+    queryFn: () => call(apiFetch, RunList, `${planPath(planId)}/runs`),
+  });
+  const runId = shownRun ?? runs.data?.runs[0]?.id ?? null;
+  const top = useRef<HTMLElement>(null);
+  // Starting a run brings its report into view: the outcome is what the reviewer came for.
+  useEffect(() => {
+    if (!shownRun) return;
+    const calm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    top.current?.scrollIntoView({ behavior: calm ? "auto" : "smooth", block: "start" });
+  }, [shownRun]);
+  if (!runId) return null;
+  const all = runs.data?.runs ?? [];
+
+  return (
+    <section ref={top} aria-label="Runs" className="flex scroll-mt-20 flex-col gap-3">
+      {all.length > 1 && (
+        <nav aria-label="Runs" className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1">
+          {all.map((r) => (
             <button
               key={r.id}
               type="button"
               aria-current={r.id === runId ? "true" : undefined}
-              onClick={() => setShownRun(r.id)}
-              className="rounded border border-slate-300 px-2 py-1 aria-[current=true]:border-slate-900"
+              onClick={() => onShow(r.id)}
+              className="rounded-lg border border-line bg-surface px-3 py-1.5 text-xs whitespace-nowrap text-muted shadow-card aria-[current=true]:border-accent aria-[current=true]:text-ink"
             >
               r{r.revision} · {r.state} · {new Date(r.createdAt).toLocaleTimeString()}
             </button>
           ))}
         </nav>
       )}
-      {runId && <RunTimeline key={runId} apiFetch={apiFetch} runId={runId} />}
+      <RunTimeline key={runId} apiFetch={apiFetch} runId={runId} />
+      <AuditPanel key={`audit-${runId}`} apiFetch={apiFetch} runId={runId} />
+      <PrecedentPanel
+        key={`precedent-${runId}`}
+        apiFetch={apiFetch}
+        runId={runId}
+        completed={all.find((r) => r.id === runId)?.state === "completed"}
+      />
     </section>
-  );
-}
-
-function Problem({ children }: { children: string }) {
-  return (
-    <p role="alert" className="mt-3 rounded bg-rose-50 p-2 text-sm text-rose-800">
-      {children}
-    </p>
   );
 }

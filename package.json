@@ -7,12 +7,14 @@
     "node": ">=24.11.1 <25"
   },
   "scripts": {
+    "rehearsal": "tsx scripts/rehearsal/cli.ts",
     "dev": "pnpm --parallel --filter @rehearsal/api --filter @rehearsal/web dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "test": "vitest run",
     "test:core": "vitest run --project core --project contracts --project testkit",
     "test:providers": "vitest run --project providers",
+    "test:memory": "vitest run --project memory",
     "lint": "biome check .",
     "format": "biome format --write .",
     "fixtures:write": "tsx scripts/seed/write-bundles.ts",

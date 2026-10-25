@@ -29,6 +29,20 @@
       "when": 1792718548060,
       "tag": "0003_perpetual_arclight",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792847741737,
+      "tag": "0004_reflective_archangel",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792889181167,
+      "tag": "0005_keen_speedball",
+      "breakpoints": true
     }
   ]
 }

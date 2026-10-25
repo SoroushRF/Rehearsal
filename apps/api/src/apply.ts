@@ -1,4 +1,5 @@
-import { ApplyRequest } from "@rehearsal/contracts";
+import { ApplyRequest, PlanManifest } from "@rehearsal/contracts";
+import { approvalStatus, type BillingPolicy, explainShortfall } from "@rehearsal/core";
 import { type Db, type PgBoss, requestApply } from "@rehearsal/db";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 
@@ -19,6 +20,8 @@ export interface ApplyDeps {
   boss: PgBoss;
   auth: AuthResolver;
   now?: () => Date;
+  /** The policies approvals are checked against; with them, apply refuses a plan short of its approvers. */
+  policies?: readonly BillingPolicy[];
 }
 
 /**
@@ -34,13 +37,23 @@ export function registerApplyRoute(app: FastifyInstance, deps: ApplyDeps) {
     const body = ApplyRequest.strict().safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: "invalid_request" });
 
+    const at = deps.now?.() ?? new Date();
+    const { policies } = deps;
     const result = await requestApply(deps.db, deps.boss, {
+      ...(policies && {
+        checkApprovals: (stored, grants) => {
+          const manifest = PlanManifest.safeParse(stored);
+          if (!manifest.success) return null; // admission refuses a manifest it can't read
+          const status = approvalStatus(manifest.data, body.data.planHash, policies, grants, at);
+          return status.satisfied ? null : explainShortfall(status);
+        },
+      }),
       orgId: auth.orgId,
       userId: auth.userId,
       planId: req.params.id,
       revision: body.data.revision,
       planHash: body.data.planHash,
-      now: deps.now?.() ?? new Date(),
+      now: at,
     });
 
     switch (result.kind) {

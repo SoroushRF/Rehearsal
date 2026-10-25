@@ -1,11 +1,220 @@
+@import "@fontsource-variable/inter";
 @import "tailwindcss";
 
-/* The review UI is light-only for now; say so, so a dark browser doesn't paint text on black. */
+/*
+ * Design tokens. Components use only these semantic names (bg-surface, text-muted, border-line,
+ * tone-ok, …), never raw palette colors, so light and dark stay consistent.
+ *
+ * Risk legend, used the same way everywhere:
+ *   ok     reversible, safe            danger  irreversible, can't be taken back
+ *   warn   compensable / best effort   info    who has to sign, neutral facts
+ */
 :root {
   color-scheme: light;
+  --canvas: #f5f6f8;
+  --surface: #ffffff;
+  --sunken: #f0f2f5;
+  --line: #e2e5ea;
+  --line-strong: #c9ced7;
+  --ink: #0e1626;
+  --muted: #465065;
+  --subtle: #5f6b80;
+  --accent: #4338ca;
+  --accent-hover: #3730a3;
+  --accent-soft: #eceefe;
+  --on-accent: #ffffff;
+  --ok-solid: #1f9d55;
+  --warn-solid: #e5a00d;
+  --danger-solid: #d93a46;
+  --info-solid: #3b82d6;
+
+  --ok-fg: #0a6b38;
+  --ok-bg: #e7f6ed;
+  --ok-line: #b3dfc4;
+  --warn-fg: #8a4a00;
+  --warn-bg: #fff3dc;
+  --warn-line: #f2d296;
+  --danger-fg: #b0202a;
+  --danger-bg: #fdebed;
+  --danger-line: #f5bec4;
+  --info-fg: #1b4e92;
+  --info-bg: #e8f0fc;
+  --info-line: #b9d1f2;
+
+  --elev-card: 0 1px 2px rgb(14 22 38 / 0.05), 0 1px 1px rgb(14 22 38 / 0.03);
+  --elev-raised: 0 8px 24px rgb(14 22 38 / 0.1), 0 2px 6px rgb(14 22 38 / 0.06);
+  --ring: 0 0 0 3px rgb(67 56 202 / 0.35);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --canvas: #0a0e16;
+    --surface: #121827;
+    --sunken: #0d1320;
+    --line: #232c3e;
+    --line-strong: #34405a;
+    --ink: #e9edf5;
+    --muted: #b0b9ca;
+    --subtle: #8f9ab0;
+    --accent: #7c85f5;
+    --accent-hover: #939bff;
+    --accent-soft: #1b2142;
+    --on-accent: #0a0e16;
+    --ok-solid: #3ecb82;
+    --warn-solid: #f0b429;
+    --danger-solid: #ff6b76;
+    --info-solid: #5aa2f0;
+
+    --ok-fg: #72dca0;
+    --ok-bg: #0e2a1b;
+    --ok-line: #1d5236;
+    --warn-fg: #f3b967;
+    --warn-bg: #2b1f0a;
+    --warn-line: #5b4311;
+    --danger-fg: #ff9ba3;
+    --danger-bg: #2f1418;
+    --danger-line: #63262d;
+    --info-fg: #8fbbf6;
+    --info-bg: #0f2038;
+    --info-line: #274b78;
+
+    --elev-card: 0 1px 2px rgb(0 0 0 / 0.4);
+    --elev-raised: 0 12px 32px rgb(0 0 0 / 0.55), 0 2px 6px rgb(0 0 0 / 0.4);
+    --ring: 0 0 0 3px rgb(124 133 245 / 0.45);
+  }
+}
+
+@theme inline {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-sunken: var(--sunken);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-on-accent: var(--on-accent);
+
+  --color-ok-solid: var(--ok-solid);
+  --color-warn-solid: var(--warn-solid);
+  --color-danger-solid: var(--danger-solid);
+  --color-info-solid: var(--info-solid);
+  --color-ok: var(--ok-fg);
+  --color-ok-bg: var(--ok-bg);
+  --color-ok-line: var(--ok-line);
+  --color-warn: var(--warn-fg);
+  --color-warn-bg: var(--warn-bg);
+  --color-warn-line: var(--warn-line);
+  --color-danger: var(--danger-fg);
+  --color-danger-bg: var(--danger-bg);
+  --color-danger-line: var(--danger-line);
+  --color-info: var(--info-fg);
+  --color-info-bg: var(--info-bg);
+  --color-info-line: var(--info-line);
+
+  --shadow-card: var(--elev-card);
+  --shadow-raised: var(--elev-raised);
+}
+
+html {
+  background: var(--canvas);
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
-  background-color: var(--color-slate-50);
-  color: var(--color-slate-900);
+  margin: 0;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.5;
+  font-feature-settings: "cv11", "ss03";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Money and counts line up in columns. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* One consistent, visible focus ring for every interactive element. */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+  border-radius: 0.5rem;
+}
+
+::selection {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--sunken) 25%, var(--line) 37%, var(--sunken) 63%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+  border-radius: 0.5rem;
+}
+/*
+ * No fill-mode: a transform left filling forward makes the element the containing block for any
+ * position:fixed descendant (the floating action bar), pinning it to the page instead of the screen.
+ */
+.enter {
+  animation: rise 0.28s ease-out;
+}
+.drawer-enter {
+  animation: slide-in 0.22s ease-out;
+}
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+/* In-page links glide, unless the reader has asked for less motion. */
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton,
+  .enter,
+  .drawer-enter,
+  .spin {
+    animation: none;
+  }
+  html {
+    scroll-behavior: auto;
+  }
 }
