@@ -92,6 +92,27 @@ describe("rehearsal token minter (T1.23)", () => {
     await app.close();
   });
 
+  it("hands out no token when teardown lands while the mint is in flight", async () => {
+    const { app, active, mint, rehearsal } = setup();
+    let release = () => {};
+    const paused = new Promise<void>((r) => {
+      release = r;
+    });
+    mint.mockImplementationOnce(async (world) => {
+      await paused;
+      return { token: `jwt-for-${world.tenant}`, expiresAt: 1 };
+    });
+    const pending = rehearsal("rehearsal-secret", { vendor: "stripe", rehearsalId: ACTIVE });
+    await vi.waitFor(() => expect(mint).toHaveBeenCalledTimes(1));
+    active.delete(ACTIVE);
+    release();
+    const res = await pending;
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toEqual({ error: "rehearsal_not_provisioned" });
+    expect(res.body).not.toContain("jwt-for-");
+    await app.close();
+  });
+
   it("never lets the worker pick a tenant, URL, world or vendor outside the list", async () => {
     const { app, mint, rehearsal } = setup();
     for (const payload of [

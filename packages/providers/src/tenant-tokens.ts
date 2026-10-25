@@ -1,5 +1,6 @@
 import type { World } from "@rehearsal/contracts";
 import { z } from "zod";
+import { NO_REDIRECTS } from "./era";
 import {
   REHEARSAL_URL_KEYS,
   resolveRehearsalWorld,
@@ -91,6 +92,7 @@ export function workerWorlds(
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${secret}` },
         body: JSON.stringify({ vendor }),
+        ...NO_REDIRECTS,
       });
       if (!res.ok) throw new Error(`mint ${vendor}/${world} → ${res.status}`);
       return MintedToken.parse(await res.json());
@@ -179,6 +181,7 @@ export function rehearsalWorkerWorlds(
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${secret}` },
         body: JSON.stringify({ vendor, rehearsalId }),
+        ...NO_REDIRECTS,
       });
       if (!res.ok) throw new Error(`mint ${vendor}/${config.tenant} → ${res.status}`);
       const minted = RehearsalMintedToken.parse(await res.json());

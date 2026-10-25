@@ -82,6 +82,12 @@ export function registerRehearsalTokenRoute(app: FastifyInstance, deps: Rehearsa
     }
     try {
       const minted = await mint(world, deps.adminToken);
+      // Teardown can land while the mint is in flight, and a reset doesn't revoke a signed token:
+      // check again, and hand out nothing for a rehearsal that's gone. This narrows the race to
+      // the reply itself; closing it needs the lifecycle to fence issuance (T3.13).
+      if (!(await deps.active(rehearsalId))) {
+        return reply.code(409).send({ error: "rehearsal_not_provisioned" });
+      }
       const result: RehearsalMintedToken = {
         ...minted,
         tenant: world.tenant,
