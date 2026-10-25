@@ -1,4 +1,6 @@
 import { randomBytes } from "node:crypto";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import type { Observation, PlanManifest, QueryObservation } from "@rehearsal/contracts";
 import { fingerprint } from "@rehearsal/core";
 import {
@@ -228,6 +230,67 @@ describe("snapshot support", () => {
     expect(() =>
       rehearsalAdminToken({ ...ENV, REHEARSAL_ERA_ADMIN_TOKEN: ENV.ERA_ADMIN_TOKEN }),
     ).toThrow("must differ");
+  });
+
+  it("refuses a requester page whose count or rows don't add up", async () => {
+    const ticket = records.zendesk.tickets.find((t) => t.id === CASE.ticketId) ?? {};
+    const id = String(ticket.id);
+    const projections = { [id]: zendeskTicketProjection(ticket) };
+    const evidence: Evidence = {
+      actions: [],
+      observations: [],
+      queryObservations: [
+        {
+          id: "q_tickets",
+          world: "planning",
+          vendor: "zendesk",
+          predicate: {
+            kind: "zendesk.tickets.byRequester",
+            requesterId: String(ticket.requester_id),
+          },
+          cutoff: "2026-10-24T00:00:00.000Z",
+          complete: true,
+          matchingIds: [id],
+          projectionVersion: ZENDESK_TICKET_PROJECTION,
+          projections,
+          fingerprint: fingerprint({ matchingIds: [id], projections }),
+          capturedAt: "2026-10-24T00:00:00.000Z",
+        },
+      ],
+    };
+    let page: unknown = {};
+    const server = createServer((_req, res) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify(page));
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    const zendesk = {
+      baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+      tenant: "rh-abcd1234",
+      tenantToken: "signed.jwt",
+    };
+    const verify = async (body: unknown) => {
+      page = body;
+      return verifySnapshot(evidence, { zendesk });
+    };
+    try {
+      expect(await verify({ tickets: [ticket], count: 1, next_page: null })).toEqual({
+        ok: true,
+        mismatches: [],
+      });
+      // Every returned row matches, but the server says there are two.
+      expect(await verify({ tickets: [ticket], count: 2, next_page: null })).toEqual({
+        ok: false,
+        mismatches: ["q_tickets: count is 2 but the page has 1 tickets"],
+      });
+      expect(await verify({ tickets: [ticket, ticket], count: 2, next_page: null })).toEqual({
+        ok: false,
+        mismatches: [`q_tickets: page repeats ${id}`],
+      });
+      expect((await verify({ tickets: [ticket], next_page: null })).ok).toBe(false);
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
   });
 
   it("tears down only a finished rehearsal", async () => {

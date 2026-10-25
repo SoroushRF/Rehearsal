@@ -360,6 +360,23 @@ async function read(vendor: SnapshotVendor, world: WorldConfig, path: string) {
   return (await res.json()) as Record<string, unknown>;
 }
 
+// Raw list pages, checked before anything is compared: a short or repeated page must not read as
+// "the same population" just because every row it did return matches.
+const Row = z.record(z.string(), z.unknown());
+const StripeChargePage = z.object({ data: z.array(Row), has_more: z.boolean() });
+const ZendeskTicketPage = z.object({
+  tickets: z.array(Row),
+  count: z.number().int().nonnegative(),
+  next_page: z.string().nullable(),
+});
+
+function uniqueIds(rows: Record<string, unknown>[]): string[] {
+  const ids = rows.map((r) => String(r.id));
+  const dupes = [...new Set(ids.filter((id, i) => ids.indexOf(id) !== i))].sort();
+  if (dupes.length > 0) throw new Error(`page repeats ${dupes.join(", ")}`);
+  return ids;
+}
+
 function differing(want: Record<string, unknown>, got: Record<string, unknown>): string[] {
   const fields = new Set([...Object.keys(want), ...Object.keys(got)]);
   return [...fields].filter((f) => canonicalize(want[f]) !== canonicalize(got[f])).sort();
@@ -423,9 +440,10 @@ export async function verifySnapshot(
           "created[lt]": String(lt),
           limit: "100",
         });
-        const page = await read("stripe", world, `/v1/charges?${params}`);
-        if (page.has_more !== false) throw new Error("more than 100 matches; can't enumerate");
-        for (const c of page.data as Record<string, unknown>[]) {
+        const page = StripeChargePage.parse(await read("stripe", world, `/v1/charges?${params}`));
+        if (page.has_more) throw new Error("more than 100 matches; can't enumerate");
+        uniqueIds(page.data);
+        for (const c of page.data) {
           const created = Number(c.created);
           if (c.customer === p.customerId && created >= gte && created < lt) {
             got.set(String(c.id), stripeChargeProjection(c));
@@ -433,9 +451,13 @@ export async function verifySnapshot(
         }
       } else {
         const path = `/api/v2/users/${encodeURIComponent(p.requesterId)}/tickets/requested.json?per_page=100`;
-        const page = await read("zendesk", world, path);
+        const page = ZendeskTicketPage.parse(await read("zendesk", world, path));
         if (page.next_page !== null) throw new Error("more than 100 matches; can't enumerate");
-        for (const t of page.tickets as Record<string, unknown>[]) {
+        const returned = uniqueIds(page.tickets).length;
+        if (page.count !== returned) {
+          throw new Error(`count is ${page.count} but the page has ${returned} tickets`);
+        }
+        for (const t of page.tickets) {
           if (String(t.requester_id) === p.requesterId) {
             got.set(String(t.id), zendeskTicketProjection(t));
           }
