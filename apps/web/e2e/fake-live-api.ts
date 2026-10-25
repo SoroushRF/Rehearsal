@@ -67,7 +67,16 @@ const json = (route: Route, status: number, body: unknown) =>
   route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 
 /** A stand-in for the API with just enough state for one review: revise, refuse, approve, apply. */
-export function fakeApi({ dual = false }: { dual?: boolean } = {}) {
+export function fakeApi({
+  dual = false,
+  completedRun = false,
+}: {
+  dual?: boolean;
+  /** Serve the applied run as completed, and the precedent routes, instead of the held phantom. */
+  completedRun?: boolean;
+} = {}) {
+  const run = () => (completedRun ? { ...RUN, state: "completed" } : RUN);
+  const precedents: object[] = [];
   let current = { revision: 1, ...V1 };
   const grants: object[] = [];
   let approvals = 0;
@@ -190,12 +199,30 @@ export function fakeApi({ dual = false }: { dual?: boolean } = {}) {
       return json(route, 202, { runId: "run_1", state: "approved", existing: false });
     }
     if (path === "/api/plans/plan_happy/runs")
-      return json(route, 200, { runs: applied ? [RUN] : [] });
+      return json(route, 200, { runs: applied ? [run()] : [] });
+    if (path === "/api/precedents") return json(route, 200, { precedents, syncEnabled: false });
+    if (path === "/api/runs/run_1/precedents") {
+      const b = body as Record<string, unknown>;
+      precedents.push({
+        id: b.id,
+        version: 1,
+        appliesTo: b.appliesTo,
+        status: "waiting",
+        statement: b.statement,
+        conditions: b.conditions,
+        exceptions: b.exceptions,
+        effectiveFrom: b.effectiveFrom,
+        effectiveUntil: b.effectiveUntil,
+        author: "user_finance",
+        approvedAt: "2026-10-24T12:00:00.000Z",
+      });
+      return json(route, 201, { precedent: { id: b.id, version: 1 }, syncEnabled: false });
+    }
     if (path === "/api/runs/run_1/events") {
       // The phantom: a new duplicate charge appeared for cus_fixture_002 after approval.
       const after = Number(new URL(req.url()).searchParams.get("after") ?? 0);
       return json(route, 200, {
-        run: RUN,
+        run: run(),
         events: PHANTOM_EVENTS.filter((e) => e.seq > after),
         more: false,
       });

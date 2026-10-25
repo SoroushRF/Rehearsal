@@ -6,6 +6,7 @@ import policyV3 from "../../../scenarios/billing/policy.v3.json" with { type: "j
 import { buildApp } from "./app";
 import type { ApplyDeps } from "./apply";
 import { bearerReviewer, clerkFromEnv, type ReviewerResolver } from "./auth";
+import { publisherFromEnv, startPrecedentWorker } from "./precedent-sync";
 import { tenantTokenDepsFromEnv } from "./tenant-tokens";
 
 /** Without Clerk keys every command is refused as unauthenticated. */
@@ -37,6 +38,16 @@ const approvals = apply && {
   policies,
 };
 const runs = apply && { db: apply.db, auth: reviewer };
+// Agent Memory is optional: without it a promotion is recorded and waits, and nothing plans from it.
+const publisherFor = publisherFromEnv();
+const precedents = apply && {
+  db: apply.db,
+  boss: apply.boss,
+  reviewer,
+  syncEnabled: publisherFor !== null,
+};
+if (apply && publisherFor) await startPrecedentWorker(apply.boss, { db: apply.db, publisherFor });
+else console.warn("Agent Memory not configured; promoted precedents will wait for a sync");
 const rehearse = apply && {
   db: apply.db,
   boss: apply.boss,
@@ -48,6 +59,7 @@ const app = buildApp({
   plans,
   approvals,
   runs,
+  precedents,
   rehearse,
   reviewer,
   tenantTokens: tenantTokenDepsFromEnv(),
