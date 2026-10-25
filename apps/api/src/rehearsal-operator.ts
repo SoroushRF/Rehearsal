@@ -8,6 +8,7 @@ import {
   type Provisioned,
   provisionSnapshot,
   teardownSnapshot,
+  verifySnapshot,
 } from "../../../scripts/seed/snapshot";
 import { presents } from "./rehearsal-tokens";
 
@@ -17,7 +18,8 @@ import { presents } from "./rehearsal-tokens";
  *
  * - provision: the rehearsal must be claimed (`provisioning`). The plan is loaded from storage
  *   and checked against the rehearsal's hash and snapshot digest; its own evidence is seeded into
- *   the `rh-<id>` tenants. The answer is what was seeded from outside the evidence, never a token.
+ *   the `rh-<id>` tenants and read back; a mismatch refuses the run (§4). The answer is what was
+ *   seeded from outside the evidence, never a token.
  * - teardown: the rehearsal must have ended with no send in flight; its tenants are reset.
  *
  * Everything is derived from the stored rehearsal: the caller can't name a tenant, a plan or a URL.
@@ -39,11 +41,23 @@ export async function rehearsalTenantActive(db: Db, rehearsalId: string): Promis
   return !!stored && stored.state !== "queued" && !stored.tornDown;
 }
 
+/** Seed the snapshot, then read the tenants back before anything runs. */
+export async function seedAndVerify(
+  manifest: PlanManifest,
+  rehearsalId: string,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<Provisioned> {
+  const seeded = await provisionSnapshot(manifest, rehearsalId, env);
+  if (!seeded.ok) return seeded;
+  const check = await verifySnapshot(manifest, seeded.worlds);
+  return check.ok ? seeded : { ok: false, refusals: check.mismatches };
+}
+
 export function registerRehearsalOperatorRoutes(
   app: FastifyInstance,
   deps: RehearsalOperatorDeps,
 ): void {
-  const provision = deps.provision ?? ((m, id) => provisionSnapshot(m, id));
+  const provision = deps.provision ?? seedAndVerify;
   const teardown = deps.teardown ?? ((id, state) => teardownSnapshot(id, state));
 
   async function stored(id: string) {
