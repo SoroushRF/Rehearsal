@@ -47,10 +47,10 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T1.22** Seed disposable Era worlds from a supported incident snapshot [#166](https://github.com/SoroushRF/Rehearsal/issues/166) | 👀 in review [PR #213](https://github.com/SoroushRF/Rehearsal/pull/213) | T1.21 (T1, in review)<br>T1.7 (T1, in review)<br>T1.13 (T1, in review)<br>T1.14 (T1, in review) | T3.15 (T3) |
 | **T1.23** Scoped rehearsal credentials and world routing [#167](https://github.com/SoroushRF/Rehearsal/issues/167) | 👀 in review [PR #214](https://github.com/SoroushRF/Rehearsal/pull/214) | T1.20 (T1, in review)<br>T1.21 (T1, in review) | T3.15 (T3) |
 | **T1.24** Native Stripe sandbox setup and read conformance _(stretch)_ [#178](https://github.com/SoroushRF/Rehearsal/issues/178) | 👀 in review [PR #215](https://github.com/SoroushRF/Rehearsal/pull/215) | T1.20 (T1, in review) | T3.17 (T3) |
-| **T1.25** Competent scripted benchmark baseline _(stretch)_ [#180](https://github.com/SoroushRF/Rehearsal/issues/180) | 🟥 blocked | T1.27 (T1, blocked)<br>T4.14 (T4, ready) |  |
+| **T1.25** Competent scripted benchmark baseline _(stretch)_ [#180](https://github.com/SoroushRF/Rehearsal/issues/180) | 🟥 blocked | T1.27 (T1, in review)<br>T4.14 (T4, ready) |  |
 | **T1.26** Precedent reuse across different incidents _(stretch)_ [#181](https://github.com/SoroushRF/Rehearsal/issues/181) | 🟥 blocked | T2.17 (T2, ready)<br>T4.14 (T4, ready) |  |
-| **T1.27** Extend the scorecard to the full operation set [#161](https://github.com/SoroushRF/Rehearsal/issues/161) | 🟥 blocked | T1.7 (T1, in review)<br>T1.13 (T1, in review)<br>T1.14 (T1, in review) | T1.25, T1.28 |
-| **T1.28** Run and publish versioned benchmark comparisons [#176](https://github.com/SoroushRF/Rehearsal/issues/176) | 🟥 blocked | T1.27 (T1, blocked)<br>T4.13 (T4, blocked) | T2.7 (T2) |
+| **T1.27** Extend the scorecard to the full operation set [#161](https://github.com/SoroushRF/Rehearsal/issues/161) | 👀 in review [PR #219](https://github.com/SoroushRF/Rehearsal/pull/219) | T1.7 (T1, in review)<br>T1.13 (T1, in review)<br>T1.14 (T1, in review) | T1.25, T1.28 |
+| **T1.28** Run and publish versioned benchmark comparisons [#176](https://github.com/SoroushRF/Rehearsal/issues/176) | 🟥 blocked | T1.27 (T1, in review)<br>T4.13 (T4, blocked) | T2.7 (T2) |
 
 ## T2 Review & Approve
 
@@ -160,7 +160,7 @@ flowchart LR
     T1_21["T1.21 Contracts: rehearsal jobs, scenario refere"]:::review
     T1_22["T1.22 Seed disposable Era worlds from a supporte"]:::review
     T1_23["T1.23 Scoped rehearsal credentials and world rou"]:::review
-    T1_27["T1.27 Extend the scorecard to the full operation"]:::blocked
+    T1_27["T1.27 Extend the scorecard to the full operation"]:::review
     T1_28["T1.28 Run and publish versioned benchmark compar"]:::blocked
   end
   subgraph T2[T2 Review & Approve]
