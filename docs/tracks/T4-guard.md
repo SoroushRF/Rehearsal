@@ -37,6 +37,25 @@
 | T4.7 | _Stretch:_ impact service behind `ImpactPort`, advisory only. Deferred past the hackathon ([0008](../decisions/0008-ml-out-of-hackathon-scope.md)) | — | Integration test: model absent or failing → same execution | #31 | — |
 | T4.10 | _Full scope:_ guard: one remedy per obligation across refunds and credits | Done | A second remedy for the same obligation is held, including a teammate's and one sent under another plan or revision; distinct obligations pass. Fixture: `apps/executor-worker/test/one-remedy.test.ts`. Era: `evals/providers/test/one-remedy.test.ts` passes | #152 | T1.19 |
 
+### IAM authorization (Oct 24)
+
+Decision [0014](../decisions/0014-iam-permission-based-authorization.md) is proposed. These rows are the implementation. T4.15 stays open until that record merges.
+
+| ID | Task | Milestone | Done when | Issue | Blocked by |
+|---|---|---|---|---|---|
+| T4.15 | Decision 0014: IAM as the permission decision point | M5 | The decision records permissions, the IAM service, and who may call it | [#220](https://github.com/SoroushRF/Rehearsal/issues/220) | — |
+| T4.16 | Contracts: permissions, rule file, IAM request and response | M5 | Shared types parse, and a grant can carry permissions and a rule version | [#221](https://github.com/SoroushRF/Rehearsal/issues/221) | [T4.15](https://github.com/SoroushRF/Rehearsal/issues/220) |
+| T4.17 | Rule file v1 | M5 | Versioned JSON maps the four roles and covers every person-facing route plus `run:admit` | [#222](https://github.com/SoroushRF/Rehearsal/issues/222) | [T4.16](https://github.com/SoroushRF/Rehearsal/issues/221) |
+| T4.18 | Pure PDP engine | M5 | A pure function allows or denies from the rule file, and denies when the rule is missing | [#223](https://github.com/SoroushRF/Rehearsal/issues/223) | [T4.16](https://github.com/SoroushRF/Rehearsal/issues/221) |
+| T4.19 | IAM service | M5 | The service checks a Clerk token or stored grants over mTLS and fails closed | [#224](https://github.com/SoroushRF/Rehearsal/issues/224) | [T4.17](https://github.com/SoroushRF/Rehearsal/issues/222), [T4.18](https://github.com/SoroushRF/Rehearsal/issues/223) |
+| T4.20 | API enforcement | M5 | Person-facing routes ask IAM with facts taken from stored rows | [#225](https://github.com/SoroushRF/Rehearsal/issues/225) | [T4.19](https://github.com/SoroushRF/Rehearsal/issues/224) |
+| T4.21 | Grants store permissions | M5 | New grants record permissions and the rule version; a role-only row is not a silent allow | [#226](https://github.com/SoroushRF/Rehearsal/issues/226) | [T4.16](https://github.com/SoroushRF/Rehearsal/issues/221), [T4.20](https://github.com/SoroushRF/Rehearsal/issues/225) |
+| T4.22 | Executor `run:admit` | M5 | Admission asks IAM again before sending and refuses when that answer is not allow | [#227](https://github.com/SoroushRF/Rehearsal/issues/227) | [T4.19](https://github.com/SoroushRF/Rehearsal/issues/224), [T4.21](https://github.com/SoroushRF/Rehearsal/issues/226) |
+| T4.23 | Invites and role changes | M5 | Invite and role routes ask IAM, then Clerk, and assign only roles from the rule file | [#228](https://github.com/SoroushRF/Rehearsal/issues/228) | [T4.20](https://github.com/SoroushRF/Rehearsal/issues/225) |
+| T4.24 | Web permissions | M5 | The UI shows permissions from `GET /api/me` and offers only actions the caller holds | [#229](https://github.com/SoroushRF/Rehearsal/issues/229) | [T4.20](https://github.com/SoroushRF/Rehearsal/issues/225), [T4.23](https://github.com/SoroushRF/Rehearsal/issues/228) |
+| T4.25 | Clerk configuration | M5 | The four org roles exist, member is the default, and Clerk has no custom `rehearsal:*` permissions | [#230](https://github.com/SoroushRF/Rehearsal/issues/230) | — |
+| T4.26 | End-to-end acceptance | M5 | On a real Clerk session each role can do only what the rule file allows | [#231](https://github.com/SoroushRF/Rehearsal/issues/231) | [T4.20](https://github.com/SoroushRF/Rehearsal/issues/225), [T4.21](https://github.com/SoroushRF/Rehearsal/issues/226), [T4.22](https://github.com/SoroushRF/Rehearsal/issues/227), [T4.23](https://github.com/SoroushRF/Rehearsal/issues/228), [T4.24](https://github.com/SoroushRF/Rehearsal/issues/229), [T4.25](https://github.com/SoroushRF/Rehearsal/issues/230) |
+
 ### Beyond and benchmark backlog (Oct 24)
 
 See [beyond.md](../beyond.md) for scope, parallel work, external gates and the release cut line. Blockers are completion prerequisites; fixture/contract work may start earlier. Killer rows are optional.
@@ -50,10 +69,12 @@ See [beyond.md](../beyond.md) for scope, parallel work, external gates and the r
 
 ## Decisions
 
+- **2026-10-24.** Authorization is permissions, decided by a separate IAM service and enforced by the API and the executor ([0014](../decisions/0014-iam-permission-based-authorization.md), proposed).
 - **2026-10-21.** A missing, incomplete, or mismatched re-check holds the step as `evidence_unavailable`. It is never treated as proof that the approved rows and query membership are unchanged.
 
 ## Handoff log
 
+- **2026-10-24 (skhdemo).** Decision 0014 is proposed on `t4/T4.15-iam-decision`; no code yet. Next is T4.16.
 - **2026-10-24 (Codex, backlog planning):** Filed 4 owned M5 issues (T4.11 #169, T4.12 #173, T4.13 #175, T4.14 #179) with scope/track labels, acceptance criteria and linked blockers. Added the cross-track dependency map in [beyond.md](../beyond.md); native GitHub dependencies mirror these rows. No feature implementation or live validation is claimed. Next: finish the full prerequisites, then follow the graph; optional killer work stays off the main release path.
 
 _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
