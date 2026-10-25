@@ -42,3 +42,6 @@ AGENTS.local.md
 
 # T1.24: what a native Stripe sandbox run created (IDs only, no key)
 .stripe-sandbox-run.json
+
+# Deployment credentials and operator material, never part of a build context or commit.
+.deploy/

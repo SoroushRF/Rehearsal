@@ -1,0 +1,869 @@
+{
+  "previews": {
+    "generation": "off"
+  },
+  "services": [
+    {
+      "name": "rehearsal-api",
+      "type": "web",
+      "runtime": "node",
+      "region": "ohio",
+      "plan": "0.5c-512mb",
+      "autoDeployTrigger": "off",
+      "numInstances": 1,
+      "maxShutdownDelaySeconds": 180,
+      "buildCommand": "corepack enable && pnpm install --frozen-lockfile --prod=false && pnpm --filter @rehearsal/web build",
+      "startCommand": "node infra/render/start.mjs api",
+      "envVars": [
+        {
+          "key": "NODE_VERSION",
+          "value": "24.11.1"
+        },
+        {
+          "key": "DATABASE_URL",
+          "fromDatabase": {
+            "name": "rehearsal-db",
+            "property": "connectionString"
+          }
+        },
+        {
+          "key": "API_PORT",
+          "value": "10000"
+        },
+        {
+          "key": "REHEARSAL_IAM_HOST",
+          "fromService": {
+            "name": "rehearsal-iam",
+            "type": "pserv",
+            "property": "host"
+          }
+        },
+        {
+          "key": "DEPLOY_IAM_CA_PEM",
+          "sync": false
+        },
+        {
+          "key": "DEPLOY_API_CERT_PEM",
+          "sync": false
+        },
+        {
+          "key": "DEPLOY_API_KEY_PEM",
+          "sync": false
+        },
+        {
+          "key": "ERA_STRIPE_PLANNING_HOST",
+          "fromService": {
+            "name": "rehearsal-stripe-planning",
+            "type": "pserv",
+            "property": "host"
+          }
+        },
+        {
+          "key": "ERA_ZENDESK_PLANNING_HOST",
+          "fromService": {
+            "name": "rehearsal-zendesk-planning",
+            "type": "pserv",
+            "property": "host"
+          }
+        },
+        {
+          "key": "ERA_SLACK_PLANNING_HOST",
+          "fromService": {
+            "name": "rehearsal-slack-planning",
+            "type": "pserv",
+            "property": "host"
+          }
+        },
+        {
+          "key": "ERA_STRIPE_OPERATIONAL_HOST",
+          "fromService": {
+            "name": "rehearsal-stripe-operational",
+            "type": "pserv",
+            "property": "host"
+          }
+        },
+        {
+          "key": "ERA_ZENDESK_OPERATIONAL_HOST",
+          "fromService": {
+            "name": "rehearsal-zendesk-operational",
+            "type": "pserv",
+            "property": "host"
+          }
+        },
+        {
+          "key": "ERA_SLACK_OPERATIONAL_HOST",
+          "fromService": {
+            "name": "rehearsal-slack-operational",
+            "type": "pserv",
+            "property": "host"
+          }
+        },
+        {
+          "key": "ERA_STRIPE_REHEARSAL_HOST",
+          "fromService": {
+            "name": "rehearsal-stripe-rehearsal",
+            "type": "pserv",
+            "property": "host"
+          }
+        },
+        {
+          "key": "ERA_ZENDESK_REHEARSAL_HOST",
+          "fromService": {
+            "name": "rehearsal-zendesk-rehearsal",
+            "type": "pserv",
+            "property": "host"
+          }
+        },
+        {
+          "key": "ERA_SLACK_REHEARSAL_HOST",
+          "fromService": {
+            "name": "rehearsal-slack-rehearsal",
+            "type": "pserv",
+            "property": "host"
+          }
+        },
+        {
+          "key": "ERA_TENANT",
+          "value": "rehearsal-demo"
+        },
+        {
+          "key": "ERA_ADMIN_TOKEN",
+          "generateValue": true
+        },
+        {
+          "key": "REHEARSAL_ERA_ADMIN_TOKEN",
+          "generateValue": true
+        },
+        {
+          "key": "PLANNER_WORKER_SECRET",
+          "generateValue": true
+        },
+        {
+          "key": "EXECUTOR_WORKER_SECRET",
+          "generateValue": true
+        },
+        {
+          "key": "REHEARSAL_WORKER_SECRET",
+          "generateValue": true
+        },
+        {
+          "key": "VITE_CLERK_PUBLISHABLE_KEY",
+          "sync": false
+        }
+      ],
+      "healthCheckPath": "/api/health",
+      "preDeployCommand": "pnpm --filter @rehearsal/db migrate"
+    },
+    {
+      "name": "rehearsal-iam",
+      "type": "pserv",
+      "runtime": "node",
+      "region": "ohio",
+      "plan": "0.5c-512mb",
+      "autoDeployTrigger": "off",
+      "numInstances": 1,
+      "maxShutdownDelaySeconds": 180,
+      "buildCommand": "corepack enable && pnpm install --frozen-lockfile --prod=false",
+      "startCommand": "node infra/render/start.mjs iam",
+      "envVars": [
+        {
+          "key": "NODE_VERSION",
+          "value": "24.11.1"
+        },
+        {
+          "key": "IAM_HOST",
+          "value": "0.0.0.0"
+        },
+        {
+          "key": "IAM_PORT",
+          "value": "3443"
+        },
+        {
+          "key": "DEPLOY_IAM_CA_PEM",
+          "sync": false
+        },
+        {
+          "key": "DEPLOY_SERVER_CERT_PEM",
+          "sync": false
+        },
+        {
+          "key": "DEPLOY_SERVER_KEY_PEM",
+          "sync": false
+        },
+        {
+          "key": "CLERK_PUBLISHABLE_KEY",
+          "sync": false
+        },
+        {
+          "key": "CLERK_SECRET_KEY",
+          "sync": false
+        },
+        {
+          "key": "CLERK_AUTHORIZED_PARTIES",
+          "sync": false
+        }
+      ]
+    },
+    {
+      "name": "rehearsal-planner",
+      "type": "worker",
+      "runtime": "node",
+      "region": "ohio",
+      "plan": "0.5c-512mb",
+      "autoDeployTrigger": "off",
+      "numInstances": 1,
+      "maxShutdownDelaySeconds": 180,
+      "buildCommand": "corepack enable && pnpm install --frozen-lockfile --prod=false",
+      "startCommand": "node infra/render/start.mjs planner",
+      "envVars": [
+        {
+          "key": "NODE_VERSION",
+          "value": "24.11.1"
+        },
+        {
+          "key": "REHEARSAL_API_HOST",
+          "fromService": {
+            "name": "rehearsal-api",
+            "type": "web",
+            "property": "host"
+          }
+        },
+        {
+          "key": "PLANNER_WORKER_SECRET",
+          "fromService": {
+            "name": "rehearsal-api",
+            "type": "web",
+            "envVarKey": "PLANNER_WORKER_SECRET"
+          }
+        },
+        {
+          "key": "ERA_STRIPE_PLANNING_HOST",
+          "fromService": {
+            "name": "rehearsal-stripe-planning",
+            "type": "pserv",
+            "property": "host"
+          }
+        },
+        {
+          "key": "ERA_ZENDESK_PLANNING_HOST",
+          "fromService": {
+            "name": "rehearsal-zendesk-planning",
+            "type": "pserv",
+            "property": "host"
+          }
+        },
+        {
+          "key": "ERA_SLACK_PLANNING_HOST",
+          "fromService": {
+            "name": "rehearsal-slack-planning",
+            "type": "pserv",
+            "property": "host"
+          }
+        },
+        {
+          "key": "ERA_TENANT",
+          "value": "rehearsal-demo"
+        },
+        {
+          "key": "PLANNER_MODEL",
+          "value": "gemini-4-argon"
+        },
+        {
+          "key": "GOOGLE_CLOUD_LOCATION",
+          "value": "global"
+        },
+        {
+          "key": "GOOGLE_CLOUD_PROJECT",
+          "sync": false
+        },
+        {
+          "key": "DEPLOY_GOOGLE_CREDENTIALS_JSON",
+          "sync": false
+        },
+        {
+          "key": "CUSTOMER_REPLIES",
+          "value": "1"
+        },
+        {
+          "key": "BALANCE_CREDITS",
+          "value": "1"
+        },
+        {
+          "key": "RUN_SUMMARY_CHANNEL",
+          "sync": false
+        }
+      ]
+    },
+    {
+      "name": "rehearsal-executor",
+      "type": "worker",
+      "runtime": "node",
+      "region": "ohio",
+      "plan": "0.5c-512mb",
+      "autoDeployTrigger": "off",
+      "numInstances": 1,
+      "maxShutdownDelaySeconds": 180,
+      "buildCommand": "corepack enable && pnpm install --frozen-lockfile --prod=false",
+      "startCommand": "node infra/render/start.mjs executor",
+      "envVars": [
+        {
+          "key": "NODE_VERSION",
+          "value": "24.11.1"
+        },
+        {
+          "key": "DATABASE_URL",
+          "fromDatabase": {
+            "name": "rehearsal-db",
+            "property": "connectionString"
+          }
+        },
+        {
+          "key": "REHEARSAL_API_HOST",
+          "fromService": {
+            "name": "rehearsal-api",
+            "type": "web",
+            "property": "host"
+          }
+        },
+        {
+          "key": "EXECUTOR_WORKER_SECRET",
+          "fromService": {
+            "name": "rehearsal-api",
+            "type": "web",
+            "envVarKey": "EXECUTOR_WORKER_SECRET"
+          }
+        },
+        {
+          "key": "REHEARSAL_IAM_HOST",
+          "fromService": {
+            "name": "rehearsal-iam",
+            "type": "pserv",
+            "property": "host"
+          }
+        },
+        {
+          "key": "DEPLOY_IAM_CA_PEM",
+          "sync": false
+        },
+        {
+          "key": "DEPLOY_EXECUTOR_CERT_PEM",
+          "sync": false
+        },
+        {
+          "key": "DEPLOY_EXECUTOR_KEY_PEM",
+          "sync": false
+        },
+        {
+          "key": "ERA_STRIPE_OPERATIONAL_HOST",
+          "fromService": {
+            "name": "rehearsal-stripe-operational",
+            "type": "pserv",
+            "property": "host"
+          }
+        },
+        {
+          "key": "ERA_ZENDESK_OPERATIONAL_HOST",
+          "fromService": {
+            "name": "rehearsal-zendesk-operational",
+            "type": "pserv",
+            "property": "host"
+          }
+        },
+        {
+          "key": "ERA_SLACK_OPERATIONAL_HOST",
+          "fromService": {
+            "name": "rehearsal-slack-operational",
+            "type": "pserv",
+            "property": "host"
+          }
+        },
+        {
+          "key": "ERA_TENANT",
+          "value": "rehearsal-demo"
+        }
+      ]
+    },
+    {
+      "name": "rehearsal-rehearsal",
+      "type": "worker",
+      "runtime": "node",
+      "region": "ohio",
+      "plan": "0.5c-512mb",
+      "autoDeployTrigger": "off",
+      "numInstances": 1,
+      "maxShutdownDelaySeconds": 180,
+      "buildCommand": "corepack enable && pnpm install --frozen-lockfile --prod=false",
+      "startCommand": "node infra/render/start.mjs rehearsal",
+      "envVars": [
+        {
+          "key": "NODE_VERSION",
+          "value": "24.11.1"
+        },
+        {
+          "key": "DATABASE_URL",
+          "fromDatabase": {
+            "name": "rehearsal-db",
+            "property": "connectionString"
+          }
+        },
+        {
+          "key": "REHEARSAL_API_HOST",
+          "fromService": {
+            "name": "rehearsal-api",
+            "type": "web",
+            "property": "host"
+          }
+        },
+        {
+          "key": "REHEARSAL_WORKER_SECRET",
+          "fromService": {
+            "name": "rehearsal-api",
+            "type": "web",
+            "envVarKey": "REHEARSAL_WORKER_SECRET"
+          }
+        },
+        {
+          "key": "ERA_STRIPE_REHEARSAL_HOST",
+          "fromService": {
+            "name": "rehearsal-stripe-rehearsal",
+            "type": "pserv",
+            "property": "host"
+          }
+        },
+        {
+          "key": "ERA_ZENDESK_REHEARSAL_HOST",
+          "fromService": {
+            "name": "rehearsal-zendesk-rehearsal",
+            "type": "pserv",
+            "property": "host"
+          }
+        },
+        {
+          "key": "ERA_SLACK_REHEARSAL_HOST",
+          "fromService": {
+            "name": "rehearsal-slack-rehearsal",
+            "type": "pserv",
+            "property": "host"
+          }
+        }
+      ]
+    },
+    {
+      "name": "rehearsal-stripe-planning",
+      "type": "pserv",
+      "runtime": "image",
+      "image": {
+        "url": "docker.io/erabyeon/stripe@sha256:2981ee73e05ecd061a5754e87e5a3775d3e857ef29ea2a3b544de038adf0a599"
+      },
+      "region": "ohio",
+      "plan": "0.5c-512mb",
+      "numInstances": 1,
+      "envVars": [
+        {
+          "key": "PORT",
+          "value": "8080"
+        },
+        {
+          "key": "SIMCORE_SEED",
+          "value": "42"
+        },
+        {
+          "key": "SIMCORE_TODAY",
+          "value": "2026-10-01"
+        },
+        {
+          "key": "SIMCORE_STATE",
+          "value": "day1"
+        },
+        {
+          "key": "SIMCORE_FIDELITY",
+          "value": "high"
+        },
+        {
+          "key": "SIMCORE_ALLOW_CLIENT_WRITES",
+          "value": "1"
+        },
+        {
+          "key": "SIMCORE_ADMIN_TOKEN",
+          "fromService": {
+            "name": "rehearsal-api",
+            "type": "web",
+            "envVarKey": "ERA_ADMIN_TOKEN"
+          }
+        }
+      ]
+    },
+    {
+      "name": "rehearsal-zendesk-planning",
+      "type": "pserv",
+      "runtime": "image",
+      "image": {
+        "url": "docker.io/erabyeon/zendesk@sha256:f91c3190378822f8400caf22a47e0a2107a31ba3aa912251425080829bab6444"
+      },
+      "region": "ohio",
+      "plan": "0.5c-512mb",
+      "numInstances": 1,
+      "envVars": [
+        {
+          "key": "PORT",
+          "value": "8080"
+        },
+        {
+          "key": "SIMCORE_SEED",
+          "value": "42"
+        },
+        {
+          "key": "SIMCORE_TODAY",
+          "value": "2026-10-01"
+        },
+        {
+          "key": "SIMCORE_STATE",
+          "value": "day1"
+        },
+        {
+          "key": "SIMCORE_FIDELITY",
+          "value": "high"
+        },
+        {
+          "key": "SIMCORE_ALLOW_CLIENT_WRITES",
+          "value": "1"
+        },
+        {
+          "key": "SIMCORE_ADMIN_TOKEN",
+          "fromService": {
+            "name": "rehearsal-api",
+            "type": "web",
+            "envVarKey": "ERA_ADMIN_TOKEN"
+          }
+        }
+      ]
+    },
+    {
+      "name": "rehearsal-slack-planning",
+      "type": "pserv",
+      "runtime": "image",
+      "image": {
+        "url": "docker.io/erabyeon/slack@sha256:33382931f381da5dca51c45ad4ad7c7bfc07644d3240465bfd41e7b7ea2cb75f"
+      },
+      "region": "ohio",
+      "plan": "0.5c-512mb",
+      "numInstances": 1,
+      "envVars": [
+        {
+          "key": "PORT",
+          "value": "8080"
+        },
+        {
+          "key": "SIMCORE_SEED",
+          "value": "42"
+        },
+        {
+          "key": "SIMCORE_TODAY",
+          "value": "2026-10-01"
+        },
+        {
+          "key": "SIMCORE_STATE",
+          "value": "day1"
+        },
+        {
+          "key": "SIMCORE_FIDELITY",
+          "value": "high"
+        },
+        {
+          "key": "SIMCORE_ALLOW_CLIENT_WRITES",
+          "value": "1"
+        },
+        {
+          "key": "SIMCORE_ADMIN_TOKEN",
+          "fromService": {
+            "name": "rehearsal-api",
+            "type": "web",
+            "envVarKey": "ERA_ADMIN_TOKEN"
+          }
+        }
+      ]
+    },
+    {
+      "name": "rehearsal-stripe-operational",
+      "type": "pserv",
+      "runtime": "image",
+      "image": {
+        "url": "docker.io/erabyeon/stripe@sha256:2981ee73e05ecd061a5754e87e5a3775d3e857ef29ea2a3b544de038adf0a599"
+      },
+      "region": "ohio",
+      "plan": "0.5c-512mb",
+      "numInstances": 1,
+      "envVars": [
+        {
+          "key": "PORT",
+          "value": "8080"
+        },
+        {
+          "key": "SIMCORE_SEED",
+          "value": "42"
+        },
+        {
+          "key": "SIMCORE_TODAY",
+          "value": "2026-10-01"
+        },
+        {
+          "key": "SIMCORE_STATE",
+          "value": "day1"
+        },
+        {
+          "key": "SIMCORE_FIDELITY",
+          "value": "high"
+        },
+        {
+          "key": "SIMCORE_ALLOW_CLIENT_WRITES",
+          "value": "1"
+        },
+        {
+          "key": "SIMCORE_ADMIN_TOKEN",
+          "fromService": {
+            "name": "rehearsal-api",
+            "type": "web",
+            "envVarKey": "ERA_ADMIN_TOKEN"
+          }
+        }
+      ]
+    },
+    {
+      "name": "rehearsal-zendesk-operational",
+      "type": "pserv",
+      "runtime": "image",
+      "image": {
+        "url": "docker.io/erabyeon/zendesk@sha256:f91c3190378822f8400caf22a47e0a2107a31ba3aa912251425080829bab6444"
+      },
+      "region": "ohio",
+      "plan": "0.5c-512mb",
+      "numInstances": 1,
+      "envVars": [
+        {
+          "key": "PORT",
+          "value": "8080"
+        },
+        {
+          "key": "SIMCORE_SEED",
+          "value": "42"
+        },
+        {
+          "key": "SIMCORE_TODAY",
+          "value": "2026-10-01"
+        },
+        {
+          "key": "SIMCORE_STATE",
+          "value": "day1"
+        },
+        {
+          "key": "SIMCORE_FIDELITY",
+          "value": "high"
+        },
+        {
+          "key": "SIMCORE_ALLOW_CLIENT_WRITES",
+          "value": "1"
+        },
+        {
+          "key": "SIMCORE_ADMIN_TOKEN",
+          "fromService": {
+            "name": "rehearsal-api",
+            "type": "web",
+            "envVarKey": "ERA_ADMIN_TOKEN"
+          }
+        }
+      ]
+    },
+    {
+      "name": "rehearsal-slack-operational",
+      "type": "pserv",
+      "runtime": "image",
+      "image": {
+        "url": "docker.io/erabyeon/slack@sha256:33382931f381da5dca51c45ad4ad7c7bfc07644d3240465bfd41e7b7ea2cb75f"
+      },
+      "region": "ohio",
+      "plan": "0.5c-512mb",
+      "numInstances": 1,
+      "envVars": [
+        {
+          "key": "PORT",
+          "value": "8080"
+        },
+        {
+          "key": "SIMCORE_SEED",
+          "value": "42"
+        },
+        {
+          "key": "SIMCORE_TODAY",
+          "value": "2026-10-01"
+        },
+        {
+          "key": "SIMCORE_STATE",
+          "value": "day1"
+        },
+        {
+          "key": "SIMCORE_FIDELITY",
+          "value": "high"
+        },
+        {
+          "key": "SIMCORE_ALLOW_CLIENT_WRITES",
+          "value": "1"
+        },
+        {
+          "key": "SIMCORE_ADMIN_TOKEN",
+          "fromService": {
+            "name": "rehearsal-api",
+            "type": "web",
+            "envVarKey": "ERA_ADMIN_TOKEN"
+          }
+        }
+      ]
+    },
+    {
+      "name": "rehearsal-stripe-rehearsal",
+      "type": "pserv",
+      "runtime": "image",
+      "image": {
+        "url": "docker.io/erabyeon/stripe@sha256:2981ee73e05ecd061a5754e87e5a3775d3e857ef29ea2a3b544de038adf0a599"
+      },
+      "region": "ohio",
+      "plan": "0.5c-512mb",
+      "numInstances": 1,
+      "envVars": [
+        {
+          "key": "PORT",
+          "value": "8080"
+        },
+        {
+          "key": "SIMCORE_SEED",
+          "value": "42"
+        },
+        {
+          "key": "SIMCORE_TODAY",
+          "value": "2026-10-01"
+        },
+        {
+          "key": "SIMCORE_STATE",
+          "value": "day1"
+        },
+        {
+          "key": "SIMCORE_FIDELITY",
+          "value": "high"
+        },
+        {
+          "key": "SIMCORE_ALLOW_CLIENT_WRITES",
+          "value": "1"
+        },
+        {
+          "key": "SIMCORE_ADMIN_TOKEN",
+          "fromService": {
+            "name": "rehearsal-api",
+            "type": "web",
+            "envVarKey": "REHEARSAL_ERA_ADMIN_TOKEN"
+          }
+        }
+      ]
+    },
+    {
+      "name": "rehearsal-zendesk-rehearsal",
+      "type": "pserv",
+      "runtime": "image",
+      "image": {
+        "url": "docker.io/erabyeon/zendesk@sha256:f91c3190378822f8400caf22a47e0a2107a31ba3aa912251425080829bab6444"
+      },
+      "region": "ohio",
+      "plan": "0.5c-512mb",
+      "numInstances": 1,
+      "envVars": [
+        {
+          "key": "PORT",
+          "value": "8080"
+        },
+        {
+          "key": "SIMCORE_SEED",
+          "value": "42"
+        },
+        {
+          "key": "SIMCORE_TODAY",
+          "value": "2026-10-01"
+        },
+        {
+          "key": "SIMCORE_STATE",
+          "value": "day1"
+        },
+        {
+          "key": "SIMCORE_FIDELITY",
+          "value": "high"
+        },
+        {
+          "key": "SIMCORE_ALLOW_CLIENT_WRITES",
+          "value": "1"
+        },
+        {
+          "key": "SIMCORE_ADMIN_TOKEN",
+          "fromService": {
+            "name": "rehearsal-api",
+            "type": "web",
+            "envVarKey": "REHEARSAL_ERA_ADMIN_TOKEN"
+          }
+        }
+      ]
+    },
+    {
+      "name": "rehearsal-slack-rehearsal",
+      "type": "pserv",
+      "runtime": "image",
+      "image": {
+        "url": "docker.io/erabyeon/slack@sha256:33382931f381da5dca51c45ad4ad7c7bfc07644d3240465bfd41e7b7ea2cb75f"
+      },
+      "region": "ohio",
+      "plan": "0.5c-512mb",
+      "numInstances": 1,
+      "envVars": [
+        {
+          "key": "PORT",
+          "value": "8080"
+        },
+        {
+          "key": "SIMCORE_SEED",
+          "value": "42"
+        },
+        {
+          "key": "SIMCORE_TODAY",
+          "value": "2026-10-01"
+        },
+        {
+          "key": "SIMCORE_STATE",
+          "value": "day1"
+        },
+        {
+          "key": "SIMCORE_FIDELITY",
+          "value": "high"
+        },
+        {
+          "key": "SIMCORE_ALLOW_CLIENT_WRITES",
+          "value": "1"
+        },
+        {
+          "key": "SIMCORE_ADMIN_TOKEN",
+          "fromService": {
+            "name": "rehearsal-api",
+            "type": "web",
+            "envVarKey": "REHEARSAL_ERA_ADMIN_TOKEN"
+          }
+        }
+      ]
+    }
+  ],
+  "databases": [
+    {
+      "name": "rehearsal-db",
+      "region": "ohio",
+      "plan": "0.1c-256mb",
+      "diskSizeGB": 1,
+      "postgresMajorVersion": "17",
+      "databaseName": "rehearsal",
+      "user": "rehearsal",
+      "ipAllowList": []
+    }
+  ]
+}
