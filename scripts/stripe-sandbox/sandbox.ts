@@ -1,4 +1,4 @@
-import { type ReadTarget, stripeReader } from "@rehearsal/providers";
+import { NO_REDIRECTS, type ReadTarget, stripeReader } from "@rehearsal/providers";
 
 /**
  * T1.24: a narrow, opt-in proof against a real Stripe **test-mode** account. It creates a few
@@ -54,6 +54,7 @@ export function sandboxClient(
     const res = await doFetch(`${STRIPE_API}${path}`, {
       ...init,
       headers: { ...headers, ...(init.headers as object), authorization: `Bearer ${key}` },
+      ...NO_REDIRECTS,
     });
     const body = (await res.json()) as Record<string, unknown>;
     if (!res.ok) {

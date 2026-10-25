@@ -6,6 +6,13 @@ export interface EraMeta {
   [key: string]: unknown;
 }
 
+/**
+ * Simulators never redirect. A followed redirect would carry the tenant token or admin token to a
+ * URL no world check looked at, so every request here fails on one instead (a write's transport
+ * failure is an unknown outcome, reconciled by reads).
+ */
+export const NO_REDIRECTS = { redirect: "error" } as const satisfies RequestInit;
+
 /** Client-side request to a simulator world, scoped to its tenant. */
 export async function eraFetch(
   world: WorldConfig,
@@ -18,7 +25,7 @@ export async function eraFetch(
   const token =
     typeof world.tenantToken === "object" ? await world.tenantToken.get() : world.tenantToken;
   headers.set("X-Sim-Tenant", token ?? world.tenant);
-  return fetch(`${world.baseUrl}${path}`, { ...init, headers });
+  return fetch(`${world.baseUrl}${path}`, { ...init, headers, ...NO_REDIRECTS });
 }
 
 /**
@@ -43,6 +50,7 @@ export async function mintTenantToken(
       client_secret: "rehearsal",
       tenant: world.tenant,
     }),
+    ...NO_REDIRECTS,
   });
   if (!res.ok) throw new Error(`POST /token → ${res.status} ${await res.text()}`);
   const body = (await res.json()) as { access_token: string; expires_in: number };
@@ -69,5 +77,6 @@ export async function eraAdmin(
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${adminToken}` },
     body: body === undefined ? undefined : JSON.stringify(body),
+    ...NO_REDIRECTS,
   });
 }

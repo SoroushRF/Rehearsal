@@ -1,6 +1,15 @@
 import type { World } from "@rehearsal/contracts";
 import { z } from "zod";
-import { resolveWorld, type WorldConfig, worldEnvKey } from "./worlds";
+import { NO_REDIRECTS } from "./era";
+import {
+  REHEARSAL_URL_KEYS,
+  resolveRehearsalWorld,
+  resolveWorld,
+  SHARED_URL_KEYS,
+  type WorldConfig,
+  worldEnvKey,
+  worldUrl,
+} from "./worlds";
 
 /** A signed tenant token and when it stops working (epoch ms). */
 export const MintedToken = z.object({ token: z.string().min(1), expiresAt: z.number().int() });
@@ -60,6 +69,8 @@ export type WorkerRole = keyof typeof WORKER_ROLES;
 export const TENANT_TOKEN_ROUTE = "/internal/era/tenant-token";
 
 type EraVendor = "stripe" | "zendesk" | "slack";
+/** A rehearsal has no Slack world: the operator's rehearsal mint route refuses it. */
+type RehearsalVendor = "stripe" | "zendesk";
 
 /**
  * A worker's Stripe and Zendesk worlds, plus the executor's Slack world when its URL is set (only
@@ -85,6 +96,7 @@ export function workerWorlds(
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${secret}` },
         body: JSON.stringify({ vendor }),
+        ...NO_REDIRECTS,
       });
       if (!res.ok) throw new Error(`mint ${vendor}/${world} → ${res.status}`);
       return MintedToken.parse(await res.json());
@@ -107,4 +119,89 @@ export async function primeTokens(worlds: Record<string, WorldConfig>): Promise<
     if (typeof world.tenantToken !== "object") throw new Error(`${world.baseUrl} has no token`);
     await world.tenantToken.get();
   }
+}
+
+// --- Execution rehearsal worker (T1.23, decision 0013 §3) -------------------
+
+/** Path of the operator's rehearsal mint route in apps/api. Separate from the workers' route. */
+export const REHEARSAL_TENANT_TOKEN_ROUTE = "/internal/era/rehearsal-tenant-token";
+
+/** What the operator minted, and for which tenant and container, so the worker can check both. */
+export const RehearsalMintedToken = MintedToken.extend({
+  tenant: z.string().min(1),
+  baseUrl: z.url(),
+});
+export type RehearsalMintedToken = z.infer<typeof RehearsalMintedToken>;
+
+/**
+ * What a rehearsal worker refuses to start next to: model keys, both admin tokens, the other
+ * workers' secrets, and every planning and operational URL. The names are listed, not matched by a
+ * `REHEARSAL_` prefix, because REHEARSAL_API_URL is every worker's way to the API.
+ */
+export const REHEARSAL_WORKER_FORBIDDEN = [
+  "ANTHROPIC_API_KEY",
+  "GEMINI_API_KEY",
+  "GOOGLE_API_KEY",
+  "GOOGLE_APPLICATION_CREDENTIALS",
+  "ERA_ADMIN_TOKEN",
+  "REHEARSAL_ERA_ADMIN_TOKEN",
+  "PLANNER_WORKER_SECRET",
+  "EXECUTOR_WORKER_SECRET",
+  ...SHARED_URL_KEYS,
+] as const;
+
+/** What the planner and executor refuse: the rehearsal admin token, secret and worlds. */
+export const REHEARSAL_CREDENTIALS = [
+  "REHEARSAL_ERA_ADMIN_TOKEN",
+  "REHEARSAL_WORKER_SECRET",
+  ...Object.values(REHEARSAL_URL_KEYS),
+] as const;
+
+export function rehearsalWorkerViolations(env: NodeJS.ProcessEnv = process.env): string[] {
+  return REHEARSAL_WORKER_FORBIDDEN.filter((k) => env[k]);
+}
+
+/**
+ * One rehearsal's Stripe and Zendesk worlds for the rehearsal worker. Each token is minted by the
+ * operator for this rehearsal only, with REHEARSAL_WORKER_SECRET, and refreshed before it expires.
+ * A mint for another tenant, or for a container other than the one this worker is configured to
+ * call, fails closed: the operator, which knows every world, checked that its URL isn't a shared one.
+ */
+export function rehearsalWorkerWorlds(
+  rehearsalId: string,
+  env: NodeJS.ProcessEnv = process.env,
+  options: { clock?: { now(): Date }; fetch?: typeof fetch } = {},
+): Record<RehearsalVendor, WorldConfig> {
+  const violations = rehearsalWorkerViolations(env);
+  if (violations.length > 0) {
+    throw new Error(`a rehearsal worker must not hold ${violations.join(", ")}`);
+  }
+  const apiUrl = env.REHEARSAL_API_URL?.replace(/\/$/, "");
+  const secret = env.REHEARSAL_WORKER_SECRET;
+  if (!apiUrl) throw new Error("REHEARSAL_API_URL is not set");
+  if (!secret) throw new Error("REHEARSAL_WORKER_SECRET is not set");
+  const doFetch = options.fetch ?? fetch;
+
+  const bind = (vendor: RehearsalVendor): WorldConfig => {
+    const config = resolveRehearsalWorld(vendor, rehearsalId, env);
+    const mint = async () => {
+      const res = await doFetch(`${apiUrl}${REHEARSAL_TENANT_TOKEN_ROUTE}`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${secret}` },
+        body: JSON.stringify({ vendor, rehearsalId }),
+        ...NO_REDIRECTS,
+      });
+      if (!res.ok) throw new Error(`mint ${vendor}/${config.tenant} → ${res.status}`);
+      const minted = RehearsalMintedToken.parse(await res.json());
+      if (minted.tenant !== config.tenant) {
+        throw new Error(`minted for ${minted.tenant}, not ${config.tenant}`);
+      }
+      if (worldUrl(minted.baseUrl) !== worldUrl(config.baseUrl)) {
+        throw new Error(`minted for ${minted.baseUrl}, but configured for ${config.baseUrl}`);
+      }
+      return { token: minted.token, expiresAt: minted.expiresAt };
+    };
+    return { ...config, tenantToken: new RefreshingTokenSource(mint, options.clock) };
+  };
+  return { stripe: bind("stripe"), zendesk: bind("zendesk") };
 }

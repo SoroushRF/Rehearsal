@@ -32,3 +32,20 @@ it("starts with the model key, planning URLs and its own secret", () => {
     }),
   ).toEqual([]);
 });
+
+it("refuses the execution rehearsal's admin token, worker secret and worlds", () => {
+  expect(
+    plannerCredentialViolations({
+      REHEARSAL_ERA_ADMIN_TOKEN: "rehearsal-admin",
+      REHEARSAL_WORKER_SECRET: "rehearsal-secret",
+      ERA_STRIPE_REHEARSAL_URL: "http://127.0.0.1:8103",
+      ERA_ZENDESK_REHEARSAL_URL: "http://127.0.0.1:8113",
+      REHEARSAL_API_URL: "http://127.0.0.1:3000",
+    }),
+  ).toEqual([
+    "REHEARSAL_ERA_ADMIN_TOKEN",
+    "REHEARSAL_WORKER_SECRET",
+    "ERA_STRIPE_REHEARSAL_URL",
+    "ERA_ZENDESK_REHEARSAL_URL",
+  ]);
+});

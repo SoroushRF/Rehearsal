@@ -43,6 +43,13 @@
       "when": 1792889181167,
       "tag": "0005_keen_speedball",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792901041435,
+      "tag": "0006_rehearsals",
+      "breakpoints": true
     }
   ]
 }

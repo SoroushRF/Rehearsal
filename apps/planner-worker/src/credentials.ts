@@ -1,3 +1,5 @@
+import { REHEARSAL_CREDENTIALS } from "@rehearsal/providers";
+
 /**
  * The planner worker holds the model key and planning-world capability ONLY. It mints planning
  * tenant tokens through the operator with PLANNER_WORKER_SECRET; it never holds the admin token,
@@ -12,6 +14,8 @@ export const PLANNER_FORBIDDEN = [
   "ERA_ADMIN_TOKEN",
   "EXECUTOR_WORKER_SECRET",
   "DATABASE_URL",
+  // Execution rehearsal (decision 0013): its admin token, worker secret and worlds.
+  ...REHEARSAL_CREDENTIALS,
 ] as const;
 
 export function plannerCredentialViolations(env: NodeJS.ProcessEnv = process.env): string[] {

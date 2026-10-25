@@ -37,6 +37,11 @@ export function tenantTokenDepsFromEnv(env = process.env): TenantTokenDeps | und
   if (secrets.planner && secrets.planner === secrets.executor) {
     throw new Error("PLANNER_WORKER_SECRET and EXECUTOR_WORKER_SECRET must differ");
   }
+  // A worker secret equal to the admin token would hand a worker the admin token itself.
+  for (const { secretEnv } of Object.values(WORKER_ROLES)) {
+    if (env[secretEnv] === adminToken)
+      throw new Error(`${secretEnv} must differ from ERA_ADMIN_TOKEN`);
+  }
   return { adminToken, secrets, env };
 }
 
