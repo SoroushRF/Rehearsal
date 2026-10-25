@@ -2,13 +2,13 @@ import { type Db, schema } from "@rehearsal/db";
 import { and, asc, desc, eq, gt } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import type { AuthResolver } from "./apply";
+import { authorize, bearerToken, type IamClient, refuse, requirePerson } from "./iam";
 
 const { runs, runEvents } = schema;
 
 export interface RunDeps {
   db: Db;
-  auth: AuthResolver;
+  iam?: IamClient;
 }
 
 /** Page size for event polling. A run writes a handful of events per step. */
@@ -36,23 +36,26 @@ function runView(r: typeof runs.$inferSelect) {
  */
 export function registerRunRoutes(app: FastifyInstance, deps: RunDeps) {
   app.get<{ Params: { id: string } }>("/api/runs/:id/events", async (req, reply) => {
-    const auth = await deps.auth(req);
-    if (!auth) return reply.code(401).send({ error: "unauthenticated" });
+    const token = bearerToken(req);
+    if (!token) return reply.code(401).send({ error: "unauthenticated" });
     const query = EventsQuery.safeParse(req.query);
     if (!query.success) return reply.code(400).send({ error: "invalid_request" });
 
-    const [run] = await deps.db
-      .select()
-      .from(runs)
-      .where(and(eq(runs.orgId, auth.orgId), eq(runs.id, req.params.id)));
-    if (!run) return reply.code(404).send({ error: "run_not_found" });
+    const [run] = await deps.db.select().from(runs).where(eq(runs.id, req.params.id));
+    if (!run) {
+      const person = await requirePerson(deps.iam, token);
+      if (!person.ok) return refuse(reply, person, "run_not_found");
+      return reply.code(404).send({ error: "run_not_found" });
+    }
+    const gate = await authorize(deps.iam, token, "GET /api/runs/:id/events", { orgId: run.orgId });
+    if (!gate.ok) return refuse(reply, gate, "run_not_found");
 
     const rows = await deps.db
       .select()
       .from(runEvents)
       .where(
         and(
-          eq(runEvents.orgId, auth.orgId),
+          eq(runEvents.orgId, run.orgId),
           eq(runEvents.runId, run.id),
           gt(runEvents.seq, query.data.after),
         ),
@@ -73,14 +76,28 @@ export function registerRunRoutes(app: FastifyInstance, deps: RunDeps) {
     };
   });
 
+  /**
+   * A plan's runs. There is no plan document to load: the org is the one on the stored run rows.
+   * No runs is an empty list. Runs that all belong to another org are missing.
+   */
   app.get<{ Params: { id: string } }>("/api/plans/:id/runs", async (req, reply) => {
-    const auth = await deps.auth(req);
-    if (!auth) return reply.code(401).send({ error: "unauthenticated" });
+    const token = bearerToken(req);
+    if (!token) return reply.code(401).send({ error: "unauthenticated" });
+    const person = await requirePerson(deps.iam, token);
+    if (!person.ok) return refuse(reply, person, "plan_not_found");
+
     const rows = await deps.db
       .select()
       .from(runs)
-      .where(and(eq(runs.orgId, auth.orgId), eq(runs.planId, req.params.id)))
+      .where(eq(runs.planId, req.params.id))
       .orderBy(desc(runs.createdAt));
-    return { runs: rows.map(runView) };
+    if (rows.length === 0) return { runs: [] };
+
+    const mine = rows.filter((row) => row.orgId === person.person.orgId);
+    const orgId = mine[0]?.orgId;
+    if (!orgId) return reply.code(404).send({ error: "plan_not_found" });
+    const gate = await authorize(deps.iam, token, "GET /api/plans/:id/runs", { orgId });
+    if (!gate.ok) return refuse(reply, gate, "plan_not_found");
+    return { runs: mine.map(runView) };
   });
 }

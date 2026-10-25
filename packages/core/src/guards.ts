@@ -258,7 +258,25 @@ export function guardAction(input: GuardActionInput): GuardVerdict {
       "re-read is missing",
     );
     if (isVerdict(current)) return current;
-    const verdict = compareObservation(planned, current, overlay);
+    // Appends do not overwrite priority. Keep the full approved snapshot in the plan, but
+    // compare only the append's server-defined ticket assumptions; patches still compare all.
+    const appendTicket =
+      (input.action.kind === "zendesk.ticket.appendPrivateNote" ||
+        input.action.kind === "zendesk.ticket.appendPublicReply") &&
+      planned.entity.vendor === "zendesk" &&
+      planned.entity.kind === "ticket" &&
+      planned.entity.id === input.action.args.ticketId;
+    const basis = appendTicket
+      ? {
+          ...planned,
+          projection: Object.fromEntries(
+            Object.entries(planned.projection).filter(([field]) =>
+              ["id", "requester_id", "external_id", "status"].includes(field),
+            ),
+          ),
+        }
+      : planned;
+    const verdict = compareObservation(basis, current, overlay);
     if (verdict.decision === "hold") return verdict;
   }
 

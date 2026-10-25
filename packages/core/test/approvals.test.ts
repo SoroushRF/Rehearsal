@@ -1,10 +1,11 @@
-import type { ApprovalGrant, Role } from "@rehearsal/contracts";
+import type { ApprovalGrant, PermissionV1, Role } from "@rehearsal/contracts";
 import { describe, expect, it } from "vitest";
 import {
   approvalStatus,
   type BillingPolicy,
   dualApprovalStatus,
   evaluateBillingPolicy,
+  explainShortfall,
   liveGrantsFor,
   requiresDualApproval,
 } from "../src";
@@ -27,7 +28,15 @@ const V3: BillingPolicy = {
   dualApprovalMinor: 10_000,
 };
 
-const grant = (id: string, user: string, roles: Role[], over: Partial<ApprovalGrant> = {}) =>
+const SUPPORT = "rehearsal:approve:support_step";
+const FINANCE = "rehearsal:approve:finance_step";
+
+const grant = (
+  id: string,
+  user: string,
+  permissions: readonly PermissionV1[] | undefined,
+  over: Partial<ApprovalGrant> = {},
+) =>
   ({
     id,
     orgId: "org_1",
@@ -36,7 +45,8 @@ const grant = (id: string, user: string, roles: Role[], over: Partial<ApprovalGr
     planHash: HASH,
     actorUserId: user,
     actorSessionId: `sess_${user}`,
-    roles,
+    roles: ["support_lead"] satisfies Role[],
+    ...(permissions ? { permissions: [...permissions] } : {}),
     grantedAt: "2026-10-24T11:00:00.000Z",
     expiresAt: "2026-10-24T13:00:00.000Z",
     revokedAt: null,
@@ -85,58 +95,83 @@ describe("policy v3 names the steps that need two approvers", () => {
 });
 
 describe("dualApprovalStatus", () => {
-  it("is satisfied by a support lead and a different finance lead", () => {
-    const s = dualApprovalStatus([
-      grant("g1", "sup", ["support_lead"]),
-      grant("g2", "fin", ["finance_lead"]),
-    ]);
+  it("is satisfied by a support permission and a different person's finance permission", () => {
+    const s = dualApprovalStatus([grant("g1", "sup", [SUPPORT]), grant("g2", "fin", [FINANCE])]);
     expect(s).toMatchObject({ satisfied: true, needed: [] });
-    expect(s.signed.map((x) => [x.role, x.actorUserId])).toEqual([
-      ["support_lead", "sup"],
-      ["finance_lead", "fin"],
+    expect(s.signed.map((x) => [x.permission, x.actorUserId])).toEqual([
+      [SUPPORT, "sup"],
+      [FINANCE, "fin"],
     ]);
   });
 
-  it("is satisfied when one person holds both roles but another fills a seat", () => {
+  it("is satisfied when one person holds both permissions but another fills a seat", () => {
     const s = dualApprovalStatus([
-      grant("g1", "boss", ["support_lead", "finance_lead"]),
-      grant("g2", "sup", ["support_lead"]),
+      grant("g1", "boss", [SUPPORT, FINANCE]),
+      grant("g2", "sup", [SUPPORT]),
     ]);
     expect(s.satisfied).toBe(true);
-    expect(s.signed.map((x) => [x.role, x.actorUserId])).toEqual([
-      ["support_lead", "sup"],
-      ["finance_lead", "boss"],
+    expect(s.signed.map((x) => [x.permission, x.actorUserId])).toEqual([
+      [SUPPORT, "sup"],
+      [FINANCE, "boss"],
     ]);
   });
 
-  it("is not satisfied by one person holding both roles, however many times they sign", () => {
+  it("is not satisfied by one person holding both permissions, however many times they sign", () => {
     const s = dualApprovalStatus([
-      grant("g1", "boss", ["support_lead", "finance_lead"]),
-      grant("g2", "boss", ["support_lead", "finance_lead"], { actorSessionId: "other" }),
+      grant("g1", "boss", [SUPPORT, FINANCE]),
+      grant("g2", "boss", [SUPPORT, FINANCE], { actorSessionId: "other" }),
     ]);
-    expect(s).toMatchObject({ satisfied: false, needed: ["support_lead"] });
-    expect(s.signed).toEqual([{ role: "finance_lead", grantId: "g1", actorUserId: "boss" }]);
+    expect(s).toMatchObject({ satisfied: false, needed: [SUPPORT] });
+    expect(s.signed).toEqual([{ permission: FINANCE, grantId: "g1", actorUserId: "boss" }]);
   });
 
-  it("names the open seat for a lone approver, and both for none", () => {
-    expect(dualApprovalStatus([grant("g1", "sup", ["support_lead"])]).needed).toEqual([
-      "finance_lead",
-    ]);
-    expect(dualApprovalStatus([grant("g1", "fin", ["finance_lead"])]).needed).toEqual([
-      "support_lead",
-    ]);
+  it("names the open permission for a lone approver, and both for none", () => {
+    expect(dualApprovalStatus([grant("g1", "sup", [SUPPORT])]).needed).toEqual([FINANCE]);
+    expect(dualApprovalStatus([grant("g1", "fin", [FINANCE])]).needed).toEqual([SUPPORT]);
     expect(dualApprovalStatus([])).toMatchObject({
       satisfied: false,
-      needed: ["support_lead", "finance_lead"],
+      needed: [SUPPORT, FINANCE],
       signed: [],
     });
+  });
+
+  it("does not map roles into permissions, and a role-only grant fills no seat", () => {
+    const bothRoles = ["support_lead", "finance_lead"] satisfies Role[];
+    const rolesAndOnePermission = dualApprovalStatus([
+      grant("g1", "boss", [SUPPORT], { roles: bothRoles }),
+    ]);
+    expect(rolesAndOnePermission.signed).toEqual([
+      { permission: SUPPORT, grantId: "g1", actorUserId: "boss" },
+    ]);
+    expect(rolesAndOnePermission.needed).toEqual([FINANCE]);
+
+    const roleOnly = grant("g1", "boss", undefined, { roles: bothRoles });
+    expect(roleOnly.permissions).toBeUndefined();
+    expect(dualApprovalStatus([roleOnly])).toMatchObject({
+      satisfied: false,
+      signed: [],
+      needed: [SUPPORT, FINANCE],
+    });
+    const withFinance = dualApprovalStatus([roleOnly, grant("g2", "fin", [FINANCE])]);
+    expect(withFinance.satisfied).toBe(false);
+    expect(withFinance.signed.map((x) => x.actorUserId)).toEqual(["fin"]);
+    expect(withFinance.needed).toEqual([SUPPORT]);
+  });
+
+  it("names the missing permissions", () => {
+    expect(explainShortfall(dualApprovalStatus([grant("g1", "fin", [FINANCE])]))).toBe(
+      `needs two different approvers (${SUPPORT} + ${FINANCE}); signed: fin as ${FINANCE}; still needed: ${SUPPORT}`,
+    );
+    expect(explainShortfall(dualApprovalStatus([]))).toBe(
+      `needs two different approvers (${SUPPORT} + ${FINANCE}); still needed: ${SUPPORT} + ${FINANCE}`,
+    );
   });
 });
 
 describe("liveGrantsFor and approvalStatus", () => {
   const plan = { orgId: "org_1", planId: "plan_1", revision: 1, planHash: HASH };
-  const sup = grant("g1", "sup", ["support_lead"]);
-  const fin = grant("g2", "fin", ["finance_lead"]);
+  const sup = grant("g1", "sup", [SUPPORT]);
+  const fin = grant("g2", "fin", [FINANCE]);
 
   it.each<[string, Partial<ApprovalGrant>]>([
     ["revoked", { revokedAt: "2026-10-24T11:30:00.000Z" }],
@@ -172,54 +207,8 @@ describe("liveGrantsFor and approvalStatus", () => {
     expect(status).toMatchObject({
       dualRequired: true,
       satisfied: false,
-      needed: ["support_lead"],
+      needed: [SUPPORT],
     });
     expect(approvalStatus(flagged, HASH, [V1, V3], [fin, sup], AT).satisfied).toBe(true);
-  });
-});
-
-describe("seats are judged on permissions (decision 0014)", () => {
-  const SUPPORT_STEP = "rehearsal:approve:support_step";
-  const FINANCE_STEP = "rehearsal:approve:finance_step";
-  const signed = (s: ReturnType<typeof dualApprovalStatus>) =>
-    s.signed.map((x) => [x.role, x.actorUserId]);
-
-  it("fills a seat from the permissions a grant recorded", () => {
-    const s = dualApprovalStatus([
-      grant("g1", "sup", ["support_lead"], { permissions: [SUPPORT_STEP] }),
-      grant("g2", "fin", ["finance_lead"], { permissions: [FINANCE_STEP] }),
-    ]);
-    expect(s.satisfied).toBe(true);
-    expect(signed(s)).toEqual([
-      ["support_lead", "sup"],
-      ["finance_lead", "fin"],
-    ]);
-  });
-
-  it("goes by the recorded permissions, not the roles beside them", () => {
-    const s = dualApprovalStatus([
-      grant("g1", "sup", ["support_lead", "finance_lead"], {
-        permissions: ["rehearsal:read:plan"],
-      }),
-      grant("g2", "fin", ["finance_lead"], { permissions: [FINANCE_STEP] }),
-    ]);
-    expect(s).toMatchObject({ satisfied: false, needed: ["support_lead"] });
-  });
-
-  it("reads a grant that only has roles as the permissions those roles signed with", () => {
-    const s = dualApprovalStatus([
-      grant("g1", "sup", ["support_lead"]),
-      grant("g2", "fin", ["finance_lead"], { permissions: [FINANCE_STEP] }),
-    ]);
-    expect(s.satisfied).toBe(true);
-  });
-
-  it("does not let one person fill both seats, old row or new", () => {
-    const both = [SUPPORT_STEP, FINANCE_STEP] as ApprovalGrant["permissions"];
-    const s = dualApprovalStatus([
-      grant("g1", "boss", ["support_lead", "finance_lead"]),
-      grant("g2", "boss", ["finance_lead"], { permissions: both, actorSessionId: "other" }),
-    ]);
-    expect(s.satisfied).toBe(false);
   });
 });

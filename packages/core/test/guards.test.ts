@@ -284,10 +284,7 @@ describe("advanceOverlay", () => {
       currentQueries: [],
     };
     expect(guardAction({ ...input, overlay })).toEqual({ decision: "admit" });
-    expect(holdReason(guardAction(input))).toMatchObject({
-      kind: "row_changed",
-      fields: ["priority"],
-    });
+    expect(guardAction(input)).toEqual({ decision: "admit" });
   });
 
   it("still holds a collateral change after our own refund", () => {
@@ -381,6 +378,53 @@ describe("advanceOverlay", () => {
 });
 
 describe("guardAction", () => {
+  const ticket = {
+    ...plannedTicket,
+    projection: { ...ticketProjection, external_id: "cus_1" },
+  };
+  const reply: Action = {
+    ...guardedNote,
+    kind: "zendesk.ticket.appendPublicReply",
+    compensation: "irreversible",
+    protection: "no_atomic_guard",
+    args: {
+      ticketId: "1",
+      public: true,
+      template: { id: "refund-issued", version: 1 },
+      values: { customerName: "Pat", amountMinor: 4210 },
+      body: "Your refund was issued.",
+    },
+  };
+  const checkTicket = (action: Action, change: Record<string, unknown>) =>
+    guardAction({
+      action,
+      plannedObservations: [ticket],
+      currentObservations: [reread(ticket, { ...ticket.projection, ...change })],
+      plannedQueries: [],
+      currentQueries: [],
+    });
+
+  it.each([guardedNote, reply])("ignores only unrelated ticket fields for $kind", (action) => {
+    expect(checkTicket(action, { priority: "urgent" })).toEqual({ decision: "admit" });
+    for (const field of ["id", "requester_id", "external_id", "status"]) {
+      expect(holdReason(checkTicket(action, { [field]: "changed" }))).toMatchObject({
+        kind: "row_changed",
+        fields: [field],
+      });
+      expect(holdReason(checkTicket(action, { [field]: undefined }))).toMatchObject({
+        kind: "row_changed",
+      });
+    }
+    expect(ticket.projection.priority).toBe("normal");
+  });
+
+  it("still holds the priority patch after a teammate's priority edit", () => {
+    expect(holdReason(checkTicket(guardedPatch, { priority: "urgent" }))).toMatchObject({
+      kind: "row_changed",
+      fields: ["priority"],
+    });
+  });
+
   const plannedQuery = query(["ch_1"]);
   const base = {
     action: guardedRefund,

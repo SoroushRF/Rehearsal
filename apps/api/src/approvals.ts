@@ -5,14 +5,22 @@ import {
   approvalStatus,
   type BillingPolicy,
   evaluateBillingPolicy,
-  requiresDualApproval,
   validateGraph,
 } from "@rehearsal/core";
 import { type Db, schema, toApprovalGrant } from "@rehearsal/db";
 import { and, desc, eq, gt, isNull, lte } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
-import type { ReviewerResolver } from "./auth";
-import { loadPlan, type Outcome, type StoredPlan, type Tx } from "./plans";
+import {
+  AUTHZ_RULE,
+  approvalFacts,
+  authorize,
+  bearerToken,
+  type IamClient,
+  refuse,
+  requirePerson,
+  rolesFromPermissions,
+} from "./iam";
+import { loadPlan, loadPlanById, type Outcome, type StoredPlan, type Tx } from "./plans";
 import { precedentCheck } from "./precedent-check";
 
 const { approvalGrants } = schema;
@@ -22,7 +30,7 @@ export const DEFAULT_APPROVAL_TTL_MS = 60 * 60 * 1000;
 
 export interface ApprovalDeps {
   db: Db;
-  reviewer: ReviewerResolver;
+  iam?: IamClient;
   policies: readonly BillingPolicy[];
   now?: () => Date;
   ttlMs?: number;
@@ -31,12 +39,7 @@ export interface ApprovalDeps {
 type GrantRow = typeof approvalGrants.$inferSelect;
 
 function toGrant(row: GrantRow): ApprovalGrant {
-  return ApprovalGrant.parse({
-    ...row,
-    grantedAt: row.grantedAt.toISOString(),
-    expiresAt: row.expiresAt.toISOString(),
-    revokedAt: row.revokedAt?.toISOString() ?? null,
-  });
+  return ApprovalGrant.parse(toApprovalGrant(row));
 }
 
 /** Who has signed which seat, and which is open, from the stored grants for this exact hash. */
@@ -59,26 +62,42 @@ async function statusFor(
 }
 
 /**
- * Approval binds one reviewer's verified roles to one exact revision and hash, for a limited time.
- * It checks everything executor admission will check (graph, policy, roles), so a plan that would
- * be refused at apply is refused here first. Admission re-checks all of it regardless.
+ * Approval binds one person's permissions to one exact revision and hash, for a limited time.
+ * IAM decides whether they may sign. Hash, revision, and policy stay here. Dollars never leave.
  */
 export function registerApprovalRoutes(app: FastifyInstance, deps: ApprovalDeps) {
   const now = () => deps.now?.() ?? new Date();
 
   app.post<{ Params: { id: string } }>("/api/plans/:id/approvals", async (req, reply) => {
-    const me = await deps.reviewer(req);
-    if (!me) return reply.code(401).send({ error: "unauthenticated" });
-    if (me.roles.length === 0) {
-      return reply.code(403).send({ error: "missing_roles", missing: [], held: [] });
-    }
+    const token = bearerToken(req);
+    if (!token) return reply.code(401).send({ error: "unauthenticated" });
     // Strict: the reviewer approves a stored revision by number and hash, never a body of actions.
     const body = ApproveRequest.strict().safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: "invalid_request" });
 
+    const preview = await loadPlanById(deps.db, req.params.id, body.data.revision);
+    if (preview.kind === "not_found") {
+      const person = await requirePerson(deps.iam, token);
+      if (!person.ok) return refuse(reply, person, "plan_not_found");
+      return reply.code(404).send({ error: "plan_not_found" });
+    }
+    const orgId = preview.kind === "corrupt" ? preview.orgId : preview.plan.manifest.orgId;
+    const resource =
+      preview.kind === "found"
+        ? { orgId, ...approvalFacts(preview.plan.manifest, deps.policies) }
+        : { orgId };
+    const gate = await authorize(deps.iam, token, "POST /api/plans/:id/approvals", resource);
+    if (!gate.ok) return refuse(reply, gate, "plan_not_found");
+    if (preview.kind === "corrupt") {
+      req.log.error({ planId: req.params.id }, preview.detail);
+      return reply.code(500).send({ error: "stored_plan_invalid" });
+    }
+    const roles = rolesFromPermissions(gate.person.permissions);
+    if (roles.length === 0) return reply.code(403).send({ error: "forbidden" });
+
     // Reply only after the transaction commits, so an apply right after a 201 finds the grant.
     const out = await deps.db.transaction(async (tx): Promise<Outcome> => {
-      const loaded = await loadPlan(tx, me.orgId, req.params.id, body.data.revision);
+      const loaded = await loadPlan(tx, orgId, req.params.id, body.data.revision);
       if (loaded.kind === "not_found") return [404, { error: "plan_not_found" }];
       if (loaded.kind === "corrupt") {
         req.log.error({ planId: req.params.id }, loaded.detail);
@@ -114,26 +133,16 @@ export function registerApprovalRoutes(app: FastifyInstance, deps: ApprovalDeps)
         return [409, { error: "precedent_changed", holds: precedents.holds }];
       }
 
-      // Where policy asks for two approvers (decision 0011) each signs for their own seat, so a
-      // member holding either role may sign; admission then needs two different people.
-      if (!requiresDualApproval(plan.manifest, deps.policies)) {
-        const required = [...new Set(plan.manifest.actions.map((a) => a.requiredRole))];
-        const missing = required.filter((r) => !me.roles.includes(r));
-        if (missing.length > 0) {
-          return [403, { error: "missing_roles", missing, held: me.roles }];
-        }
-      }
-
       const at = now();
-      // A repeat click returns the reviewer's live grant for this hash instead of stacking another.
+      // A repeat click returns this person's live grant for this hash instead of stacking another.
       const [live] = await tx
         .select()
         .from(approvalGrants)
         .where(
           and(
-            eq(approvalGrants.orgId, me.orgId),
+            eq(approvalGrants.orgId, plan.manifest.orgId),
             eq(approvalGrants.planHash, plan.planHash),
-            eq(approvalGrants.actorUserId, me.userId),
+            eq(approvalGrants.actorUserId, gate.person.userId),
             isNull(approvalGrants.revokedAt),
             lte(approvalGrants.grantedAt, at),
             gt(approvalGrants.expiresAt, at),
@@ -148,13 +157,15 @@ export function registerApprovalRoutes(app: FastifyInstance, deps: ApprovalDeps)
 
       const grant = ApprovalGrant.parse({
         id: `grant_${randomUUID()}`,
-        orgId: me.orgId,
+        orgId: plan.manifest.orgId,
         planId: plan.planId,
         revision: plan.revision,
         planHash: plan.planHash,
-        actorUserId: me.userId,
-        actorSessionId: me.sessionId,
-        roles: me.roles,
+        actorUserId: gate.person.userId,
+        actorSessionId: gate.person.sessionId,
+        roles,
+        permissions: gate.person.permissions,
+        authzRule: AUTHZ_RULE,
         grantedAt: at.toISOString(),
         expiresAt: new Date(at.getTime() + (deps.ttlMs ?? DEFAULT_APPROVAL_TTL_MS)).toISOString(),
         revokedAt: null,
@@ -173,21 +184,30 @@ export function registerApprovalRoutes(app: FastifyInstance, deps: ApprovalDeps)
   });
 
   app.get<{ Params: { id: string } }>("/api/plans/:id/approvals", async (req, reply) => {
-    const me = await deps.reviewer(req);
-    if (!me) return reply.code(401).send({ error: "unauthenticated" });
+    const token = bearerToken(req);
+    if (!token) return reply.code(401).send({ error: "unauthenticated" });
+    const loaded = await loadPlanById(deps.db, req.params.id);
+    if (loaded.kind === "not_found") {
+      const person = await requirePerson(deps.iam, token);
+      if (!person.ok) return refuse(reply, person, "plan_not_found");
+      return reply.code(404).send({ error: "plan_not_found" });
+    }
+    const orgId = loaded.kind === "corrupt" ? loaded.orgId : loaded.plan.manifest.orgId;
+    const gate = await authorize(deps.iam, token, "GET /api/plans/:id/approvals", { orgId });
+    if (!gate.ok) return refuse(reply, gate, "plan_not_found");
+    if (loaded.kind === "corrupt") {
+      req.log.error({ planId: req.params.id }, loaded.detail);
+      return reply.code(500).send({ error: "stored_plan_invalid" });
+    }
+
     const rows = await deps.db
       .select()
       .from(approvalGrants)
-      .where(and(eq(approvalGrants.orgId, me.orgId), eq(approvalGrants.planId, req.params.id)))
+      .where(and(eq(approvalGrants.orgId, orgId), eq(approvalGrants.planId, req.params.id)))
       .orderBy(desc(approvalGrants.grantedAt));
     const at = now().getTime();
-    // For the newest revision: is a second approver asked for, and who has signed which seat.
-    const loaded = await loadPlan(deps.db, me.orgId, req.params.id);
-    const approval =
-      loaded.kind === "found" ? await statusFor(deps.db, deps, loaded.plan, now()) : null;
-    // And do the precedents it cited still hold? Shown next to the Approve button.
-    const precedents =
-      loaded.kind === "found" ? await precedentCheck(deps.db, loaded.plan.manifest) : null;
+    const approval = await statusFor(deps.db, deps, loaded.plan, now());
+    const precedents = await precedentCheck(deps.db, loaded.plan.manifest);
     return {
       grants: rows.map((r) => ({
         ...toGrant(r),
@@ -202,15 +222,33 @@ export function registerApprovalRoutes(app: FastifyInstance, deps: ApprovalDeps)
   app.post<{ Params: { id: string; grantId: string } }>(
     "/api/plans/:id/approvals/:grantId/revoke",
     async (req, reply) => {
-      const me = await deps.reviewer(req);
-      if (!me) return reply.code(401).send({ error: "unauthenticated" });
-      // Anyone who may approve in this org may withdraw an approval; read-only members may not.
-      if (me.roles.length === 0) return reply.code(403).send({ error: "missing_roles" });
+      const token = bearerToken(req);
+      if (!token) return reply.code(401).send({ error: "unauthenticated" });
+
+      const [grant] = await deps.db
+        .select()
+        .from(approvalGrants)
+        .where(eq(approvalGrants.id, req.params.grantId));
+      if (!grant || grant.planId !== req.params.id) {
+        const person = await requirePerson(deps.iam, token);
+        if (!person.ok) return refuse(reply, person, "grant_not_found");
+        return reply.code(404).send({ error: "grant_not_found" });
+      }
+      const gate = await authorize(
+        deps.iam,
+        token,
+        "POST /api/plans/:id/approvals/:grantId/revoke",
+        {
+          orgId: grant.orgId,
+          grant: { actorUserId: grant.actorUserId },
+        },
+      );
+      if (!gate.ok) return refuse(reply, gate, "grant_not_found");
 
       const scope = and(
-        eq(approvalGrants.orgId, me.orgId),
-        eq(approvalGrants.planId, req.params.id),
-        eq(approvalGrants.id, req.params.grantId),
+        eq(approvalGrants.orgId, grant.orgId),
+        eq(approvalGrants.planId, grant.planId),
+        eq(approvalGrants.id, grant.id),
       );
       const [revoked] = await deps.db
         .update(approvalGrants)

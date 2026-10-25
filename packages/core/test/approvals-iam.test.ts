@@ -1,8 +1,8 @@
 import { decide } from "@rehearsal/authz";
-import { type ApprovalGrant, AuthzRuleFile, type Role } from "@rehearsal/contracts";
+import { type ApprovalGrant, AuthzRuleFile, type PermissionV1 } from "@rehearsal/contracts";
 import { describe, expect, it } from "vitest";
 import raw from "../../../scenarios/authz/rehearsal-authz.v1.json" with { type: "json" };
-import { dualApprovalStatus, liveGrantsFor, seatPermissionsHeld } from "../src";
+import { dualApprovalStatus, liveGrantsFor } from "../src";
 
 /**
  * Two places can judge "two different people": `dualApprovalStatus` here (the API and the apply
@@ -18,23 +18,24 @@ const PLAN = { orgId: "org_1", planId: "plan_1", revision: 1, planHash: HASH };
 const grant = (
   id: string,
   user: string,
-  roles: Role[],
+  permissions: PermissionV1[] | undefined,
   over: Partial<ApprovalGrant> = {},
 ): ApprovalGrant => ({
   id,
   ...PLAN,
   actorUserId: user,
   actorSessionId: `sess_${user}`,
-  roles,
+  roles: ["support_lead"],
+  ...(permissions === undefined ? {} : { permissions }),
   grantedAt: "2026-10-24T11:00:00.000Z",
   expiresAt: "2026-10-24T13:00:00.000Z",
   revokedAt: null,
   ...over,
 });
 
-const SUP = ["support_lead"] as Role[];
-const FIN = ["finance_lead"] as Role[];
-const BOTH = ["support_lead", "finance_lead"] as Role[];
+const SUP: PermissionV1[] = ["rehearsal:approve:support_step"];
+const FIN: PermissionV1[] = ["rehearsal:approve:finance_step"];
+const BOTH: PermissionV1[] = [...SUP, ...FIN];
 
 const cases: [string, ApprovalGrant[], boolean][] = [
   [
@@ -47,13 +48,13 @@ const cases: [string, ApprovalGrant[], boolean][] = [
     [grant("1", "boss", BOTH), grant("2", "a", SUP)],
     true,
   ],
-  ["one person holding both roles", [grant("1", "boss", BOTH)], false],
+  ["one person holding both permissions", [grant("1", "boss", BOTH)], false],
   [
-    "one person holding both roles, signing twice",
+    "one person holding both permissions, signing twice",
     [grant("1", "boss", BOTH), grant("2", "boss", BOTH)],
     false,
   ],
-  ["the same role twice", [grant("1", "a", SUP), grant("2", "b", SUP)], false],
+  ["the same permission twice", [grant("1", "a", SUP), grant("2", "b", SUP)], false],
   ["a missing seat", [grant("1", "a", FIN)], false],
   ["no grants", [], false],
   [
@@ -82,17 +83,25 @@ const cases: [string, ApprovalGrant[], boolean][] = [
     "recorded permissions over roles",
     [
       grant("1", "a", SUP, { permissions: ["rehearsal:approve:support_step"] }),
-      grant("2", "b", BOTH, { permissions: ["rehearsal:read:plan"] }),
+      grant("2", "b", BOTH, {
+        roles: ["support_lead", "finance_lead"],
+        permissions: ["rehearsal:read:plan"],
+      }),
     ],
     false,
   ],
   [
-    "a new row beside an old one",
+    "a permission grant beside a role-only grant does not fill both seats",
     [
-      grant("1", "a", SUP),
+      grant("1", "a", undefined),
       grant("2", "b", FIN, { permissions: ["rehearsal:approve:finance_step"] }),
     ],
-    true,
+    false,
+  ],
+  [
+    "two role-only grants fill no seats",
+    [grant("1", "a", undefined), grant("2", "b", undefined, { roles: ["finance_lead"] })],
+    false,
   ],
 ];
 
@@ -107,8 +116,8 @@ describe("one answer for 'two different people'", () => {
         ...PLAN,
         dualRequired: true,
         requiredPermissions: [],
-        // IAM reads permissions off each grant, so an old row is shown the way the app reads it.
-        grants: grants.map((g) => ({ ...g, permissions: [...seatPermissionsHeld(g)] })),
+        // Pass the saved grants unchanged: missing permissions must not be inferred from roles.
+        grants,
       },
       now: NOW,
     });

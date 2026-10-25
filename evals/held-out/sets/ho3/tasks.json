@@ -1,0 +1,95 @@
+{
+  "set": "ho3",
+  "version": 1,
+  "policy": { "id": "billing-remedy", "version": 1 },
+  "ops": { "credits": false, "replies": true, "summary": true },
+  "setup": [],
+  "precedents": [
+    {
+      "id": "triple-charge-refund",
+      "appliesTo": "billing.duplicate_charge",
+      "statement": "When one invoice was paid three times inside the incident window, keep the earliest payment and refund both later ones.",
+      "conditions": [
+        "All three charges succeeded, for the same invoice, amount and currency",
+        "None of them is refunded yet"
+      ],
+      "exceptions": ["Charges in a currency the remedy policy doesn't cover go to a person"],
+      "effectiveFrom": "2026-08-01",
+      "effectiveUntil": null
+    }
+  ],
+  "tasks": [
+    {
+      "id": "HO3-1",
+      "title": "Remedy INC-BILL-0818",
+      "scope": "all"
+    },
+    {
+      "id": "HO3-2",
+      "title": "Remedy INC-BILL-0818; Copperleaf and Pippin are charged again after approval",
+      "scope": "all",
+      "drift": [
+        {
+          "kind": "phantom_charge",
+          "caseKey": "d03",
+          "chargeId": "ch_INC0818d03phantom",
+          "at": "2026-08-21T09:00:00.000Z"
+        },
+        {
+          "kind": "phantom_charge",
+          "caseKey": "d09",
+          "chargeId": "ch_INC0818d09phantom",
+          "at": "2026-08-24T12:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "HO3-3",
+      "title": "Remedy INC-BILL-0818; a teammate lowers Marrowbone's ticket and the first refund is throttled",
+      "scope": "all",
+      "drift": [{ "kind": "teammate_priority", "caseKey": "d06", "priority": "low" }],
+      "faults": [{ "kind": "throttle_first_refund" }]
+    },
+    {
+      "id": "HO3-4",
+      "title": "Remedy INC-BILL-0818; Elmstead's reply and Wren & Thistle's note land but their responses are lost",
+      "scope": "all",
+      "faults": [
+        { "kind": "lose_reply_response", "caseKey": "d02" },
+        { "kind": "lose_note_response", "caseKey": "d04" }
+      ]
+    },
+    {
+      "id": "HO3-5",
+      "title": "Remedy INC-BILL-0818; Harbourline shows an older charge and an unrelated customer is charged",
+      "scope": "all",
+      "drift": [
+        {
+          "kind": "early_charge",
+          "caseKey": "d01",
+          "chargeId": "ch_INC0818d01early",
+          "at": "2026-08-02T09:00:00.000Z"
+        },
+        {
+          "kind": "stranger_charge",
+          "chargeId": "ch_INC0818stranger",
+          "customerId": "cus_qb2SfmzRQOpH4DDt",
+          "at": "2026-08-16T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "HO3-6",
+      "title": "Remedy INC-BILL-0818 citing the triple-charge precedent; finance withdraws it after approval",
+      "scope": "all",
+      "requires": ["precedent_registry"],
+      "modes": ["memory"],
+      "events": [{ "kind": "precedent_withdrawn", "precedentId": "triple-charge-refund" }]
+    },
+    {
+      "id": "HO3-7",
+      "title": "Look into Stonechat, Glenrock and Delmar only",
+      "scope": ["d07", "q01", "q03"]
+    }
+  ]
+}

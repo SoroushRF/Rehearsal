@@ -5,6 +5,8 @@ import { REHEARSAL_CREDENTIALS } from "@rehearsal/providers";
  * the operator with EXECUTOR_WORKER_SECRET; it never holds the admin token or the planner's secret.
  */
 export const EXECUTOR_FORBIDDEN = [
+  // The Clerk secret stays in IAM. The executor asks IAM; it does not verify people itself.
+  "CLERK_SECRET_KEY",
   "ANTHROPIC_API_KEY",
   "GEMINI_API_KEY",
   "GOOGLE_API_KEY",

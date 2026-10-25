@@ -1,36 +1,21 @@
-import type { ApprovalGrant, PermissionV1, PlanManifest, Role } from "@rehearsal/contracts";
+import type { ApprovalGrant, PermissionV1, PlanManifest } from "@rehearsal/contracts";
 import { type BillingPolicy, evaluateBillingPolicy } from "./policy";
 
 /** The two seats a plan with dual approval needs filled, by two different people. */
-export const DUAL_SEATS = ["support_lead", "finance_lead"] as const satisfies readonly Role[];
-
-/** The permission that fills each seat (decision 0014); the seat names stay roles for callers. */
-export const SEAT_PERMISSION = {
-  support_lead: "rehearsal:approve:support_step",
-  finance_lead: "rehearsal:approve:finance_step",
-} as const satisfies Record<(typeof DUAL_SEATS)[number], PermissionV1>;
-
-/**
- * What a grant lets its holder sign. A grant written under a rule file records its permissions and
- * that is what counts. A grant from before that only has roles, and each role is the permission
- * that signed its seat, so it keeps its meaning (the Clerk mapping gives a finance lead both).
- */
-export function seatPermissionsHeld(grant: ApprovalGrant): readonly PermissionV1[] {
-  if (grant.permissions) return grant.permissions;
-  return grant.roles.flatMap((role) =>
-    role === "support_lead" || role === "finance_lead" ? [SEAT_PERMISSION[role]] : [],
-  );
-}
+export const DUAL_SEATS = [
+  "rehearsal:approve:support_step",
+  "rehearsal:approve:finance_step",
+] as const satisfies readonly PermissionV1[];
 
 export interface ApprovalStatus {
   /** Policy asks for two distinct approvers on this plan. */
   dualRequired: boolean;
   /** Always true when `dualRequired` is false: nothing beyond the ordinary grant is asked. */
   satisfied: boolean;
-  /** Who fills which seat right now, from live grants only. */
-  signed: { role: Role; grantId: string; actorUserId: string }[];
-  /** Seats still open. A seat held by the same person as the other seat counts as open. */
-  needed: Role[];
+  /** Who fills which seat right now, from live grants only. A seat is a stored permission. */
+  signed: { permission: PermissionV1; grantId: string; actorUserId: string }[];
+  /** Seat permissions still open. A seat held by the same person as the other counts as open. */
+  needed: PermissionV1[];
 }
 
 /** Whether any policy the plan cites asks for two approvers. Unknown policies are ignored here. */
@@ -63,28 +48,31 @@ export function liveGrantsFor(
   );
 }
 
+/** Seat permissions stored on the grant. Roles are not consulted and are not mapped. */
+function heldSeats(grant: ApprovalGrant): PermissionV1[] {
+  const permissions = grant.permissions ?? [];
+  return DUAL_SEATS.filter((seat) => permissions.includes(seat));
+}
+
 /**
- * The one place that decides "two different people": the API, the apply request and executor
- * admission all call it. It fills the two seats from live grants. A grant fills a seat only if it
- * holds that seat's permission, and the two seats need different users: one person holding both
- * fills one. The judgement is on permissions, so it agrees with the `seats` rule IAM evaluates
- * for `run:admit` (a test holds the two together). When several pairs work,
- * grants holding fewer roles are used first and then the older one, so the answer is stable.
+ * Fills the two seats from permissions stored on live grants. A grant fills a seat only if it
+ * holds that permission, and the two seats need different users: one person who holds both fills
+ * one. A grant with roles and no permissions fills none. When several pairs work, grants holding
+ * fewer of these seats are used first and then the older one, so the answer is stable.
  * Pass grants already filtered with `liveGrantsFor`.
  */
 export function dualApprovalStatus(live: readonly ApprovalGrant[]): ApprovalStatus {
-  const seatsHeld = (g: ApprovalGrant) =>
-    DUAL_SEATS.filter((role) => seatPermissionsHeld(g).includes(SEAT_PERMISSION[role])).length;
+  const [supportSeat, financeSeat] = DUAL_SEATS;
   const order = (a: ApprovalGrant, b: ApprovalGrant) =>
-    seatsHeld(a) - seatsHeld(b) ||
+    heldSeats(a).length - heldSeats(b).length ||
     Date.parse(a.grantedAt) - Date.parse(b.grantedAt) ||
     a.id.localeCompare(b.id);
-  const holding = (role: Role) =>
-    live.filter((g) => seatPermissionsHeld(g).includes(SEAT_PERMISSION[role])).sort(order);
-  const support = holding("support_lead");
-  const finance = holding("finance_lead");
-  const seat = (role: Role, g: ApprovalGrant) => ({
-    role,
+  const holding = (seat: PermissionV1) =>
+    live.filter((g) => heldSeats(g).includes(seat)).sort(order);
+  const support = holding(supportSeat);
+  const finance = holding(financeSeat);
+  const seat = (permission: PermissionV1, g: ApprovalGrant) => ({
+    permission,
     grantId: g.id,
     actorUserId: g.actorUserId,
   });
@@ -95,7 +83,7 @@ export function dualApprovalStatus(live: readonly ApprovalGrant[]): ApprovalStat
       return {
         dualRequired: true,
         satisfied: true,
-        signed: [seat("support_lead", s), seat("finance_lead", f)],
+        signed: [seat(supportSeat, s), seat(financeSeat, f)],
         needed: [],
       };
     }
@@ -106,16 +94,16 @@ export function dualApprovalStatus(live: readonly ApprovalGrant[]): ApprovalStat
     return {
       dualRequired: true,
       satisfied: false,
-      signed: [seat("finance_lead", f0)],
-      needed: ["support_lead"],
+      signed: [seat(financeSeat, f0)],
+      needed: [supportSeat],
     };
   }
   const s0 = support[0];
   return {
     dualRequired: true,
     satisfied: false,
-    signed: s0 ? [seat("support_lead", s0)] : [],
-    needed: s0 ? ["finance_lead"] : ["support_lead", "finance_lead"],
+    signed: s0 ? [seat(supportSeat, s0)] : [],
+    needed: s0 ? [financeSeat] : [supportSeat, financeSeat],
   };
 }
 
@@ -133,11 +121,12 @@ export function approvalStatus(
   return dualApprovalStatus(liveGrantsFor(grants, { ...manifest, planHash }, at));
 }
 
-/** A sentence for a refusal: who is missing. */
+/** A sentence for a refusal: which permissions are missing. */
 export function explainShortfall(status: ApprovalStatus): string {
+  const [supportSeat, financeSeat] = DUAL_SEATS;
   const open = status.needed.join(" + ");
-  const who = status.signed.map((s) => `${s.actorUserId} as ${s.role}`).join(", ");
-  return `needs two different approvers (support_lead + finance_lead); ${
+  const who = status.signed.map((s) => `${s.actorUserId} as ${s.permission}`).join(", ");
+  return `needs two different approvers (${supportSeat} + ${financeSeat}); ${
     who ? `signed: ${who}; ` : ""
   }still needed: ${open}`;
 }
