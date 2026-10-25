@@ -123,6 +123,8 @@ export function explain(err: unknown): string {
       return "This plan changed since you loaded it. Reload to review the current version.";
     case "policy_violation":
       return `Breaks policy: ${(r.violations ?? []).map((v) => `${v.rule} (${v.detail})`).join("; ")}`;
+    case "precedent_changed":
+      return "A precedent this plan rests on changed after it was planned. Rehearse again to plan against what is in force now.";
     case "approval_invalid":
       return `No live approval for this exact plan${r.detail ? `: ${r.detail}` : ""}.`;
     case "forbidden":

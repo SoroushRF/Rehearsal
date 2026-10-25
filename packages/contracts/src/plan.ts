@@ -2,6 +2,7 @@ import { z } from "zod";
 import { Action } from "./actions";
 import { CONTRACTS_VERSION, PolicyRef, Role, Sha256Hex, Timestamp } from "./common";
 import { Observation, QueryObservation } from "./observations";
+import { PrecedentBasis } from "./precedents";
 
 /**
  * The immutable thing a reviewer approves. Its canonical hash (RFC 8785 + SHA-256) is what an
@@ -32,6 +33,11 @@ export const PlanManifest = z.object({
   actions: z.array(Action),
   /** Actions the reviewer removed (with dependents), for audit. */
   excluded: z.array(z.object({ actionId: z.string(), reason: z.enum(["reviewer", "dependency"]) })),
+  /**
+   * The precedents the planner relied on, with the registry epoch of each area it consulted.
+   * Absent for a plan that used none, so every plan made before this field keeps its hash.
+   */
+  precedentBasis: PrecedentBasis.optional(),
 });
 export type PlanManifest = z.infer<typeof PlanManifest>;
 

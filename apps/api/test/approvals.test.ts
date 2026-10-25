@@ -1,6 +1,15 @@
 import { PlanManifest } from "@rehearsal/contracts";
 import type { BillingPolicy, BillingPolicyV1 } from "@rehearsal/core";
-import { createDb, type Db, migrateDb, type PgBoss, schema, startQueue } from "@rehearsal/db";
+import {
+  approvePrecedent,
+  createDb,
+  type Db,
+  migrateDb,
+  type PgBoss,
+  recordPrecedentEvent,
+  schema,
+  startQueue,
+} from "@rehearsal/db";
 import { billingManifest } from "@rehearsal/testkit";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -430,5 +439,127 @@ describe.skipIf(!process.env.DB_TESTS)("two distinct approvers (real Postgres)",
     const res = await apply(financeOnly(orgId), planId, hash);
     expect(res.statusCode).toBe(403);
     expect(res.json().detail).toMatch(/still needed: support_lead/);
+  });
+});
+
+// A plan that cites precedents can only be approved while they still hold (T2.17).
+describe.skipIf(!process.env.DB_TESTS)("approval and cited precedents (real Postgres)", () => {
+  const url = process.env.DATABASE_URL ?? "postgres://rehearsal:rehearsal@localhost:5432/rehearsal";
+  const db = createDb(url);
+  beforeAll(() => migrateDb(db));
+
+  const AREA = "billing.duplicate_charge";
+  const deps = (me: Reviewer) => ({
+    approvals: {
+      db,
+      reviewer: () => me,
+      policies: [POLICY, POLICY_V3],
+      now: () => NOW,
+      ttlMs: TTL,
+    },
+  });
+  const approve = (me: Reviewer, planId: string, hash: string) =>
+    send(deps(me), "POST", `/api/plans/${planId}/approvals`, { revision: 1, planHash: hash });
+  const listed = async (me: Reviewer, planId: string) =>
+    (await send(deps(me), "GET", `/api/plans/${planId}/approvals`)).json();
+
+  /** Approves, syncs and so activates one version of a precedent, as the sync job would. */
+  async function activate(orgId: string, version: number) {
+    const digest = String(version).repeat(64).slice(0, 64);
+    await approvePrecedent(db, {
+      orgId,
+      precedentId: "dup-refund",
+      version,
+      appliesTo: AREA,
+      digest,
+      record: { version },
+      actorUserId: "user_fin",
+      sourceRunId: "run_1",
+    });
+    await recordPrecedentEvent(db, {
+      orgId,
+      precedentId: "dup-refund",
+      version,
+      kind: "activated",
+    });
+    return digest;
+  }
+  async function seed(basis: "none" | "v1") {
+    const orgId = `org_${crypto.randomUUID()}`;
+    const planId = `plan_${crypto.randomUUID()}`;
+    const digest = await activate(orgId, 1);
+    const precedentBasis =
+      basis === "none"
+        ? undefined
+        : {
+            citations: [
+              {
+                id: "dup-refund",
+                version: 1,
+                digest,
+                appliesTo: AREA,
+                factIds: ["fact_1"],
+                traceId: "trace_1",
+              },
+            ],
+            epochs: { [AREA]: 1 },
+          };
+    const manifest = PlanManifest.parse({ ...billingManifest(planId), orgId, precedentBasis });
+    const stored = await storePlan(db, manifest);
+    if (!stored) throw new Error("seed failed");
+    return { orgId, planId, hash: stored.planHash };
+  }
+
+  it("approves a plan whose cited precedent is still active, and reports it holds", async () => {
+    const { orgId, planId, hash } = await seed("v1");
+    expect((await listed(finance(orgId), planId)).precedents).toEqual({ ok: true });
+    expect((await approve(finance(orgId), planId, hash)).statusCode).toBe(201);
+  });
+
+  it("refuses once a newer version is active, naming what changed", async () => {
+    const { orgId, planId, hash } = await seed("v1");
+    await activate(orgId, 2);
+    const res = await approve(finance(orgId), planId, hash);
+    expect(res.statusCode).toBe(409);
+    const { error, holds } = res.json();
+    expect(error).toBe("precedent_changed");
+    expect(holds.map((h: { reason: string }) => h.reason).sort()).toEqual([
+      "epoch_changed",
+      "superseded",
+    ]);
+    expect((await listed(finance(orgId), planId)).precedents.ok).toBe(false);
+    // Nothing was stored.
+    const grants = await db
+      .select()
+      .from(schema.approvalGrants)
+      .where(eq(schema.approvalGrants.planId, planId));
+    expect(grants).toEqual([]);
+  });
+
+  it("refuses once the cited precedent is withdrawn", async () => {
+    const { orgId, planId, hash } = await seed("v1");
+    await recordPrecedentEvent(db, {
+      orgId,
+      precedentId: "dup-refund",
+      version: 1,
+      kind: "withdrawn",
+    });
+    const res = await approve(finance(orgId), planId, hash);
+    expect(res.statusCode).toBe(409);
+    expect(res.json().holds.map((h: { reason: string }) => h.reason)).toContain("withdrawn");
+  });
+
+  it("doesn't touch a plan that cited nothing, whatever happens to precedents", async () => {
+    const { orgId, planId, hash } = await seed("none");
+    await activate(orgId, 2);
+    expect((await listed(finance(orgId), planId)).precedents).toEqual({ ok: true });
+    expect((await approve(finance(orgId), planId, hash)).statusCode).toBe(201);
+  });
+
+  it("only looks at its own organization's registry", async () => {
+    const mine = await seed("v1");
+    const other = await seed("v1");
+    await activate(other.orgId, 2);
+    expect((await approve(finance(mine.orgId), mine.planId, mine.hash)).statusCode).toBe(201);
   });
 });

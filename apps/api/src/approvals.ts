@@ -13,6 +13,7 @@ import { and, desc, eq, gt, isNull, lte } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import type { ReviewerResolver } from "./auth";
 import { loadPlan, type Outcome, type StoredPlan, type Tx } from "./plans";
+import { precedentCheck } from "./precedent-check";
 
 const { approvalGrants } = schema;
 
@@ -107,6 +108,12 @@ export function registerApprovalRoutes(app: FastifyInstance, deps: ApprovalDeps)
         policySnapshot.push({ id: ref.id, version: ref.version, contents: policy });
       }
 
+      // A precedent the plan rested on may have been replaced or withdrawn since it was planned.
+      const precedents = await precedentCheck(tx, plan.manifest);
+      if (!precedents.ok) {
+        return [409, { error: "precedent_changed", holds: precedents.holds }];
+      }
+
       // Where policy asks for two approvers (decision 0011) each signs for their own seat, so a
       // member holding either role may sign; admission then needs two different people.
       if (!requiresDualApproval(plan.manifest, deps.policies)) {
@@ -178,12 +185,16 @@ export function registerApprovalRoutes(app: FastifyInstance, deps: ApprovalDeps)
     const loaded = await loadPlan(deps.db, me.orgId, req.params.id);
     const approval =
       loaded.kind === "found" ? await statusFor(deps.db, deps, loaded.plan, now()) : null;
+    // And do the precedents it cited still hold? Shown next to the Approve button.
+    const precedents =
+      loaded.kind === "found" ? await precedentCheck(deps.db, loaded.plan.manifest) : null;
     return {
       grants: rows.map((r) => ({
         ...toGrant(r),
         live: r.revokedAt === null && r.grantedAt.getTime() <= at && r.expiresAt.getTime() > at,
       })),
       approval,
+      precedents,
     };
   });
 

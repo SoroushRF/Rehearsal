@@ -71,12 +71,15 @@ export function fakeApi({
   dual = false,
   completedRun = false,
   activePrecedent = false,
+  citesPrecedent = false,
 }: {
   dual?: boolean;
   /** Serve the applied run as completed, and the precedent routes, instead of the held phantom. */
   completedRun?: boolean;
   /** Start with one active precedent, so it can be withdrawn. */
   activePrecedent?: boolean;
+  /** The plan cites a precedent; `held` says the registry has moved on since it was planned. */
+  citesPrecedent?: false | "holds" | "held";
 } = {}) {
   const run = () => (completedRun ? { ...RUN, state: "completed" } : RUN);
   const precedents: Record<string, unknown>[] = activePrecedent
@@ -96,7 +99,24 @@ export function fakeApi({
         },
       ]
     : [];
-  let current = { revision: 1, ...V1 };
+  const basis = {
+    citations: [
+      {
+        id: "duplicate-charge-refund",
+        version: 2,
+        digest: "d".repeat(64),
+        appliesTo: "billing.duplicate_charge",
+        factIds: ["fact_1", "fact_2"],
+        traceId: "trace_abc",
+      },
+    ],
+    epochs: { "billing.duplicate_charge": 3 },
+  };
+  let current = {
+    revision: 1,
+    ...V1,
+    manifest: citesPrecedent ? { ...V1.manifest, precedentBasis: basis } : V1.manifest,
+  };
   const grants: object[] = [];
   let approvals = 0;
   let applied = false;
@@ -170,7 +190,32 @@ export function fakeApi({
       };
     };
     if (path === "/api/plans/plan_happy/approvals" && req.method() === "GET")
-      return json(route, 200, { grants, ...(dual && { approval: seats() }) });
+      return json(route, 200, {
+        grants,
+        ...(dual && { approval: seats() }),
+        ...(citesPrecedent && {
+          precedents:
+            citesPrecedent === "held"
+              ? {
+                  ok: false,
+                  holds: [
+                    {
+                      id: "duplicate-charge-refund",
+                      reason: "superseded",
+                      citedVersion: 2,
+                      activeVersion: 3,
+                    },
+                    {
+                      appliesTo: "billing.duplicate_charge",
+                      reason: "epoch_changed",
+                      plannedEpoch: 3,
+                      currentEpoch: 4,
+                    },
+                  ],
+                }
+              : { ok: true },
+        }),
+      });
     if (dual && path === "/api/plans/plan_happy/approvals") {
       const second = grants.length === 1;
       const grant = {
