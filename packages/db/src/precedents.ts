@@ -1,4 +1,4 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import type { Db } from "./index";
 import { precedentEvents } from "./schema";
 
@@ -92,6 +92,16 @@ export function deriveRegistry(events: readonly PrecedentEventRow[]): RegistryVi
     };
   });
   return { snapshot: { active, epochs }, entries };
+}
+
+/**
+ * Serializes changes to one precedent for the rest of the transaction, so a withdrawal and a sync
+ * of the same precedent can't interleave between reading what is active and appending the event.
+ */
+export async function lockPrecedent(tx: Tx, orgId: string, precedentId: string): Promise<void> {
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${`rehearsal:precedent:${orgId}:${precedentId}`}, 0))`,
+  );
 }
 
 export async function loadRegistry(db: Exec, orgId: string): Promise<RegistryView> {

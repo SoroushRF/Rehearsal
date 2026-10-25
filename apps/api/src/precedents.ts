@@ -4,7 +4,9 @@ import {
   enqueuePrecedentSync,
   latestApproved,
   loadRegistry,
+  lockPrecedent,
   type PgBoss,
+  recordPrecedentEvent,
   schema,
 } from "@rehearsal/db";
 import { PrecedentId, PrecedentRecord, precedentDigest } from "@rehearsal/memory";
@@ -42,6 +44,12 @@ export const PromoteRequest = z.strictObject({
   effectiveFrom: z.iso.date(),
   effectiveUntil: z.iso.date().nullable(),
 });
+
+/**
+ * Which version the finance lead saw as active. Like an approval's hash, it stops a stale page from
+ * withdrawing a newer version nobody looked at.
+ */
+export const WithdrawRequest = z.strictObject({ version: z.int().positive() });
 
 /**
  * Promoting a case to a precedent (decision 0012). Finance only, from a completed run. It records
@@ -120,6 +128,45 @@ export function registerPrecedentRoutes(app: FastifyInstance, deps: PrecedentDep
           syncEnabled: deps.syncEnabled,
         },
       ];
+    });
+    return reply.code(out[0]).send(out[1]);
+  });
+
+  /**
+   * Withdraws the active version (finance only). History isn't edited: a `withdrawn` event is
+   * appended, the precedent leaves the registry snapshot and its area's epoch moves, so any plan
+   * that relied on it is held once admission checks citations. A newer version that is still
+   * waiting is a separate approval and becomes active if its sync completes.
+   */
+  app.post<{ Params: { id: string } }>("/api/precedents/:id/withdraw", async (req, reply) => {
+    const me = await deps.reviewer(req);
+    if (!me) return reply.code(401).send({ error: "unauthenticated" });
+    if (!me.roles.includes("finance_lead")) {
+      return reply
+        .code(403)
+        .send({ error: "missing_roles", missing: ["finance_lead"], held: me.roles });
+    }
+    const body = WithdrawRequest.safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: "invalid_request" });
+    const id = req.params.id;
+
+    const out = await deps.db.transaction(async (tx): Promise<Outcome> => {
+      await lockPrecedent(tx, me.orgId, id);
+      const { snapshot, entries } = await loadRegistry(tx, me.orgId);
+      if (!entries.some((e) => e.id === id)) return [404, { error: "precedent_not_found" }];
+      const active = snapshot.active.get(id);
+      if (!active) return [409, { error: "not_active" }];
+      if (active.version !== body.data.version) {
+        return [409, { error: "stale_version", activeVersion: active.version }];
+      }
+      await recordPrecedentEvent(tx, {
+        orgId: me.orgId,
+        precedentId: id,
+        version: active.version,
+        kind: "withdrawn",
+        actorUserId: me.userId,
+      });
+      return [200, { precedent: { id, version: active.version, status: "withdrawn" } }];
     });
     return reply.code(out[0]).send(out[1]);
   });

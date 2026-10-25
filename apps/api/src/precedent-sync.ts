@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import {
   approvedVersion,
   type Db,
+  lockPrecedent,
   type PgBoss,
   PRECEDENT_QUEUE,
   PrecedentSyncJob,
@@ -63,11 +64,14 @@ export async function syncPrecedent(
   const record = PrecedentRecord.parse(approved.record);
 
   await deps.publisherFor(job.orgId).publish(record);
-  const written = await recordPrecedentEvent(deps.db, {
-    orgId: job.orgId,
-    precedentId: job.precedentId,
-    version: job.version,
-    kind: "activated",
+  const written = await deps.db.transaction(async (tx) => {
+    await lockPrecedent(tx, job.orgId, job.precedentId);
+    return recordPrecedentEvent(tx, {
+      orgId: job.orgId,
+      precedentId: job.precedentId,
+      version: job.version,
+      kind: "activated",
+    });
   });
   return written ? "activated" : "already_active";
 }

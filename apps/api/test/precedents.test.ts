@@ -1,5 +1,14 @@
-import { createDb, type Db, migrateDb, type PgBoss, schema, startQueue } from "@rehearsal/db";
+import {
+  createDb,
+  type Db,
+  loadRegistry,
+  migrateDb,
+  type PgBoss,
+  schema,
+  startQueue,
+} from "@rehearsal/db";
 import type { PrecedentRecord } from "@rehearsal/memory";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app";
 import type { Reviewer } from "../src/auth";
@@ -83,6 +92,32 @@ describe("promoting a precedent, before touching the database", () => {
   ])("refuses a body with %s", async (_label, body) => {
     const res = await send(as(finance("org_1")), "POST", "/api/runs/r1/precedents", body);
     expect(res.statusCode).toBe(400);
+  });
+});
+
+describe("withdrawing a precedent, before touching the database", () => {
+  const as = (me: Reviewer | null) => ({
+    precedents: { db: {} as Db, boss: {} as PgBoss, reviewer: () => me, syncEnabled: false },
+  });
+  const withdraw = (me: Reviewer | null, body: object = { version: 1 }) =>
+    send(as(me), "POST", "/api/precedents/dup-refund/withdraw", body);
+
+  it("is unavailable without a database", async () => {
+    const res = await send({}, "POST", "/api/precedents/dup-refund/withdraw", { version: 1 });
+    expect(res.statusCode).toBe(503);
+  });
+
+  it("refuses a caller who isn't signed in, and a support lead", async () => {
+    expect((await withdraw(null)).statusCode).toBe(401);
+    expect((await withdraw(support("org_1"))).statusCode).toBe(403);
+  });
+
+  it.each([
+    ["no version", {}],
+    ["a version that isn't a positive integer", { version: 0 }],
+    ["anything besides the version", { version: 1, status: "withdrawn" }],
+  ])("refuses a body with %s", async (_label, body) => {
+    expect((await withdraw(finance("org_1"), body)).statusCode).toBe(400);
   });
 });
 
@@ -251,5 +286,74 @@ describe.skipIf(!process.env.DB_TESTS)("promoting a precedent (real Postgres)", 
     const b = await seedRun();
     await promote(finance(a.orgId), a.runId);
     expect(await list(finance(b.orgId))).toEqual([]);
+  });
+
+  describe("withdrawing (#233)", () => {
+    const withdraw = (me: Reviewer, id: string, version: number) =>
+      send(deps(me), "POST", `/api/precedents/${id}/withdraw`, { version });
+    async function active() {
+      const { orgId, runId } = await seedRun();
+      await promote(finance(orgId), runId);
+      await syncPrecedent({ orgId, precedentId: "dup-refund", version: 1 }, { db, publisherFor });
+      return { orgId, runId };
+    }
+
+    it("withdraws the active version: it leaves the snapshot and its area's epoch moves", async () => {
+      const { orgId } = await active();
+      const before = await loadRegistry(db, orgId);
+      expect(before.snapshot.active.get("dup-refund")?.version).toBe(1);
+
+      const res = await withdraw(finance(orgId), "dup-refund", 1);
+      expect(res.statusCode).toBe(200);
+      expect(res.json().precedent).toMatchObject({ version: 1, status: "withdrawn" });
+
+      const after = await loadRegistry(db, orgId);
+      expect(after.snapshot.active.has("dup-refund")).toBe(false);
+      expect(after.snapshot.epochs.get(content.appliesTo)).toBe(
+        (before.snapshot.epochs.get(content.appliesTo) ?? 0) + 1,
+      );
+      expect((await list(finance(orgId)))[0]?.status).toBe("withdrawn");
+    });
+
+    it("refuses a version that isn't the active one, so a stale page can't withdraw a newer one", async () => {
+      const { orgId, runId } = await active();
+      await promote(finance(orgId), runId, { ...content, statement: "Changed." });
+      await syncPrecedent({ orgId, precedentId: "dup-refund", version: 2 }, { db, publisherFor });
+      const res = await withdraw(finance(orgId), "dup-refund", 1);
+      expect(res.statusCode).toBe(409);
+      expect(res.json()).toEqual({ error: "stale_version", activeVersion: 2 });
+    });
+
+    it("refuses a precedent that is only waiting, or already withdrawn", async () => {
+      const { orgId, runId } = await seedRun();
+      await promote(finance(orgId), runId);
+      expect((await withdraw(finance(orgId), "dup-refund", 1)).json()).toEqual({
+        error: "not_active",
+      });
+
+      const done = await active();
+      expect((await withdraw(finance(done.orgId), "dup-refund", 1)).statusCode).toBe(200);
+      expect((await withdraw(finance(done.orgId), "dup-refund", 1)).statusCode).toBe(409);
+    });
+
+    it("can't reach another organization's precedent", async () => {
+      await active();
+      const res = await withdraw(finance(`org_${crypto.randomUUID()}`), "dup-refund", 1);
+      expect(res.statusCode).toBe(404);
+    });
+
+    it("lets two withdrawals race and records only one", async () => {
+      const { orgId } = await active();
+      const results = await Promise.all([
+        withdraw(finance(orgId), "dup-refund", 1),
+        withdraw(finance(orgId), "dup-refund", 1),
+      ]);
+      expect(results.map((r) => r.statusCode).sort()).toEqual([200, 409]);
+      const events = await db
+        .select()
+        .from(schema.precedentEvents)
+        .where(eq(schema.precedentEvents.orgId, orgId));
+      expect(events.filter((e) => e.kind === "withdrawn")).toHaveLength(1);
+    });
   });
 });
