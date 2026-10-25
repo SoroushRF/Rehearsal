@@ -8,8 +8,10 @@ import {
   planHash,
 } from "@rehearsal/core";
 import {
+  approvedGrant,
   billingManifest,
   FakeClock,
+  fakeRunAdmit,
   MemoryApplyStore,
   MemoryJournal,
   worldFromManifest,
@@ -72,17 +74,19 @@ function setup(first: PlanManifest) {
   const store = new MemoryApplyStore();
   const journal = new MemoryJournal();
   const world = worldFromManifest(first.observations);
+  const clock = new FakeClock("2026-10-21T12:00:00.000Z");
   let n = 0;
   const deps: ExecutorDeps = {
     store,
     journal,
-    clock: new FakeClock("2026-10-21T12:00:00.000Z"),
+    clock,
     providers: { stripe: world.provider("stripe"), zendesk: world.provider("zendesk") },
     worlds: {
       stripe: { world: "operational", tenant: "test" },
       zendesk: { world: "operational", tenant: "test" },
     },
     policies: [policyV1, policyV2] as BillingPolicy[],
+    admit: fakeRunAdmit({ now: () => clock.now() }),
     newId: (prefix: string) => `${prefix}_${++n}`,
     sleep: async () => {},
   };
@@ -98,7 +102,7 @@ function setup(first: PlanManifest) {
     const approvalId = `grant_${planId}@${revision}`;
     store.plans.set(`${planId}@${revision}`, { planHash: hash, manifest });
     store.runs.set(runId, { planId, revision, planHash: hash, approvalId });
-    const grant: ApprovalGrant = {
+    const grant: ApprovalGrant = approvedGrant({
       id: approvalId,
       orgId: manifest.orgId,
       planId,
@@ -110,7 +114,7 @@ function setup(first: PlanManifest) {
       grantedAt: "2026-10-21T11:00:00.000Z",
       expiresAt: "2026-10-21T13:00:00.000Z",
       revokedAt: null,
-    };
+    });
     store.grants.set(approvalId, grant);
     const job = { orgId: manifest.orgId, runId, planId, revision, planHash: hash };
     return () => executeRun(job, deps);

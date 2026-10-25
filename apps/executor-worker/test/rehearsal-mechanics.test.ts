@@ -11,7 +11,9 @@ import {
   rehearsalTenant,
 } from "@rehearsal/core";
 import {
+  approvedGrant,
   FakeClock,
+  fakeRunAdmit,
   happyPathBundle,
   MemoryApplyStore,
   MemoryJournal,
@@ -38,19 +40,22 @@ function setup() {
     planHash: hash,
     approvalId: APPROVAL,
   });
-  store.grants.set(APPROVAL, {
-    id: APPROVAL,
-    orgId: manifest.orgId,
-    planId: manifest.planId,
-    revision: 1,
-    planHash: hash,
-    actorUserId: "user_finance",
-    actorSessionId: "sess_1",
-    roles: ["support_lead", "finance_lead"],
-    grantedAt: "2026-10-21T11:00:00.000Z",
-    expiresAt: "2026-10-21T13:00:00.000Z",
-    revokedAt: null,
-  });
+  store.grants.set(
+    APPROVAL,
+    approvedGrant({
+      id: APPROVAL,
+      orgId: manifest.orgId,
+      planId: manifest.planId,
+      revision: 1,
+      planHash: hash,
+      actorUserId: "user_finance",
+      actorSessionId: "sess_1",
+      roles: ["support_lead", "finance_lead"],
+      grantedAt: "2026-10-21T11:00:00.000Z",
+      expiresAt: "2026-10-21T13:00:00.000Z",
+      revokedAt: null,
+    }),
+  );
   const clock = new FakeClock("2026-10-21T12:00:00.000Z");
   let n = 0;
   const newId = (prefix: string) => `${prefix}_${++n}`;
@@ -101,6 +106,7 @@ function setup() {
         zendesk: { world: "operational", tenant: "test" },
       },
       policies: POLICIES,
+      admit: fakeRunAdmit({ now: () => clock.now() }),
       newId,
       sleep: async () => {},
     };
