@@ -189,6 +189,9 @@ importers:
       '@rehearsal/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@rehearsal/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@rehearsal/planner':
         specifier: workspace:*
         version: link:../../packages/planner
