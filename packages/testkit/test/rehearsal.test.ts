@@ -8,6 +8,7 @@ import {
   PlanManifest,
   Receipt,
   RehearsalStepResult,
+  type RehearsalVersions,
 } from "@rehearsal/contracts";
 import {
   planHash,
@@ -171,6 +172,33 @@ describe("rehearsal report staleness (T1.21)", () => {
         current,
       ),
     ).toEqual([]);
+  });
+
+  it("ignores the commit on either side, even in a caller's full versions object (#240)", () => {
+    // A caller may pass its whole build object, commit included: same build, current.
+    const full: RehearsalVersions = { ...report.versions };
+    expect(rehearsalStaleness(report, { ...current, versions: full })).toEqual([]);
+    // Only the current commit differs: still current.
+    expect(
+      rehearsalStaleness(report, { ...current, versions: { ...full, commit: "abcdef0" } }),
+    ).toEqual([]);
+  });
+
+  it.each<[string, Partial<RehearsalVersions>]>([
+    ["engine", { engine: "engine-next" }],
+    ["worker", { worker: "worker-next" }],
+    ["verifier", { verifier: "verifier-next" }],
+    ["projections", { projections: { stripe: "stripe.charge.v9" } }],
+    ["images", { images: { stripe: `sha256:${"c".repeat(64)}` } }],
+  ])("is stale when the %s changes, with or without a commit alongside", (_field, change) => {
+    const full: RehearsalVersions = { ...report.versions, ...change };
+    expect(rehearsalStaleness(report, { ...current, versions: full })).toEqual([
+      "versions_changed",
+    ]);
+    const { commit: _c, ...noCommit } = full;
+    expect(rehearsalStaleness(report, { ...current, versions: noCommit })).toEqual([
+      "versions_changed",
+    ]);
   });
 
   it("names each reason a report no longer describes what the reviewer sees", () => {

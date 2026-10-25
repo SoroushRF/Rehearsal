@@ -41,8 +41,23 @@ export interface RehearsalReadContext {
   viewedPlanHash: string;
   /** The policy the viewed plan is evaluated under. */
   policy: { id: string; version: number };
-  versions: Omit<RehearsalVersions, "commit">;
+  /** The current build. A `commit` may be present; it is ignored, like the report's. */
+  versions: Omit<RehearsalVersions, "commit"> & { commit?: string };
   now: Date;
+}
+
+/**
+ * The parts of a build that decide what a rehearsal ran. The commit is provenance only, so it is
+ * left out on both sides, whatever else a caller's object carries.
+ */
+function executionVersions(v: Omit<RehearsalVersions, "commit">) {
+  return {
+    engine: v.engine,
+    worker: v.worker,
+    verifier: v.verifier,
+    projections: v.projections,
+    images: v.images,
+  };
 }
 
 /**
@@ -60,8 +75,12 @@ export function rehearsalStaleness(
   if (current.policy.id !== report.policy.id || current.policy.version !== report.policy.version) {
     reasons.push("policy_changed");
   }
-  const { commit: _commit, ...ran } = report.versions;
-  if (canonicalize(ran) !== canonicalize(current.versions)) reasons.push("versions_changed");
+  if (
+    canonicalize(executionVersions(report.versions)) !==
+    canonicalize(executionVersions(current.versions))
+  ) {
+    reasons.push("versions_changed");
+  }
   const finished = Date.parse(report.finishedAt);
   if (!(current.now.getTime() - finished < REHEARSAL_REPORT_TTL_MS)) reasons.push("expired");
   return reasons;
