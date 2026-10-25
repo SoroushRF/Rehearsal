@@ -8,6 +8,8 @@ import { buildApp } from "./app";
 import type { ApplyDeps } from "./apply";
 import { iamClientFromEnv } from "./iam";
 import { publisherFromEnv, startPrecedentWorker } from "./precedent-sync";
+import { rehearsalTenantActive } from "./rehearsal-operator";
+import { rehearsalTokenDepsFromEnv } from "./rehearsal-tokens";
 import { tenantTokenDepsFromEnv } from "./tenant-tokens";
 
 /**
@@ -70,6 +72,12 @@ const rehearse = apply && {
   precedentRegistry: async (orgId: string) => (await loadRegistry(apply.db, orgId)).snapshot,
 };
 const executionRehearsals = apply && { db: apply.db, boss: apply.boss, iam };
+// T1.23/T3.16: the rehearsal worker's minter and operator routes, when this API holds the rehearsal
+// admin token and worker secret. A token is minted only for a claimed rehearsal not yet reset.
+const rehearsalTokens =
+  apply && rehearsalTokenDepsFromEnv((id) => rehearsalTenantActive(apply.db, id));
+const rehearsalOperator = apply &&
+  rehearsalTokens && { db: apply.db, secret: rehearsalTokens.secret };
 const app = buildApp({
   apply,
   plans,
@@ -80,6 +88,8 @@ const app = buildApp({
   executionRehearsals,
   iam,
   tenantTokens: tenantTokenDepsFromEnv(),
+  rehearsalTokens,
+  rehearsalOperator,
 });
 const port = Number(process.env.API_PORT ?? process.env.PORT ?? 3000);
 

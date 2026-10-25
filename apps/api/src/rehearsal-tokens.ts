@@ -55,7 +55,8 @@ export function rehearsalTokenDepsFromEnv(
   return { adminToken, secret, active, env };
 }
 
-function presents(authorization: string | undefined, secret: string): boolean {
+/** Constant-time check of a worker's bearer secret. */
+export function presents(authorization: string | undefined, secret: string): boolean {
   const presented = Buffer.from(authorization?.replace(/^Bearer /, "") ?? "");
   const expected = Buffer.from(secret);
   return presented.length === expected.length && timingSafeEqual(presented, expected);
