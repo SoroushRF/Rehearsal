@@ -1,5 +1,6 @@
 export * from "./actions";
 export * from "./api";
+export * from "./authz";
 export * from "./common";
 export * from "./execution";
 export * from "./impact";

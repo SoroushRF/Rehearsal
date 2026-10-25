@@ -22,6 +22,12 @@ export interface CompensatorDeps {
   clock: Clock;
 }
 
+/** The run's own keys: operational by default, a rehearsal's namespaced ones when it passes them. */
+const operationKeyIn = (ctx: CompensationContext, action: Action) =>
+  ctx.keys ? ctx.keys.operation(action) : operationKey(ctx.orgId, ctx.manifest.planId, action);
+const undoKeyIn = (ctx: CompensationContext, action: Action) =>
+  ctx.keys ? ctx.keys.undo(action) : undoKey(ctx.orgId, ctx.manifest.planId, action);
+
 const STAMP_LIMIT = "guarded by Zendesk's updated_stamp, which has a documented 1-second limit";
 
 /**
@@ -282,8 +288,8 @@ export function createCompensator(deps: CompensatorDeps): Compensator {
           writtenFields(other).includes(field),
         );
         const [undos, forwards] = await Promise.all([
-          ctx.journal.attemptsForKey(undoKey(ctx.orgId, ctx.manifest.planId, other)),
-          ctx.journal.attemptsForKey(operationKey(ctx.orgId, ctx.manifest.planId, other)),
+          ctx.journal.attemptsForKey(undoKeyIn(ctx, other)),
+          ctx.journal.attemptsForKey(operationKeyIn(ctx, other)),
         ]);
         const sent = [...undos, ...forwards].some((item) => item.state !== "prepared");
         const restored = restoredByUndo(
@@ -368,7 +374,7 @@ async function compensate(
   if (!provider || !world) return held("no Zendesk provider to compensate with");
   if (!provider.preconditions) return held("no stamp precondition to guard the undo with");
 
-  const key = undoKey(ctx.orgId, ctx.manifest.planId, action);
+  const key = undoKeyIn(ctx, action);
   const earlier = (await ctx.journal.attemptsForKey(key)).at(-1);
   // Close this in-flight undo only after a fresh one is actually dispatched.
   // `reject` — a negative read showed it never landed. `reconcile` — it landed, but a field remains.
