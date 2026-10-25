@@ -3,6 +3,7 @@ import type { BillingPolicyV1 } from "@rehearsal/core";
 import { planHash } from "@rehearsal/core";
 import {
   APPLY_QUEUE,
+  approvePrecedent,
   createDb,
   MAX_REAPS,
   migrateDb,
@@ -10,6 +11,7 @@ import {
   type PgBoss,
   PgJournal,
   reapStuckRuns,
+  recordPrecedentEvent,
   requestApply,
   requestCancel,
   schema,
@@ -45,10 +47,9 @@ describe.skipIf(!process.env.DB_TESTS)(
     });
 
     /** An approved plan in a fresh org with a run requested through the real apply command. */
-    async function approvedRun() {
-      const orgId = `org_${randomUUID()}`;
+    async function approvedRun(extra: Record<string, unknown> = {}, orgId = `org_${randomUUID()}`) {
       const planId = `plan_${randomUUID()}`;
-      const manifest = { ...billingManifest(planId), orgId };
+      const manifest = { ...billingManifest(planId), orgId, ...extra };
       const hash = planHash(manifest);
       await db
         .insert(schema.planVersions)
@@ -93,6 +94,44 @@ describe.skipIf(!process.env.DB_TESTS)(
       };
     }
 
+    /** Approve and activate one version of a precedent in this org, as the sync job would (#234). */
+    async function activatePrecedent(orgId: string, version: number) {
+      const digest = String(version).repeat(64);
+      await approvePrecedent(db, {
+        orgId,
+        precedentId: "dup-refund",
+        version,
+        appliesTo: "billing.duplicate_charge",
+        digest,
+        record: { version },
+        actorUserId: "user_finance",
+        sourceRunId: "run_1",
+      });
+      await recordPrecedentEvent(db, {
+        orgId,
+        precedentId: "dup-refund",
+        version,
+        kind: "activated",
+      });
+      return digest;
+    }
+    /** A plan citing `dup-refund` v1 as the registry stands once it is activated (epoch 1). */
+    const citing = (digest: string) => ({
+      precedentBasis: {
+        citations: [
+          {
+            id: "dup-refund",
+            version: 1,
+            digest,
+            appliesTo: "billing.duplicate_charge",
+            factIds: ["fact_1"],
+            traceId: "trace_1",
+          },
+        ],
+        epochs: { "billing.duplicate_charge": 1 },
+      },
+    });
+
     const runState = async (runId: string) =>
       (await db.select().from(schema.runs)).find((r) => r.id === runId)?.state;
 
@@ -133,6 +172,36 @@ describe.skipIf(!process.env.DB_TESTS)(
         r.manifest.actions.map((a) => a.id).sort(),
       );
       expect(r.world.refunds).toHaveLength(2);
+    }, 30_000);
+
+    it("applies a plan whose cited precedent the Postgres registry still backs (#234)", async () => {
+      const orgId = `org_${randomUUID()}`;
+      const digest = await activatePrecedent(orgId, 1);
+      const r = await approvedRun(citing(digest), orgId);
+      expect(stateOf(await handleApplyJob(jobOf(r), contextFor(r.world)))).toBe("completed");
+    }, 30_000);
+
+    it("refuses and sends nothing once a newer version is active in that registry (#234)", async () => {
+      const orgId = `org_${randomUUID()}`;
+      const digest = await activatePrecedent(orgId, 1);
+      const r = await approvedRun(citing(digest), orgId);
+      await activatePrecedent(orgId, 2);
+      const result = await handleApplyJob(jobOf(r), contextFor(r.world));
+      expect(stateOf(result)).toBe("failed");
+      expect(r.world.effects).toEqual([]);
+      const events = (await db.select().from(schema.runEvents)).filter((e) => e.runId === r.runId);
+      expect(JSON.stringify(events.map((e) => e.payload))).toMatch(
+        /precedent changed since approval/,
+      );
+    }, 30_000);
+
+    it("reads only its own organization's registry (#234)", async () => {
+      const orgId = `org_${randomUUID()}`;
+      const digest = await activatePrecedent(orgId, 1);
+      const r = await approvedRun(citing(digest), orgId);
+      // Another org replacing a precedent with the same ID changes nothing here.
+      await activatePrecedent(`org_${randomUUID()}`, 2);
+      expect(stateOf(await handleApplyJob(jobOf(r), contextFor(r.world)))).toBe("completed");
     }, 30_000);
 
     it("a job delivered twice is skipped the second time", async () => {
