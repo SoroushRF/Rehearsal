@@ -29,6 +29,9 @@ export const PERMISSIONS_V1 = [
   "rehearsal:revoke:any_grant",
   "rehearsal:invite:member",
   "rehearsal:manage:role",
+  "rehearsal:read:precedent",
+  "rehearsal:promote:precedent",
+  "rehearsal:withdraw:precedent",
 ] as const;
 
 export const PermissionV1 = z.enum(PERMISSIONS_V1);
@@ -160,3 +163,91 @@ export const AuthzDecision = z.strictObject({
   reason: z.string().min(1),
 });
 export type AuthzDecision = z.infer<typeof AuthzDecision>;
+
+/**
+ * `GET /api/me` has no product rule (decision 0014, point 5). The API sends the session token;
+ * IAM verifies it and reads permissions from the named rule file. This is not an authorization
+ * decision and does not name an action.
+ */
+export const IdentityRequest = z.strictObject({
+  token: z.string().min(1),
+  rule: AuthzRuleRef,
+});
+export type IdentityRequest = z.infer<typeof IdentityRequest>;
+
+export const IdentityResult = z.discriminatedUnion("ok", [
+  z.strictObject({
+    ok: z.literal(true),
+    userId: z.string().min(1),
+    orgId: z.string().min(1),
+    /** Clerk's organization role (`org:finance_lead`), or null when Clerk sent none. */
+    clerkRole: z.string().nullable(),
+    permissions: z.array(PermissionV1),
+    /** Present so a grant can record the session IAM verified. Not returned by `GET /api/me`. */
+    sessionId: z.string().min(1),
+  }),
+  z.strictObject({
+    ok: z.literal(false),
+    error: z.enum(["unauthenticated", "no_active_organization", "unknown_rule"]),
+  }),
+]);
+export type IdentityResult = z.infer<typeof IdentityResult>;
+
+/**
+ * Ask IAM to invite a member or change a role. The organization is not a field: IAM verifies
+ * `token` and writes only in that organization. `role` is a Clerk role (`org:member`), and IAM
+ * accepts it only when the loaded rule file maps it.
+ */
+export const MembershipCommand = z.discriminatedUnion("kind", [
+  z.strictObject({
+    kind: z.literal("invite"),
+    token: z.string().min(1),
+    rule: AuthzRuleRef,
+    email: z.string().trim().min(1),
+    role: z.string().trim().min(1),
+  }),
+  z.strictObject({
+    kind: z.literal("set_role"),
+    token: z.string().min(1),
+    rule: AuthzRuleRef,
+    userId: z.string().trim().min(1),
+    role: z.string().trim().min(1),
+  }),
+]);
+export type MembershipCommand = z.infer<typeof MembershipCommand>;
+
+export const MembershipFailure = z.enum([
+  "bad_request",
+  "unknown_rule",
+  "unauthenticated",
+  "no_active_organization",
+  "forbidden",
+  "invalid_role",
+  "last_owner",
+  "member_not_found",
+  "clerk_unavailable",
+]);
+export type MembershipFailure = z.infer<typeof MembershipFailure>;
+
+/** IAM's report of a membership write. A success names the organization the token verified. */
+export const MembershipResult = z.union([
+  z.strictObject({
+    ok: z.literal(true),
+    kind: z.literal("invite"),
+    orgId: z.string().min(1),
+    role: z.string().min(1),
+    email: z.string().min(1),
+  }),
+  z.strictObject({
+    ok: z.literal(true),
+    kind: z.literal("set_role"),
+    orgId: z.string().min(1),
+    role: z.string().min(1),
+    userId: z.string().min(1),
+  }),
+  z.strictObject({
+    ok: z.literal(false),
+    error: MembershipFailure,
+  }),
+]);
+export type MembershipResult = z.infer<typeof MembershipResult>;

@@ -1,6 +1,6 @@
 import type { PlanManifest } from "@rehearsal/contracts";
 import type { BillingPolicy } from "@rehearsal/core";
-import type { PlanningSession, PlanningSessionOptions } from "@rehearsal/planner";
+import type { CoverageIssue, PlanningSession, PlanningSessionOptions } from "@rehearsal/planner";
 import { INCIDENT, type SeededCase } from "@rehearsal/testkit";
 import policyV1 from "../../../scenarios/billing/policy.v1.json" with { type: "json" };
 import policyV2 from "../../../scenarios/billing/policy.v2.json" with { type: "json" };
@@ -116,6 +116,7 @@ export interface DecidedIntent {
 export interface AgentResult {
   intents: DecidedIntent[];
   manifest: PlanManifest;
+  coverage?: CoverageIssue[];
 }
 
 /** The step ID the planning tools give the intent's action; direct mode uses the same. */
@@ -291,6 +292,9 @@ export async function runAgent(
 
   return {
     intents: decided,
+    coverage: session.coverage(
+      cases.filter((c) => task.scope.includes(c.key)).map((c) => c.customerId),
+    ),
     manifest: session.manifest({
       ...meta,
       model: AGENT_ID,

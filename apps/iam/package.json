@@ -1,0 +1,21 @@
+{
+  "name": "@rehearsal/iam",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./boot": "./src/boot.ts"
+  },
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "tsx src/main.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@clerk/backend": "3.23.2",
+    "@rehearsal/authz": "workspace:*",
+    "@rehearsal/contracts": "workspace:*"
+  }
+}

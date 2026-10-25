@@ -1,4 +1,5 @@
 import { APPLY_QUEUE, createDb, reapStuckRuns, startQueue } from "@rehearsal/db";
+import { iamClientViolations } from "@rehearsal/iam/boot";
 import {
   primeTokens,
   slackProviderWriter,
@@ -13,16 +14,35 @@ import {
 import policyV1 from "../../../scenarios/billing/policy.v1.json" with { type: "json" };
 import policyV2 from "../../../scenarios/billing/policy.v2.json" with { type: "json" };
 import policyV3 from "../../../scenarios/billing/policy.v3.json" with { type: "json" };
-import { executorCredentialViolations } from "./credentials";
+import { executorCredentialViolations, executorIamUrlViolations } from "./credentials";
+import { runAdmitFromEnv } from "./iam";
 import { handleApplyJob, type WorkerContext } from "./worker";
 
 /**
  * Executor worker: deterministic, no model key, no inference in the dispatch path.
  * Holds operational-world capability and consumes approved immutable manifests only.
  */
+const iamCerts = iamClientViolations();
+if (iamCerts.length > 0) {
+  console.error(`executor-worker needs its IAM client certificate: ${iamCerts.join(", ")}`);
+  process.exit(1);
+}
+
 const forbidden = executorCredentialViolations();
 if (forbidden.length > 0) {
   console.error(`executor-worker must not receive: ${forbidden.join(", ")}`);
+  process.exit(1);
+}
+
+const iamUrl = executorIamUrlViolations();
+if (iamUrl.length > 0) {
+  console.error(`executor-worker needs ${iamUrl.join(", ")} to ask IAM`);
+  process.exit(1);
+}
+
+const admit = runAdmitFromEnv();
+if (!admit) {
+  console.error("executor-worker needs IAM_URL and its client certificate to ask IAM");
   process.exit(1);
 }
 
@@ -70,6 +90,7 @@ const ctx: WorkerContext = {
     ...(worlds.slack && { slack: { world: "operational", tenant: worlds.slack.tenant } }),
   },
   clock,
+  admit,
   policies: [policyV1, policyV2, policyV3] as WorkerContext["policies"][number][],
   // Independent cases applied at once per run (cases sharing a record always run in order).
   executor: { caseConcurrency: Number(process.env.EXECUTOR_CASE_CONCURRENCY ?? 4) || 1 },

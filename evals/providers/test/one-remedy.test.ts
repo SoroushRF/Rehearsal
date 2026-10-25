@@ -19,6 +19,7 @@ import {
 import {
   billingManifest,
   FakeClock,
+  fakeRunAdmit,
   INCIDENT,
   incidentRecords,
   MemoryApplyStore,
@@ -147,6 +148,8 @@ describe.skipIf(!ENABLED)("one remedy per obligation on Era", () => {
       actorUserId: "user_finance",
       actorSessionId: "sess",
       roles: ["support_lead", "finance_lead"],
+      permissions: ["rehearsal:approve:support_step", "rehearsal:approve:finance_step"],
+      authzRule: { id: "rehearsal-authz", version: 1 },
       grantedAt: "2026-10-01T00:00:00.000Z",
       expiresAt: "2099-01-01T00:00:00.000Z",
       revokedAt: null,
@@ -173,6 +176,7 @@ describe.skipIf(!ENABLED)("one remedy per obligation on Era", () => {
       providers,
       worlds: operational,
       policies: [policy as BillingPolicyV1],
+      admit: fakeRunAdmit({ now: () => new Date("2026-10-22T12:00:00.000Z") }),
       newId: (prefix) => `${prefix}_${++n}`,
       guard: createReadGuard({ providers, worlds: operational, clock }),
     };

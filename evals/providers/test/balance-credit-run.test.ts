@@ -1,7 +1,13 @@
 import type { Action, PlanManifest } from "@rehearsal/contracts";
 import { type BillingPolicyV2, type ExecutorDeps, executeRun, planHash } from "@rehearsal/core";
 import { stripeWriter, type WorldConfig, writeOnly } from "@rehearsal/providers";
-import { billingManifest, FakeClock, MemoryApplyStore, MemoryJournal } from "@rehearsal/testkit";
+import {
+  billingManifest,
+  FakeClock,
+  fakeRunAdmit,
+  MemoryApplyStore,
+  MemoryJournal,
+} from "@rehearsal/testkit";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import policy from "../../../scenarios/billing/policy.v2.json" with { type: "json" };
 import {
@@ -95,6 +101,8 @@ describe.skipIf(!ENABLED)("balance credit through the executor on Era", () => {
       actorUserId: "user_support",
       actorSessionId: "sess",
       roles: ["support_lead"],
+      permissions: ["rehearsal:approve:support_step", "rehearsal:approve:finance_step"],
+      authzRule: { id: "rehearsal-authz", version: 1 },
       grantedAt: "2026-10-01T00:00:00.000Z",
       expiresAt: "2099-01-01T00:00:00.000Z",
       revokedAt: null,
@@ -120,6 +128,7 @@ describe.skipIf(!ENABLED)("balance credit through the executor on Era", () => {
       providers: { stripe: writer },
       worlds: { stripe: { world: "operational", tenant: stripe.tenant } },
       policies: [policy as BillingPolicyV2],
+      admit: fakeRunAdmit({ now: () => new Date("2026-10-22T12:00:00.000Z") }),
       newId: (p) => `${p}_${++n}`,
       retry: { maxAttempts: 1 },
       sleep: async () => {},

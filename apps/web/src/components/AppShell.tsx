@@ -30,10 +30,10 @@ export function AppShell({
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
           <div className="flex min-w-0 items-center gap-3">
             <a href="/" className="flex items-center gap-2.5">
-              <span className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-accent text-on-accent shadow-card">
+              <span className="brand-mark">
                 <Icon name="flask" className="h-[18px] w-[18px]" />
               </span>
-              <span className="text-[17px] font-semibold tracking-tight text-ink">Rehearsal</span>
+              <span className="brand-name">Rehearsal</span>
             </a>
             <span className="hidden border-l border-line pl-3 text-[13px] text-subtle md:inline">
               Rehearse the plan. Approve its effects. Apply with evidence.

@@ -1,0 +1,35 @@
+{
+  "split": "held-out",
+  "sets": [
+    {
+      "id": "ho1",
+      "version": 1,
+      "gold": "cb72b74bddc4629c5ed9ee90b6ad08de2c202a2c911f7f3334888de4ea72aaba",
+      "evidence": {
+        "data": "fixture",
+        "eraSeed": "not_run",
+        "planners": "not_run"
+      }
+    },
+    {
+      "id": "ho2",
+      "version": 1,
+      "gold": "4908f026d0d577545313997daa050e68783b85afdfb5d7ca27aa6182d6e33712",
+      "evidence": {
+        "data": "fixture",
+        "eraSeed": "not_run",
+        "planners": "not_run"
+      }
+    },
+    {
+      "id": "ho3",
+      "version": 1,
+      "gold": "8c29c7d4005e071356307021e8c667cec33220af7cf73ea6fa25436e09d8ce3a",
+      "evidence": {
+        "data": "fixture",
+        "eraSeed": "not_run",
+        "planners": "not_run"
+      }
+    }
+  ]
+}

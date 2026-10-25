@@ -1,12 +1,25 @@
 import { randomUUID } from "node:crypto";
 import { PlanManifest } from "@rehearsal/contracts";
 import { planHash, validateGraph } from "@rehearsal/core";
-import { type Db, type PgBoss, PLAN_QUEUE } from "@rehearsal/db";
-import { PLANNER_JOB_ROUTES, PlanJob } from "@rehearsal/providers";
+import { type Db, type PgBoss, PLAN_QUEUE, type RegistrySnapshot } from "@rehearsal/db";
+import { checkPrecedentBasis } from "@rehearsal/memory";
+import {
+  PLANNER_JOB_ROUTES,
+  PlanJob,
+  type PlanJobRegistry,
+  registryOfJob,
+} from "@rehearsal/providers";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
 import incident from "../../../scenarios/billing/incident.v1.json" with { type: "json" };
-import type { ReviewerResolver } from "./auth";
+import {
+  authorize,
+  authorizeCollection,
+  bearerToken,
+  type IamClient,
+  refuse,
+  requirePerson,
+} from "./iam";
 import { loadPlan, storePlan } from "./plans";
 import { workerRole } from "./tenant-tokens";
 
@@ -20,9 +33,14 @@ import { workerRole } from "./tenant-tokens";
 export interface RehearseDeps {
   db: Db;
   boss: PgBoss;
-  reviewer: ReviewerResolver;
+  iam?: IamClient;
   /** PLANNER_WORKER_SECRET. Without it the internal planner routes refuse everyone. */
   plannerSecret?: string;
+  /**
+   * The org's precedent registry (#235). A plan job carries it so the planner cites only active
+   * versions, and the returned basis is checked against it. Absent: plans carry no basis.
+   */
+  precedentRegistry?: (orgId: string) => Promise<RegistrySnapshot>;
 }
 
 /** Incidents this deployment can rehearse. The planner worker loads the brief by ID. */
@@ -54,17 +72,24 @@ const STATE = {
 
 export function registerRehearseRoutes(app: FastifyInstance, deps: RehearseDeps) {
   app.post<{ Params: { id: string } }>("/api/incidents/:id/rehearse", async (req, reply) => {
-    const reviewer = await deps.reviewer(req);
-    if (!reviewer) return reply.code(401).send({ error: "unauthenticated" });
-    // Rehearsing spends model tokens; only someone who could approve a plan may ask for one.
-    if (reviewer.roles.length === 0) return reply.code(403).send({ error: "forbidden" });
+    // The incident catalog is not stored per organization. The job is created in the org IAM
+    // verified, and the permission check is what stops a member from spending model tokens.
+    const gate = await authorizeCollection(
+      deps.iam,
+      bearerToken(req),
+      "POST /api/incidents/:id/rehearse",
+    );
+    if (!gate.ok) return refuse(reply, gate, "incident_not_found");
     if (!INCIDENTS.has(req.params.id)) return reply.code(404).send({ error: "incident_not_found" });
 
     const job: PlanJob = {
-      orgId: reviewer.orgId,
+      orgId: gate.person.orgId,
       incidentId: req.params.id,
       planId: `plan_${randomUUID()}`,
-      requestedBy: reviewer.userId,
+      requestedBy: gate.person.userId,
+      ...(deps.precedentRegistry && {
+        precedents: registryForJob(await deps.precedentRegistry(gate.person.orgId)),
+      }),
     };
     const jobId = await deps.boss.send(PLAN_QUEUE, PlanJob.parse(job));
     if (!jobId) return reply.code(503).send({ error: "not_enqueued" });
@@ -72,13 +97,18 @@ export function registerRehearseRoutes(app: FastifyInstance, deps: RehearseDeps)
   });
 
   app.get<{ Params: { id: string } }>("/api/rehearsals/:id", async (req, reply) => {
-    const reviewer = await deps.reviewer(req);
-    if (!reviewer) return reply.code(401).send({ error: "unauthenticated" });
+    const token = bearerToken(req);
+    if (!token) return reply.code(401).send({ error: "unauthenticated" });
     const found = await loadJob(deps, req.params.id);
-    // Another org's rehearsal is indistinguishable from a missing one.
-    if (!found || found.data.orgId !== reviewer.orgId) {
+    if (!found) {
+      const person = await requirePerson(deps.iam, token);
+      if (!person.ok) return refuse(reply, person, "rehearsal_not_found");
       return reply.code(404).send({ error: "rehearsal_not_found" });
     }
+    const gate = await authorize(deps.iam, token, "GET /api/rehearsals/:id", {
+      orgId: found.data.orgId,
+    });
+    if (!gate.ok) return refuse(reply, gate, "rehearsal_not_found");
     const output = (found.job.output ?? {}) as Record<string, unknown>;
     const state = STATE[found.job.state];
     return {
@@ -134,6 +164,8 @@ export function registerRehearseRoutes(app: FastifyInstance, deps: RehearseDeps)
     if (m.actions.length === 0) return refuse("plan has no steps");
     const problems = validateGraph(m.actions);
     if (problems.length > 0) return refuse(`plan graph is invalid: ${JSON.stringify(problems)}`);
+    const precedentProblem = checkJobBasis(m, job);
+    if (precedentProblem) return refuse(precedentProblem);
 
     let stored = await storePlan(deps.db, m);
     if (!stored) {
@@ -163,6 +195,32 @@ export function registerRehearseRoutes(app: FastifyInstance, deps: RehearseDeps)
     await deps.boss.fail(PLAN_QUEUE, found.job.id, body.data);
     return reply.code(204).send();
   });
+}
+
+function registryForJob(snapshot: RegistrySnapshot): PlanJobRegistry {
+  return {
+    active: [...snapshot.active].map(([id, v]) => ({ id, version: v.version, digest: v.digest })),
+    epochs: Object.fromEntries(snapshot.epochs),
+  };
+}
+
+/**
+ * A plan's precedent basis must be what the job allowed: cited versions active in the job's
+ * registry, and every one of its areas consulted at the job's epoch. A worker can't cite a
+ * withdrawn precedent or skip an area, and a job without precedents gets a plan without a basis.
+ */
+export function checkJobBasis(m: PlanManifest, job: PlanJob): string | null {
+  const areas = Object.keys(job.precedents?.epochs ?? {});
+  if (!m.precedentBasis) {
+    return areas.length > 0 ? "plan has no precedent basis but the org has precedents" : null;
+  }
+  if (!job.precedents || areas.length === 0) return "plan cites precedents the job didn't offer";
+  const cited = Object.keys(m.precedentBasis.epochs).sort();
+  if (cited.join("\n") !== areas.sort().join("\n")) {
+    return "plan's precedent areas differ from the org's registry";
+  }
+  const check = checkPrecedentBasis(m.precedentBasis, registryOfJob(job.precedents));
+  return check.ok ? null : `plan's precedent basis doesn't hold: ${JSON.stringify(check.holds)}`;
 }
 
 async function loadJob(deps: RehearseDeps, id: string) {

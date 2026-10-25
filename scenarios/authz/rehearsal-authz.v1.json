@@ -1,0 +1,210 @@
+{
+  "id": "rehearsal-authz",
+  "version": 1,
+  "rolesFromClerk": {
+    "org:owner": "owner",
+    "org:finance_lead": "finance_lead",
+    "org:support_lead": "support_lead",
+    "org:member": "member"
+  },
+  "roles": {
+    "owner": [
+      "rehearsal:read:plan",
+      "rehearsal:read:run",
+      "rehearsal:rehearse:incident",
+      "rehearsal:revise:plan",
+      "rehearsal:approve:support_step",
+      "rehearsal:approve:finance_step",
+      "rehearsal:apply:plan",
+      "rehearsal:cancel:run",
+      "rehearsal:revoke:own_grant",
+      "rehearsal:revoke:any_grant",
+      "rehearsal:invite:member",
+      "rehearsal:manage:role",
+      "rehearsal:read:precedent",
+      "rehearsal:promote:precedent",
+      "rehearsal:withdraw:precedent"
+    ],
+    "finance_lead": [
+      "rehearsal:read:plan",
+      "rehearsal:read:run",
+      "rehearsal:rehearse:incident",
+      "rehearsal:revise:plan",
+      "rehearsal:approve:support_step",
+      "rehearsal:approve:finance_step",
+      "rehearsal:apply:plan",
+      "rehearsal:cancel:run",
+      "rehearsal:revoke:own_grant",
+      "rehearsal:revoke:any_grant",
+      "rehearsal:read:precedent",
+      "rehearsal:promote:precedent",
+      "rehearsal:withdraw:precedent"
+    ],
+    "support_lead": [
+      "rehearsal:read:plan",
+      "rehearsal:read:run",
+      "rehearsal:rehearse:incident",
+      "rehearsal:revise:plan",
+      "rehearsal:approve:support_step",
+      "rehearsal:apply:plan",
+      "rehearsal:cancel:run",
+      "rehearsal:revoke:own_grant",
+      "rehearsal:read:precedent"
+    ],
+    "member": ["rehearsal:read:plan", "rehearsal:read:run", "rehearsal:read:precedent"]
+  },
+  "rules": [
+    {
+      "action": "GET /api/plans",
+      "rbac": { "anyOf": ["rehearsal:read:plan"] },
+      "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
+    },
+    {
+      "action": "GET /api/plans/:id",
+      "rbac": { "anyOf": ["rehearsal:read:plan"] },
+      "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
+    },
+    {
+      "action": "GET /api/plans/:id/approvals",
+      "rbac": { "anyOf": ["rehearsal:read:plan"] },
+      "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
+    },
+    {
+      "action": "GET /api/rehearsals/:id",
+      "rbac": { "anyOf": ["rehearsal:read:plan"] },
+      "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
+    },
+    {
+      "action": "GET /api/precedents",
+      "rbac": { "anyOf": ["rehearsal:read:precedent"] },
+      "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
+    },
+    {
+      "action": "GET /api/plans/:id/runs",
+      "rbac": { "anyOf": ["rehearsal:read:run"] },
+      "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
+    },
+    {
+      "action": "GET /api/runs/:id/events",
+      "rbac": { "anyOf": ["rehearsal:read:run"] },
+      "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
+    },
+    {
+      "action": "GET /api/runs/:id/audit",
+      "rbac": { "anyOf": ["rehearsal:read:run"] },
+      "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
+    },
+    {
+      "action": "POST /api/incidents/:id/rehearse",
+      "rbac": { "anyOf": ["rehearsal:rehearse:incident"] },
+      "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
+    },
+    {
+      "action": "POST /api/plans/:id/revisions",
+      "rbac": { "anyOf": ["rehearsal:revise:plan"] },
+      "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
+    },
+    {
+      "action": "POST /api/plans/:id/apply",
+      "rbac": { "anyOf": ["rehearsal:apply:plan"] },
+      "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
+    },
+    {
+      "action": "POST /api/runs/:id/cancel",
+      "rbac": { "anyOf": ["rehearsal:cancel:run"] },
+      "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
+    },
+    {
+      "action": "POST /api/plans/:id/approvals",
+      "rbac": { "allOf": "resource.requiredPermissions" },
+      "abac": [
+        { "eq": ["subject.orgId", "resource.orgId"] },
+        { "eq": ["resource.dualRequired", "false"] }
+      ]
+    },
+    {
+      "action": "POST /api/plans/:id/approvals",
+      "rbac": { "anyOf": ["rehearsal:approve:support_step", "rehearsal:approve:finance_step"] },
+      "abac": [
+        { "eq": ["subject.orgId", "resource.orgId"] },
+        { "eq": ["resource.dualRequired", "true"] }
+      ]
+    },
+    {
+      "action": "POST /api/plans/:id/approvals/:grantId/revoke",
+      "rbac": { "anyOf": ["rehearsal:revoke:own_grant"] },
+      "abac": [
+        { "eq": ["subject.orgId", "resource.orgId"] },
+        { "eq": ["subject.userId", "resource.grant.actorUserId"] }
+      ]
+    },
+    {
+      "action": "POST /api/plans/:id/approvals/:grantId/revoke",
+      "rbac": { "anyOf": ["rehearsal:revoke:any_grant"] },
+      "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
+    },
+    {
+      "action": "POST /api/runs/:id/precedents",
+      "rbac": { "anyOf": ["rehearsal:promote:precedent"] },
+      "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
+    },
+    {
+      "action": "POST /api/precedents/:id/withdraw",
+      "rbac": { "anyOf": ["rehearsal:withdraw:precedent"] },
+      "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
+    },
+    {
+      "action": "POST /api/members/invitations",
+      "rbac": { "anyOf": ["rehearsal:invite:member"] },
+      "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
+    },
+    {
+      "action": "PATCH /api/members/:userId/role",
+      "rbac": { "anyOf": ["rehearsal:manage:role"] },
+      "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
+    },
+    {
+      "action": "run:admit",
+      "rbac": {},
+      "abac": [
+        { "eq": ["resource.dualRequired", "false"] },
+        {
+          "some": {
+            "in": "resource.grants",
+            "where": [
+              { "eq": ["item.orgId", "resource.orgId"] },
+              { "eq": ["item.planHash", "resource.planHash"] },
+              { "eq": ["item.revision", "resource.revision"] },
+              { "isNull": "item.revokedAt" },
+              { "gt": ["env.now", "item.grantedAt"] },
+              { "gt": ["item.expiresAt", "env.now"] },
+              { "allOf": ["item.permissions", "resource.requiredPermissions"] }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "action": "run:admit",
+      "rbac": {},
+      "abac": [
+        { "eq": ["resource.dualRequired", "true"] },
+        {
+          "seats": {
+            "in": "resource.grants",
+            "where": [
+              { "eq": ["item.orgId", "resource.orgId"] },
+              { "eq": ["item.planHash", "resource.planHash"] },
+              { "eq": ["item.revision", "resource.revision"] },
+              { "isNull": "item.revokedAt" },
+              { "gt": ["env.now", "item.grantedAt"] },
+              { "gt": ["item.expiresAt", "env.now"] }
+            ],
+            "fill": ["rehearsal:approve:support_step", "rehearsal:approve:finance_step"],
+            "distinct": "actorUserId"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -3,6 +3,8 @@ import {
   type ApprovalGrant,
   type Attempt,
   type AttemptState,
+  type AuthzDecision,
+  type AuthzRequest,
   type EntityRef,
   type HoldReason,
   type ObjectBinding,
@@ -16,14 +18,10 @@ import {
   ZendeskPriority,
   ZendeskStatus,
 } from "@rehearsal/contracts";
-import {
-  dualApprovalStatus,
-  explainShortfall,
-  liveGrantsFor,
-  requiresDualApproval,
-} from "./approvals";
+import { approvalFacts, grantFact } from "./approvals";
 import { bindingKey } from "./bindings";
 import { topoOrder, validateGraph } from "./dag";
+import { decisionEchoes } from "./echo";
 import { creditEffectMatches, refundEffectMatches } from "./effects";
 import { planHash as computePlanHash, fingerprint, sha256Hex } from "./hash";
 import { type BillingPolicy, evaluateBillingPolicy } from "./policy";
@@ -75,8 +73,8 @@ export interface ApplyStore {
   ): Promise<{ planHash: string; manifest: unknown } | null>;
   loadGrant(orgId: string, approvalId: string): Promise<ApprovalGrant | null>;
   /**
-   * Every grant ever made for this plan hash, live or not; admission filters. Needed only for a
-   * plan that policy says needs two approvers. A store without it refuses such a plan.
+   * Every grant for this plan hash, live or not. Operational admission sends them to IAM.
+   * A store without this refuses the run before anything is sent.
    */
   loadGrantsForPlanHash?(orgId: string, planHash: string): Promise<ApprovalGrant[]>;
   /**
@@ -167,6 +165,19 @@ export interface RunKeys {
  */
 export type Compensator = (ctx: CompensationContext) => Promise<void>;
 
+/**
+ * Asks IAM `run:admit`. Core does not open TLS or read certificates; the executor worker does.
+ * Missing, unreachable, malformed, or a decision about different facts is a refusal.
+ */
+export interface RunAdmit {
+  decide(
+    request: AuthzRequest,
+  ): Promise<{ kind: "decision"; decision: AuthzDecision } | { kind: "unavailable" }>;
+}
+
+/** The rule file IAM loads for `run:admit`. The executor names it; IAM has the text. */
+export const RUN_ADMIT_RULE = { id: "rehearsal-authz", version: 1 } as const;
+
 export interface ExecutorDeps {
   store: ApplyStore;
   journal: JournalPort;
@@ -197,6 +208,11 @@ export interface ExecutorDeps {
    * Non-idempotent unknown writes remain held regardless of age. Default 60 s.
    */
   reconcileAfterMs?: number;
+  /**
+   * Operational `run:admit`, before any send. The read-only pass does not call it. Absent is
+   * the same as IAM being down: the run is refused and nothing is dispatched.
+   */
+  admit?: RunAdmit;
 }
 
 /** RunOutcome.refusal when another run of the same plan holds the apply lock: retry later. */
@@ -450,7 +466,49 @@ export function caseGroups(
   return [...groups.values()];
 }
 
-/** Run-level admission. Any failure means nothing is dispatched. */
+const IAM_UNAVAILABLE = "IAM is unavailable";
+
+/**
+ * `run:admit` on the stored grants. No person, no token, no amounts. A missing client, a bad
+ * answer, or a deny refuses the run. The read-only pass never reaches here.
+ */
+async function admitWithIam(
+  job: ApplyJobInput,
+  manifest: PlanManifest,
+  deps: ExecutorDeps,
+): Promise<{ ok: true } | { ok: false; detail: string }> {
+  if (!deps.store.loadGrantsForPlanHash) {
+    return { ok: false, detail: "the store can't list grants" };
+  }
+  const grants = await deps.store.loadGrantsForPlanHash(job.orgId, job.planHash);
+  const facts = approvalFacts(manifest, deps.policies);
+  const request: AuthzRequest = {
+    action: "run:admit",
+    rule: RUN_ADMIT_RULE,
+    mode: { kind: "grants" },
+    resource: {
+      orgId: job.orgId,
+      planHash: job.planHash,
+      revision: job.revision,
+      dualRequired: facts.dualRequired,
+      requiredPermissions: facts.requiredPermissions,
+      grants: grants.map(grantFact),
+    },
+  };
+  if (!deps.admit) return { ok: false, detail: IAM_UNAVAILABLE };
+  let answer: Awaited<ReturnType<RunAdmit["decide"]>>;
+  try {
+    answer = await deps.admit.decide(request);
+  } catch {
+    return { ok: false, detail: IAM_UNAVAILABLE };
+  }
+  if (answer.kind !== "decision" || !decisionEchoes(request, answer.decision)) {
+    return { ok: false, detail: IAM_UNAVAILABLE };
+  }
+  if (answer.decision.effect !== "allow") return { ok: false, detail: answer.decision.reason };
+  return { ok: true };
+}
+
 /**
  * Checks both admissions run before any step, so neither mode can start a plan the other would stop
  * halfway: every vendor the plan writes to is wired (say, a summary with no Slack provider after
@@ -477,6 +535,7 @@ function whyNotRunnable(
   return null;
 }
 
+/** Run-level admission. Any failure means nothing is dispatched. */
 async function admit(
   job: ApplyJobInput,
   deps: ExecutorDeps,
@@ -537,24 +596,9 @@ async function admit(
   }
   if (grantedAt > now) return { ok: false, detail: "grant is dated in the future" };
   if (expiresAt <= now) return { ok: false, detail: "grant expired" };
-  if (requiresDualApproval(manifest, deps.policies)) {
-    // Two live grants from two different users replace the single grant holding every role.
-    if (!deps.store.loadGrantsForPlanHash) {
-      return { ok: false, detail: "this plan needs two approvers and the store can't list grants" };
-    }
-    const all = await deps.store.loadGrantsForPlanHash(job.orgId, job.planHash);
-    const status = dualApprovalStatus(
-      liveGrantsFor(all, { ...manifest, planHash: job.planHash }, deps.clock.now()),
-    );
-    if (!status.satisfied) return { ok: false, detail: explainShortfall(status) };
-  } else {
-    const missing = [...new Set(manifest.actions.map((a) => a.requiredRole))].filter(
-      (r) => !grant.roles.includes(r),
-    );
-    if (missing.length > 0) {
-      return { ok: false, detail: `grant lacks roles: ${missing.join(", ")}` };
-    }
-  }
+  // Seats are IAM's decision. The stored grants and the plan's facts are the whole question.
+  const admitted = await admitWithIam(job, manifest, deps);
+  if (!admitted.ok) return admitted;
 
   const graph = validateGraph(manifest.actions);
   if (graph.length > 0) return { ok: false, detail: `invalid graph: ${graph[0]?.detail}` };

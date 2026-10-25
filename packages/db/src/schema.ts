@@ -1,3 +1,4 @@
+import type { AuthzRuleRef, PermissionV1 } from "@rehearsal/contracts";
 import { sql } from "drizzle-orm";
 import {
   bigserial,
@@ -61,6 +62,16 @@ export const approvalGrants = pgTable("approval_grants", {
   actorUserId: text("actor_user_id").notNull(),
   actorSessionId: text("actor_session_id").notNull(),
   roles: jsonb("roles").$type<string[]>().notNull(),
+  /**
+   * Permissions the approver held when they signed, copied from the person IAM verified.
+   * Null on a grant written before this column. Those rows are not read as permissions.
+   */
+  permissions: jsonb("permissions").$type<PermissionV1[]>(),
+  /**
+   * The rule file (`id` and `version`) those permissions were copied from. Null on the same
+   * older grants. A later rule file does not rewrite this.
+   */
+  authzRule: jsonb("authz_rule").$type<AuthzRuleRef>(),
   grantedAt: timestamp("granted_at", { withTimezone: true }).notNull(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   revokedAt: timestamp("revoked_at", { withTimezone: true }),

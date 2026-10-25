@@ -5,9 +5,11 @@ import {
   PrecedentBasis,
   type PrecedentCitation,
   type RegistrySnapshot,
+  recallBasis,
 } from "../src/citations";
 import { memoryConfigFromEnv, precedentsFromEnv } from "../src/config";
-import { precedentDigest } from "../src/precedent";
+import { type PrecedentRecord, precedentDigest } from "../src/precedent";
+import type { PrecedentRecall } from "../src/precedents";
 import { precedent, setup } from "./fixtures";
 
 const AREA = "billing.duplicate_charge";
@@ -160,5 +162,100 @@ describe("config from env", () => {
     });
     const store = precedentsFromEnv({ ...env, SURREAL_AGENT_MEMORY_SCOPE: "rehearsal/demo" });
     expect(store?.scope).toBe("rehearsal/demo");
+  });
+});
+
+describe("recallBasis", () => {
+  const OTHER = "billing.refund_window";
+  const other = precedent({ id: "refund-window", appliesTo: OTHER });
+  const recalled = (record: PrecedentRecord, traceId = "t1") => ({
+    precedents: [
+      {
+        id: record.id,
+        version: record.version,
+        statement: record.statement,
+        author: record.author,
+        record,
+        digest: precedentDigest(record),
+        factIds: ["a1", "a2", "a3"],
+        hitIds: ["h1"],
+      },
+    ],
+    traceId,
+    rejected: [],
+  });
+  const recaller = (byArea: Record<string, PrecedentRecall>) => {
+    const asked: string[] = [];
+    return {
+      asked,
+      recall: async (area: string) => {
+        asked.push(area);
+        return byArea[area] ?? { precedents: [], traceId: null, rejected: [] };
+      },
+    };
+  };
+
+  it("cites the active version with its facts and trace, and records every area's epoch", async () => {
+    const r = recaller({ [AREA]: recalled(v1) });
+    const result = await recallBasis(
+      r,
+      registry(
+        [[v1.id, v1]],
+        [
+          [AREA, 1],
+          [OTHER, 2],
+        ],
+      ),
+    );
+    expect(r.asked).toEqual([AREA, OTHER]);
+    expect(result?.basis).toEqual({ citations: [cite()], epochs: { [AREA]: 1, [OTHER]: 2 } });
+    expect(result?.precedents.map((p) => p.id)).toEqual([v1.id]);
+    expect(result?.dropped).toEqual([]);
+  });
+
+  it("drops what memory still holds but the registry doesn't list as active", async () => {
+    // Memory keeps a withdrawn precedent's copy and an old version's: neither may be cited.
+    const r = recaller({ [AREA]: recalled(v1), [OTHER]: recalled(other) });
+    const result = await recallBasis(
+      r,
+      registry(
+        [[v1.id, v2]],
+        [
+          [AREA, 2],
+          [OTHER, 2],
+        ],
+      ),
+    );
+    expect(result?.basis.citations).toEqual([]);
+    expect(result?.dropped).toEqual([
+      { id: v1.id, reason: "registry has version 2" },
+      { id: other.id, reason: "not active in the registry" },
+    ]);
+  });
+
+  it("drops a recalled copy whose content differs from the approved version", async () => {
+    const tampered = { ...v1, statement: "Refund everything." };
+    const result = await recallBasis(
+      recaller({ [AREA]: recalled(tampered) }),
+      registry([[v1.id, v1]]),
+    );
+    expect(result?.dropped).toEqual([
+      { id: v1.id, reason: "content differs from the approved version" },
+    ]);
+  });
+
+  it("binds the epochs without recalling when nothing is active, and is null with no areas", async () => {
+    const r = recaller({});
+    expect((await recallBasis(r, registry([], [[AREA, 2]])))?.basis).toEqual({
+      citations: [],
+      epochs: { [AREA]: 2 },
+    });
+    expect(r.asked).toEqual([]);
+    expect(await recallBasis(r, registry([], []))).toBeNull();
+  });
+
+  it("lets a recall failure through, so a plan isn't made without its precedents", async () => {
+    const down = { recall: async () => Promise.reject(new Error("memory down")) };
+    await expect(recallBasis(down, registry([[v1.id, v1]]))).rejects.toThrow("memory down");
   });
 });

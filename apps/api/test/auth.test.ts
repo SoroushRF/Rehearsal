@@ -1,108 +1,96 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { buildApp } from "../src/app";
-import {
-  type Authenticate,
-  bearerReviewer,
-  clerkFromEnv,
-  reviewerFrom,
-  type SessionClaims,
-} from "../src/auth";
+import { bearer, fakeIam, finance, member, support } from "./fake-iam";
 
-const claims = (orgRole: string | null, orgId: string | null = "org_1"): SessionClaims => ({
-  userId: "user_1",
-  sessionId: "sess_1",
-  orgId,
-  orgRole,
-});
-
-describe("reviewerFrom", () => {
-  it.each([
-    ["org:finance_lead", ["finance_lead", "support_lead"]],
-    ["org:support_lead", ["support_lead"]],
-    ["org:member", []],
-    ["org:admin", []],
-    [null, []],
-  ])("maps Clerk role %s to %j", (role, roles) => {
-    expect(reviewerFrom(claims(role))).toEqual({
-      userId: "user_1",
-      orgId: "org_1",
-      sessionId: "sess_1",
-      roles,
-    });
-  });
-
-  it("refuses a session without an active organization", () => {
-    expect(reviewerFrom(claims("org:finance_lead", null))).toBeNull();
-    expect(reviewerFrom(null)).toBeNull();
-  });
-});
-
-describe("bearerReviewer", () => {
-  async function resolve(headers: Record<string, string>, authenticate: Authenticate) {
-    const app = buildApp({ webRoot: null, reviewer: bearerReviewer(authenticate) });
+describe("GET /api/me", () => {
+  it("returns the person IAM verified and the permissions from the rule file", async () => {
+    const person = support("org_1");
+    const app = buildApp({ webRoot: null, iam: fakeIam([person]) });
     try {
-      return await app.inject({ method: "GET", url: "/api/me", headers });
+      const res = await app.inject({
+        method: "GET",
+        url: "/api/me",
+        headers: { ...bearer(person), cookie: "__session=cookie_tok" },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body).toMatchObject({
+        userId: "user_sup",
+        orgId: "org_1",
+        clerkRole: "org:support_lead",
+      });
+      expect(body.permissions).toContain("rehearsal:read:plan");
+      expect(body.permissions).toContain("rehearsal:apply:plan");
+      expect(body.permissions).not.toContain("rehearsal:approve:finance_step");
+      expect(body).not.toHaveProperty("roles");
     } finally {
       await app.close();
     }
-  }
+  });
 
-  it("verifies only the bearer token, never the cookie", async () => {
-    const authenticate = vi.fn<Authenticate>(async () => claims("org:support_lead"));
-    const res = await resolve(
-      { authorization: "Bearer tok_123", cookie: "__session=cookie_tok" },
-      authenticate,
-    );
-    expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ userId: "user_1", orgId: "org_1", roles: ["support_lead"] });
-
-    const [request] = authenticate.mock.calls[0] ?? [];
-    expect(request?.headers.get("authorization")).toBe("Bearer tok_123");
-    expect(request?.headers.get("cookie")).toBeNull();
+  it("returns an empty permission list for a Clerk role the rule file does not map", async () => {
+    const person = {
+      token: "tok_admin",
+      userId: "user_admin",
+      orgId: "org_1",
+      clerkRole: "org:admin",
+      sessionId: "sess_admin",
+    };
+    const app = buildApp({ webRoot: null, iam: fakeIam([person]) });
+    try {
+      const res = await app.inject({ method: "GET", url: "/api/me", headers: bearer(person) });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({ clerkRole: "org:admin", permissions: [] });
+    } finally {
+      await app.close();
+    }
   });
 
   it.each([
     ["no credentials", {}],
-    ["only Clerk's cookie", { cookie: "__session=cookie_tok" }],
+    ["only a cookie", { cookie: "__session=cookie_tok" }],
     ["a non-bearer header", { authorization: "Basic dXNlcjpwYXNz" }],
     ["an empty bearer token", { authorization: "Bearer " }],
-  ])("is unauthenticated with %s, without asking Clerk", async (_label, headers) => {
-    const authenticate = vi.fn<Authenticate>(async () => claims("org:finance_lead"));
-    expect((await resolve(headers, authenticate)).statusCode).toBe(401);
-    expect(authenticate).not.toHaveBeenCalled();
-  });
-
-  it("is unauthenticated when Clerk rejects the token", async () => {
-    expect((await resolve({ authorization: "Bearer bad" }, async () => null)).statusCode).toBe(401);
-  });
-
-  it("applies to the plan routes too", async () => {
-    const app = buildApp({
-      webRoot: null,
-      plans: { db: {} as never, auth: bearerReviewer(async () => claims("org:support_lead")) },
-    });
+  ])("is unauthenticated with %s", async (_label, headers) => {
+    const app = buildApp({ webRoot: null, iam: fakeIam([finance("org_1")]) });
     try {
-      const res = await app.inject({ method: "GET", url: "/api/plans" });
+      expect((await app.inject({ method: "GET", url: "/api/me", headers })).statusCode).toBe(401);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("is unauthenticated when IAM rejects the token", async () => {
+    const app = buildApp({ webRoot: null, iam: fakeIam([]) });
+    try {
+      const res = await app.inject({
+        method: "GET",
+        url: "/api/me",
+        headers: { authorization: "Bearer bad" },
+      });
       expect(res.statusCode).toBe(401);
     } finally {
       await app.close();
     }
   });
-});
 
-describe("clerkFromEnv", () => {
-  it("is off unless both keys are set", () => {
-    expect(clerkFromEnv({})).toBeUndefined();
-    expect(clerkFromEnv({ CLERK_SECRET_KEY: "sk_test_x" })).toBeUndefined();
-    expect(clerkFromEnv({ CLERK_PUBLISHABLE_KEY: "pk_test_x" })).toBeUndefined();
-  });
-
-  it("without Clerk, /api/me says nobody is signed in", async () => {
-    const app = buildApp({ webRoot: null });
+  it("is 503 when IAM is down, and 401 when no IAM client is configured and no token is sent", async () => {
+    const down = buildApp({ webRoot: null, iam: fakeIam([member("org_1")], { down: true }) });
     try {
-      expect((await app.inject({ method: "GET", url: "/api/me" })).statusCode).toBe(401);
+      const res = await down.inject({
+        method: "GET",
+        url: "/api/me",
+        headers: bearer(member("org_1")),
+      });
+      expect(res.statusCode).toBe(503);
     } finally {
-      await app.close();
+      await down.close();
+    }
+    const bare = buildApp({ webRoot: null });
+    try {
+      expect((await bare.inject({ method: "GET", url: "/api/me" })).statusCode).toBe(401);
+    } finally {
+      await bare.close();
     }
   });
 });

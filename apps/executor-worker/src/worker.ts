@@ -9,6 +9,7 @@ import {
   executeRun,
   PLAN_LOCKED,
   type ProviderPort,
+  type RunAdmit,
   type RunOutcome,
   type WorldContext,
 } from "@rehearsal/core";
@@ -21,6 +22,8 @@ export interface WorkerContext {
   worlds: Partial<Record<Vendor, WorldContext>>;
   clock: Clock;
   policies: readonly BillingPolicy[];
+  /** `run:admit` over mTLS. The read-only pass does not call it. */
+  admit: RunAdmit;
   /** Overrides for tests (retry sleeps, the reconcile window). */
   executor?: Pick<ExecutorDeps, "retry" | "sleep" | "reconcileAfterMs" | "caseConcurrency">;
 }
@@ -83,6 +86,7 @@ export async function handleApplyJob(
     precedents: {
       snapshot: async (orgId) => (await loadRegistry(ctx.db, orgId)).snapshot,
     },
+    admit: ctx.admit,
     newId: (prefix) => `${prefix}_${randomUUID()}`,
     guard: createReadGuard({ providers: ctx.providers, worlds: ctx.worlds, clock: ctx.clock }),
     compensate: createCompensator({

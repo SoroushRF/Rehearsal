@@ -4,7 +4,14 @@ import { type Db, schema } from "@rehearsal/db";
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import type { AuthResolver } from "./apply";
+import {
+  authorize,
+  authorizeCollection,
+  bearerToken,
+  type IamClient,
+  refuse,
+  requirePerson,
+} from "./iam";
 
 const { planVersions } = schema;
 export type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -13,7 +20,7 @@ export type Outcome = [status: number, body: unknown];
 
 export interface PlanDeps {
   db: Db;
-  auth: AuthResolver;
+  iam?: IamClient;
 }
 
 export interface StoredPlan {
@@ -27,7 +34,7 @@ export interface StoredPlan {
 export type Load =
   | { kind: "found"; plan: StoredPlan; latestRevision: number }
   | { kind: "not_found" }
-  | { kind: "corrupt"; detail: string };
+  | { kind: "corrupt"; detail: string; orgId: string };
 
 /**
  * Stores a validated manifest as a new revision under its own org and plan ID. Plans arrive from
@@ -78,7 +85,11 @@ export async function loadPlan(
     manifest.data.revision !== row.revision ||
     planHash(manifest.data) !== row.planHash
   ) {
-    return { kind: "corrupt", detail: `revision ${row.revision} does not match its row or hash` };
+    return {
+      kind: "corrupt",
+      orgId,
+      detail: `revision ${row.revision} does not match its row or hash`,
+    };
   }
   return {
     kind: "found",
@@ -95,14 +106,33 @@ export async function loadPlan(
 
 const RevisionQuery = z.object({ revision: z.coerce.number().int().positive().optional() });
 
+function storedOrg(loaded: Exclude<Load, { kind: "not_found" }>): string {
+  return loaded.kind === "corrupt" ? loaded.orgId : loaded.plan.manifest.orgId;
+}
+
+/**
+ * Loads one plan by id without an organization. The org on the row is the only one used afterwards.
+ * Two organizations sharing an id is not a guess: that is treated as missing.
+ */
+export async function loadPlanById(db: Db | Tx, planId: string, revision?: number): Promise<Load> {
+  const rows = await db
+    .select({ orgId: planVersions.orgId })
+    .from(planVersions)
+    .where(eq(planVersions.planId, planId));
+  const orgs = [...new Set(rows.map((row) => row.orgId))];
+  const orgId = orgs[0];
+  if (!orgId || orgs.length !== 1) return { kind: "not_found" };
+  return loadPlan(db, orgId, planId, revision);
+}
+
 /**
  * Read routes return the server's own stored copy with its hash. The only way to change a plan
  * is a new revision that excludes actions; the browser names them by ID and never sends bodies.
  */
 export function registerPlanRoutes(app: FastifyInstance, deps: PlanDeps) {
   app.get("/api/plans", async (req, reply) => {
-    const auth = await deps.auth(req);
-    if (!auth) return reply.code(401).send({ error: "unauthenticated" });
+    const gate = await authorizeCollection(deps.iam, bearerToken(req), "GET /api/plans");
+    if (!gate.ok) return refuse(reply, gate, "plan_not_found");
 
     const rows = await deps.db
       .select({
@@ -113,7 +143,7 @@ export function registerPlanRoutes(app: FastifyInstance, deps: PlanDeps) {
         createdAt: planVersions.createdAt,
       })
       .from(planVersions)
-      .where(eq(planVersions.orgId, auth.orgId))
+      .where(eq(planVersions.orgId, gate.person.orgId))
       .orderBy(desc(planVersions.createdAt), desc(planVersions.revision));
 
     // Newest revision of each plan, newest plan first.
@@ -128,35 +158,56 @@ export function registerPlanRoutes(app: FastifyInstance, deps: PlanDeps) {
   });
 
   app.get<{ Params: { id: string } }>("/api/plans/:id", async (req, reply) => {
-    const auth = await deps.auth(req);
-    if (!auth) return reply.code(401).send({ error: "unauthenticated" });
+    const token = bearerToken(req);
+    if (!token) return reply.code(401).send({ error: "unauthenticated" });
     const query = RevisionQuery.safeParse(req.query);
     if (!query.success) return reply.code(400).send({ error: "invalid_request" });
 
-    const loaded = await loadPlan(deps.db, auth.orgId, req.params.id, query.data.revision);
-    switch (loaded.kind) {
-      case "not_found":
-        return reply.code(404).send({ error: "plan_not_found" });
-      case "corrupt":
-        req.log.error({ planId: req.params.id }, loaded.detail);
-        return reply.code(500).send({ error: "stored_plan_invalid" });
-      case "found":
-        return { ...loaded.plan, latestRevision: loaded.latestRevision };
+    const loaded = await loadPlanById(deps.db, req.params.id, query.data.revision);
+    if (loaded.kind === "not_found") {
+      const person = await requirePerson(deps.iam, token);
+      if (!person.ok) return refuse(reply, person, "plan_not_found");
+      return reply.code(404).send({ error: "plan_not_found" });
     }
+    const gate = await authorize(deps.iam, token, "GET /api/plans/:id", {
+      orgId: storedOrg(loaded),
+    });
+    if (!gate.ok) return refuse(reply, gate, "plan_not_found");
+    if (loaded.kind === "corrupt") {
+      req.log.error({ planId: req.params.id }, loaded.detail);
+      return reply.code(500).send({ error: "stored_plan_invalid" });
+    }
+    return { ...loaded.plan, latestRevision: loaded.latestRevision };
   });
 
   app.post<{ Params: { id: string } }>("/api/plans/:id/revisions", async (req, reply) => {
-    const auth = await deps.auth(req);
-    if (!auth) return reply.code(401).send({ error: "unauthenticated" });
+    const token = bearerToken(req);
+    if (!token) return reply.code(401).send({ error: "unauthenticated" });
     // Strict: only IDs, the base revision and its hash. Never action bodies.
     const body = CreateRevisionRequest.strict().safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: "invalid_request" });
     const { baseRevision, basePlanHash, excludeActionIds } = body.data;
 
+    const preview = await loadPlanById(deps.db, req.params.id, baseRevision);
+    if (preview.kind === "not_found") {
+      const person = await requirePerson(deps.iam, token);
+      if (!person.ok) return refuse(reply, person, "plan_not_found");
+      return reply.code(404).send({ error: "plan_not_found" });
+    }
+    const gate = await authorize(deps.iam, token, "POST /api/plans/:id/revisions", {
+      orgId: storedOrg(preview),
+    });
+    if (!gate.ok) return refuse(reply, gate, "plan_not_found");
+    if (preview.kind === "corrupt") {
+      req.log.error({ planId: req.params.id }, preview.detail);
+      return reply.code(500).send({ error: "stored_plan_invalid" });
+    }
+    const orgId = preview.plan.manifest.orgId;
+
     // Reply only after the transaction commits, so a client that reads right after a 201 sees
     // the new revision.
     const out = await deps.db.transaction(async (tx): Promise<Outcome> => {
-      const loaded = await loadPlan(tx, auth.orgId, req.params.id, baseRevision);
+      const loaded = await loadPlan(tx, orgId, req.params.id, baseRevision);
       if (loaded.kind === "not_found") return [404, { error: "plan_not_found" }];
       if (loaded.kind === "corrupt") {
         req.log.error({ planId: req.params.id }, loaded.detail);
@@ -178,7 +229,7 @@ export function registerPlanRoutes(app: FastifyInstance, deps: PlanDeps) {
       const [inserted] = await tx
         .insert(planVersions)
         .values({
-          orgId: auth.orgId,
+          orgId,
           planId: base.planId,
           revision: next.revision,
           planHash: hash,

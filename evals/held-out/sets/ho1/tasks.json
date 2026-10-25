@@ -1,0 +1,61 @@
+{
+  "set": "ho1",
+  "version": 1,
+  "policy": { "id": "billing-remedy", "version": 2 },
+  "ops": { "credits": true, "replies": true, "summary": true },
+  "setup": [],
+  "precedents": [],
+  "tasks": [
+    {
+      "id": "HO1-1",
+      "title": "Remedy INC-BILL-0612",
+      "scope": "all"
+    },
+    {
+      "id": "HO1-2",
+      "title": "Remedy INC-BILL-0612; Larkspur is charged again in July",
+      "scope": "all",
+      "drift": [
+        {
+          "kind": "late_charge",
+          "caseKey": "a01",
+          "chargeId": "ch_INC0612a01late",
+          "at": "2026-07-03T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "HO1-3",
+      "title": "Remedy INC-BILL-0612; Ferndale is charged a third time after approval",
+      "scope": "all",
+      "drift": [
+        {
+          "kind": "phantom_charge",
+          "caseKey": "a07",
+          "chargeId": "ch_INC0612a07phantom",
+          "at": "2026-06-24T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "HO1-4",
+      "title": "Remedy INC-BILL-0612; a teammate escalates Brightwater's ticket to urgent",
+      "scope": "all",
+      "drift": [{ "kind": "teammate_priority", "caseKey": "a02", "priority": "urgent" }]
+    },
+    {
+      "id": "HO1-5",
+      "title": "Remedy INC-BILL-0612; the first refund is throttled and Brightwater's refund response is lost",
+      "scope": "all",
+      "faults": [
+        { "kind": "throttle_first_refund" },
+        { "kind": "lose_refund_response", "caseKey": "a02" }
+      ]
+    },
+    {
+      "id": "HO1-6",
+      "title": "Look into Larkspur, Tamsin & Rowe and Westbrook only",
+      "scope": ["a01", "a05", "n01"]
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+import { Sha256Hex } from "@rehearsal/contracts";
 import { z } from "zod";
 
 /**
@@ -11,18 +12,44 @@ export const PLANNER_JOB_ROUTES = {
   fail: "/internal/planner/jobs/:id/fail",
 } as const;
 
+/**
+ * The org's precedent registry when the job was created (#235), as JSON: the active version of each
+ * precedent and every area's epoch. The worker has no database, so this is how it learns which
+ * recalled precedents it may cite; the API checks the plan's basis against the same snapshot.
+ */
+export const PlanJobRegistry = z.strictObject({
+  active: z.array(
+    z.strictObject({ id: z.string().min(1), version: z.int().positive(), digest: Sha256Hex }),
+  ),
+  epochs: z.record(z.string().min(1), z.int().nonnegative()),
+});
+export type PlanJobRegistry = z.infer<typeof PlanJobRegistry>;
+
 /** A request to rehearse one incident for one org. The plan ID is fixed when the job is created. */
 export const PlanJob = z.object({
   orgId: z.string().min(1),
   incidentId: z.string().min(1),
   planId: z.string().min(1),
   requestedBy: z.string().min(1),
+  /** Absent when precedents aren't wired (core mode): the plan then carries no basis. */
+  precedents: PlanJobRegistry.optional(),
 });
 export type PlanJob = z.infer<typeof PlanJob>;
 
 /** `POST next` answers 204 when there is nothing to do, or one claimed job. */
 export const ClaimedPlanJob = z.object({ id: z.uuid(), data: PlanJob });
 export type ClaimedPlanJob = z.infer<typeof ClaimedPlanJob>;
+
+/** The job's registry in the shape `checkPrecedentBasis` and `recallBasis` take. */
+export function registryOfJob(r: PlanJobRegistry): {
+  active: Map<string, { version: number; digest: Sha256Hex }>;
+  epochs: Map<string, number>;
+} {
+  return {
+    active: new Map(r.active.map(({ id, ...v }) => [id, v])),
+    epochs: new Map(Object.entries(r.epochs)),
+  };
+}
 
 export interface CompletePlanJob {
   manifest: unknown;

@@ -13,6 +13,8 @@
     "@anthropic-ai/sdk": "^1.1.0",
     "@google/genai": "2.30.0",
     "@rehearsal/core": "workspace:*",
+    "@rehearsal/iam": "workspace:*",
+    "@rehearsal/memory": "workspace:*",
     "@rehearsal/planner": "workspace:*",
     "@rehearsal/providers": "workspace:*"
   },

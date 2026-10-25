@@ -188,7 +188,11 @@ describe("planning loop", () => {
     ["a refusal", [reply([], { stop_reason: "refusal" })], "refusal"],
     ["a truncated turn", [reply([], { stop_reason: "max_tokens" })], "truncated"],
     ["another model answering", [reply([], { model: "claude-opus-5-5" })], "model_mismatch"],
-    ["finishing without a step", [reply([], { text: "Nothing to do." })], "empty_plan"],
+    [
+      "finishing without examining the brief",
+      [reply([], { text: "Nothing to do." })],
+      "incomplete_plan",
+    ],
   ];
   it.each(failures)("fails closed on %s", async (_, turns, reason) => {
     const { session } = world();
@@ -243,7 +247,7 @@ describe("planning loop", () => {
     ]);
     await expect(
       runPlanningLoop({ client, model: MODEL, session, brief: BRIEF, meta: META }),
-    ).rejects.toMatchObject({ reason: "empty_plan" });
+    ).rejects.toMatchObject({ reason: "incomplete_plan" });
     const results = requests[1]?.messages.at(-1)?.content as Anthropic.ToolResultBlockParam[];
     expect(results.map((r) => r.is_error)).toEqual([true, true]);
     expect(results[0]?.content).toMatch(/unknown tool http_get/);

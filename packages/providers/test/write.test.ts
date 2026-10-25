@@ -896,3 +896,132 @@ describe("slackWriter (T3.10)", () => {
     ).rejects.toThrow(/bound to operational/);
   });
 });
+
+describe("native Stripe test-mode refunds (T3.17)", () => {
+  const CTX_RH = { world: "rehearsal", tenant: "native" } as const;
+  /** A native writer aimed at the mock server, standing in for api.stripe.com. */
+  const native = (over: Partial<WriteTarget> = {}): WriteTarget => ({
+    world: "rehearsal",
+    config: { baseUrl: target.config.baseUrl, tenant: "native" },
+    authorization: "Bearer sk_test_abc123",
+    transport: "native",
+    accountId: "acct_pinned",
+    headers: { "stripe-version": "2026-09-30.preview" },
+    timeoutMs: 200,
+    ...over,
+  });
+  const refundAction = refund;
+  if (refundAction.kind !== "stripe.refund.create") throw new Error("fixture has no refund");
+
+  it("refuses a live key, an operational world and an unpinned account", () => {
+    expect(() => stripeWriter(native({ authorization: "Bearer sk_live_abc" }))).toThrow(
+      /test-mode secret key/,
+    );
+    expect(() => stripeWriter(native({ authorization: "Bearer rk_test_abc" }))).toThrow(
+      /test-mode secret key/,
+    );
+    expect(() => stripeWriter(native({ world: "operational" }))).toThrow(
+      /never an operational world/,
+    );
+    expect(() => stripeWriter(native({ accountId: undefined }))).toThrow(/pinned account/);
+  });
+
+  it("checks the pinned account once before anything is journaled", async () => {
+    const w = stripeWriter(native());
+    reply = { status: 200, body: JSON.stringify({ id: "acct_other", livemode: false }) };
+    await expect(w.preconditions?.(refundAction, CTX_RH)).rejects.toThrow(/not the pinned one/);
+    reply = { status: 200, body: JSON.stringify({ id: "acct_pinned", livemode: false }) };
+    expect(await w.preconditions?.(refundAction, CTX_RH)).toEqual({});
+    seen = [];
+    expect(await w.preconditions?.(refundAction, CTX_RH)).toEqual({});
+    expect(seen).toEqual([]); // checked once
+  });
+
+  it("sends the exact journaled bytes natively: bearer key, idempotency key, pinned version, no tenant", async () => {
+    const w = stripeWriter(native());
+    const req = w.prepare(refundAction, new Map(), "op_native_key");
+    reply = {
+      status: 200,
+      body: JSON.stringify({
+        id: "re_1",
+        object: "refund",
+        amount: 4210,
+        status: "succeeded",
+        livemode: false,
+      }),
+    };
+    expect(await w.dispatch(req, CTX_RH)).toMatchObject({ kind: "confirmed" });
+    const sent = seen.at(-1);
+    expect(sent?.body).toBe(req.body);
+    expect(sent?.headers.authorization).toBe("Bearer sk_test_abc123");
+    expect(sent?.headers["idempotency-key"]).toBe("op_native_key");
+    expect(sent?.headers["stripe-version"]).toBe("2026-09-30.preview");
+    expect(sent?.headers["x-sim-tenant"]).toBeUndefined();
+  });
+
+  it("never confirms a live-mode answer", async () => {
+    const w = stripeWriter(native());
+    reply = {
+      status: 200,
+      body: JSON.stringify({ id: "re_1", status: "succeeded", livemode: true }),
+    };
+    expect(await w.dispatch(w.prepare(refundAction, new Map(), "op_k"), CTX_RH)).toMatchObject({
+      kind: "unknown",
+    });
+  });
+
+  it("reads a pending refund as undecided, not applied and not contradicted", async () => {
+    const w = stripeWriter(native());
+    const req = w.prepare(refundAction, new Map(), "op_pending");
+    const attempt = Attempt.parse({
+      id: "att_n",
+      actionId: refundAction.id,
+      planHash: "a".repeat(64),
+      operationKey: "op_pending",
+      attemptNo: 1,
+      state: "unknown_outcome",
+      request: {
+        method: req.method,
+        path: req.path,
+        encoding: req.encoding,
+        body: req.body,
+        bodySha256: "b".repeat(64),
+      },
+      providerStatus: null,
+      error: null,
+      preparedAt: "2026-10-21T12:00:00.000Z",
+      dispatchedAt: "2026-10-21T12:00:00.000Z",
+      settledAt: null,
+    });
+    const list = (status: string) => ({
+      status: 200,
+      body: JSON.stringify({
+        object: "list",
+        livemode: false,
+        has_more: false,
+        data: [
+          {
+            id: "re_1",
+            amount: refundAction.args.amount.amountMinor,
+            charge: refundAction.args.chargeId,
+            currency: refundAction.args.amount.currency,
+            status,
+            metadata: { rehearsal_op: "op_pending" },
+          },
+        ],
+      }),
+    });
+    reply = list("pending");
+    expect(await w.reconcile(attempt, refundAction, CTX_RH)).toEqual({
+      kind: "indeterminate",
+      detail: "the refund is pending",
+    });
+    reply = list("failed");
+    expect(await w.reconcile(attempt, refundAction, CTX_RH)).toMatchObject({
+      kind: "indeterminate",
+      contradicts: true,
+    });
+    reply = list("succeeded");
+    expect((await w.reconcile(attempt, refundAction, CTX_RH)).kind).toBe("applied");
+  });
+});

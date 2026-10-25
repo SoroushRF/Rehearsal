@@ -33,6 +33,16 @@ it("starts with the model key, planning URLs and its own secret", () => {
   ).toEqual([]);
 });
 
+it("refuses a way to reach IAM, and the Clerk secret", () => {
+  expect(plannerCredentialViolations({ IAM_URL: "https://127.0.0.1:3443" })).toEqual(["IAM_URL"]);
+  expect(plannerCredentialViolations({ CLERK_SECRET_KEY: "sk_test" })).toEqual([
+    "CLERK_SECRET_KEY",
+  ]);
+  expect(plannerCredentialViolations({ IAM_CLIENT_CERT: "/tmp/api.crt" })).toEqual([
+    "IAM_CLIENT_CERT",
+  ]);
+});
+
 it("refuses the execution rehearsal's admin token, worker secret and worlds", () => {
   expect(
     plannerCredentialViolations({

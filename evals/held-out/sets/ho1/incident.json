@@ -1,0 +1,134 @@
+{
+  "incident": "INC-BILL-0612",
+  "summary": "A payment-retry deploy in June charged some customers more than once for one invoice.",
+  "window": {
+    "createdGte": "2026-06-01T00:00:00.000Z",
+    "createdLt": "2026-07-01T00:00:00.000Z"
+  },
+  "ids": { "prefix": "INC0612", "ticketBase": 9200001 },
+  "cases": [
+    {
+      "key": "a01",
+      "kind": "duplicate",
+      "customerId": "cus_1tCyQghdYT5B1qfJ",
+      "name": "Larkspur Analytics",
+      "email": "ops@larkspur-analytics.com",
+      "requesterId": 2000000,
+      "amountMinor": 3150,
+      "currency": "cad",
+      "chargedAt": "2026-06-03T14:20:00.000Z"
+    },
+    {
+      "key": "a02",
+      "kind": "duplicate",
+      "customerId": "cus_nn3KiCVswYZ1evdA",
+      "name": "Brightwater Logistics",
+      "email": "billing@brightwater-logistics.ca",
+      "requesterId": 2000001,
+      "amountMinor": 18900,
+      "currency": "cad",
+      "chargedAt": "2026-06-05T10:00:00.000Z"
+    },
+    {
+      "key": "a03",
+      "kind": "duplicate",
+      "customerId": "cus_Nhkxbxx60La4FByQ",
+      "name": "Quillon Labs",
+      "email": "finance@quillonlabs.io",
+      "requesterId": 2000002,
+      "amountMinor": 7725,
+      "currency": "cad",
+      "chargedAt": "2026-06-09T16:45:00.000Z",
+      "billingCurrency": "usd"
+    },
+    {
+      "key": "a04",
+      "kind": "duplicate",
+      "customerId": "cus_9jKtSsNe5qWokbFf",
+      "name": "Harrowgate Dental",
+      "email": "accounts@harrowgatedental.ca",
+      "requesterId": 2000003,
+      "amountMinor": 10000,
+      "currency": "cad",
+      "chargedAt": "2026-06-12T08:30:00.000Z"
+    },
+    {
+      "key": "a05",
+      "kind": "triple",
+      "customerId": "cus_nRgv2x9pv6X6KSqy",
+      "name": "Tamsin & Rowe",
+      "email": "ap@tamsinrowe.com",
+      "requesterId": 2000004,
+      "amountMinor": 4480,
+      "currency": "cad",
+      "chargedAt": "2026-06-16T11:10:00.000Z"
+    },
+    {
+      "key": "a06",
+      "kind": "duplicate",
+      "customerId": "cus_pU3x4IbMLqM7IXT4",
+      "name": "Okapi Studio",
+      "email": "hello@okapistudio.co",
+      "requesterId": 2000005,
+      "amountMinor": 2250,
+      "currency": "cad",
+      "chargedAt": "2026-06-18T13:00:00.000Z",
+      "ticketExternalId": "cus_ebwm04HBxGVvScKH"
+    },
+    {
+      "key": "a07",
+      "kind": "duplicate",
+      "customerId": "cus_2hWccy52TWM1Tgg7",
+      "name": "Ferndale Outfitters",
+      "email": "orders@ferndale-outfitters.ca",
+      "requesterId": 2000006,
+      "amountMinor": 6600,
+      "currency": "cad",
+      "chargedAt": "2026-06-22T09:40:00.000Z"
+    },
+    {
+      "key": "n01",
+      "kind": "control_failed_retry",
+      "customerId": "cus_ipiltsj6mcDfeQVg",
+      "name": "Westbrook Veterinary",
+      "email": "office@westbrookvet.ca",
+      "requesterId": 2000007,
+      "amountMinor": 5100,
+      "currency": "cad",
+      "chargedAt": "2026-06-07T15:00:00.000Z"
+    },
+    {
+      "key": "n02",
+      "kind": "control_distinct",
+      "customerId": "cus_pt3OkYok709INMKF",
+      "name": "Cobalt Ridge Media",
+      "email": "billing@cobaltridge.media",
+      "requesterId": 2000008,
+      "amountMinor": 3900,
+      "currency": "cad",
+      "chargedAt": "2026-06-10T12:00:00.000Z"
+    },
+    {
+      "key": "n03",
+      "kind": "control_other_currency",
+      "customerId": "cus_OVNtDG9L1ktPYtf4",
+      "name": "Juniper & Hale",
+      "email": "ar@juniperhale.com",
+      "requesterId": 2000009,
+      "amountMinor": 8200,
+      "currency": "usd",
+      "chargedAt": "2026-06-14T17:25:00.000Z"
+    },
+    {
+      "key": "n04",
+      "kind": "control_outside_window",
+      "customerId": "cus_mzkBTRCNa8vf0XFu",
+      "name": "Selkirk Yoga",
+      "email": "studio@selkirkyoga.ca",
+      "requesterId": 2000010,
+      "amountMinor": 2700,
+      "currency": "cad",
+      "chargedAt": "2026-05-28T10:00:00.000Z"
+    }
+  ]
+}

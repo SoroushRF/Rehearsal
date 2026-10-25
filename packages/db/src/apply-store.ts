@@ -1,4 +1,4 @@
-import type { ApprovalGrant, Role, RunState } from "@rehearsal/contracts";
+import type { ApprovalGrant, PermissionV1, Role, RunState } from "@rehearsal/contracts";
 import type { ApplyStore, RemedyStepRef, StoredRun } from "@rehearsal/core";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Db } from "./index";
@@ -14,6 +14,9 @@ export function toApprovalGrant(row: typeof approvalGrants.$inferSelect): Approv
     actorUserId: row.actorUserId,
     actorSessionId: row.actorSessionId,
     roles: row.roles as Role[],
+    // Null is an old row: omit the fields. Do not turn `roles` into permissions.
+    ...(row.permissions != null ? { permissions: row.permissions as PermissionV1[] } : {}),
+    ...(row.authzRule != null ? { authzRule: row.authzRule } : {}),
     grantedAt: row.grantedAt.toISOString(),
     expiresAt: row.expiresAt.toISOString(),
     revokedAt: row.revokedAt?.toISOString() ?? null,

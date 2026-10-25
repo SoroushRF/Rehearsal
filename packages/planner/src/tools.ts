@@ -3,6 +3,7 @@ import {
   type EntityRef,
   type Observation,
   type PlanManifest,
+  type PrecedentBasis,
   type QueryObservation,
   type Role,
   ZendeskPriority,
@@ -17,6 +18,7 @@ import {
   type WorldContext,
 } from "@rehearsal/core";
 import { z } from "zod";
+import { assessCoverage, duplicateInvoiceGroup } from "./coverage";
 
 /**
  * T1.4: the typed tools the planner model may call. Every tool reads the planning world itself
@@ -162,6 +164,7 @@ export class PlanningSession {
   readonly #observations = new Map<string, Observation>();
   readonly #queries = new Map<string, QueryObservation>();
   readonly #actions: Action[] = [];
+  readonly #lastChargeQueries = new Map<string, QueryObservation>();
 
   constructor(opts: PlanningSessionOptions) {
     if (opts.ctx.world !== "planning") {
@@ -194,6 +197,15 @@ export class PlanningSession {
     return structuredClone(this.#actions);
   }
 
+  coverage(customerIds: readonly string[]) {
+    return assessCoverage(
+      customerIds,
+      [...this.#lastChargeQueries.values()],
+      this.actions,
+      this.#opts.policy,
+    );
+  }
+
   /** The tools this session offers the model. */
   toolDefinitions() {
     return planningToolDefinitions({ credits: this.#opts.credits });
@@ -207,6 +219,7 @@ export class PlanningSession {
     model: string;
     promptVersion: string;
     adapters: Record<string, string>;
+    precedentBasis?: PrecedentBasis;
   }): PlanManifest {
     return {
       schemaVersion: 1,
@@ -229,6 +242,7 @@ export class PlanningSession {
       queryObservations: this.queryObservations,
       actions: this.actions,
       excluded: [],
+      ...(meta.precedentBasis && { precedentBasis: meta.precedentBasis }),
     };
   }
 
@@ -312,14 +326,16 @@ export class PlanningSession {
     return structuredClone(snapshot);
   }
 
-  #customerCharges(customerId: string): Promise<QueryObservation> {
-    return this.#record(
+  async #customerCharges(customerId: string): Promise<QueryObservation> {
+    const query = await this.#record(
       this.#opts.readers.stripe.query(
         { kind: "stripe.charges.byCustomerInWindow", customerId, ...this.#opts.window },
         this.#now(),
         this.#opts.ctx,
       ),
     );
+    this.#lastChargeQueries.set(customerId, query);
+    return query;
   }
 
   #add(action: Action): Action {
@@ -388,27 +404,11 @@ export class PlanningSession {
     if (prior) throw new Refusal(`already remedied by ${prior.id}`);
     // Every excess charge of an invoice must point to the same paid original. Pair cycles
     // must never turn three payments into three refunds.
-    const group = population.matchingIds
-      .map((id) => population.projections[id])
-      .filter((p) => p?.invoice === t.invoice);
-    if (
-      group.some(
-        (p) =>
-          !p ||
-          p.customer !== customer ||
-          p.currency !== t.currency ||
-          p.amount !== t.amount ||
-          p.status !== "succeeded" ||
-          !Number.isSafeInteger(p.created) ||
-          p.amount_refunded !== 0,
-      )
-    ) {
+    const group = duplicateInvoiceGroup(population, t.invoice);
+    if (!group || group[0]?.currency !== t.currency || group[0]?.amount !== t.amount) {
       throw new Refusal("invoice group is ambiguous or already refunded; leave it for a human");
     }
-    const anchor = [...group].sort(
-      (a, b) =>
-        Number(a?.created) - Number(b?.created) || String(a?.id).localeCompare(String(b?.id)),
-    )[0];
+    const anchor = group[0];
     if (anchor?.id !== duplicateOf || anchor.id === chargeId) {
       throw new Refusal("keep the invoice's earliest paid charge as the original");
     }

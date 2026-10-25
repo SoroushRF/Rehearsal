@@ -50,9 +50,6 @@ importers:
 
   apps/api:
     dependencies:
-      '@clerk/backend':
-        specifier: 3.23.2
-        version: 3.23.2(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@fastify/static':
         specifier: ^10.1.6
         version: 10.1.6
@@ -65,6 +62,9 @@ importers:
       '@rehearsal/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@rehearsal/iam':
+        specifier: workspace:*
+        version: link:../iam
       '@rehearsal/memory':
         specifier: workspace:*
         version: link:../../packages/memory
@@ -81,6 +81,9 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
     devDependencies:
+      '@rehearsal/authz':
+        specifier: workspace:*
+        version: link:../../packages/authz
       '@rehearsal/testkit':
         specifier: workspace:*
         version: link:../../packages/testkit
@@ -96,6 +99,9 @@ importers:
       '@rehearsal/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@rehearsal/iam':
+        specifier: workspace:*
+        version: link:../iam
       '@rehearsal/providers':
         specifier: workspace:*
         version: link:../../packages/providers
@@ -106,6 +112,18 @@ importers:
       drizzle-orm:
         specifier: ^0.45.4
         version: 0.45.4(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(pg@8.23.1)
+
+  apps/iam:
+    dependencies:
+      '@clerk/backend':
+        specifier: 3.23.2
+        version: 3.23.2(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@rehearsal/authz':
+        specifier: workspace:*
+        version: link:../../packages/authz
+      '@rehearsal/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
 
   apps/planner-worker:
     dependencies:
@@ -118,6 +136,12 @@ importers:
       '@rehearsal/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@rehearsal/iam':
+        specifier: workspace:*
+        version: link:../iam
+      '@rehearsal/memory':
+        specifier: workspace:*
+        version: link:../../packages/memory
       '@rehearsal/planner':
         specifier: workspace:*
         version: link:../../packages/planner
@@ -137,7 +161,13 @@ importers:
       '@clerk/react':
         specifier: 6.17.8
         version: 6.17.8(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@fontsource-variable/fraunces':
+        specifier: ^5.3.0
+        version: 5.3.0
       '@fontsource-variable/inter':
+        specifier: ^5.3.0
+        version: 5.3.0
+      '@fontsource-variable/jetbrains-mono':
         specifier: ^5.3.0
         version: 5.3.0
       '@rehearsal/contracts':
@@ -181,6 +211,27 @@ importers:
         specifier: ^8.3.4
         version: 8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)
 
+  evals/held-out:
+    dependencies:
+      '@rehearsal/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@rehearsal/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@rehearsal/planner':
+        specifier: workspace:*
+        version: link:../../packages/planner
+      '@rehearsal/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
+      '@rehearsal/testkit':
+        specifier: workspace:*
+        version: link:../../packages/testkit
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
+
   evals/providers:
     dependencies:
       '@rehearsal/contracts':
@@ -189,6 +240,9 @@ importers:
       '@rehearsal/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@rehearsal/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@rehearsal/planner':
         specifier: workspace:*
         version: link:../../packages/planner
@@ -223,6 +277,12 @@ importers:
         specifier: workspace:*
         version: link:../../packages/testkit
 
+  packages/authz:
+    dependencies:
+      '@rehearsal/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+
   packages/contracts:
     dependencies:
       zod:
@@ -234,6 +294,10 @@ importers:
       '@rehearsal/contracts':
         specifier: workspace:*
         version: link:../contracts
+    devDependencies:
+      '@rehearsal/authz':
+        specifier: workspace:*
+        version: link:../authz
 
   packages/db:
     dependencies:
@@ -911,8 +975,14 @@ packages:
   '@fastify/static@10.1.6':
     resolution: {integrity: sha512-f3x9XisI+y6AIhIfA/+Q3SFsuXeqNNk5HQh5htgHsPxmMLb4pLFskV6eFaLSW3IbI4azrS5np+/tkzXNH99LyQ==}
 
+  '@fontsource-variable/fraunces@5.3.0':
+    resolution: {integrity: sha512-9BYGySn4AHEJdgp9Z28tQ3X+laJMEOITXkQarZXeloWQZDq5oOvXJ3kDA8c7MGIfpogIaZfjrQBqmda8POOCKA==}
+
   '@fontsource-variable/inter@5.3.0':
     resolution: {integrity: sha512-OupL48va4JNofb97w6NYeF9S7W/kHNKM0Er8Dem5nqi4jeOLrVJDoE8tZEpnMJmtkvNbB1EIPPwHcdkF6b1oUA==}
+
+  '@fontsource-variable/jetbrains-mono@5.3.0':
+    resolution: {integrity: sha512-F32xpS2NsGYoQi2ADSkKTgpJj7ozajsGgDJ8woTnqjmIB+dxDIqImjl4pXZVEExu8UFZ2ndhmX18EBS/hdz3Lw==}
 
   '@google/genai@2.30.0':
     resolution: {integrity: sha512-Gkv1ix8iZey/V3WF4lHaRS8C71P533jenDT/lA+fdPTCfXYfmCVHvo+0H5jTgzonqsmROQG7QpzLJkpoP/x7bg==}
@@ -2677,7 +2747,11 @@ snapshots:
       fastq: 1.20.3
       glob: 13.0.6
 
+  '@fontsource-variable/fraunces@5.3.0': {}
+
   '@fontsource-variable/inter@5.3.0': {}
+
+  '@fontsource-variable/jetbrains-mono@5.3.0': {}
 
   '@google/genai@2.30.0':
     dependencies:

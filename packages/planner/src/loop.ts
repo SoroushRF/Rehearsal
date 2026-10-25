@@ -1,5 +1,5 @@
 import type Anthropic from "@anthropic-ai/sdk";
-import type { PlanManifest } from "@rehearsal/contracts";
+import type { PlanManifest, PrecedentBasis } from "@rehearsal/contracts";
 import { validateGraph } from "@rehearsal/core";
 import {
   briefMessage,
@@ -32,7 +32,13 @@ export interface PlanningLoopOptions {
   model: string;
   session: PlanningSession;
   brief: IncidentBrief;
-  meta: { orgId: string; planId: string; adapters: Record<string, string> };
+  meta: {
+    orgId: string;
+    planId: string;
+    adapters: Record<string, string>;
+    /** What the brief's precedents rest on; recorded in the manifest as given. */
+    precedentBasis?: PrecedentBasis;
+  };
   limits?: Partial<Record<"maxTurns" | "maxToolCalls" | "maxTokensPerTurn", number>>;
   signal?: AbortSignal;
   /** Called after every turn, for logs. */
@@ -64,6 +70,7 @@ export class PlanningLoopError extends Error {
       | "truncated"
       | "model_mismatch"
       | "empty_plan"
+      | "incomplete_plan"
       | "invalid_plan",
     message: string,
   ) {
@@ -194,7 +201,12 @@ function finish(
     model: opts.model,
     promptVersion: PROMPT_VERSION,
     adapters: opts.meta.adapters,
+    precedentBasis: opts.meta.precedentBasis,
   });
+  const coverage = opts.session.coverage(opts.brief.customers.map((c) => c.customerId));
+  if (coverage.length > 0) {
+    throw new PlanningLoopError("incomplete_plan", JSON.stringify(coverage));
+  }
   if (manifest.actions.length === 0) {
     throw new PlanningLoopError("empty_plan", "the model finished without proposing any step");
   }
