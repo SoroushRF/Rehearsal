@@ -1444,9 +1444,13 @@ async function applyLocked(
       const undo = await sentUndo(action);
       if (undo) return settleFromUndo(action, undo);
       // An earlier revision's write whose read-back contradicted it has no confirmed receipt (and
-      // no bindings): read it back now rather than adopt it (T3.8).
-      const confirmedEarlier = (await journal.receiptsFor(latest.planHash)).some(
-        (r) => r.actionId === action.id && r.outcome === "confirmed",
+      // no bindings), and neither does one whose recorded effect isn't this action's: read it back
+      // now rather than adopt it (T3.8).
+      const confirmedEarlier = (await journal.receiptsFor(latest.planHash)).find(
+        (r) =>
+          r.actionId === action.id &&
+          r.outcome === "confirmed" &&
+          effectMatches(action, r.observedEffect),
       );
       if (!confirmedEarlier) {
         let back: ReconcileResult;
@@ -1470,20 +1474,18 @@ async function applyLocked(
           { results: bindable(back.effect) },
         );
       }
-      // Confirmed under an earlier revision of this plan with the same content: adopt its results.
+      // Confirmed under an earlier revision of this plan with the same content: adopt that receipt's
+      // provider object and observed effect (a credit's balance transaction has no bindings), and
+      // its bindings for later steps.
       const earlier = (await journal.bindings(latest.planHash)).filter(
         (b) => b.ref.stepId === latest.actionId,
       );
       const results = Object.fromEntries(earlier.map((b) => [b.ref.path, b.value]));
-      const refund = results["refund.id"];
       return settle(
         action,
         receiptFor(action, "confirmed", {
-          providerRef:
-            typeof refund === "string"
-              ? { vendor: "stripe", kind: "refund", id: refund }
-              : targetOf(action),
-          observedEffect: results,
+          providerRef: confirmedEarlier.providerRef ?? targetOf(action),
+          observedEffect: confirmedEarlier.observedEffect,
           limitations: [
             `applied by attempt ${latest.id} under plan hash ${latest.planHash}; not re-sent`,
           ],

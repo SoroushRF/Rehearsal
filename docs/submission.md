@@ -1,0 +1,106 @@
+# Submission kit: two-minute video and Devpost (T2.7)
+
+**Status: draft, written 2026-10-25.** It is not final until the deployed URL (T2.5) and the final benchmark (T1.28) exist. Everything marked **[fill]** has to be replaced then. Every claim below points at the file or test that backs it; if you can't point at one, don't say it.
+
+Deadline: Oct 25, 11:59 PM ET. The brief says submit in the afternoon. Public repository, a public two-minute video, a live link where it applies, stack and partner use, and AI-tool disclosure ([build plan §13](source/build-plan.md#13-current-event-facts-and-resource-gates)).
+
+## The one-line pitch
+
+**Terraform plan for AI agents doing batch operations.** The agent plans inside a simulated copy of the company. A reviewer approves the exact plan once, bound to its hash. A deterministic executor with no model applies it, re-checking each step first and holding anything that went stale.
+
+Closing line (proposed in [0001](decisions/0001-open-team-decisions.md), not yet settled by the team): **"Rehearse the plan. Approve its effects. Apply with evidence."** Do not use the brief's "Eon recovers it": we don't build recovery.
+
+## Two-minute script
+
+About 250 spoken words. Shots are in the order to record them. The live app screens are the review page at `/app`; the saved replay is `/?replay=phantom`.
+
+| Time | Shot | Say |
+|---|---|---|
+| 0:00 | Title card, then the landing page headline | "Agents that write to production fail in ways nobody reviews until it's too late. Per-call approval asks a human dozens of times with no view of the whole job. Rolling back afterwards can't unsend an email." |
+| 0:15 | The two-worlds diagram on the landing page | "Rehearsal separates deciding from doing. The model plans in a copy of the company. Production never sees the model, only a recorded, approved plan." |
+| 0:28 | Review page: plan grouped by customer, plan hash in the corner | "Here is a billing bug: eight customers charged twice. The agent has planned the refunds, the ticket updates and the notes. Everything is exact: integer money, what can be undone, how well each write is protected, and the evidence behind it." |
+| 0:50 | Untick one customer; the dependent note drops; a new hash appears | "Uncheck a customer and their note drops with them. That's a new revision with a new hash. Refunds over the threshold need a finance lead, and a second person where policy asks for two." |
+| 1:10 | Approve once; the approval panel shows the hash it is bound to | "One approval, bound to this exact plan. Change one byte and it no longer applies." |
+| 1:18 | Apply; run timeline fills in with receipts | "Now a deterministic executor, with no model and no model key, applies it. Before every step it re-reads what the step relied on." |
+| 1:30 | Phantom: a new duplicate charge appears after approval; that step shows Held with the reason | "Between approval and apply, a new matching charge appeared. The approved plan didn't account for it, so that refund is held, with the reason on the receipt, and so is the note that depends on it. Everything else went through." |
+| 1:50 | Receipts, then the scorecard table | "On the same twenty tasks, with real Era simulators: direct writes confirmed ten, per-call approval fourteen, Rehearsal eighteen, with no invalid allows, and about thirty-seven reviewer actions against four hundred and twenty-five." |
+| 2:00 | Closing card | "Rehearse the plan. Approve its effects. Apply with evidence." |
+
+Cut to fit: drop the second-person line at 0:50 first, then the scorecard sentence. Keep the phantom hold; it's the moment.
+
+### Recording notes
+
+- Use `pnpm demo:reset`, then rehearse and approve in the live app; run `pnpm demo:phantom` between approving and applying for the real phantom. If the deployment isn't up, record against local Era and say "local simulators" on the card.
+- The saved replay (`/?replay=phantom`) is a **fixture** made by running the real executor engine on a fake provider. If you cut to it, its banner says "Saved replay, not live"; leave the banner in frame.
+- Show the "Fixture" or "Ran on Era" chip on the plan page when it is visible, rather than hiding it.
+- Captions on, no music with lyrics, 16:9, public (unlisted doesn't count for the stricter Luma wording).
+
+## What we can claim, and what backs it
+
+| Claim | Backed by | Evidence level |
+|---|---|---|
+| Plans are checked against a canonical hash; approval is for one exact hash; changed hash or revision is refused | `packages/core` hash tests, `apps/api/test/approvals.test.ts` refusal matrix | tests (Postgres in CI) |
+| The executor has no model and no model key; the planner has no operational URLs or Era admin token | credential checks at worker startup, `apps/*/test/credentials.test.ts` | tests |
+| A new matching record after approval holds the step and its dependents | `evals/providers/test/phantom.test.ts` | `era_integration` |
+| A teammate's edit survives; the undo is skipped with a recorded conflict | `evals/providers/test/compensation.test.ts` | `era_integration` |
+| A lost response is reconciled through reads and never blindly re-sent | `evals/providers/test/reconcile.test.ts` (every write's response lost across three restarts; each applied once) | `era_integration` |
+| An agent plan was approved in the UI and applied 24 of 24 steps | #131 (live run with a real model) | `era_integration`, one run |
+| Two different people are required where policy v3 asks | `packages/core/test/approvals.test.ts`, executor admission tests, [0011](decisions/0011-two-distinct-approvers.md) | tests; no plan cites v3 yet |
+| A past run opens with the policy it was approved under | `apps/api/test/audit.test.ts` | tests |
+| Scorecard: 20 tasks, three modes | `evals/scorecard/results/latest.txt` | `era_integration`, **scripted planner** |
+
+### The scorecard, honestly
+
+Scripted planner (`latest.txt`, pinned Era images, 2026-10-23):
+
+| | Direct | Per-call | Rehearsal |
+|---|---|---|---|
+| Confirmed success | 10/20 | 14/20 | 18/20 |
+| Invalid allows | 20 | 11 | 0 |
+| Duplicates | 4 | 2 | 0 |
+| Wrongful holds | 0 | 0 | 2 |
+| Reviewer actions | 0 | 425 | 37 |
+
+- The per-call reviewer is **modelled**, not a person; so are the counts of reviewer actions. Say "modelled".
+- The two Rehearsal holds are the teammate-edit traps (T3, T10). They are the guard working; the table counts them as wrongful because the scripted agent's plan was otherwise valid. Say so if asked.
+- With a real model as planner (`model-gemini-4-argon.txt`, 2026-10-24) the picture is less flattering: Rehearsal confirmed 17/20 with **zero invalid allows**, but wrongful holds rise to 26, 18 plans were made, one had no steps and one failed (a failed plan is never stored, so nothing is applied). Direct writes confirmed only 2/20. **If the video shows the scripted numbers, the Devpost text must show or link the model numbers too.** Replace both with the final T1.28 comparison when it exists **[fill]**.
+
+## What we must not say
+
+- That this is a real bank, a real Stripe or Zendesk account, or a compliance claim: both worlds are Era simulators. Native Stripe sandbox evidence exists only if T1.24 and T3.17 finish and are labelled separately.
+- That rollback or recovery exists. A refund or an appended note is never "rolled back"; only owned fields are conditionally restored.
+- That a model gates execution, or that any ML model was trained or served: out of scope ([0008](decisions/0008-ml-out-of-hackathon-scope.md)).
+- That the human reviewer numbers are measured: they are modelled. No outside operator has used it yet (T2.22).
+- That precedents are live: the promotion path is built, but it hasn't run against the hosted Agent Memory service, and plans can't yet cite precedents (T2.17).
+- The two statistics (PocketOS, Georgian) must be quoted exactly as in the brief, and checked against their original sources first. PocketOS: the founder reported about 30 hours of disruption; Railway restored backups within about 30 minutes of being contacted. Don't say permanent loss or 30 hours of hard downtime.
+
+## Devpost text (draft)
+
+**Tagline:** Terraform plan for AI agents doing batch operations.
+
+**Inspiration.** Agents that write to production fail in ways no one reviews until it is too late. Approving every call interrupts a human dozens of times with no view of the whole job, and cleaning up afterwards can't unsend a message or may wipe legitimate edits made since. We wanted the review to happen once, on the whole plan, and the execution to be something you can trust without trusting a model.
+
+**What it does.** A support or finance team gets a billing bug: customers charged twice. The agent plans the remedies inside a simulated copy of the company (Era). A reviewer sees the whole job grouped by customer, with exact money, how reversible each step is, how well each write is protected, and the evidence behind it. They can drop a customer (their dependent note drops too), and finance must sign refunds above a threshold. They approve once, bound to the plan's hash. A deterministic executor with no model applies exactly that plan to a separate operational world, re-checks each step's assumptions first, holds any step whose assumptions went stale, and writes a receipt.
+
+**How we built it.** TypeScript throughout. Zod contracts at every trust boundary; an RFC 8785 canonical hash; Fastify API and a React review UI; Postgres with an append-only journal (the exact request bytes and idempotency key are stored before anything is sent; an unknown outcome is reconciled through reads, never re-sent blindly); pg-boss for jobs; Clerk for sign-in and roles; two workers with separate credentials (the planner has a model key and the planning world only, the executor has the operational world only). Typed operations only: no arbitrary URL, method or patch tools.
+
+**Challenges.** Honest partial outcomes (a refund is never "rolled back"); ID divergence between the rehearsed world and production (the note carries the production refund ID, never the rehearsed one); throttling and lost responses; keeping the planner and the executor from ever sharing credentials.
+
+**Accomplishments.** Phantom, teammate-edit conflict, throttled refunds and a lost response all pass against pinned Era images **[fill: link the final run]**. On 20 traps and controls, Rehearsal had no invalid allows (see the scorecard and its caveats). **[fill: T1.28 numbers.]**
+
+**What we learned.** Approval is not authorization: an approval has to be typed state tied to an exact hash, and the thing that applies it has to re-check the world. A trap the agent never sees is more instructive than one it does.
+
+**What's next.** Two-person approval by policy, a past-run audit view, and precedents that finance promotes after a run are built; execution rehearsal in disposable worlds is next. Native Stripe sandbox proof and real operator testing are not done.
+
+**Built with.** TypeScript, Node, React, Vite, Tailwind, Fastify, Zod, Postgres, Drizzle, pg-boss, Clerk, Playwright, Vitest, Biome, Era (Stripe and Zendesk simulators), Anthropic and Gemini models for planning, SurrealDB Agent Memory (precedents, if configured) **[fill: confirm what actually shipped]**.
+
+**Disclosures (fill in truthfully).** AI coding tools were used to write parts of this repository **[fill: which, by whom]**; prior work: **[fill]**. Partner services actually used: **[fill]**. No ML model was trained or served.
+
+## Before recording
+
+- [ ] Deployed URL up and `pnpm smoke:*` passing against it (T2.5) **[fill: URL]**
+- [ ] `?replay=phantom` opens signed out on the deployed URL
+- [ ] Final scorecard from T1.28 replaces the numbers above, scripted and real-model both
+- [ ] A one-line `docs/` or README pointer to this kit and to `evals/scorecard/results/`
+- [ ] Repository public; no `.env`, keys or tokens committed
+- [ ] Devpost "built with", disclosures and the video link filled; tag `submission` after submitting

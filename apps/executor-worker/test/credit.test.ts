@@ -92,16 +92,17 @@ function setup(first: PlanManifest) {
     clock: deps.clock,
   });
   const approve = (manifest: PlanManifest) => {
+    const { planId, revision } = manifest;
     const hash = planHash(manifest);
-    const runId = `run_${manifest.planId}`;
-    const approvalId = `grant_${manifest.planId}`;
-    store.plans.set(`${manifest.planId}@1`, { planHash: hash, manifest });
-    store.runs.set(runId, { planId: manifest.planId, revision: 1, planHash: hash, approvalId });
+    const runId = `run_${planId}@${revision}`;
+    const approvalId = `grant_${planId}@${revision}`;
+    store.plans.set(`${planId}@${revision}`, { planHash: hash, manifest });
+    store.runs.set(runId, { planId, revision, planHash: hash, approvalId });
     const grant: ApprovalGrant = {
       id: approvalId,
       orgId: manifest.orgId,
-      planId: manifest.planId,
-      revision: 1,
+      planId,
+      revision,
       planHash: hash,
       actorUserId: "user_finance",
       actorSessionId: "sess_1",
@@ -111,13 +112,7 @@ function setup(first: PlanManifest) {
       revokedAt: null,
     };
     store.grants.set(approvalId, grant);
-    const job = {
-      orgId: manifest.orgId,
-      runId,
-      planId: manifest.planId,
-      revision: 1,
-      planHash: hash,
-    };
+    const job = { orgId: manifest.orgId, runId, planId, revision, planHash: hash };
     return () => executeRun(job, deps);
   };
   return { world, deps, approve };
@@ -167,6 +162,35 @@ describe("balance credit (T1.14)", () => {
     expect(receipt?.limitations.join(" ")).toContain("found by reading the provider; not re-sent");
     expect(s.world.credits).toHaveLength(1);
     expect(receipt?.providerRef?.id).toBe(s.world.credits[0]?.id);
+  });
+
+  it("adopts a credit confirmed under an earlier revision with its balance transaction, not re-sent", async () => {
+    const plan = creditPlan("plan_credit");
+    const s = setup(plan);
+    const first = (await s.approve(plan)()).receipts.find((r) => r.actionId === "credit_001");
+    expect(first?.outcome).toBe("confirmed");
+
+    // Re-approved as revision 2 with the credit unchanged, as after excluding another customer.
+    const rev2: PlanManifest = { ...plan, revision: 2, parentRevision: 1 };
+    expect(planHash(rev2)).not.toBe(planHash(plan));
+    const out = await s.approve(rev2)();
+    expect(out.state).toBe("completed");
+    const adopted = out.receipts.find((r) => r.actionId === "credit_001");
+    expect(adopted?.outcome).toBe("confirmed");
+    expect(adopted?.providerRef).toEqual({
+      vendor: "stripe",
+      kind: "customer_balance_transaction",
+      id: s.world.credits[0]?.id,
+    });
+    expect(adopted?.observedEffect).toEqual(first?.observedEffect);
+    expect(adopted?.observedEffect).toMatchObject({
+      "credit.id": s.world.credits[0]?.id,
+      "credit.amount": -4210,
+      "credit.charge": CHARGE,
+      currency: "cad",
+    });
+    expect(adopted?.limitations.join(" ")).toContain("not re-sent");
+    expect(s.world.credits).toHaveLength(1);
   });
 
   it("holds a credit when the customer's currency no longer matches what was approved", async () => {

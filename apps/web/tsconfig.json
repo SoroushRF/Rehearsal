@@ -10,6 +10,7 @@
     "test",
     "e2e",
     "vite.config.ts",
+    "api-origin.ts",
     "vite.e2e.config.ts",
     "vitest.config.ts",
     "playwright.config.ts"
