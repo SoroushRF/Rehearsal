@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app";
 import type { Reviewer } from "../src/auth";
 import { loadPlan, storePlan } from "../src/plans";
-import type { RehearseDeps } from "../src/rehearse";
+import { checkJobBasis, type RehearseDeps } from "../src/rehearse";
 
 const SECRET = "planner-secret";
 const reviewer = (orgId: string, roles: Reviewer["roles"] = ["support_lead"]): Reviewer => ({
@@ -55,6 +55,24 @@ describe("rehearse routes", () => {
     });
   });
 
+  it("puts the org's precedent registry on the job when precedents are wired", async () => {
+    const digest = "d".repeat(64);
+    const res = await app(reviewer("org_1"), {
+      precedentRegistry: async (orgId) => {
+        expect(orgId).toBe("org_1");
+        return {
+          active: new Map([["dup-refund", { version: 2, digest }]]),
+          epochs: new Map([["billing.duplicate_charge", 3]]),
+        };
+      },
+    }).inject({ method: "POST", url: `/api/incidents/${INCIDENT.incident}/rehearse` });
+    expect(res.statusCode).toBe(202);
+    expect(PlanJob.parse(sent.at(-1)?.[1]).precedents).toEqual({
+      active: [{ id: "dup-refund", version: 2, digest }],
+      epochs: { "billing.duplicate_charge": 3 },
+    });
+  });
+
   it("keeps the internal routes for the planner worker's secret", async () => {
     const id = "11111111-1111-4111-8111-111111111111";
     for (const [secret, authorization] of [
@@ -86,6 +104,60 @@ describe("rehearse routes", () => {
       url: `/api/incidents/${INCIDENT.incident}/rehearse`,
     });
     expect(res.statusCode).toBe(503);
+  });
+});
+
+describe("a returned plan's precedent basis", () => {
+  const AREA = "billing.duplicate_charge";
+  const digest = "d".repeat(64);
+  const citation = {
+    id: "dup-refund",
+    version: 2,
+    digest,
+    appliesTo: AREA,
+    factIds: ["f1"],
+    traceId: "t1",
+  };
+  const job = (precedents?: PlanJob["precedents"]): PlanJob => ({
+    orgId: "org_1",
+    incidentId: INCIDENT.incident,
+    planId: "plan_1",
+    requestedBy: "user_1",
+    ...(precedents && { precedents }),
+  });
+  const registry = { active: [{ id: "dup-refund", version: 2, digest }], epochs: { [AREA]: 3 } };
+  const plan = (precedentBasis?: unknown) =>
+    ({
+      ...billingManifest(),
+      ...(precedentBasis !== undefined && { precedentBasis }),
+    }) as Parameters<typeof checkJobBasis>[0];
+
+  it("accepts a basis that cites what the job's registry has active, at its epochs", () => {
+    expect(
+      checkJobBasis(plan({ citations: [citation], epochs: { [AREA]: 3 } }), job(registry)),
+    ).toBeNull();
+    expect(checkJobBasis(plan(), job())).toBeNull();
+    expect(checkJobBasis(plan(), job({ active: [], epochs: {} }))).toBeNull();
+  });
+
+  it("refuses a plan that skipped the org's precedents or cites ones it wasn't offered", () => {
+    expect(checkJobBasis(plan(), job(registry))).toMatch(/no precedent basis/);
+    expect(checkJobBasis(plan({ citations: [citation], epochs: { [AREA]: 3 } }), job())).toMatch(
+      /didn't offer/,
+    );
+    expect(checkJobBasis(plan({ citations: [], epochs: {} }), job(registry))).toMatch(
+      /areas differ/,
+    );
+  });
+
+  it("refuses a citation the registry doesn't have active, or a moved epoch", () => {
+    const withdrawn = { active: [], epochs: { [AREA]: 4 } };
+    expect(
+      checkJobBasis(plan({ citations: [citation], epochs: { [AREA]: 4 } }), job(withdrawn)),
+    ).toMatch(/withdrawn/);
+    expect(
+      checkJobBasis(plan({ citations: [citation], epochs: { [AREA]: 2 } }), job(registry)),
+    ).toMatch(/epoch_changed/);
   });
 });
 

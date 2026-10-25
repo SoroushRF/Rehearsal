@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import {
   approvedVersion,
   type Db,
@@ -13,20 +12,14 @@ import {
   AgentMemoryPrecedents,
   memoryConfigFromEnv,
   PrecedentRecord,
+  precedentScope,
 } from "@rehearsal/memory";
+
+export { precedentScope } from "@rehearsal/memory";
 
 /** What the sync needs from Agent Memory: store a version and read it back. */
 export type PrecedentPublisher = Pick<AgentMemoryPrecedents, "publish">;
 export type PublisherFor = (orgId: string) => PrecedentPublisher;
-
-/**
- * One memory scope per organization (decision 0012): a shared scope would let one organization's
- * planner recall another's precedents. Clerk org IDs are mixed case and the service takes only
- * lowercase paths, so the scope carries a hash of the ID instead.
- */
-export function precedentScope(baseScope: string, orgId: string): string {
-  return `${baseScope}/org-${createHash("sha256").update(orgId).digest("hex").slice(0, 16)}`;
-}
 
 /** Publishers built from the environment, or null when Agent Memory isn't configured (core mode). */
 export function publisherFromEnv(env: Record<string, string | undefined> = process.env) {
