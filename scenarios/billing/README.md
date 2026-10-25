@@ -12,6 +12,6 @@ Fictional company and authored demo policy. Not a financial or regulatory requir
   - `@rehearsal/testkit`'s `incidentRecords()` builds the inject records from it and from `fixtures/`.
   - `pnpm demo:reset` resets all four worlds, seeds them identically and checks that planning and operational read back the same.
 - `fixtures/`: Era inject templates copied from real GET responses (owner: A). See `fixtures/README.md`.
-- `held-out/`: three incidents the demo cohort does not share, each with gold written before any planner run. The loader is `packages/testkit/src/held-out.ts` and is not exported from the package index. Evidence is `fixture`. A changed-precedent case is omitted until precedent promotion exists.
+- `expected/`: independent expected results (owner: D). Not created yet.
 
 All bundles are `evidence: "fixture"` until they have run against real Era images.
