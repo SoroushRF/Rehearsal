@@ -7,6 +7,7 @@ import {
   eraFetch,
   mintTenantToken,
   rehearsalWorkerWorlds,
+  stripeReader,
   stripeWriter,
   workerWorlds,
 } from "../src";
@@ -106,6 +107,22 @@ describe("credentialed requests never follow a redirect (T1.23)", () => {
       ERA_TENANT: "t",
     }).stripe.tenantToken as { get(): Promise<string> };
     await expect(planner.get()).rejects.toThrow(/no valid Era tenant token/);
+    expect(trapped).toEqual([]);
+  });
+
+  it("a native Stripe read doesn't carry its key past a redirect", async () => {
+    const reader = stripeReader({
+      world: "planning",
+      config: { baseUrl: redirector.url, tenant: "native" },
+      authorization: "Bearer sk_test_x",
+      transport: "native",
+    });
+    await expect(
+      reader.observe(
+        { vendor: "stripe", kind: "charge", id: "ch_1" },
+        { world: "planning", tenant: "native" },
+      ),
+    ).rejects.toThrow();
     expect(trapped).toEqual([]);
   });
 });
