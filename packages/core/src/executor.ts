@@ -798,6 +798,40 @@ export async function executeRehearsal(
   job: RehearsalRunInput,
   deps: RehearsalExecutorDeps,
 ): Promise<RunOutcome> {
+  const { apply, mechanics, store, authority } = rehearsalMechanics(job, deps);
+  const admission = await admitRehearsal(job, deps);
+  if (!admission.ok) {
+    await deps.journal.appendEvent(job.rehearsalId, "run.refused", { detail: admission.detail });
+    return { state: "failed", receipts: [], refusal: admission.detail, error: null };
+  }
+  if (await store.runCancelled?.(job.orgId, job.rehearsalId)) {
+    await deps.journal.appendEvent(job.rehearsalId, "run.cancelled", { before: "admission" });
+    const outcome = await applyLocked(apply, mechanics, admission.manifest, authority, true);
+    return { ...outcome, state: "cancelled", refusal: RUN_CANCELLED };
+  }
+  return applyLocked(apply, mechanics, admission.manifest, authority);
+}
+
+/**
+ * T3.16: the read-only pass for a rehearsal whose worker stopped (it died, its lease expired, or
+ * it ended with a send in flight). Same admission, then only reads: an in-flight send is resolved
+ * by reading the rehearsal's own tenant, and nothing is prepared, sent or replayed. A rehearsal is
+ * never resumed (decision 0013, §5). `unresolved` says a send is still in flight after it.
+ */
+export async function reconcileRehearsal(
+  job: RehearsalRunInput,
+  deps: RehearsalExecutorDeps,
+): Promise<RunOutcome> {
+  const { apply, mechanics, authority } = rehearsalMechanics(job, deps);
+  const admission = await admitRehearsal(job, deps);
+  if (!admission.ok) {
+    await deps.journal.appendEvent(job.rehearsalId, "run.refused", { detail: admission.detail });
+    return { state: "failed", receipts: [], refusal: admission.detail, error: null };
+  }
+  return applyLocked(apply, mechanics, admission.manifest, authority, true, "failed");
+}
+
+function rehearsalMechanics(job: RehearsalRunInput, deps: RehearsalExecutorDeps) {
   // Receipts and result bindings are looked up by plan hash, not operation key. Under the real
   // hash, a rehearsal's confirmed receipt or refund id would satisfy an operational run sharing a
   // journal (and the other way round). Its journal sees only `rh_<id>_<hash>`.
@@ -821,17 +855,7 @@ export async function executeRehearsal(
   };
   const mechanics: ExecutorDeps = { ...deps, store };
   const authority: Authority = { kind: "rehearsal", rehearsalId: job.rehearsalId };
-  const admission = await admitRehearsal(job, deps);
-  if (!admission.ok) {
-    await deps.journal.appendEvent(job.rehearsalId, "run.refused", { detail: admission.detail });
-    return { state: "failed", receipts: [], refusal: admission.detail, error: null };
-  }
-  if (await store.runCancelled?.(job.orgId, job.rehearsalId)) {
-    await deps.journal.appendEvent(job.rehearsalId, "run.cancelled", { before: "admission" });
-    const outcome = await applyLocked(apply, mechanics, admission.manifest, authority, true);
-    return { ...outcome, state: "cancelled", refusal: RUN_CANCELLED };
-  }
-  return applyLocked(apply, mechanics, admission.manifest, authority);
+  return { apply, mechanics, store, authority };
 }
 
 /** The keys a pass journals and sends under: a rehearsal's are namespaced to it (decision 0013, §3). */
