@@ -87,9 +87,27 @@ already send it, and the smoke now does too. On `8c82eb2`, cloud job
 `job-dbf4b7l9fdbs738peij0` reran the smoke with that same header correction and succeeded
 at 18:08:53 UTC (14:08 Toronto): all nine worlds, DB, IAM, `/`, `/app`, health,
 phantom replay JSON and signed-out plan refusal. PR #315 persists the correction.
-The complete signed-in model/review/approval/apply flow on this cloud deployment is
-still unverified. Agent Memory and Slack summaries are not configured in this deployment
-yet (their services/code remain available).
+The final API release `570d96016ce2554d19c1ed92402f13e6f8223805` (PR #315) passed
+the committed standalone smoke as `job-dbf4f3ks728c73e30stg` at 18:17:10 UTC.
+The signed-in cloud flow then passed with the owner's explicit approval:
+
+- Google sign-in selected the existing Rehearsal Demo organization.
+- Gemini stored `plan_69a61834-720f-4052-8561-63a73befe7d9`, revision 1, hash prefix
+  `687eb2d2c1e0`: eight CAD duplicate refunds totaling 64,877 minor units, eight ticket
+  priority changes, eight private notes and eight exact-template public replies.
+  The three control cases were left alone, including the USD refund refused by policy.
+- The owner authorized approving and applying that exact simulator revision. Run
+  `run_46a5fb49-597b-4bc9-8b66-c46843c895c9` completed with **32/32 done**; all receipt
+  rows reported applied and read back from the provider. Evidence: cloud Era integration,
+  not real Stripe/Zendesk accounts.
+- The separate disposable-world execution rehearsal refused this plan before dispatch:
+  its seeder cannot rebuild `zendesk.ticket.appendPublicReply` actions. That path remains
+  unverified for this manifest; the successful operational-world simulator apply does
+  not establish disposable-world rehearsal support for replies.
+
+Agent Memory and Slack summaries are not configured in this deployment yet (their
+services/code remain available). Planning and operational worlds now intentionally
+differ because the approved simulator apply ran; do not reset while a run is active.
 
 Render required a card despite the credit; the owner added it. The temporary empty
 Stripe form loaded after reloading Billing. The deployment uses a dedicated Google
