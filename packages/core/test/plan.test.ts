@@ -28,6 +28,41 @@ describe("planHash", () => {
   it("is sensitive to action order", () => {
     expect(planHash(manifest([patch, refund, note]))).not.toBe(planHash(manifest()));
   });
+
+  it("hashes a plan without a precedent basis exactly as before the field existed", () => {
+    // Pinned before `precedentBasis` was added: approvals of existing plans must stay valid.
+    const golden = "bb07408c6d8e0008a97fa97065c8b670b54d06f2f7a6e4b3fcd6044811b719aa";
+    expect(planHash(manifest())).toBe(golden);
+    expect(planHash({ ...manifest(), precedentBasis: undefined })).toBe(golden);
+  });
+
+  it("covers the precedent basis", () => {
+    const citation = {
+      id: "dup-charge-refund",
+      version: 2,
+      digest: "c".repeat(64),
+      appliesTo: "billing.duplicate_charge",
+      factIds: ["fact_1"],
+      traceId: "trace_1",
+    };
+    const basis = { citations: [citation], epochs: { "billing.duplicate_charge": 3 } };
+    const cited = planHash({ ...manifest(), precedentBasis: basis });
+    expect(cited).not.toBe(planHash(manifest()));
+    expect(
+      planHash({
+        ...manifest(),
+        precedentBasis: { ...basis, epochs: { "billing.duplicate_charge": 4 } },
+      }),
+    ).not.toBe(cited);
+    expect(
+      planHash({
+        ...manifest(),
+        precedentBasis: { ...basis, citations: [{ ...citation, version: 3 }] },
+      }),
+    ).not.toBe(cited);
+    // A citation without its area's epoch can't be approved at all.
+    expect(() => planHash({ ...manifest(), precedentBasis: { ...basis, epochs: {} } })).toThrow();
+  });
 });
 
 describe("dependency graph", () => {
