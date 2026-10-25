@@ -3,7 +3,6 @@ import { and, asc, desc, eq, gt } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { authorize, bearerToken, type IamClient, refuse, requirePerson } from "./iam";
-import { loadPlanById } from "./plans";
 
 const { runs, runEvents } = schema;
 
@@ -77,24 +76,28 @@ export function registerRunRoutes(app: FastifyInstance, deps: RunDeps) {
     };
   });
 
+  /**
+   * A plan's runs. There is no plan document to load: the org is the one on the stored run rows.
+   * No runs is an empty list. Runs that all belong to another org are missing.
+   */
   app.get<{ Params: { id: string } }>("/api/plans/:id/runs", async (req, reply) => {
     const token = bearerToken(req);
     if (!token) return reply.code(401).send({ error: "unauthenticated" });
-    const loaded = await loadPlanById(deps.db, req.params.id);
-    if (loaded.kind === "not_found") {
-      const person = await requirePerson(deps.iam, token);
-      if (!person.ok) return refuse(reply, person, "plan_not_found");
-      return reply.code(404).send({ error: "plan_not_found" });
-    }
-    const orgId = loaded.kind === "corrupt" ? loaded.orgId : loaded.plan.manifest.orgId;
-    const gate = await authorize(deps.iam, token, "GET /api/plans/:id/runs", { orgId });
-    if (!gate.ok) return refuse(reply, gate, "plan_not_found");
-    if (loaded.kind === "corrupt") return reply.code(500).send({ error: "stored_plan_invalid" });
+    const person = await requirePerson(deps.iam, token);
+    if (!person.ok) return refuse(reply, person, "plan_not_found");
+
     const rows = await deps.db
       .select()
       .from(runs)
-      .where(and(eq(runs.orgId, orgId), eq(runs.planId, req.params.id)))
+      .where(eq(runs.planId, req.params.id))
       .orderBy(desc(runs.createdAt));
-    return { runs: rows.map(runView) };
+    if (rows.length === 0) return { runs: [] };
+
+    const mine = rows.filter((row) => row.orgId === person.person.orgId);
+    const orgId = mine[0]?.orgId;
+    if (!orgId) return reply.code(404).send({ error: "plan_not_found" });
+    const gate = await authorize(deps.iam, token, "GET /api/plans/:id/runs", { orgId });
+    if (!gate.ok) return refuse(reply, gate, "plan_not_found");
+    return { runs: mine.map(runView) };
   });
 }

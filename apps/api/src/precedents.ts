@@ -10,7 +10,7 @@ import {
   schema,
 } from "@rehearsal/db";
 import { PrecedentId, PrecedentRecord, precedentDigest } from "@rehearsal/memory";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import {
@@ -59,20 +59,31 @@ export const PromoteRequest = z.strictObject({
 export const WithdrawRequest = z.strictObject({ version: z.int().positive() });
 
 /**
+ * This organization's stored copy of the precedent. The id is reused across organizations, so a
+ * row in some other org is not this one. The org sent to IAM is the one on the stored row.
+ */
+async function storedPrecedentOrg(
+  db: Db,
+  orgId: string,
+  precedentId: string,
+): Promise<string | null> {
+  const rows = await db
+    .select({ orgId: schema.precedentEvents.orgId })
+    .from(schema.precedentEvents)
+    .where(
+      and(
+        eq(schema.precedentEvents.orgId, orgId),
+        eq(schema.precedentEvents.precedentId, precedentId),
+      ),
+    );
+  return rows.find((row) => row.orgId === orgId)?.orgId ?? null;
+}
+
+/**
  * Promoting a case to a precedent (decision 0012). Finance only, from a completed run. It records
  * the approved version and queues its sync to Agent Memory in one transaction; the precedent is
  * "waiting" until the sync has read it back, and nothing plans from it before then.
  */
-/** The organization that stored this precedent, when exactly one has. */
-async function precedentOrg(db: Db, precedentId: string): Promise<string | null> {
-  const rows = await db
-    .select({ orgId: schema.precedentEvents.orgId })
-    .from(schema.precedentEvents)
-    .where(eq(schema.precedentEvents.precedentId, precedentId));
-  const orgs = [...new Set(rows.map((row) => row.orgId))];
-  return orgs.length === 1 ? (orgs[0] ?? null) : null;
-}
-
 export function registerPrecedentRoutes(app: FastifyInstance, deps: PrecedentDeps) {
   const now = () => deps.now?.() ?? new Date();
 
@@ -164,15 +175,13 @@ export function registerPrecedentRoutes(app: FastifyInstance, deps: PrecedentDep
   app.post<{ Params: { id: string } }>("/api/precedents/:id/withdraw", async (req, reply) => {
     const token = bearerToken(req);
     if (!token) return reply.code(401).send({ error: "unauthenticated" });
+    const person = await requirePerson(deps.iam, token);
+    if (!person.ok) return refuse(reply, person, "precedent_not_found");
     const body = WithdrawRequest.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: "invalid_request" });
     const id = req.params.id;
-    const orgId = await precedentOrg(deps.db, id);
-    if (!orgId) {
-      const person = await requirePerson(deps.iam, token);
-      if (!person.ok) return refuse(reply, person, "precedent_not_found");
-      return reply.code(404).send({ error: "precedent_not_found" });
-    }
+    const orgId = await storedPrecedentOrg(deps.db, person.person.orgId, id);
+    if (!orgId) return reply.code(404).send({ error: "precedent_not_found" });
     const gate = await authorize(deps.iam, token, "POST /api/precedents/:id/withdraw", { orgId });
     if (!gate.ok) return refuse(reply, gate, "precedent_not_found");
 
