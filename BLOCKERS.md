@@ -10,7 +10,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
-| **T4.13** Integrated isolation and recovery acceptance gate [#175](https://github.com/SoroushRF/Rehearsal/issues/175) | @skhdemo | 👀 in review | 2 |
+| **T4.13** Integrated isolation and recovery acceptance gate [#175](https://github.com/SoroushRF/Rehearsal/issues/175) | @skhdemo | 🟨 ready | 2 |
 | **T1.28** Run and publish versioned benchmark comparisons [#176](https://github.com/SoroushRF/Rehearsal/issues/176) | @SoroushRF | 🟥 blocked | 1 |
 
 ## T1 Rehearse
@@ -46,7 +46,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T1.25** Competent scripted benchmark baseline _(stretch)_ [#180](https://github.com/SoroushRF/Rehearsal/issues/180) | 🟨 ready | — |  |
 | **T1.26** Precedent reuse across different incidents _(stretch)_ [#181](https://github.com/SoroushRF/Rehearsal/issues/181) | 🟨 ready | — |  |
 | **T1.27** Extend the scorecard to the full operation set [#161](https://github.com/SoroushRF/Rehearsal/issues/161) | ✅ done |  | T1.25, T1.28 |
-| **T1.28** Run and publish versioned benchmark comparisons [#176](https://github.com/SoroushRF/Rehearsal/issues/176) | 🟥 blocked | T4.13 (T4, in review) | T2.7 (T2) |
+| **T1.28** Run and publish versioned benchmark comparisons [#176](https://github.com/SoroushRF/Rehearsal/issues/176) | 🟥 blocked | T4.13 (T4, ready) | T2.7 (T2) |
 | **T1.29** Plans carry a PrecedentBasis; the review page shows recalled precedents with their trace _(stretch)_ [#235](https://github.com/SoroushRF/Rehearsal/issues/235) | ✅ done |  |  |
 | **T1.30** Flag a plan that leaves out an eligible customer [#274](https://github.com/SoroushRF/Rehearsal/issues/274) | ✅ done |  |  |
 
@@ -134,7 +134,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T4.26** End-to-end authorization acceptance on a real Clerk session [#231](https://github.com/SoroushRF/Rehearsal/issues/231) | ✅ done |  |  |
 | **T4.11** Allowlisted rehearsal challenges and controls [#169](https://github.com/SoroushRF/Rehearsal/issues/169) | ✅ done |  | T3.16 (T3), T4.12 |
 | **T4.12** Independent verifier for observed rehearsal effects [#173](https://github.com/SoroushRF/Rehearsal/issues/173) | ✅ done |  | T2.21 (T2), T4.13 |
-| **T4.13** Integrated isolation and recovery acceptance gate [#175](https://github.com/SoroushRF/Rehearsal/issues/175) | 👀 in review [PR #320](https://github.com/SoroushRF/Rehearsal/pull/320) | — | T1.28 (T1) |
+| **T4.13** Integrated isolation and recovery acceptance gate [#175](https://github.com/SoroushRF/Rehearsal/issues/175) | 🟨 ready | — | T1.28 (T1) |
 | **T4.14** Held-out incident datasets and independent gold _(stretch)_ [#179](https://github.com/SoroushRF/Rehearsal/issues/179) | ✅ done |  | T1.25 (T1), T1.26 (T1) |
 | **T4.27** Note and reply guards check only the ticket fields they use [#273](https://github.com/SoroushRF/Rehearsal/issues/273) | ✅ done |  |  |
 
@@ -237,7 +237,7 @@ flowchart LR
     T4_26["T4.26 End-to-end authorization acceptance on a r"]:::done
     T4_11["T4.11 Allowlisted rehearsal challenges and contr"]:::done
     T4_12["T4.12 Independent verifier for observed rehearsa"]:::done
-    T4_13["T4.13 Integrated isolation and recovery acceptan"]:::review
+    T4_13["T4.13 Integrated isolation and recovery acceptan"]:::ready
     T4_27["T4.27 Note and reply guards check only the ticke"]:::done
   end
   T1_1 --> T1_2
