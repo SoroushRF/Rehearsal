@@ -177,3 +177,49 @@ describe("liveGrantsFor and approvalStatus", () => {
     expect(approvalStatus(flagged, HASH, [V1, V3], [fin, sup], AT).satisfied).toBe(true);
   });
 });
+
+describe("seats are judged on permissions (decision 0014)", () => {
+  const SUPPORT_STEP = "rehearsal:approve:support_step";
+  const FINANCE_STEP = "rehearsal:approve:finance_step";
+  const signed = (s: ReturnType<typeof dualApprovalStatus>) =>
+    s.signed.map((x) => [x.role, x.actorUserId]);
+
+  it("fills a seat from the permissions a grant recorded", () => {
+    const s = dualApprovalStatus([
+      grant("g1", "sup", ["support_lead"], { permissions: [SUPPORT_STEP] }),
+      grant("g2", "fin", ["finance_lead"], { permissions: [FINANCE_STEP] }),
+    ]);
+    expect(s.satisfied).toBe(true);
+    expect(signed(s)).toEqual([
+      ["support_lead", "sup"],
+      ["finance_lead", "fin"],
+    ]);
+  });
+
+  it("goes by the recorded permissions, not the roles beside them", () => {
+    const s = dualApprovalStatus([
+      grant("g1", "sup", ["support_lead", "finance_lead"], {
+        permissions: ["rehearsal:read:plan"],
+      }),
+      grant("g2", "fin", ["finance_lead"], { permissions: [FINANCE_STEP] }),
+    ]);
+    expect(s).toMatchObject({ satisfied: false, needed: ["support_lead"] });
+  });
+
+  it("reads a grant that only has roles as the permissions those roles signed with", () => {
+    const s = dualApprovalStatus([
+      grant("g1", "sup", ["support_lead"]),
+      grant("g2", "fin", ["finance_lead"], { permissions: [FINANCE_STEP] }),
+    ]);
+    expect(s.satisfied).toBe(true);
+  });
+
+  it("does not let one person fill both seats, old row or new", () => {
+    const both = [SUPPORT_STEP, FINANCE_STEP] as ApprovalGrant["permissions"];
+    const s = dualApprovalStatus([
+      grant("g1", "boss", ["support_lead", "finance_lead"]),
+      grant("g2", "boss", ["finance_lead"], { permissions: both, actorSessionId: "other" }),
+    ]);
+    expect(s.satisfied).toBe(false);
+  });
+});

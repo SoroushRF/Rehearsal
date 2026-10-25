@@ -1,9 +1,14 @@
 @import "@fontsource-variable/inter";
+@import "@fontsource-variable/fraunces";
+@import "@fontsource-variable/jetbrains-mono";
 @import "tailwindcss";
 
 /*
  * Design tokens. Components use only these semantic names (bg-surface, text-muted, border-line,
  * tone-ok, …), never raw palette colors, so light and dark stay consistent.
+ *
+ * Identity: warm paper, ink, and one lime used as a highlighter. In light the accent is a deep
+ * olive so text and buttons stay readable on paper; in dark the accent is the lime itself.
  *
  * Risk legend, used the same way everywhere:
  *   ok     reversible, safe            danger  irreversible, can't be taken back
@@ -11,56 +16,61 @@
  */
 :root {
   color-scheme: light;
-  --canvas: #f5f6f8;
-  --surface: #ffffff;
-  --sunken: #f0f2f5;
-  --line: #e2e5ea;
-  --line-strong: #c9ced7;
-  --ink: #0e1626;
-  --muted: #465065;
-  --subtle: #5f6b80;
-  --accent: #4338ca;
-  --accent-hover: #3730a3;
-  --accent-soft: #eceefe;
-  --on-accent: #ffffff;
-  --ok-solid: #1f9d55;
-  --warn-solid: #e5a00d;
-  --danger-solid: #d93a46;
-  --info-solid: #3b82d6;
+  --canvas: #f3eee3;
+  --surface: #fbf8f0;
+  --sunken: #ebe5d6;
+  --line: #ddd5c2;
+  --line-strong: #bdb299;
+  --ink: #17150f;
+  --muted: #484436;
+  --subtle: #5f594a;
+  --accent: #2f4408;
+  --accent-hover: #1f2f04;
+  --accent-soft: #e4ebb9;
+  --on-accent: #f7f4ea;
+  --lime: #c5f13a;
+  --on-lime: #17150f;
+  --stamp: #17150f;
+  --ok-solid: #2f8f3f;
+  --warn-solid: #d9930a;
+  --danger-solid: #c8372d;
+  --info-solid: #3b6fb0;
 
-  --ok-fg: #0a6b38;
-  --ok-bg: #e7f6ed;
-  --ok-line: #b3dfc4;
-  --warn-fg: #8a4a00;
-  --warn-bg: #fff3dc;
-  --warn-line: #f2d296;
-  --danger-fg: #b0202a;
-  --danger-bg: #fdebed;
-  --danger-line: #f5bec4;
-  --info-fg: #1b4e92;
-  --info-bg: #e8f0fc;
-  --info-line: #b9d1f2;
+  --ok-fg: #1d5a2a;
+  --ok-bg: #e1eed3;
+  --ok-line: #b2cf98;
+  --warn-fg: #7a4300;
+  --warn-bg: #fbebc4;
+  --warn-line: #e6c675;
+  --danger-fg: #a1241b;
+  --danger-bg: #f9e0d9;
+  --danger-line: #eab0a4;
+  --info-fg: #24497a;
+  --info-bg: #e0e8f1;
+  --info-line: #b1c4db;
 
-  --elev-card: 0 1px 2px rgb(14 22 38 / 0.05), 0 1px 1px rgb(14 22 38 / 0.03);
-  --elev-raised: 0 8px 24px rgb(14 22 38 / 0.1), 0 2px 6px rgb(14 22 38 / 0.06);
-  --ring: 0 0 0 3px rgb(67 56 202 / 0.35);
+  --elev-card: 0 1px 0 rgb(23 21 15 / 0.05), 0 1px 2px rgb(23 21 15 / 0.05);
+  --elev-raised: 0 10px 28px rgb(23 21 15 / 0.12), 0 2px 6px rgb(23 21 15 / 0.07);
+  --ring: 0 0 0 3px rgb(47 68 8 / 0.4);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
-    --canvas: #0a0e16;
-    --surface: #121827;
-    --sunken: #0d1320;
-    --line: #232c3e;
-    --line-strong: #34405a;
-    --ink: #e9edf5;
-    --muted: #b0b9ca;
-    --subtle: #8f9ab0;
-    --accent: #7c85f5;
-    --accent-hover: #939bff;
-    --accent-soft: #1b2142;
-    --on-accent: #0a0e16;
+    --canvas: #11120d;
+    --surface: #1a1c14;
+    --sunken: #151610;
+    --line: #2b2e21;
+    --line-strong: #444832;
+    --ink: #efeedd;
+    --muted: #c4c2ae;
+    --subtle: #a09e88;
+    --accent: #c5f13a;
+    --accent-hover: #d7f86b;
+    --accent-soft: #272f0d;
+    --on-accent: #11120d;
+    --lime: #c5f13a;
+    --on-lime: #11120d;
     --ok-solid: #3ecb82;
     --warn-solid: #f0b429;
     --danger-solid: #ff6b76;
@@ -81,13 +91,15 @@
 
     --elev-card: 0 1px 2px rgb(0 0 0 / 0.4);
     --elev-raised: 0 12px 32px rgb(0 0 0 / 0.55), 0 2px 6px rgb(0 0 0 / 0.4);
-    --ring: 0 0 0 3px rgb(124 133 245 / 0.45);
+    --ring: 0 0 0 3px rgb(197 241 58 / 0.45);
   }
 }
 
 @theme inline {
   --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+  --font-display: "Fraunces Variable", Georgia, "Times New Roman", serif;
+  --font-mono:
+    "JetBrains Mono Variable", ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
 
   --color-canvas: var(--canvas);
   --color-surface: var(--surface);
@@ -101,6 +113,8 @@
   --color-accent-hover: var(--accent-hover);
   --color-accent-soft: var(--accent-soft);
   --color-on-accent: var(--on-accent);
+  --color-lime: var(--lime);
+  --color-on-lime: var(--on-lime);
 
   --color-ok-solid: var(--ok-solid);
   --color-warn-solid: var(--warn-solid);
@@ -140,6 +154,14 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/* Page and section titles are set in the display serif; everything you act on stays in the sans. */
+h1,
+h2 {
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+  letter-spacing: -0.02em;
+}
+
 /* Money and counts line up in columns. */
 .tnum {
   font-variant-numeric: tabular-nums;
@@ -153,8 +175,222 @@ body {
 }
 
 ::selection {
-  background: var(--accent-soft);
+  background: var(--lime);
+  color: var(--on-lime);
+}
+
+/* ---------- Brand ---------- */
+
+/* The logo tile: a dark stamp with a lime flask; in dark mode the lime is the tile. */
+.brand-mark {
+  display: inline-flex;
+  height: 2rem;
+  width: 2rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.5rem;
+  background: var(--stamp);
+  color: var(--lime);
+  box-shadow: var(--elev-card);
+}
+@media (prefers-color-scheme: dark) {
+  .brand-mark,
+  .ledger-index {
+    background: var(--lime);
+    color: var(--on-lime);
+  }
+}
+.brand-name {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
   color: var(--ink);
+}
+
+/* A highlighter stroke behind a phrase. The text keeps ink on lime in both themes. */
+.mark {
+  background: linear-gradient(transparent 58%, var(--lime) 58% 92%, transparent 92%);
+  color: var(--ink);
+  padding: 0 0.12em;
+  margin: 0 -0.12em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+@media (prefers-color-scheme: dark) {
+  .mark {
+    background: none;
+    color: var(--lime);
+  }
+}
+
+/* Small mono caption used for section labels and ledger headings. */
+.workspace-label {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--subtle);
+}
+
+/* ---------- Review workspace: a ledger ---------- */
+
+.review-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  border-bottom: 2px solid var(--ink);
+  padding-bottom: 1rem;
+}
+.review-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.review-title h2 {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 1.875rem;
+  line-height: 1.15;
+  font-weight: 600;
+  color: var(--ink);
+}
+@media (min-width: 640px) {
+  .review-title h2 {
+    font-size: 2.5rem;
+  }
+}
+.review-context {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.25rem 1.5rem;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+.review-context p {
+  margin: 0;
+}
+
+/* Plan → Review → Apply, with the current step highlighted. */
+.review-stage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.review-stage li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  padding: 0.25rem 0.75rem 0.25rem 0.375rem;
+  color: var(--subtle);
+}
+.review-stage li[aria-current="step"] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--surface);
+}
+.stage-number {
+  display: inline-flex;
+  height: 1.25rem;
+  min-width: 1.25rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--sunken);
+  color: var(--muted);
+  font-size: 0.6875rem;
+}
+.review-stage li[aria-current="step"] .stage-number {
+  background: var(--lime);
+  color: var(--on-lime);
+}
+
+/* One customer's page of the ledger: a heavy top rule, a ruled head, then the steps. */
+.ledger-section {
+  border-radius: 0.75rem;
+  border-color: var(--line-strong);
+  border-top: 3px solid var(--ink);
+}
+.ledger-customer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  border-bottom: 1px dashed var(--line-strong);
+  background: var(--sunken);
+  padding: 0.875rem 0.75rem;
+}
+@media (min-width: 640px) {
+  .ledger-customer {
+    padding-inline: 1.25rem;
+  }
+}
+.ledger-customer .tnum {
+  font-family: var(--font-mono);
+  font-size: 1.0625rem;
+  letter-spacing: -0.02em;
+}
+.ledger-index {
+  display: inline-flex;
+  height: 1.75rem;
+  min-width: 1.75rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.375rem;
+  background: var(--stamp);
+  padding: 0 0.375rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--lime);
+}
+.ledger-row {
+  padding-block: 1rem;
+}
+.ledger-row[data-dropped="true"] {
+  background-image: repeating-linear-gradient(
+    135deg,
+    transparent 0 7px,
+    color-mix(in srgb, var(--line-strong) 35%, transparent) 7px 8px
+  );
+}
+
+/* The summary reads like the bottom line of a statement. */
+.ledger-summary {
+  border-radius: 0.75rem;
+  border-color: var(--line-strong);
+  border-top: 3px solid var(--lime);
+}
+.ledger-summary-amount {
+  margin: 0.25rem 0 0;
+  font-family: var(--font-display);
+  font-size: 2.25rem;
+  line-height: 1.1;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+.ledger-summary-note {
+  margin: 0.5rem 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  color: var(--muted);
 }
 
 @keyframes shimmer {

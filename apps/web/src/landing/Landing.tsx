@@ -62,7 +62,7 @@ function Header() {
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
         <a href="/" className="flex items-center gap-2.5">
           <Logo />
-          <span className="text-[17px] font-semibold tracking-tight text-ink">Rehearsal</span>
+          <span className="brand-name">Rehearsal</span>
         </a>
         <nav aria-label="Sections" className="hidden items-center gap-1 md:flex">
           {NAV.map((n) => (
@@ -85,7 +85,7 @@ function Header() {
 
 function Logo() {
   return (
-    <span className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-accent text-on-accent shadow-card">
+    <span className="brand-mark">
       <Icon name="flask" className="h-[18px] w-[18px]" />
     </span>
   );
@@ -135,7 +135,7 @@ function Heading({
 }) {
   return (
     <div className="max-w-2xl">
-      <p className="text-xs font-semibold tracking-wider text-accent uppercase">{eyebrow}</p>
+      <p className="workspace-label !text-accent">{eyebrow}</p>
       <h2
         id={id}
         className="mt-2 text-[28px] leading-9 font-semibold tracking-tight text-ink sm:text-4xl sm:leading-[2.75rem]"
@@ -153,7 +153,7 @@ function Hero() {
       {/* Soft color wash behind the headline; decorative only. */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(60rem_28rem_at_15%_-10%,var(--accent-soft),transparent_70%),radial-gradient(40rem_24rem_at_100%_10%,var(--info-bg),transparent_70%)]"
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(48rem_26rem_at_12%_-12%,var(--accent-soft),transparent_70%),repeating-linear-gradient(0deg,transparent_0_39px,color-mix(in_srgb,var(--line)_55%,transparent)_39px_40px)]"
       />
       <div className="relative mx-auto grid max-w-6xl items-center gap-12 px-4 py-16 sm:px-6 sm:py-24 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] lg:gap-16">
         <div>
@@ -166,7 +166,7 @@ function Hero() {
           >
             Terraform plan
             <br />
-            for <span className="text-accent">AI agents</span>.
+            for <span className="mark">AI agents</span>.
           </h1>
           <p className="mt-6 max-w-xl text-lg leading-8 text-muted">
             When an agent has to change real systems in bulk, it shouldn't touch them until a person

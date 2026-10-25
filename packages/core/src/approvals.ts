@@ -1,8 +1,26 @@
-import type { ApprovalGrant, PlanManifest, Role } from "@rehearsal/contracts";
+import type { ApprovalGrant, PermissionV1, PlanManifest, Role } from "@rehearsal/contracts";
 import { type BillingPolicy, evaluateBillingPolicy } from "./policy";
 
 /** The two seats a plan with dual approval needs filled, by two different people. */
 export const DUAL_SEATS = ["support_lead", "finance_lead"] as const satisfies readonly Role[];
+
+/** The permission that fills each seat (decision 0014); the seat names stay roles for callers. */
+export const SEAT_PERMISSION = {
+  support_lead: "rehearsal:approve:support_step",
+  finance_lead: "rehearsal:approve:finance_step",
+} as const satisfies Record<(typeof DUAL_SEATS)[number], PermissionV1>;
+
+/**
+ * What a grant lets its holder sign. A grant written under a rule file records its permissions and
+ * that is what counts. A grant from before that only has roles, and each role is the permission
+ * that signed its seat, so it keeps its meaning (the Clerk mapping gives a finance lead both).
+ */
+export function seatPermissionsHeld(grant: ApprovalGrant): readonly PermissionV1[] {
+  if (grant.permissions) return grant.permissions;
+  return grant.roles.flatMap((role) =>
+    role === "support_lead" || role === "finance_lead" ? [SEAT_PERMISSION[role]] : [],
+  );
+}
 
 export interface ApprovalStatus {
   /** Policy asks for two distinct approvers on this plan. */
@@ -46,17 +64,23 @@ export function liveGrantsFor(
 }
 
 /**
- * Fills the two seats from live grants. A grant fills a seat only if it holds that role, and the
- * two seats need different users: one person with both roles fills one. When several pairs work,
+ * The one place that decides "two different people": the API, the apply request and executor
+ * admission all call it. It fills the two seats from live grants. A grant fills a seat only if it
+ * holds that seat's permission, and the two seats need different users: one person holding both
+ * fills one. The judgement is on permissions, so it agrees with the `seats` rule IAM evaluates
+ * for `run:admit` (a test holds the two together). When several pairs work,
  * grants holding fewer roles are used first and then the older one, so the answer is stable.
  * Pass grants already filtered with `liveGrantsFor`.
  */
 export function dualApprovalStatus(live: readonly ApprovalGrant[]): ApprovalStatus {
+  const seatsHeld = (g: ApprovalGrant) =>
+    DUAL_SEATS.filter((role) => seatPermissionsHeld(g).includes(SEAT_PERMISSION[role])).length;
   const order = (a: ApprovalGrant, b: ApprovalGrant) =>
-    a.roles.length - b.roles.length ||
+    seatsHeld(a) - seatsHeld(b) ||
     Date.parse(a.grantedAt) - Date.parse(b.grantedAt) ||
     a.id.localeCompare(b.id);
-  const holding = (role: Role) => live.filter((g) => g.roles.includes(role)).sort(order);
+  const holding = (role: Role) =>
+    live.filter((g) => seatPermissionsHeld(g).includes(SEAT_PERMISSION[role])).sort(order);
   const support = holding("support_lead");
   const finance = holding("finance_lead");
   const seat = (role: Role, g: ApprovalGrant) => ({

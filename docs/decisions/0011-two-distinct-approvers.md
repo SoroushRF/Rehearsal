@@ -25,3 +25,12 @@
 - Moving the planner to v3 is a separate, deliberate change: then every large refund in the demo takes two sign-ins.
 - The refusal matrix grows: one person holding both roles, two people with the same role, a missing seat, a revoked or expired seat, and a stale hash.
 - Clerk's fresh-verification step (T2.23) builds on this and stays separate.
+
+## Amendment, 2026-10-25 (T2, reconciling with 0014)
+
+[0014](0014-iam-permission-based-authorization.md) names the two seats as permissions (`rehearsal:approve:support_step`, `rehearsal:approve:finance_step`), not roles, and has IAM judge `run:admit` with a `seats` rule. Two judges would drift, so:
+
+- `dualApprovalStatus` in `@rehearsal/core` is still the one function the API, the apply request and the executor call, and it now judges seats on permissions. A grant that recorded `permissions` counts by those; a grant from before that has only `roles`, and each role is the permission that signed its seat. The Clerk mapping gives a finance lead both roles, so no old grant changes meaning. It still reports seats as `support_lead` / `finance_lead`, so the API response and the approver-seats UI are unchanged.
+- `packages/core/test/approvals-iam.test.ts` runs the T2.13 refusal matrix (one person holding both seats, the same seat twice, a missing, revoked, expired or future-dated seat, a stale hash or revision, another organization, recorded permissions over roles, old rows beside new ones) through both this function and the `run:admit` rule in `scenarios/authz/rehearsal-authz.v1.json`, and they must agree.
+- T2.23 (fresh verification) builds on the permission-based `approvalStatus`, not on roles.
+- Still open, and T4.21's to decide: whether an old row with only `roles` stays readable once approvals write `permissions` (0014 point 7).

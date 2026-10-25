@@ -58,6 +58,7 @@ See [beyond.md](../beyond.md) for scope, parallel work, external gates and the r
 | T2.22 | _Beyond:_ Operator task tests and findings | M5 | Two outside operators complete observed tasks; findings and limits are recorded | [#177](https://github.com/SoroushRF/Rehearsal/issues/177) | [T2.5](https://github.com/SoroushRF/Rehearsal/issues/14), [T2.6](https://github.com/SoroushRF/Rehearsal/issues/15) |
 | T2.23 | _Stretch:_ _Killer:_ Server-side fresh verification bound to the plan | M5 | Fresh verified session authorizes only one exact approval intent | [#182](https://github.com/SoroushRF/Rehearsal/issues/182) | [T2.13](https://github.com/SoroushRF/Rehearsal/issues/135), [T2.4](https://github.com/SoroushRF/Rehearsal/issues/13) |
 | T2.24 | _Stretch:_ _Killer:_ Clerk verification UI | M5 | Real verification UI preserves reviewed intent through cancel/stale/retry paths | [#183](https://github.com/SoroushRF/Rehearsal/issues/183) | [T2.23](https://github.com/SoroushRF/Rehearsal/issues/182), [T2.3](https://github.com/SoroushRF/Rehearsal/issues/12) |
+| T2.25 | Distinctive startup demo design for the landing page and the review workspace | M5 | Paper/ink/lime identity, display type and a ledger-style review; fixture/saved/simulator labels, exact-hash approval and message text unchanged; no horizontal overflow, axe clean in light and dark. **Done:** tokens, fonts and ledger layout in `apps/web` only. | [#244](https://github.com/SoroushRF/Rehearsal/issues/244) | |
 
 ## Decisions
 
@@ -67,6 +68,7 @@ _(add dated entries)_
 
 ## Handoff log
 
+- **2026-10-25, Parsa (T2.25 design, #236 reconcile, #235 fact IDs).** Branch `t2/open-issues-244-238-236-235`. T2.25: warm paper/ink/lime tokens, Fraunces display and JetBrains Mono, a `.brand-mark` tile and the ledger classes `PlanReview` already used but nothing defined (`ledger-*`, `review-*`, `workspace-label`); `apps/web` only, e2e and axe pass under Chrome (`PW_CHANNEL=chrome`). #236: `dualApprovalStatus` judges seats on permissions and a test holds it to IAM's `run:admit` rule (see the 0011 amendment). #235: the precedent card now lists fact IDs; contracts and planner were already merged. #238 needs the live stack; see the issue.
 - **2026-10-24 (Codex, backlog planning):** Filed 6 owned M5 issues (T2.19 #171, T2.20 #172, T2.21 #174, T2.22 #177, T2.23 #182, T2.24 #183) with scope/track labels, acceptance criteria and linked blockers. Added the cross-track dependency map in [beyond.md](../beyond.md); native GitHub dependencies mirror these rows. No feature implementation or live validation is claimed. Next: finish the full prerequisites, then follow the graph; optional killer work stays off the main release path.
 
 _(newest first: date, who, state, open PRs or branches, next step, gotchas)_
