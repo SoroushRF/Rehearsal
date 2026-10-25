@@ -12,7 +12,14 @@ import {
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
 import incident from "../../../scenarios/billing/incident.v1.json" with { type: "json" };
-import type { ReviewerResolver } from "./auth";
+import {
+  authorize,
+  authorizeCollection,
+  bearerToken,
+  type IamClient,
+  refuse,
+  requirePerson,
+} from "./iam";
 import { loadPlan, storePlan } from "./plans";
 import { workerRole } from "./tenant-tokens";
 
@@ -26,7 +33,7 @@ import { workerRole } from "./tenant-tokens";
 export interface RehearseDeps {
   db: Db;
   boss: PgBoss;
-  reviewer: ReviewerResolver;
+  iam?: IamClient;
   /** PLANNER_WORKER_SECRET. Without it the internal planner routes refuse everyone. */
   plannerSecret?: string;
   /**
@@ -65,19 +72,23 @@ const STATE = {
 
 export function registerRehearseRoutes(app: FastifyInstance, deps: RehearseDeps) {
   app.post<{ Params: { id: string } }>("/api/incidents/:id/rehearse", async (req, reply) => {
-    const reviewer = await deps.reviewer(req);
-    if (!reviewer) return reply.code(401).send({ error: "unauthenticated" });
-    // Rehearsing spends model tokens; only someone who could approve a plan may ask for one.
-    if (reviewer.roles.length === 0) return reply.code(403).send({ error: "forbidden" });
+    // The incident catalog is not stored per organization. The job is created in the org IAM
+    // verified, and the permission check is what stops a member from spending model tokens.
+    const gate = await authorizeCollection(
+      deps.iam,
+      bearerToken(req),
+      "POST /api/incidents/:id/rehearse",
+    );
+    if (!gate.ok) return refuse(reply, gate, "incident_not_found");
     if (!INCIDENTS.has(req.params.id)) return reply.code(404).send({ error: "incident_not_found" });
 
     const job: PlanJob = {
-      orgId: reviewer.orgId,
+      orgId: gate.person.orgId,
       incidentId: req.params.id,
       planId: `plan_${randomUUID()}`,
-      requestedBy: reviewer.userId,
+      requestedBy: gate.person.userId,
       ...(deps.precedentRegistry && {
-        precedents: registryForJob(await deps.precedentRegistry(reviewer.orgId)),
+        precedents: registryForJob(await deps.precedentRegistry(gate.person.orgId)),
       }),
     };
     const jobId = await deps.boss.send(PLAN_QUEUE, PlanJob.parse(job));
@@ -86,13 +97,18 @@ export function registerRehearseRoutes(app: FastifyInstance, deps: RehearseDeps)
   });
 
   app.get<{ Params: { id: string } }>("/api/rehearsals/:id", async (req, reply) => {
-    const reviewer = await deps.reviewer(req);
-    if (!reviewer) return reply.code(401).send({ error: "unauthenticated" });
+    const token = bearerToken(req);
+    if (!token) return reply.code(401).send({ error: "unauthenticated" });
     const found = await loadJob(deps, req.params.id);
-    // Another org's rehearsal is indistinguishable from a missing one.
-    if (!found || found.data.orgId !== reviewer.orgId) {
+    if (!found) {
+      const person = await requirePerson(deps.iam, token);
+      if (!person.ok) return refuse(reply, person, "rehearsal_not_found");
       return reply.code(404).send({ error: "rehearsal_not_found" });
     }
+    const gate = await authorize(deps.iam, token, "GET /api/rehearsals/:id", {
+      orgId: found.data.orgId,
+    });
+    if (!gate.ok) return refuse(reply, gate, "rehearsal_not_found");
     const output = (found.job.output ?? {}) as Record<string, unknown>;
     const state = STATE[found.job.state];
     return {
