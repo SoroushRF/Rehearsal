@@ -187,7 +187,7 @@ export type RehearsalStepReport = z.infer<typeof RehearsalStepReport>;
 /**
  * `passed` only when every step was verified as expected and none is still unknown; `failed` only
  * when a step was verified as not what the scenario expects. Anything else is `unknown`: a step left
- * unknown at the end never reads as passed (decision 0013, §5).
+ * unknown at the end, or one with no recorded result, never reads as passed (decision 0013, §5).
  */
 export const RehearsalVerdict = z.enum(["passed", "failed", "unknown"]);
 
@@ -236,8 +236,12 @@ export const ExecutionRehearsalReport = z
         });
       }
     }
+    // A step with no recorded result never ran, so nothing about it can count as verified.
     const unknown = report.steps.some(
-      (s) => s.result?.outcome === "unknown_outcome" || s.verification.status === "unverified",
+      (s) =>
+        s.result === null ||
+        s.result.outcome === "unknown_outcome" ||
+        s.verification.status === "unverified",
     );
     const allMatched =
       report.state === "completed" &&
