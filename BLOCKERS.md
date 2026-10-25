@@ -6,11 +6,11 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 
 ## Top blockers
 
-79 of 97 tasks done. These open tasks hold up the most other work:
+80 of 97 tasks done. These open tasks hold up the most other work:
 
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
-| **T4.11** Allowlisted rehearsal challenges and controls [#169](https://github.com/SoroushRF/Rehearsal/issues/169) | @skhdemo | 🟨 ready | 6 |
+| **T4.11** Allowlisted rehearsal challenges and controls [#169](https://github.com/SoroushRF/Rehearsal/issues/169) | @skhdemo | 👀 in review | 6 |
 | **T4.12** Independent verifier for observed rehearsal effects [#173](https://github.com/SoroushRF/Rehearsal/issues/173) | @skhdemo | 🟥 blocked | 4 |
 | **T2.20** Review UI: start a rehearsal and follow its progress [#172](https://github.com/SoroushRF/Rehearsal/issues/172) | @parsaabbasian | 🟨 ready | 3 |
 | **T2.21** Review UI: compare expected and observed rehearsal outcomes [#174](https://github.com/SoroushRF/Rehearsal/issues/174) | @parsaabbasian | 🟥 blocked | 3 |
@@ -66,7 +66,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T2.4** Approvals endpoint: hash-bound grant and refusal test matrix [#13](https://github.com/SoroushRF/Rehearsal/issues/13) | ✅ done |  | T2.8, T2.23 |
 | **T2.5** Deploy thin slice and prove cloud workers reach the simulators [#14](https://github.com/SoroushRF/Rehearsal/issues/14) | 🟨 ready | — | T2.7, T2.22 |
 | **T2.6** Run timeline, receipts and held-step views (polling GET /api/runs/:id/events) [#15](https://github.com/SoroushRF/Rehearsal/issues/15) | ✅ done |  | T2.7, T2.22 |
-| **T2.7** Two-minute video script, recording, Devpost page [#16](https://github.com/SoroushRF/Rehearsal/issues/16) | 🟥 blocked | T2.5 (T2, ready)<br>T1.28 (T1, blocked) |  |
+| **T2.7** Two-minute video script, recording, Devpost page [#16](https://github.com/SoroushRF/Rehearsal/issues/16) | 👀 in review [PR #301](https://github.com/SoroushRF/Rehearsal/pull/301) | T2.5 (T2, ready)<br>T1.28 (T1, blocked) |  |
 | **T2.8** Thin Expo approver app on the same API _(stretch)_ [#17](https://github.com/SoroushRF/Rehearsal/issues/17) | 🟨 ready | — |  |
 | **T2.9** Decide currency: align policy.v1.json with the Era seed (USD vs CAD) [#40](https://github.com/SoroushRF/Rehearsal/issues/40) | ✅ done |  | T1.5 (T1) |
 | **T2.10** Rehearse button: start a plan from the review page and follow it [#116](https://github.com/SoroushRF/Rehearsal/issues/116) | ✅ done |  |  |
@@ -106,9 +106,9 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T3.13** Separate rehearsal persistence and durable jobs [#164](https://github.com/SoroushRF/Rehearsal/issues/164) | ✅ done |  | T2.19 (T2), T3.15 |
 | **T3.14** Share deterministic execution mechanics while preserving admission boundaries [#165](https://github.com/SoroushRF/Rehearsal/issues/165) | ✅ done |  | T3.15 |
 | **T3.15** Execute a stored plan against disposable worlds [#168](https://github.com/SoroushRF/Rehearsal/issues/168) | ✅ done |  | T3.16, T4.12 (T4) |
-| **T3.16** Rehearsal worker: restart, cancellation, and cleanup [#170](https://github.com/SoroushRF/Rehearsal/issues/170) | 🟥 blocked | T4.11 (T4, ready) | T4.13 (T4) |
+| **T3.16** Rehearsal worker: restart, cancellation, and cleanup [#170](https://github.com/SoroushRF/Rehearsal/issues/170) | 🟥 blocked | T4.11 (T4, in review) | T4.13 (T4) |
 | **T3.17** Native Stripe sandbox refund writer _(stretch)_ [#184](https://github.com/SoroushRF/Rehearsal/issues/184) | ✅ done |  | T3.18 |
-| **T3.18** Native Stripe executor recovery gate _(stretch)_ [#185](https://github.com/SoroushRF/Rehearsal/issues/185) | 🟨 ready | — |  |
+| **T3.18** Native Stripe executor recovery gate _(stretch)_ [#185](https://github.com/SoroushRF/Rehearsal/issues/185) | ✅ done |  |  |
 
 ## T4 Guard
 
@@ -134,10 +134,10 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T4.22** Executor admission as enforcement point: `run:admit` through IAM, fail closed [#227](https://github.com/SoroushRF/Rehearsal/issues/227) | ✅ done |  | T4.26 |
 | **T4.23** Invites and role changes through our API [#228](https://github.com/SoroushRF/Rehearsal/issues/228) | ✅ done |  | T4.24, T4.26 |
 | **T4.24** Web: verified permissions, actions shown by permission, invite UI [#229](https://github.com/SoroushRF/Rehearsal/issues/229) | ✅ done |  | T4.26 |
-| **T4.25** Clerk configuration and demo organization [#230](https://github.com/SoroushRF/Rehearsal/issues/230) | 🟨 ready | — | T4.26 |
-| **T4.26** End-to-end authorization acceptance on a real Clerk session [#231](https://github.com/SoroushRF/Rehearsal/issues/231) | 🟥 blocked | T4.25 (T4, ready) |  |
-| **T4.11** Allowlisted rehearsal challenges and controls [#169](https://github.com/SoroushRF/Rehearsal/issues/169) | 🟨 ready | — | T3.16 (T3), T4.12 |
-| **T4.12** Independent verifier for observed rehearsal effects [#173](https://github.com/SoroushRF/Rehearsal/issues/173) | 🟥 blocked | T4.11 (T4, ready) | T2.21 (T2), T4.13 |
+| **T4.25** Clerk configuration and demo organization [#230](https://github.com/SoroushRF/Rehearsal/issues/230) | 👀 in review [PR #304](https://github.com/SoroushRF/Rehearsal/pull/304) | — | T4.26 |
+| **T4.26** End-to-end authorization acceptance on a real Clerk session [#231](https://github.com/SoroushRF/Rehearsal/issues/231) | 🟥 blocked | T4.25 (T4, in review) |  |
+| **T4.11** Allowlisted rehearsal challenges and controls [#169](https://github.com/SoroushRF/Rehearsal/issues/169) | 👀 in review [PR #302](https://github.com/SoroushRF/Rehearsal/pull/302) | — | T3.16 (T3), T4.12 |
+| **T4.12** Independent verifier for observed rehearsal effects [#173](https://github.com/SoroushRF/Rehearsal/issues/173) | 🟥 blocked | T4.11 (T4, in review) | T2.21 (T2), T4.13 |
 | **T4.13** Integrated isolation and recovery acceptance gate [#175](https://github.com/SoroushRF/Rehearsal/issues/175) | 🟥 blocked | T3.16 (T3, blocked)<br>T2.20 (T2, ready)<br>T2.21 (T2, blocked)<br>T4.12 (T4, blocked) | T1.28 (T1) |
 | **T4.14** Held-out incident datasets and independent gold _(stretch)_ [#179](https://github.com/SoroushRF/Rehearsal/issues/179) | ✅ done |  | T1.25 (T1), T1.26 (T1) |
 | **T4.27** Note and reply guards check only the ticket fields they use [#273](https://github.com/SoroushRF/Rehearsal/issues/273) | ✅ done |  |  |
@@ -187,7 +187,7 @@ flowchart LR
     T2_4["T2.4 Approvals endpoint: hash-bound grant and re"]:::done
     T2_5["T2.5 Deploy thin slice and prove cloud workers r"]:::ready
     T2_6["T2.6 Run timeline, receipts and held-step views "]:::done
-    T2_7["T2.7 Two-minute video script, recording, Devpost"]:::blocked
+    T2_7["T2.7 Two-minute video script, recording, Devpost"]:::review
     T2_9["T2.9 Decide currency: align policy.v1.json with "]:::done
     T2_10["T2.10 Rehearse button: start a plan from the rev"]:::done
     T2_11["T2.11 Saved run replay that opens without signin"]:::done
@@ -237,9 +237,9 @@ flowchart LR
     T4_22["T4.22 Executor admission as enforcement point: `"]:::done
     T4_23["T4.23 Invites and role changes through our API"]:::done
     T4_24["T4.24 Web: verified permissions, actions shown b"]:::done
-    T4_25["T4.25 Clerk configuration and demo organization"]:::ready
+    T4_25["T4.25 Clerk configuration and demo organization"]:::review
     T4_26["T4.26 End-to-end authorization acceptance on a r"]:::blocked
-    T4_11["T4.11 Allowlisted rehearsal challenges and contr"]:::ready
+    T4_11["T4.11 Allowlisted rehearsal challenges and contr"]:::review
     T4_12["T4.12 Independent verifier for observed rehearsa"]:::blocked
     T4_13["T4.13 Integrated isolation and recovery acceptan"]:::blocked
     T4_27["T4.27 Note and reply guards check only the ticke"]:::done
