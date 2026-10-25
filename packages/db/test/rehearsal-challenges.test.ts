@@ -51,10 +51,10 @@ describe.skipIf(!process.env.DB_TESTS)("challenged rehearsals (T3.16, real Postg
     await db.$client.end();
   });
 
-  async function requested(scenario: RehearsalScenarioId) {
+  async function requested(scenario: RehearsalScenarioId, over: Partial<PlanManifest> = {}) {
     const orgId = `org_${randomUUID()}`;
     const planId = `plan_${randomUUID()}`;
-    const manifest: PlanManifest = { ...happyPathBundle().manifest, orgId, planId };
+    const manifest: PlanManifest = { ...happyPathBundle().manifest, ...over, orgId, planId };
     const hash = planHash(manifest);
     await db
       .insert(schema.planVersions)
@@ -195,6 +195,35 @@ describe.skipIf(!process.env.DB_TESTS)("challenged rehearsals (T3.16, real Postg
       expect({ actionId, got }).toEqual({ actionId, got: expected });
     }
   }
+
+  it("a precedent the plan cites that isn't in this org's registry refuses the run, naming it", async () => {
+    const area = "billing.duplicate_charge";
+    const r = await requested("clean", {
+      precedentBasis: {
+        citations: [
+          {
+            id: "dup-refund",
+            version: 1,
+            digest: "d".repeat(64),
+            appliesTo: area,
+            factIds: ["f_1"],
+            traceId: "t_1",
+          },
+        ],
+        epochs: { [area]: 0 },
+      },
+    });
+    const world = worldFromManifest(r.manifest.observations);
+    const result = await runRehearsalJob(r.data, context(r, world, "clean").ctx);
+    expect(result).toMatchObject({ kind: "ran", state: "failed" });
+    const stored = await loadRehearsal(db, r.orgId, r.id);
+    expect(stored?.state).toBe("failed");
+    expect(stored?.events.map((e) => e.detail).join(" | ")).toMatch(
+      /precedent changed since planning: dup-refund v1 is withdrawn/,
+    );
+    expect(world.effects).toEqual([]);
+    await operationalUntouched(r.orgId);
+  });
 
   it("clean is unchanged: every step confirms, no mark, no operator call", async () => {
     const { r, report, c, result } = await ran("clean");

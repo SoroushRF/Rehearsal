@@ -9,6 +9,7 @@ import {
   rehearsalWorkerConfigViolations,
   runContext,
   sweepContext,
+  sweepTimings,
   workerVersions,
 } from "./worker";
 
@@ -45,9 +46,8 @@ await workRehearsalQueue(
 );
 
 // A rehearsal with no event for this long has lost its worker; it is failed, never resumed.
-const SWEEP_EVERY_MS = 60_000;
-const LEASE_MS = 15 * 60_000;
-const HAND_OFF_AFTER_MS = 60 * 60_000;
+// Overridable for a recovery drill (the T4.13 gate kills a worker and waits for the sweep).
+const { SWEEP_EVERY_MS, LEASE_MS, HAND_OFF_AFTER_MS } = sweepTimings(process.env);
 let sweeping: Promise<void> = Promise.resolve();
 const sweeper = setInterval(() => {
   sweeping = (async () => {

@@ -111,6 +111,7 @@ export function buildApp(
     app.get("/api/plans/:id/execution-rehearsals", unavailable);
     app.post("/api/plans/:id/execution-rehearsals", unavailable);
     app.get("/api/execution-rehearsals/:id/report", unavailable);
+    app.post("/api/execution-rehearsals/:id/cancel", unavailable);
   }
 
   // Only an API that holds ERA_ADMIN_TOKEN mints tenant tokens for the workers.

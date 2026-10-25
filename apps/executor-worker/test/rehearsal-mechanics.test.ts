@@ -6,7 +6,9 @@ import {
   executeRun,
   type ProviderPort,
   planHash,
+  type RegistrySnapshot,
   type RehearsalExecutorDeps,
+  reconcileRehearsal,
   rehearsalJournalHash,
   rehearsalTenant,
 } from "@rehearsal/core";
@@ -352,5 +354,86 @@ describe("shared execution mechanics, separate admission (T3.14)", () => {
     expect(patchAttempts.length).toBeGreaterThan(1); // the forward patch and its undo
     expect(patchAttempts.every((a) => a.operationKey.startsWith(`rh_${RID}_op_`))).toBe(true);
     expect(r.world.tickets.get("5531")?.priority).toBe("normal");
+  });
+});
+
+/** T4.13 G3: a precedent withdrawn after planning refuses the rehearsal, as it refuses apply. */
+describe("precedent citations at rehearsal admission", () => {
+  const AREA = "billing.duplicate_charge";
+  const digest = "d".repeat(64);
+  const basis = {
+    citations: [
+      { id: "dup-refund", version: 2, digest, appliesTo: AREA, factIds: ["f_1"], traceId: "t_1" },
+    ],
+    epochs: { [AREA]: 3 },
+  };
+  const inForce: RegistrySnapshot = {
+    active: new Map([["dup-refund", { version: 2, digest }]]),
+    epochs: new Map([[AREA, 3]]),
+  };
+  const withdrawn: RegistrySnapshot = { active: new Map(), epochs: new Map([[AREA, 3]]) };
+
+  /** The stored plan now cites `dup-refund` v2; the job names its hash. */
+  function citing(registry?: RegistrySnapshot) {
+    const s = setup();
+    const manifest = { ...s.manifest, precedentBasis: basis };
+    const hash = planHash(manifest);
+    s.store.plans.set(`${manifest.planId}@1`, { planHash: hash, manifest });
+    const r = s.rehearsal();
+    if (registry) r.deps.precedents = { snapshot: async () => registry };
+    const job = {
+      orgId: manifest.orgId,
+      rehearsalId: RID,
+      planId: manifest.planId,
+      revision: 1,
+      planHash: hash,
+    };
+    return { ...s, r, job };
+  }
+
+  it("rehearses a plan whose cited precedent is still in force", async () => {
+    const { r, job } = citing(inForce);
+    expect((await executeRehearsal(job, r.deps)).state).toBe("completed");
+  });
+
+  it("refuses one whose precedent was withdrawn, naming it, and sends nothing", async () => {
+    const { r, job } = citing(withdrawn);
+    const out = await executeRehearsal(job, r.deps);
+    expect(out.state).toBe("failed");
+    expect(out.refusal).toMatch(
+      /precedent changed since planning: dup-refund v2 is withdrawn \(none in force\)/,
+    );
+    expect(r.world.effects).toEqual([]);
+    expect(r.journal.attempts.size).toBe(0);
+  });
+
+  it("refuses one that cites precedents when no registry is configured", async () => {
+    const { r, job } = citing();
+    expect((await executeRehearsal(job, r.deps)).refusal).toMatch(/no precedent registry/);
+  });
+
+  it("still reads back a lost send after the precedent is withdrawn (read-only pass)", async () => {
+    const { r, job } = citing(inForce);
+    r.deps.retry = { maxAttempts: 1 };
+    const stripe = r.deps.providers.stripe;
+    let lose = true;
+    r.deps.providers.stripe = {
+      ...stripe,
+      dispatch: async (req, ctx) => {
+        const res = await stripe.dispatch(req, ctx);
+        if (!lose) return res;
+        lose = false;
+        return { kind: "unknown", error: "response lost (injected)" };
+      },
+    };
+    expect(outcomes((await executeRehearsal(job, r.deps)).receipts).refund_001).toBe(
+      "unknown_outcome",
+    );
+    const effects = r.world.effects.length;
+    r.deps.precedents = { snapshot: async () => withdrawn };
+    const pass = await reconcileRehearsal(job, r.deps);
+    expect(pass.refusal ?? null).toBeNull();
+    expect(outcomes(pass.receipts).refund_001).toBe("confirmed");
+    expect(r.world.effects.length).toBe(effects);
   });
 });

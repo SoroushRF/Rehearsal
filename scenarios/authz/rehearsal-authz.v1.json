@@ -90,6 +90,11 @@
       "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
     },
     {
+      "action": "POST /api/execution-rehearsals/:id/cancel",
+      "rbac": { "anyOf": ["rehearsal:rehearse:incident"] },
+      "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
+    },
+    {
       "action": "GET /api/precedents",
       "rbac": { "anyOf": ["rehearsal:read:precedent"] },
       "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]

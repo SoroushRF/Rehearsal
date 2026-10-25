@@ -7,6 +7,7 @@ import type {
 } from "@rehearsal/contracts";
 import { type BillingPolicy, planHash, VERIFIER_VERSION } from "@rehearsal/core";
 import {
+  cancelRehearsal,
   createDb,
   listRehearsalStepResults,
   loadRehearsal,
@@ -275,6 +276,48 @@ describe.skipIf(!REHEARSAL_ENABLED || !process.env.DB_TESTS)(
         expect((await loadRehearsal(db, manifest.orgId, id))?.tornDown).toBe(true);
       }, 90_000);
     }
+
+    it("cancelled mid-run on Era: what was sent is read back, nothing new is sent, the report says so", async () => {
+      const manifest = manifestFor(`org_${randomUUID()}`, `plan_${randomUUID()}`);
+      const { id, data } = await requested(manifest);
+      const ctx = runContext(id, config());
+      const stripe = ctx.providers.stripe;
+      if (!stripe) throw new Error("no stripe provider");
+      const sent: string[] = [];
+      // A reviewer cancels the moment the first write has gone out.
+      ctx.providers.stripe = {
+        ...stripe,
+        dispatch: async (req, world) => {
+          const res = await stripe.dispatch(req, world);
+          sent.push(`stripe ${req.method} ${req.path}`);
+          await cancelRehearsal(db, manifest.orgId, id, { now: new Date() });
+          return res;
+        },
+      };
+      const zendesk = ctx.providers.zendesk;
+      if (!zendesk) throw new Error("no zendesk provider");
+      ctx.providers.zendesk = {
+        ...zendesk,
+        dispatch: async (req, world) => {
+          sent.push(`zendesk ${req.method} ${req.path}`);
+          return zendesk.dispatch(req, world);
+        },
+      };
+      const result = await runRehearsalJob(data, ctx);
+      expect(result).toMatchObject({ kind: "ran", state: "cancelled" });
+      const report = result.kind === "ran" ? result.report : null;
+      if (!report) throw new Error("no report");
+      // The refund went out; the ticket patch and the note never did.
+      expect(sent).toEqual(["stripe POST /v1/refunds"]);
+      const steps = Object.fromEntries(report.steps.map((x) => [x.actionId, x]));
+      expect(steps.refund_001?.result?.outcome).toBe("confirmed");
+      expect(steps.refund_001?.verification.status).toBe("matched");
+      expect(steps.patch_001?.result).toBeNull();
+      expect(steps.note_001?.result).toBeNull();
+      expect(report.state).toBe("cancelled");
+      expect(report.verdict).not.toBe("passed");
+      expect((await loadRehearsal(db, manifest.orgId, id))?.tornDown).toBe(true);
+    }, 90_000);
 
     it("lost_response_restart on Era: the refund commits once, the restart reads it back", async () => {
       const manifest = manifestFor(`org_${randomUUID()}`, `plan_${randomUUID()}`);
