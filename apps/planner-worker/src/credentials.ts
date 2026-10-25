@@ -1,3 +1,4 @@
+import { IAM_CLIENT_ENV, IAM_SERVER_ENV } from "@rehearsal/iam/boot";
 import { REHEARSAL_CREDENTIALS } from "@rehearsal/providers";
 
 /**
@@ -14,6 +15,10 @@ export const PLANNER_FORBIDDEN = [
   "ERA_ADMIN_TOKEN",
   "EXECUTOR_WORKER_SECRET",
   "DATABASE_URL",
+  // The Clerk secret and the IAM client certificate stay with IAM, the API and the executor.
+  "CLERK_SECRET_KEY",
+  ...IAM_CLIENT_ENV,
+  ...IAM_SERVER_ENV,
   // Execution rehearsal (decision 0013): its admin token, worker secret and worlds.
   ...REHEARSAL_CREDENTIALS,
 ] as const;

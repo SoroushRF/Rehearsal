@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { connect } from "node:net";
 import { resolve } from "node:path";
 import { parseEnv } from "node:util";
+import { generateDevCerts } from "../../apps/iam/src/dev-certs.ts";
 
 /**
  * One entry point for running and testing Rehearsal locally: `pnpm rehearsal <command>`.
@@ -23,6 +24,8 @@ const ERA_CORE = [
 ];
 const ERA_SLACK = ["slack-planning", "slack-operational"];
 const ENV_FILES = { api: ".env", planner: ".env.planner", executor: ".env.executor" } as const;
+const IAM_PORT = 3443;
+const IAM_DEV_CERTS = resolve(ROOT, "infra/iam/dev");
 
 const HELP = `pnpm rehearsal <command> [flags]
 
@@ -31,7 +34,9 @@ const HELP = `pnpm rehearsal <command> [flags]
                   wait until they're writable, then reset and seed them
                     --core       skip the Slack worlds
                     --no-reset   leave the worlds' current state alone
-  start           run the API, executor worker and planner worker, each with its own env file
+  start           run IAM, the API, the executor worker and the planner worker.
+                  IAM is mTLS on 127.0.0.1:3443. Dev certificates are generated under
+                  infra/iam/dev. The planner is not given a certificate or the IAM url.
                     --web        also run the Vite dev server (the API serves the built web app)
                     --no-planner skip the planner worker (no model key or ADC)
   test            typecheck, lint and unit tests
@@ -55,6 +60,22 @@ function managedKeys(): Set<string> {
   const keys = new Set<string>();
   for (const f of [...Object.values(ENV_FILES), ".env.example"]) {
     for (const k of Object.keys(loadEnv(f))) keys.add(k);
+  }
+  // The planner must not inherit a way to reach IAM from the shell. `start` adds these only to
+  // IAM, the API and the executor.
+  for (const k of [
+    "IAM_URL",
+    "IAM_PORT",
+    "IAM_HOST",
+    "IAM_RULES_DIR",
+    "IAM_CLIENT_CERT",
+    "IAM_CLIENT_KEY",
+    "IAM_CLIENT_CA",
+    "IAM_TLS_CERT",
+    "IAM_TLS_KEY",
+    "IAM_TLS_CLIENT_CA",
+  ]) {
+    keys.add(k);
   }
   return keys;
 }
@@ -190,6 +211,7 @@ async function waitForEra(api: Record<string, string>, slack: boolean): Promise<
 }
 
 async function up(flags: Set<string>): Promise<boolean> {
+  generateDevCerts(IAM_DEV_CERTS);
   if (!dockerUp()) {
     console.error("Docker isn't answering. Start Docker Desktop, then run this again.");
     return false;
@@ -217,14 +239,41 @@ async function up(flags: Set<string>): Promise<boolean> {
 
 async function startAll(flags: Set<string>): Promise<boolean> {
   const procs: { name: string; child: ChildProcess }[] = [];
-  const launch = (name: string, file: string, args: string[]) => {
+  const certs = generateDevCerts(IAM_DEV_CERTS);
+  const iamMaterial = {
+    iam: {
+      IAM_TLS_CERT: certs.serverCert,
+      IAM_TLS_KEY: certs.serverKey,
+      IAM_TLS_CLIENT_CA: certs.ca,
+      IAM_PORT: String(IAM_PORT),
+    },
+    api: {
+      IAM_URL: `https://127.0.0.1:${IAM_PORT}`,
+      IAM_CLIENT_CERT: certs.apiCert,
+      IAM_CLIENT_KEY: certs.apiKey,
+      IAM_CLIENT_CA: certs.ca,
+    },
+    executor: {
+      IAM_URL: `https://127.0.0.1:${IAM_PORT}`,
+      IAM_CLIENT_CERT: certs.executorCert,
+      IAM_CLIENT_KEY: certs.executorKey,
+      IAM_CLIENT_CA: certs.ca,
+    },
+  };
+
+  const launch = (
+    name: string,
+    file: string,
+    args: string[],
+    extra: Record<string, string> = {},
+  ) => {
     if (!existsSync(resolve(ROOT, file))) {
       console.error(`${file} is missing; not starting ${name}.`);
       return;
     }
     const child = spawn(commandLine("pnpm", args), {
       cwd: ROOT,
-      env: cleanEnv(loadEnv(file)),
+      env: cleanEnv({ ...loadEnv(file), ...extra }),
       stdio: ["ignore", "pipe", "pipe"],
       shell: true,
       detached: process.platform !== "win32",
@@ -253,7 +302,8 @@ async function startAll(flags: Set<string>): Promise<boolean> {
     );
     return false;
   }
-  launch("api", ENV_FILES.api, ["--filter", "@rehearsal/api", "start"]);
+  launch("iam", ENV_FILES.api, ["--filter", "@rehearsal/iam", "start"], iamMaterial.iam);
+  launch("api", ENV_FILES.api, ["--filter", "@rehearsal/api", "start"], iamMaterial.api);
   // The workers mint their Era tenant tokens through the API at startup, so it has to be up first.
   let apiUp = false;
   for (let i = 0; i < 60 && !apiUp; i++) {
@@ -262,7 +312,12 @@ async function startAll(flags: Set<string>): Promise<boolean> {
   }
   if (!apiUp)
     console.error(`The API didn't open :${port} within a minute; starting the workers anyway.`);
-  launch("executor", ENV_FILES.executor, ["--filter", "@rehearsal/executor-worker", "start"]);
+  launch(
+    "executor",
+    ENV_FILES.executor,
+    ["--filter", "@rehearsal/executor-worker", "start"],
+    iamMaterial.executor,
+  );
   if (!flags.has("--no-planner")) {
     launch("planner", ENV_FILES.planner, ["--filter", "@rehearsal/planner-worker", "start"]);
   }
@@ -321,6 +376,7 @@ async function status(): Promise<boolean> {
   const api = loadEnv(ENV_FILES.api);
   const port = Number(api.API_PORT ?? 3000);
   console.log(`API on :${port}: ${(await tcpOpen("127.0.0.1", port)) ? "up" : "down"}`);
+  console.log(`IAM on :${IAM_PORT}: ${(await tcpOpen("127.0.0.1", IAM_PORT)) ? "up" : "down"}`);
   return doctor();
 }
 
@@ -330,7 +386,7 @@ async function status(): Promise<boolean> {
  */
 const OURS = [
   String.raw`rehearsal[\\/]cli\.ts[" ]+start`,
-  String.raw`@rehearsal/(api|executor-worker|planner-worker)[" ]+start`,
+  '@rehearsal/(api|executor-worker|planner-worker|iam)[" ]+start',
   String.raw`rehearsal[\\/]node_modules.*tsx.*src[\\/]main\.ts`,
 ].join("|");
 

@@ -5,6 +5,9 @@ coverage/
 *.tsbuildinfo
 .vite/
 
+# Local IAM dev certificates (private keys). `pnpm rehearsal start` generates them.
+infra/iam/dev/
+
 # Secrets — only .env.example is committed
 .env
 .env.*

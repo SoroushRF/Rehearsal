@@ -1,5 +1,6 @@
 import type { BillingPolicy } from "@rehearsal/core";
 import { createDb, loadRegistry, type PgBoss, startQueue } from "@rehearsal/db";
+import { iamClientViolations } from "@rehearsal/iam/boot";
 import policyV1 from "../../../scenarios/billing/policy.v1.json" with { type: "json" };
 import policyV2 from "../../../scenarios/billing/policy.v2.json" with { type: "json" };
 import policyV3 from "../../../scenarios/billing/policy.v3.json" with { type: "json" };
@@ -8,6 +9,16 @@ import type { ApplyDeps } from "./apply";
 import { bearerReviewer, clerkFromEnv, type ReviewerResolver } from "./auth";
 import { publisherFromEnv, startPrecedentWorker } from "./precedent-sync";
 import { tenantTokenDepsFromEnv } from "./tenant-tokens";
+
+/**
+ * The API is one of the two clients IAM trusts. Without its client certificate it does not boot,
+ * so it cannot ask over an open connection. Routes still check Clerk until they ask IAM (T4.20).
+ */
+const iamCerts = iamClientViolations();
+if (iamCerts.length > 0) {
+  console.error(`api needs its IAM client certificate: ${iamCerts.join(", ")}`);
+  process.exit(1);
+}
 
 /** Without Clerk keys every command is refused as unauthenticated. */
 const authenticate = clerkFromEnv();

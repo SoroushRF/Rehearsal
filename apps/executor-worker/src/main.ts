@@ -1,4 +1,5 @@
 import { APPLY_QUEUE, createDb, reapStuckRuns, startQueue } from "@rehearsal/db";
+import { iamClientViolations } from "@rehearsal/iam/boot";
 import {
   primeTokens,
   slackProviderWriter,
@@ -20,6 +21,12 @@ import { handleApplyJob, type WorkerContext } from "./worker";
  * Executor worker: deterministic, no model key, no inference in the dispatch path.
  * Holds operational-world capability and consumes approved immutable manifests only.
  */
+const iamCerts = iamClientViolations();
+if (iamCerts.length > 0) {
+  console.error(`executor-worker needs its IAM client certificate: ${iamCerts.join(", ")}`);
+  process.exit(1);
+}
+
 const forbidden = executorCredentialViolations();
 if (forbidden.length > 0) {
   console.error(`executor-worker must not receive: ${forbidden.join(", ")}`);
