@@ -191,6 +191,7 @@ function LivePlan({ apiFetch, planId }: { apiFetch: ApiFetch; planId: string }) 
         apiFetch={apiFetch}
         plan={{ planId, revision: plan.data.revision, planHash }}
         editing={unchecked.size > 0}
+        manifest={manifest}
       />
 
       <RunSection apiFetch={apiFetch} planId={planId} shownRun={shownRun} onShow={setShownRun} />

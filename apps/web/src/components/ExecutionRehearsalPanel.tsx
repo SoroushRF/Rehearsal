@@ -1,4 +1,4 @@
-import type { RehearsalScenarioId } from "@rehearsal/contracts";
+import type { PlanManifest, RehearsalScenarioId } from "@rehearsal/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { type ApiFetch, call, explain } from "../api";
@@ -22,6 +22,7 @@ import {
 } from "../execution-rehearsal";
 import { shortHash } from "../format";
 import { useTenantKey } from "../identity";
+import { RehearsalReportToggle } from "./RehearsalReport";
 import { Alert, Button, Card, Chip, Icon } from "./ui";
 
 const POLL_MS = 2000;
@@ -37,14 +38,14 @@ export function ExecutionRehearsalPanel({
   apiFetch,
   plan,
   editing,
-  renderReport,
+  manifest,
 }: {
   apiFetch: ApiFetch;
   plan: CurrentPlan;
   /** Boxes are unchecked and no revision exists for them yet: there is nothing exact to rehearse. */
   editing: boolean;
-  /** The report for a finished rehearsal, when the page has one to show. */
-  renderReport?: (r: ExecutionRehearsalSummary) => React.ReactNode;
+  /** The plan on screen, to name the steps in a report that ran on exactly it. */
+  manifest: PlanManifest | null;
 }) {
   const queryClient = useQueryClient();
   const key = useTenantKey();
@@ -185,7 +186,16 @@ export function ExecutionRehearsalPanel({
               current={plan}
               onRetry={() => start.mutate(r.scenario.id)}
               retrying={start.isPending}
-              report={r.state === "completed" ? renderReport?.(r) : null}
+              report={
+                isTerminal(r.state) ? (
+                  <RehearsalReportToggle
+                    apiFetch={apiFetch}
+                    rehearsalId={r.rehearsalId}
+                    current={plan}
+                    manifest={manifest}
+                  />
+                ) : null
+              }
             />
           ))}
         </ul>
