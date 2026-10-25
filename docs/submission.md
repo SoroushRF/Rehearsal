@@ -23,7 +23,7 @@ About 250 spoken words. Shots are in the order to record them. The live app scre
 | 1:10 | Approve once; the approval panel shows the hash it is bound to | "One approval, bound to this exact plan. Change one byte and it no longer applies." |
 | 1:18 | Apply; run timeline fills in with receipts | "Now a deterministic executor, with no model and no model key, applies it. Before every step it re-reads what the step relied on." |
 | 1:30 | Phantom: a new duplicate charge appears after approval; that step shows Held with the reason | "Between approval and apply, a new matching charge appeared. The approved plan didn't account for it, so that refund is held, with the reason on the receipt, and so is the note that depends on it. Everything else went through." |
-| 1:50 | Receipts, then the scorecard table | "On the same twenty tasks, with real Era simulators: direct writes confirmed ten, per-call approval fourteen, Rehearsal eighteen, with no invalid allows, and about thirty-seven reviewer actions against four hundred and twenty-five." |
+| 1:50 | Receipts, then the scorecard table | "On the same twenty-eight tasks, with real Era simulators: direct writes confirmed fourteen, per-call approval nineteen, Rehearsal twenty-seven, with no invalid allows and no duplicates, and fifty-one signatures against six hundred and twenty-seven modelled per-call approvals." **[fill: confirm against the final T1.28 run]** |
 | 2:00 | Closing card | "Rehearse the plan. Approve its effects. Apply with evidence." |
 
 Cut to fit: drop the second-person line at 0:50 first, then the scorecard sentence. Keep the phantom hold; it's the moment.
@@ -47,23 +47,32 @@ Cut to fit: drop the second-person line at 0:50 first, then the scorecard senten
 | An agent plan was approved in the UI and applied 24 of 24 steps | #131 (live run with a real model) | `era_integration`, one run |
 | Two different people are required where policy v3 asks | `packages/core/test/approvals.test.ts`, executor admission tests, [0011](decisions/0011-two-distinct-approvers.md) | tests; no plan cites v3 yet |
 | A past run opens with the policy it was approved under | `apps/api/test/audit.test.ts` | tests |
-| Scorecard: 20 tasks, three modes | `evals/scorecard/results/latest.txt` | `era_integration`, **scripted planner** |
+| Scorecard: 28 tasks (14 benign controls, 14 traps), three modes | `evals/scorecard/results/latest.txt` | `era_integration`, **scripted planner** |
 
 ### The scorecard, honestly
 
-Scripted planner (`latest.txt`, pinned Era images, 2026-10-23):
+Scripted planner (`latest.txt`, pinned Era images, 2026-10-25, commit `bae6c2e`, after the note/reply guard fix T4.27):
 
 | | Direct | Per-call | Rehearsal |
 |---|---|---|---|
-| Confirmed success | 10/20 | 14/20 | 18/20 |
-| Invalid allows | 20 | 11 | 0 |
-| Duplicates | 4 | 2 | 0 |
-| Wrongful holds | 0 | 0 | 2 |
-| Reviewer actions | 0 | 425 | 37 |
+| Confirmed success | 14/28 | 19/28 | 27/28 |
+| Benign controls | 14/14 | 14/14 | 14/14 |
+| Traps | 0/14 | 5/14 | 13/14 |
+| Invalid allows | 26 | 14 | 0 |
+| Duplicates | 5 | 3 | 0 |
+| Wrongful holds | 0 | 0 | 0 |
+| Omitted obligations | 4 | 4 | 4 |
+| Reviewer actions | 0 | 627 | 51 |
+| Write-phase latency (s) | 9.5 | 9.8 | 17.8 |
+| Era API calls (write phase) | 841 | 824 | 2,790 |
+
+This run predates later merges to `main`. The final T1.28 run on the tagged submission commit replaces it **[fill]**.
 
 - The per-call reviewer is **modelled**, not a person; so are the counts of reviewer actions. Say "modelled".
-- The two Rehearsal holds are the teammate-edit traps (T3, T10). They are the guard working; the table counts them as wrongful because the scripted agent's plan was otherwise valid. Say so if asked.
-- With a real model as planner (`model-gemini-4-argon.txt`, 2026-10-24) the picture is less flattering: Rehearsal confirmed 17/20 with **zero invalid allows**, but wrongful holds rise to 26, 18 plans were made, one had no steps and one failed (a failed plan is never stored, so nothing is applied). Direct writes confirmed only 2/20. **If the video shows the scripted numbers, the Devpost text must show or link the model numbers too.** Replace both with the final T1.28 comparison when it exists **[fill]**.
+- Rehearsal's one failure is F7: the agent leaves customer c05 out of the plan, and every mode fails it. The executor can't see an omission. Since T1.30 the plan is flagged as incomplete before approval, with zero writes (`coverage-f7.txt`), but it still counts as a failure, not a success.
+- Rehearsal is slower and reads more: about 1.9× the write-phase time and 3.3× the Era calls of direct writes, because it re-reads each step's assumptions first. Both were measured one case at a time. Say so if asked.
+- With a real model as planner (`model-gemini-4-argon.txt`, 20 tasks, 2026-10-24, **before** the T4.27 guard fix): Rehearsal confirmed 17/20 with **zero invalid allows**, but there were 26 wrongful holds; 18 plans were made, one had no steps and one failed (a failed plan is never stored, so nothing is applied). Direct writes confirmed only 2/20. **If the video shows the scripted numbers, the Devpost text must show or link the model numbers too.**
+- Don't cite the Gemini full-operation run (`model-gemini-4-argon-full-ops*.txt`, 5/8): its scorer doesn't yet separate planner failures from holds. That fix (T1.31) is measurement work for after the deadline.
 
 ## What we must not say
 
@@ -86,7 +95,7 @@ Scripted planner (`latest.txt`, pinned Era images, 2026-10-23):
 
 **Challenges.** Honest partial outcomes (a refund is never "rolled back"); ID divergence between the rehearsed world and production (the note carries the production refund ID, never the rehearsed one); throttling and lost responses; keeping the planner and the executor from ever sharing credentials.
 
-**Accomplishments.** Phantom, teammate-edit conflict, throttled refunds and a lost response all pass against pinned Era images **[fill: link the final run]**. On 20 traps and controls, Rehearsal had no invalid allows (see the scorecard and its caveats). **[fill: T1.28 numbers.]**
+**Accomplishments.** Phantom, teammate-edit conflict, throttled refunds and a lost response all pass against pinned Era images **[fill: link the final run]**. On 28 traps and controls with a scripted planner, Rehearsal confirmed 27, with no invalid allows and no duplicates, against 14 for direct writes and 19 for modelled per-call approval (see the scorecard and its caveats). **[fill: confirm against the final T1.28 run.]**
 
 **What we learned.** Approval is not authorization: an approval has to be typed state tied to an exact hash, and the thing that applies it has to re-check the world. A trap the agent never sees is more instructive than one it does.
 
