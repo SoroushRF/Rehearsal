@@ -26,7 +26,8 @@ export interface Clock {
 }
 
 export interface WorldContext {
-  world: World;
+  /** `rehearsal` only for an execution rehearsal's disposable tenant; operational admission refuses it. */
+  world: World | "rehearsal";
   tenant: string;
 }
 
