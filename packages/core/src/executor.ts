@@ -40,6 +40,7 @@ import type {
   SettleTransition,
   WorldContext,
 } from "./ports";
+import { rehearsalOperationKey, rehearsalTenant } from "./rehearsal";
 import { remedyOf } from "./remedy";
 import { replyBodyFor, summaryCountKey } from "./templates";
 
@@ -142,6 +143,17 @@ export interface CompensationContext {
   record: (action: Action, result: CompensationResult) => Promise<void>;
   /** How long a lost undo must age before a negative read may send a fresh one. */
   reconcileAfterMs?: number;
+  /**
+   * The keys this run journals under: the operational ones, or a rehearsal's namespaced ones
+   * (T3.14). Absent means operational.
+   */
+  keys?: RunKeys;
+}
+
+/** Operation and undo keys for one run's actions. */
+export interface RunKeys {
+  operation: (action: Action) => string;
+  undo: (action: Action) => string;
 }
 
 /**
@@ -561,7 +573,13 @@ export async function executeRun(job: ApplyJobInput, deps: ExecutorDeps): Promis
       if (!readable.ok) {
         return { state: "cancelled", receipts: [], refusal: RUN_CANCELLED, error: null };
       }
-      const outcome = await applyLocked(job, deps, readable.manifest, readable.grant, true);
+      const outcome = await applyLocked(
+        job,
+        deps,
+        readable.manifest,
+        { kind: "grant", grant: readable.grant },
+        true,
+      );
       return { ...outcome, state: "cancelled", refusal: RUN_CANCELLED };
     }
     const admission = await admit(job, deps);
@@ -579,7 +597,7 @@ export async function executeRun(job: ApplyJobInput, deps: ExecutorDeps): Promis
         job,
         deps,
         readable.manifest,
-        readable.grant,
+        { kind: "grant", grant: readable.grant },
         true,
         "failed",
       );
@@ -590,10 +608,149 @@ export async function executeRun(job: ApplyJobInput, deps: ExecutorDeps): Promis
         unresolved: outcome.unresolved,
       };
     }
-    return await applyLocked(job, deps, admission.manifest, admission.grant);
+    return await applyLocked(job, deps, admission.manifest, {
+      kind: "grant",
+      grant: admission.grant,
+    });
   } finally {
     await release();
   }
+}
+
+/**
+ * The plan hash a rehearsal's journal rows (attempts, receipts, bindings) are filed under. Never a
+ * real plan hash, so no operational lookup by hash can see them; the rehearsal journal maps it back
+ * to the real hash for step results and reports.
+ */
+export function rehearsalJournalHash(rehearsalId: string, planHash: string): string {
+  return `rh_${rehearsalId}_${planHash}`;
+}
+
+/** One execution rehearsal to run (decision 0013): the stored plan it names, exactly. */
+export interface RehearsalRunInput {
+  orgId: string;
+  rehearsalId: string;
+  planId: string;
+  revision: number;
+  planHash: string;
+}
+
+/** What a rehearsal reads: the stored plan, and whether someone cancelled it. Never runs or grants. */
+export interface RehearsalPlanStore {
+  loadPlan(
+    orgId: string,
+    planId: string,
+    revision: number,
+  ): Promise<{ planHash: string; manifest: unknown } | null>;
+  rehearsalCancelled?(orgId: string, rehearsalId: string): Promise<boolean>;
+}
+
+/**
+ * The executor's mechanics for a rehearsal: the same providers, guard, compensator, retries and
+ * journal port, but a rehearsal journal (T3.13's tables) and rehearsal worlds only. No apply store:
+ * a rehearsal can't load a run or a grant.
+ */
+export type RehearsalExecutorDeps = Omit<ExecutorDeps, "store"> & { plans: RehearsalPlanStore };
+// Note for journals: a rehearsal's rows carry `rehearsalJournalHash(id, hash)` as their plan hash.
+
+/**
+ * Rehearsal admission (decision 0013, §2), separate from `admit` and needing no grant. The stored
+ * plan must exist at that revision and hash and pass the same graph and policy checks operational
+ * admission runs, so only an approvable plan is rehearsed; and every configured world must be this
+ * rehearsal's own disposable tenant. It never reads a grant, and nothing it returns is one.
+ */
+export async function admitRehearsal(
+  job: RehearsalRunInput,
+  deps: RehearsalExecutorDeps,
+): Promise<{ ok: true; manifest: PlanManifest } | { ok: false; detail: string }> {
+  const tenant = rehearsalTenant(job.rehearsalId);
+  const worlds = Object.entries(deps.worlds);
+  if (worlds.length === 0) return { ok: false, detail: "no rehearsal world configured" };
+  for (const [vendor, ctx] of worlds) {
+    if (!ctx || ctx.world !== "rehearsal" || ctx.tenant !== tenant) {
+      return {
+        ok: false,
+        detail: `${vendor} is configured for ${ctx?.world}/${ctx?.tenant}, not this rehearsal's ${tenant}`,
+      };
+    }
+  }
+  const stored = await deps.plans.loadPlan(job.orgId, job.planId, job.revision);
+  if (!stored) return { ok: false, detail: "plan revision not found" };
+  if (stored.planHash !== job.planHash)
+    return { ok: false, detail: "stored hash differs from the job" };
+  const parsed = PlanManifest.safeParse(stored.manifest);
+  if (!parsed.success) return { ok: false, detail: "stored manifest is invalid" };
+  if (computePlanHash(parsed.data) !== job.planHash) {
+    return { ok: false, detail: "stored manifest does not hash to the requested hash" };
+  }
+  const manifest = parsed.data;
+  if (manifest.orgId !== job.orgId) return { ok: false, detail: "manifest belongs to another org" };
+  const graph = validateGraph(manifest.actions);
+  if (graph.length > 0) return { ok: false, detail: `invalid graph: ${graph[0]?.detail}` };
+  for (const ref of manifest.policies) {
+    const policy = deps.policies.find((p) => p.id === ref.id && p.version === ref.version);
+    if (!policy) return { ok: false, detail: `policy ${ref.id}@${ref.version} is not loaded` };
+    const { violations } = evaluateBillingPolicy(manifest, policy);
+    if (violations.length > 0) {
+      return { ok: false, detail: `policy ${violations[0]?.rule}: ${violations[0]?.detail}` };
+    }
+  }
+  return { ok: true, manifest };
+}
+
+/**
+ * Run one stored plan in a rehearsal's disposable worlds (T3.14). The same deterministic mechanics
+ * as `executeRun` (typed dispatch, journal before send, exact retries, reconcile by reads, result
+ * bindings, read-back, compensation), with every operation key namespaced `rh_<id>_` and no grant:
+ * only a cancel stops its sends. A cancelled rehearsal still reads back what is in flight.
+ */
+export async function executeRehearsal(
+  job: RehearsalRunInput,
+  deps: RehearsalExecutorDeps,
+): Promise<RunOutcome> {
+  // Receipts and result bindings are looked up by plan hash, not operation key. Under the real
+  // hash, a rehearsal's confirmed receipt or refund id would satisfy an operational run sharing a
+  // journal (and the other way round). Its journal sees only `rh_<id>_<hash>`.
+  const apply: ApplyJobInput = {
+    orgId: job.orgId,
+    runId: job.rehearsalId,
+    planId: job.planId,
+    revision: job.revision,
+    planHash: rehearsalJournalHash(job.rehearsalId, job.planHash),
+  };
+  // The mechanics read the store only for the plan and for cancellation: a rehearsal has no run
+  // and no grant to load, and its fresh tenant has no earlier remedy for the one-remedy guard.
+  const store: ApplyStore = {
+    loadRun: async () => null,
+    loadPlan: (orgId, planId, revision) => deps.plans.loadPlan(orgId, planId, revision),
+    loadGrant: async () => null,
+    lockPlan: async () => async () => {},
+    runCancelled: async (orgId) =>
+      (await deps.plans.rehearsalCancelled?.(orgId, job.rehearsalId)) ?? false,
+    remedyStepsFor: async () => [],
+  };
+  const mechanics: ExecutorDeps = { ...deps, store };
+  const authority: Authority = { kind: "rehearsal", rehearsalId: job.rehearsalId };
+  const admission = await admitRehearsal(job, deps);
+  if (!admission.ok) {
+    await deps.journal.appendEvent(job.rehearsalId, "run.refused", { detail: admission.detail });
+    return { state: "failed", receipts: [], refusal: admission.detail, error: null };
+  }
+  if (await store.runCancelled?.(job.orgId, job.rehearsalId)) {
+    await deps.journal.appendEvent(job.rehearsalId, "run.cancelled", { before: "admission" });
+    const outcome = await applyLocked(apply, mechanics, admission.manifest, authority, true);
+    return { ...outcome, state: "cancelled", refusal: RUN_CANCELLED };
+  }
+  return applyLocked(apply, mechanics, admission.manifest, authority);
+}
+
+/** The keys a pass journals and sends under: a rehearsal's are namespaced to it (decision 0013, §3). */
+function runKeys(job: ApplyJobInput, authority: Authority): RunKeys {
+  const operation = (action: Action) => operationKey(job.orgId, job.planId, action);
+  const undo = (action: Action) => undoKey(job.orgId, job.planId, action);
+  if (authority.kind === "grant") return { operation, undo };
+  const ns = (key: string) => rehearsalOperationKey(authority.rehearsalId, key);
+  return { operation: (a) => ns(operation(a)), undo: (a) => ns(undo(a)) };
 }
 
 /** Any send of this plan (forward or undo, any revision) still in flight: dispatched or unknown. */
@@ -615,11 +772,20 @@ async function hasInFlight(
   return false;
 }
 
+/**
+ * What lets a pass send at all, and the only two ways to get it. Not exported: `executeRun` builds
+ * `grant` after operational `admit`, `executeRehearsal` builds `rehearsal` after `admitRehearsal`.
+ * There is no flag that turns one into the other.
+ */
+type Authority =
+  | { kind: "grant"; grant: ApprovalGrant }
+  | { kind: "rehearsal"; rehearsalId: string };
+
 async function applyLocked(
   job: ApplyJobInput,
   deps: ExecutorDeps,
   manifest: PlanManifest,
-  grant: ApprovalGrant,
+  authority: Authority,
   /** Only resolve in-flight attempts through reads; never send, adopt, guard or hold new work. */
   reconcileOnly = false,
   /** The state a read-only pass of a refused run reports (it never runs the plan). */
@@ -627,11 +793,17 @@ async function applyLocked(
 ): Promise<RunOutcome> {
   const { journal, clock } = deps;
   const at = () => clock.now().toISOString();
-  const admittedGrantFingerprint = fingerprint(grant);
+  const grant = authority.kind === "grant" ? authority.grant : null;
+  const admittedGrantFingerprint = grant ? fingerprint(grant) : null;
+  /** A rehearsal's receipts name no grant; they are converted to step results, never adopted. */
+  const approvalId = grant
+    ? grant.id
+    : `rehearsal:${(authority as { rehearsalId: string }).rehearsalId}`;
+  const keys: RunKeys = runKeys(job, authority);
   // A read-only pass (cancelled or refused run) is not an admission: say what it is.
   await journal.appendEvent(job.runId, reconcileOnly ? "run.reconciling" : "run.admitted", {
     planHash: job.planHash,
-    approvalId: grant.id,
+    approvalId,
   });
 
   const receipts: Receipt[] = [];
@@ -663,7 +835,10 @@ async function applyLocked(
     }
     return cancelled;
   };
+  /** Admission isn't a lease: before every send, the grant must still be the admitted one. */
   const grantStillValid = async () => {
+    // A rehearsal holds no grant: only a cancel stops its sends, in disposable worlds.
+    if (!grant) return true;
     const current = await deps.store.loadGrant(job.orgId, grant.id);
     return (
       current !== null &&
@@ -716,7 +891,7 @@ async function applyLocked(
     id: deps.newId("rcp"),
     actionId: action.id,
     planHash: job.planHash,
-    approvalId: grant.id,
+    approvalId,
     outcome,
     providerRef: extra.providerRef ?? null,
     observedEffect: extra.observedEffect ?? {},
@@ -934,7 +1109,7 @@ async function applyLocked(
     const context = { manifest, confirmedReceipts: [...confirmedByAction.values()] };
     const remedy = remedyOf(action);
     if (!remedy || !deps.store.remedyStepsFor) return context;
-    const own = operationKey(job.orgId, job.planId, action);
+    const own = keys.operation(action);
     const priorRemedies: PriorRemedy[] = [];
     for (const step of await deps.store.remedyStepsFor(job.orgId, remedy.obligationId)) {
       for (const attempt of await journal.attemptsFor(step.planHash, step.actionId)) {
@@ -948,7 +1123,7 @@ async function applyLocked(
 
   const sentUndo = async (action: Action) => {
     if (action.kind !== "zendesk.ticket.patchFields") return undefined;
-    const attempt = (await journal.attemptsForKey(undoKey(job.orgId, job.planId, action)))
+    const attempt = (await journal.attemptsForKey(keys.undo(action)))
       .filter((a) => a.state !== "prepared")
       .at(-1);
     if (!attempt) return undefined;
@@ -1225,9 +1400,9 @@ async function applyLocked(
     | { kind: "inconclusive"; detail: string }
   > => {
     try {
-      const attempt = (
-        await journal.attemptsForKey(operationKey(job.orgId, job.planId, action))
-      ).find((a) => a.id === attemptId);
+      const attempt = (await journal.attemptsForKey(keys.operation(action))).find(
+        (a) => a.id === attemptId,
+      );
       if (!attempt) return { kind: "inconclusive", detail: "attempt not found in the journal" };
       const result = await provider.reconcile(attempt, action, world);
       if (result.kind === "indeterminate") {
@@ -1287,7 +1462,7 @@ async function applyLocked(
       settled.set(action.id, "confirmed");
       return;
     }
-    const key = operationKey(job.orgId, job.planId, action);
+    const key = keys.operation(action);
     const vendor = vendorOf(action);
     const provider = deps.providers[vendor];
     const world = deps.worlds[vendor];
@@ -1834,7 +2009,7 @@ async function applyLocked(
    */
   const alreadySent = async (action: Action) =>
     confirmedByAction.has(action.id) ||
-    (await journal.attemptsForKey(operationKey(job.orgId, job.planId, action))).some(
+    (await journal.attemptsForKey(keys.operation(action))).some(
       (a) => a.state !== "prepared" && a.state !== "rejected",
     );
 
@@ -1918,6 +2093,7 @@ async function applyLocked(
         record: (action, { outcome, transition, ...extra }) =>
           settle(action, receiptFor(action, outcome, extra), { transition }),
         reconcileAfterMs: deps.reconcileAfterMs ?? 60_000,
+        keys,
       });
     } catch (err) {
       error = `compensation: ${(err as Error).message}`;
