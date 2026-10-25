@@ -293,6 +293,56 @@ describe("snapshot support", () => {
     }
   });
 
+  it("injects only the cited records the reset baseline lacks", async () => {
+    // A fake simulator per vendor: Era's baseline already holds the cited ticket, as it does a
+    // requester's older tickets, and /inject appends without deduping by ID.
+    const fake = async (baseline: string[]) => {
+      const injected: string[] = [];
+      const server = createServer((req, res) => {
+        let body = "";
+        req.on("data", (chunk) => {
+          body += chunk;
+        });
+        req.on("end", () => {
+          const url = req.url ?? "";
+          const reply = (status: number, json: unknown) => {
+            res.writeHead(status, { "content-type": "application/json" });
+            res.end(JSON.stringify(json));
+          };
+          if (url.endsWith("/inject")) {
+            const parsed = JSON.parse(body) as Record<string, { id: unknown }[]>;
+            for (const rows of Object.values(parsed))
+              for (const r of rows) injected.push(String(r.id));
+            return reply(200, {});
+          }
+          if (url.endsWith("/reset")) return reply(200, {});
+          if (req.method === "POST") return reply(200, { access_token: "jwt", expires_in: 3600 });
+          const id = decodeURIComponent(url.split("/").pop() ?? "").replace(/\.json$/, "");
+          return [...baseline, ...injected].includes(id) ? reply(200, { id }) : reply(404, {});
+        });
+      });
+      await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+      const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      return { server, url, injected };
+    };
+    const stripe = await fake([]);
+    const zendesk = await fake([String(CASE.ticketId)]);
+    try {
+      const result = await provisionSnapshot(offlineEvidence(), "abcd1234", {
+        ...ENV,
+        ERA_STRIPE_REHEARSAL_URL: stripe.url,
+        ERA_ZENDESK_REHEARSAL_URL: zendesk.url,
+      });
+      expect(result.ok).toBe(true);
+      expect(stripe.injected.sort()).toEqual(CASE.chargeIds);
+      expect(zendesk.injected).toEqual([]);
+    } finally {
+      for (const { server } of [stripe, zendesk]) {
+        await new Promise<void>((r) => server.close(() => r()));
+      }
+    }
+  });
+
   it("tears down only a finished rehearsal", async () => {
     for (const state of ["queued", "provisioning", "running", "verifying"] as const) {
       await expect(teardownSnapshot("abcd1234", state, ENV)).rejects.toThrow("only a finished");

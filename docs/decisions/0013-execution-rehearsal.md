@@ -95,6 +95,7 @@ The seeder ([`scripts/seed/snapshot.ts`](../../scripts/seed/snapshot.ts), T1.22)
 - a prior refund is seeded as `amount_refunded` only; its refund objects aren't in evidence;
 - a ticket gets one public comment, not its real thread (the projection leaves comments out);
 - every tenant starts from Era's seeded baseline, so records the plan never read come from it. The read-back fails if one of them lands in a cited query.
+- a cited record the baseline already has (a requester's older tickets) is kept, not injected again, because Era's `/inject` doesn't dedupe by ID. The read-back checks its projection like any other.
 
 ### 5. Lifecycle and unknown outcomes
 

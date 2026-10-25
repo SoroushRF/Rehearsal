@@ -31,6 +31,8 @@ import { z } from "zod";
  *   timestamps, so the projection leaves them out).
  * - Every tenant starts from Era's seeded baseline. Records the plan never read come from it, and
  *   the read-back fails if one of them lands in a query the plan cites.
+ * - A cited record the baseline already has is kept, not injected twice. Its projection is read
+ *   back like any other; its other fields are the baseline's, not the templates'.
  */
 
 export type SnapshotVendor = "stripe" | "zendesk";
@@ -329,19 +331,29 @@ export async function provisionSnapshot(
   const support = supportSnapshot(plan);
   if (!support.ok) return support;
   const { seed } = support;
-  const bodies = {
-    stripe: { records: seed.stripe.charges.length, body: seed.stripe },
-    zendesk: { records: seed.zendesk.tickets.length, body: seed.zendesk },
-  };
+  const records = { stripe: seed.stripe.charges, zendesk: seed.zendesk.tickets };
   const worlds: RehearsalWorlds = {};
   for (const vendor of VENDORS) {
-    const { records, body } = bodies[vendor];
-    if (records === 0) continue;
+    if (records[vendor].length === 0) continue;
     const config = rehearsalWorldConfig(vendor, rehearsalId, env);
     const { token } = await mintTenantToken(config, rehearsalAdminToken(env));
     const world = { ...config, tenantToken: token };
     await admin(world, "/reset", undefined, env);
-    await admin(world, "/inject", body, env);
+    // Era doesn't dedupe /inject by ID, and the reset baseline already holds some cited records
+    // (a requester's older tickets). Inject only the missing ones; the read-back then checks the
+    // baseline copies' projections like any other.
+    const missing = [];
+    for (const record of records[vendor]) {
+      if (!(await exists(vendor, world, String(record.id)))) missing.push(record);
+    }
+    if (missing.length > 0) {
+      await admin(
+        world,
+        "/inject",
+        vendor === "stripe" ? { charges: missing } : { tickets: missing },
+        env,
+      );
+    }
     worlds[vendor] = world;
   }
   return { ok: true, worlds, notFromEvidence: seed.notFromEvidence };
@@ -375,6 +387,17 @@ function uniqueIds(rows: Record<string, unknown>[]): string[] {
   const dupes = [...new Set(ids.filter((id, i) => ids.indexOf(id) !== i))].sort();
   if (dupes.length > 0) throw new Error(`page repeats ${dupes.join(", ")}`);
   return ids;
+}
+
+async function exists(vendor: SnapshotVendor, world: WorldConfig, id: string): Promise<boolean> {
+  const path =
+    vendor === "stripe"
+      ? `/v1/charges/${encodeURIComponent(id)}`
+      : `/api/v2/tickets/${encodeURIComponent(id)}.json`;
+  const res = await eraFetch(world, path, { headers: { authorization: AUTH[vendor] } });
+  if (res.status === 404) return false;
+  if (!res.ok) throw new Error(`GET ${path} → ${res.status}`);
+  return true;
 }
 
 function differing(want: Record<string, unknown>, got: Record<string, unknown>): string[] {
