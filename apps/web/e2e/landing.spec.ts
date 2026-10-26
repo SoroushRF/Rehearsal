@@ -14,34 +14,22 @@ test("the landing page is public and static: no API call, no sign-in", async ({ 
     page.getByRole("heading", { level: 1, name: /Terraform plan\s*for AI agents/ }),
   ).toBeVisible();
   await expect(page).toHaveTitle("Rehearsal: terraform plan for AI agents");
-  // One h1, and each section is headed.
   await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
-  for (const name of [
-    "Deciding and doing shouldn't happen in the same step",
-    "Plan in a copy, approve once, apply with no model",
-    "What happens when the world moves",
-    "Rules the engine never bends",
-    "Honest about the limits",
-  ]) {
-    await expect(page.getByRole("heading", { level: 2, name })).toBeVisible();
-  }
+  await expect(
+    page.getByRole("img", { name: /Copy, Plan, Approve, Apply, Receipts/ }),
+  ).toBeVisible();
   expect(apiCalls).toEqual([]);
   expect(errors).toEqual([]);
 });
 
-test("the buttons lead to the example plan, the saved replay and the app", async ({ page }) => {
+test("the two paths go to the saved replay and the app", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("link", { name: "Open the example plan" }).first().click();
-  await expect(page).toHaveURL(/\/app\?bundle=happy-path$/);
-  await expect(page.getByTestId("plan-hash")).toBeVisible();
-
-  await page.goto("/");
-  await page.getByRole("link", { name: "Watch a saved replay" }).first().click();
+  await page.getByRole("link", { name: "Watch a recorded run" }).click();
   await expect(page).toHaveURL(/\?replay=phantom$/);
   await expect(page.getByTestId("replay-banner")).toBeVisible();
 
   await page.goto("/");
-  await page.getByRole("banner").getByRole("link", { name: "Open the app" }).click();
+  await page.getByRole("link", { name: "Try it live" }).click();
   await expect(page).toHaveURL(/\/app$/);
   await expect(page.getByText("Example plan")).toBeVisible();
 });
@@ -54,19 +42,6 @@ test("older links keep working: /?bundle and /?replay are still the app and the 
   await expect(page.getByRole("heading", { level: 1 })).toHaveCount(0);
   await page.goto("/?replay=happy-path");
   await expect(page.getByTestId("replay-banner")).toBeVisible();
-});
-
-test("the section links scroll to their section", async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto("/");
-  await page
-    .getByRole("navigation", { name: "Sections" })
-    .getByRole("link", { name: "Guarantees" })
-    .click();
-  await expect(page).toHaveURL(/#guarantees$/);
-  await expect(
-    page.getByRole("heading", { name: "Rules the engine never bends" }),
-  ).toBeInViewport();
 });
 
 test("nothing overflows sideways on a phone", async ({ page }) => {
