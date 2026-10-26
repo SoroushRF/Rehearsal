@@ -1,3 +1,4 @@
+import { orgTenant } from "@rehearsal/core";
 import { type ProblemRecords, problemRecords } from "@rehearsal/testkit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app";
@@ -50,6 +51,43 @@ describe("POST /api/company/problems", () => {
     expect(records?.zendesk.tickets.map((t) => t.status)).toEqual(["new", "new", "new"]);
   });
 
+  it("seeds the org's worlds before injecting, so seeding can't wipe the problem", async () => {
+    const me = support("org_3", "user_1");
+    const order: string[] = [];
+    const seeded = buildApp({
+      webRoot: null,
+      problems: {
+        iam: fakeIam([me]),
+        ensureSeeded: async (orgId) => {
+          order.push(`seed ${orgId}`);
+        },
+        inject: async (orgId) => {
+          order.push(`inject ${orgId}`);
+        },
+      },
+    });
+    expect((await create(me, { preset: "duplicate_charge", count: 1 }, seeded)).statusCode).toBe(
+      204,
+    );
+    expect(order).toEqual(["seed org_3", "inject org_3"]);
+    const broken = buildApp({
+      webRoot: null,
+      problems: {
+        iam: fakeIam([me]),
+        ensureSeeded: async () => {
+          throw new Error("era down");
+        },
+        inject: async () => {
+          order.push("inject anyway");
+        },
+      },
+    });
+    expect((await create(me, { preset: "duplicate_charge", count: 1 }, broken)).json()).toEqual({
+      error: "world_unavailable",
+    });
+    expect(order).not.toContain("inject anyway");
+  });
+
   it("answers inject_failed when Era refuses, and 404 when this API can't inject", async () => {
     const me = support("org_1", "user_1");
     const down = app(me, async () => {
@@ -81,7 +119,7 @@ describe("eraProblemInjector", () => {
     expect(eraProblemInjector({})).toBeUndefined();
   });
 
-  it("writes the same records into both worlds, and only the vendors that have any", async () => {
+  it("writes the same records into both of the org's own worlds, only for vendors with any", async () => {
     const calls: [string, unknown][] = [];
     vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
       calls.push([url, JSON.parse(String(init.body))]);
@@ -90,8 +128,11 @@ describe("eraProblemInjector", () => {
     const records = problemRecords("duplicate_charge", 1, "x1", 9_300_000) as ProblemRecords;
     await eraProblemInjector(env)?.("org_1", records);
     expect(calls).toEqual([
-      ["http://stripe-planning.test/_admin/tenants/rehearsal-demo/inject", records.stripe],
-      ["http://stripe-operational.test/_admin/tenants/rehearsal-demo/inject", records.stripe],
+      [`http://stripe-planning.test/_admin/tenants/${orgTenant("org_1")}/inject`, records.stripe],
+      [
+        `http://stripe-operational.test/_admin/tenants/${orgTenant("org_1")}/inject`,
+        records.stripe,
+      ],
     ]);
   });
 
