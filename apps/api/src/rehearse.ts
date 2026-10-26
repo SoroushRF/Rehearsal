@@ -47,6 +47,11 @@ export interface RehearseDeps {
    * versions, and the returned basis is checked against it. Absent: plans carry no basis.
    */
   precedentRegistry?: (orgId: string) => Promise<RegistrySnapshot>;
+  /**
+   * Seeds a new org's own Era tenants before its first plan (#330), so the planner never reads an
+   * empty world. Absent: nothing is seeded (the shared tenant, tests).
+   */
+  ensureSeeded?: (orgId: string) => Promise<void>;
 }
 
 /** Incidents this deployment can rehearse. The planner worker loads the brief by ID. */
@@ -94,6 +99,12 @@ export function registerRehearseRoutes(app: FastifyInstance, deps: RehearseDeps)
         ? undefined
         : await loadIncident(deps.db, gate.person.orgId, req.params.id);
     if (!builtIn && !filed) return reply.code(404).send({ error: "incident_not_found" });
+    try {
+      await deps.ensureSeeded?.(gate.person.orgId);
+    } catch (error) {
+      req.log.error({ err: error }, "org worlds could not be seeded");
+      return reply.code(502).send({ error: "world_unavailable" });
+    }
 
     const job: PlanJob = {
       orgId: gate.person.orgId,

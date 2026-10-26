@@ -44,6 +44,43 @@ describe("rehearse routes", () => {
     expect(sent).toEqual([]);
   });
 
+  it("seeds the org's own worlds before the plan job is queued (#330)", async () => {
+    const order: string[] = [];
+    const me = support("org_seed", "user_1");
+    const seeding = app(me, {
+      ensureSeeded: async (orgId) => {
+        order.push(`seed ${orgId}`);
+      },
+      boss: {
+        send: async () => {
+          order.push("queued");
+          return "22222222-2222-4222-8222-222222222222";
+        },
+      } as unknown as PgBoss,
+    });
+    const ok = await seeding.inject({
+      method: "POST",
+      url: `/api/incidents/${INCIDENT.incident}/rehearse`,
+      headers: bearer(me),
+    });
+    expect(ok.statusCode).toBe(202);
+    expect(order).toEqual(["seed org_seed", "queued"]);
+
+    const before = sent.length;
+    const down = await app(me, {
+      ensureSeeded: async () => {
+        throw new Error("era down");
+      },
+    }).inject({
+      method: "POST",
+      url: `/api/incidents/${INCIDENT.incident}/rehearse`,
+      headers: bearer(me),
+    });
+    expect(down.statusCode).toBe(502);
+    expect(down.json()).toEqual({ error: "world_unavailable" });
+    expect(sent.length).toBe(before);
+  });
+
   it("queues a plan job for the verified org and returns the plan ID it will have", async () => {
     const res = await rehearse(support("org_1", "user_1"));
     expect(res.statusCode).toBe(202);

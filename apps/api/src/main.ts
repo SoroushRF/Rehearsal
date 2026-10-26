@@ -79,6 +79,8 @@ const rehearse = apply && {
   iam,
   plannerSecret: process.env.PLANNER_WORKER_SECRET,
   precedentRegistry: async (orgId: string) => (await loadRegistry(apply.db, orgId)).snapshot,
+  // Each org plans in its own tenant (#330): seed it before the first plan job.
+  ensureSeeded: (orgId: string) => ensureOrgSeeded(orgId),
 };
 const executionRehearsals = apply && { db: apply.db, boss: apply.boss, iam };
 // T1.23/T3.16: the rehearsal worker's minter and operator routes, when this API holds the rehearsal
