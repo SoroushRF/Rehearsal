@@ -15,9 +15,9 @@ test("the landing page is public and static: no API call, no sign-in", async ({ 
   ).toBeVisible();
   await expect(page).toHaveTitle("Rehearsal: terraform plan for AI agents");
   await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
-  await expect(
-    page.getByRole("img", { name: /Copy, Plan, Approve, Apply, Receipts/ }),
-  ).toBeVisible();
+  await expect(page.getByRole("figure", { name: /example plan/ })).toContainText(
+    "4 to add, 2 to change, 0 to destroy",
+  );
   expect(apiCalls).toEqual([]);
   expect(errors).toEqual([]);
 });

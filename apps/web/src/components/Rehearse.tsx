@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { type ApiFetch, call, explain, RefusedError } from "../api";
 import { useTenantKey } from "../identity";
-import { Alert, Button, Card, Icon, Spinner } from "./ui";
+import { Alert, Button, Icon, Spinner } from "./ui";
 
 /**
  * The incident rehearsed when none was picked: the built-in one (scenarios/billing/incident.v1.json)
@@ -98,12 +98,9 @@ export function RehearseBar({
 
   const running = start.isPending || (rehearsalId !== null && !done(r));
   return (
-    <Card aria-label="Rehearse" className="p-4 sm:p-5">
+    <section aria-label="Rehearse" className="border-y border-line py-4">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-start gap-3">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent">
-            <Icon name="flask" className="h-5 w-5" />
-          </span>
           <div>
             <h2 className="text-[15px] leading-6 font-semibold text-ink">Rehearse an incident</h2>
             <p className="text-sm leading-5 text-muted">
@@ -149,7 +146,7 @@ export function RehearseBar({
           )}
         </div>
       )}
-    </Card>
+    </section>
   );
 }
 

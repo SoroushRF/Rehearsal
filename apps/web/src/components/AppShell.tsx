@@ -1,7 +1,16 @@
 import { HealthResponse } from "@rehearsal/contracts";
 import { useQuery } from "@tanstack/react-query";
-import type { ReactNode } from "react";
-import { Icon } from "./ui";
+import { createContext, type ReactNode, useContext, useState } from "react";
+import { createPortal } from "react-dom";
+
+/** Where a page puts its section tabs: the top bar, beside the wordmark. */
+const TopNavSlot = createContext<HTMLElement | null>(null);
+
+/** Renders its tabs into the top bar; inline when there is no bar (tests, other shells). */
+export function TopNav({ children }: { children: ReactNode }) {
+  const slot = useContext(TopNavSlot);
+  return slot ? createPortal(children, slot) : children;
+}
 
 /** Top bar and page frame shared by the review page and the saved-replay page. */
 export function AppShell({
@@ -18,6 +27,7 @@ export function AppShell({
   status?: boolean;
   children: ReactNode;
 }) {
+  const [slot, setSlot] = useState<HTMLElement | null>(null);
   return (
     <div className="flex min-h-dvh flex-col">
       <a
@@ -26,18 +36,14 @@ export function AppShell({
       >
         Skip to content
       </a>
-      <header className="sticky top-0 z-30 border-b border-line bg-surface/85 backdrop-blur-md">
-        <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
-          <div className="flex min-w-0 items-center gap-3">
-            <a href="/" className="flex items-center gap-2.5">
-              <span className="brand-mark">
-                <Icon name="flask" className="h-[18px] w-[18px]" />
-              </span>
-              <span className="brand-name">Rehearsal</span>
+      <header className="sticky top-0 z-30 border-b border-line bg-surface">
+        <div className="mx-auto flex h-14 max-w-6xl items-stretch justify-between gap-4 px-4 sm:px-6">
+          <div className="flex min-w-0 items-stretch gap-4 sm:gap-7">
+            <a href="/" className="flex items-baseline gap-2 self-center">
+              <span className="brand-name">rehearsal</span>
+              <span className="brand-tag hidden sm:inline">plan → apply</span>
             </a>
-            <span className="hidden border-l border-line pl-3 text-[13px] text-subtle md:inline">
-              Rehearse the plan. Approve its effects. Apply with evidence.
-            </span>
+            <div ref={setSlot} className="flex min-w-0 items-stretch" />
           </div>
           <div className="flex min-w-0 items-center gap-3">{account}</div>
         </div>
@@ -49,7 +55,7 @@ export function AppShell({
       </header>
 
       <main id="content" className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 sm:py-8">
-        {children}
+        <TopNavSlot.Provider value={slot}>{children}</TopNavSlot.Provider>
       </main>
 
       <footer className="border-t border-line">
@@ -82,7 +88,7 @@ function ApiStatus() {
   );
 }
 
-/** A pill-shaped segmented picker for switching between a handful of plans or replays. */
+/** Text tabs with an ink underline, for switching between a handful of plans or replays. */
 export function Segmented<T extends string>({
   label,
   value,
@@ -95,14 +101,11 @@ export function Segmented<T extends string>({
   onChange?: (id: T) => void;
 }) {
   const cls = (on: boolean) =>
-    `inline-flex h-8 items-center rounded-lg px-3 text-[13px] font-medium whitespace-nowrap transition-colors ${
-      on ? "bg-surface text-ink shadow-card" : "text-muted hover:text-ink"
+    `inline-flex h-8 items-center border-b-2 text-[13px] whitespace-nowrap transition-colors ${
+      on ? "border-ink font-semibold text-ink" : "border-transparent text-muted hover:text-ink"
     }`;
   return (
-    <nav
-      aria-label={label}
-      className="-mx-1 flex max-w-full gap-1 overflow-x-auto rounded-xl bg-sunken p-1 sm:inline-flex"
-    >
+    <nav aria-label={label} className="flex max-w-full gap-5 overflow-x-auto sm:inline-flex">
       {options.map((o) =>
         o.href ? (
           <a

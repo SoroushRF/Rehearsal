@@ -22,7 +22,7 @@ import { droppedBy, requiredRoles } from "../plan";
 import { explainPrecedentHold, PrecedentCheck } from "../precedent-holds";
 import { type AppView, appView } from "../route";
 import { FINISHED, RunEvents, RunView } from "../runs";
-import { Segmented } from "./AppShell";
+import { Segmented, TopNav } from "./AppShell";
 import { AuditPanel } from "./AuditPanel";
 import { CompanyOverview } from "./CompanyOverview";
 import { ExecutionRehearsalPanel } from "./ExecutionRehearsalPanel";
@@ -32,7 +32,7 @@ import { PlanReview } from "./PlanReview";
 import { PrecedentPanel } from "./PrecedentPanel";
 import { INCIDENT_ID, type Rehearsal, RehearseBar } from "./Rehearse";
 import { RunTimeline } from "./RunTimeline";
-import { Alert, Button, Card, Chip, Icon, Skeleton, Spinner } from "./ui";
+import { Alert, Button, Card, Chip, Skeleton, Spinner } from "./ui";
 
 const PlanList = z.object({ plans: z.array(PlanSummary) });
 const GrantList = z.object({
@@ -120,20 +120,23 @@ export function LiveApp({ apiFetch, initialView }: { apiFetch: ApiFetch; initial
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between gap-3">
-        <Segmented label="Sections" value={view} onChange={go} options={views} />
-        {members && (
-          <button
-            type="button"
-            aria-current={view === "members" ? "page" : undefined}
-            onClick={() => go("members")}
-            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2 text-[13px] text-muted hover:text-ink aria-[current=page]:text-ink"
-          >
-            <Icon name="users" className="h-4 w-4" />
-            Members
-          </button>
-        )}
-      </div>
+      <TopNav>
+        <nav aria-label="Sections" className="flex items-stretch gap-4 overflow-x-auto sm:gap-6">
+          {[...views, ...(members ? [{ id: "members" as const, text: "Members" }] : [])].map(
+            (o) => (
+              <button
+                key={o.id}
+                type="button"
+                aria-current={view === o.id ? "page" : undefined}
+                onClick={() => go(o.id)}
+                className="top-tab"
+              >
+                {o.text}
+              </button>
+            ),
+          )}
+        </nav>
+      </TopNav>
 
       <div hidden={view !== "company"}>
         <CompanyOverview
@@ -242,9 +245,6 @@ export function LivePlans({
 
       {!planId ? (
         <Card className="flex flex-col items-center gap-3 border-dashed bg-transparent px-6 py-14 text-center shadow-none">
-          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sunken text-subtle">
-            <Icon name="flask" className="h-6 w-6" />
-          </span>
           <p className="text-base font-semibold text-ink">No plans for this organization yet.</p>
           <p className="max-w-sm text-sm text-muted">
             Rehearse the incident above. The agent plans in a copy of the company, and the plan
@@ -311,21 +311,17 @@ function ProcessSlot({ active }: { active: Stage }) {
       aria-label={`Process: ${STAGES.join(", ")}. Now at ${STAGES[active - 1]}.`}
       data-testid="process-slot"
       data-active={active}
-      className="grid grid-cols-5 border-b border-line text-[13px]"
+      className="stage-line"
     >
-      {STAGES.map((label, i) => {
-        const on = i + 1 === active;
-        return (
-          <li
-            key={label}
-            aria-current={on ? "step" : undefined}
-            className={`flex items-baseline gap-1.5 border-t-2 px-1 py-2 transition-colors sm:px-2 ${on ? "border-t-lime text-ink" : "border-t-transparent text-subtle"} ${i === 2 || i === 3 ? "border-l border-l-line" : ""}`}
-          >
-            <span className="font-mono text-xs tnum">{i + 1}</span>
-            <span className="truncate">{label}</span>
-          </li>
-        );
-      })}
+      {STAGES.map((label, i) => (
+        <li
+          key={label}
+          aria-current={i + 1 === active ? "step" : undefined}
+          data-done={i + 1 < active ? "true" : undefined}
+        >
+          {label}
+        </li>
+      ))}
     </ol>
   );
 }
@@ -552,11 +548,6 @@ function ApprovalPanel({
   return (
     <Card aria-label="Approval" className="p-5">
       <div className="flex items-center gap-2">
-        <span
-          className={`flex h-8 w-8 items-center justify-center rounded-lg ${live ? "bg-ok-bg text-ok" : "bg-accent-soft text-accent"}`}
-        >
-          <Icon name="shield" className="h-[18px] w-[18px]" />
-        </span>
         <h3 className="text-[15px] font-semibold text-ink">Approval</h3>
         {live && (
           <Chip tone="good" icon="check">

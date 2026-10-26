@@ -248,7 +248,7 @@ export function Chip({
   return (
     <span
       title={hint}
-      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs leading-5 font-medium whitespace-nowrap ${TONE[tone]}`}
+      className={`inline-flex items-center gap-1 rounded-[3px] border px-1.5 py-0.5 text-xs leading-5 font-medium whitespace-nowrap ${TONE[tone]}`}
     >
       {icon && <Icon name={icon} className="h-3.5 w-3.5" />}
       {children}
@@ -341,7 +341,7 @@ export function CopyButton({ value, label }: { value: string; label: string }) {
 export function Stat({ label, value, hint }: { label: string; value: ReactNode; hint?: string }) {
   return (
     <div className="min-w-0">
-      <dt className="text-xs font-medium tracking-wide text-subtle uppercase">{label}</dt>
+      <dt className="text-[13px] font-medium text-subtle">{label}</dt>
       <dd className="tnum mt-0.5 text-lg leading-6 font-semibold text-ink">{value}</dd>
       {hint && <dd className="text-xs text-subtle">{hint}</dd>}
     </div>
