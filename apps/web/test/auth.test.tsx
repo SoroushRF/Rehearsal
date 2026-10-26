@@ -1,6 +1,13 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { AccountBar, AuthProvider, clerkKey, Me, VerifiedIdentity } from "../src/auth";
+import {
+  AccountBar,
+  AuthProvider,
+  clerkKey,
+  Me,
+  OrganizationControl,
+  VerifiedIdentity,
+} from "../src/auth";
 
 describe("GET /api/me", () => {
   it("parses the Clerk role and permissions, not a roles list", () => {
@@ -23,6 +30,30 @@ describe("GET /api/me", () => {
     expect(html).not.toContain("rehearsal:apply:plan");
     expect(html).not.toContain("rehearsal:approve:finance_step");
     expect(html).not.toContain("No permissions");
+  });
+});
+
+describe("one organization", () => {
+  it("shows the organization name and no switcher once the person belongs to one", () => {
+    for (const membershipCount of [1, 2]) {
+      const html = renderToStaticMarkup(
+        <OrganizationControl
+          membershipCount={membershipCount}
+          activeOrganizationName="Northwind"
+        />,
+      );
+      expect(html).toContain("Northwind");
+      expect(html).toContain('data-testid="active-organization"');
+      expect(html).not.toContain("Create organization");
+    }
+  });
+
+  it("does not flash a create switcher while memberships are still loading", () => {
+    const html = renderToStaticMarkup(
+      <OrganizationControl membershipCount={null} activeOrganizationName={null} />,
+    );
+    expect(html).toBe("");
+    expect(html).not.toContain("Create organization");
   });
 });
 

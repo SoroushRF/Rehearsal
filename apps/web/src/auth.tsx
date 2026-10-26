@@ -5,9 +5,11 @@ import {
   SignInButton,
   UserButton,
   useAuth,
+  useOrganization,
+  useOrganizationList,
 } from "@clerk/react";
 import { useQuery } from "@tanstack/react-query";
-import { type ReactNode, useCallback } from "react";
+import { type ReactNode, useCallback, useEffect, useRef } from "react";
 import { z } from "zod";
 import type { ApiFetch } from "./api";
 import { Badge } from "./components/Badge";
@@ -124,7 +126,7 @@ export function AccountBar() {
       </Show>
       <Show when="signed-in">
         <VerifiedRoles />
-        <OrganizationSwitcher hidePersonal />
+        <OneOrganization />
         <UserButton />
       </Show>
     </div>
@@ -152,4 +154,83 @@ function VerifiedRoles() {
   if (me.isPending) return <span className="text-xs text-subtle">checking permissions…</span>;
   if (me.isError || me.data === null) return <Badge tone="danger">Permissions not verified</Badge>;
   return <VerifiedIdentity clerkRole={me.data.clerkRole} />;
+}
+
+/**
+ * Header slot for the signed-in person's organization.
+ * `membershipCount === null` means the list is still loading, so nothing is rendered and the
+ * create switcher cannot flash. Zero memberships keep Clerk's switcher, which is how they
+ * create or accept the first organization. After that, the name is text: no switcher and no
+ * create action, including when they already belong to more than one.
+ */
+export function OrganizationControl({
+  membershipCount,
+  activeOrganizationName,
+}: {
+  membershipCount: number | null;
+  activeOrganizationName: string | null;
+}) {
+  if (membershipCount === null) return null;
+  if (membershipCount < 1) return <OrganizationSwitcher hidePersonal />;
+  return (
+    <span data-testid="active-organization" className="max-w-xs truncate text-sm font-medium">
+      {activeOrganizationName}
+    </span>
+  );
+}
+
+/**
+ * One person is in one organization. When they have exactly one membership and it is not
+ * active, activate it once so the header is not stuck on "Choose an organization" with no
+ * switcher. A second organization is never offered here.
+ */
+function OneOrganization() {
+  const { organization, isLoaded: organizationLoaded } = useOrganization();
+  const { isLoaded, setActive, userMemberships } = useOrganizationList({
+    userMemberships: true,
+  });
+  const activated = useRef(false);
+  const memberships = userMemberships.data ?? [];
+  const membershipCount = membershipCountOf(
+    isLoaded,
+    userMemberships.isLoading,
+    userMemberships.isFetching,
+    userMemberships.count,
+    memberships.length,
+  );
+  const soleOrganizationId = membershipCount === 1 ? memberships[0]?.organization.id : undefined;
+
+  useEffect(() => {
+    if (membershipCount !== 1 || !organizationLoaded || !setActive || !soleOrganizationId) return;
+    if (organization?.id === soleOrganizationId || activated.current) return;
+    activated.current = true;
+    void setActive({ organization: soleOrganizationId }).catch(() => {
+      // One attempt. Retrying while the membership stays inactive would loop.
+    });
+  }, [membershipCount, organizationLoaded, setActive, soleOrganizationId, organization?.id]);
+
+  const activeOrganizationName =
+    organization?.name ??
+    (membershipCount === 1 ? (memberships[0]?.organization.name ?? null) : null);
+
+  return (
+    <OrganizationControl
+      membershipCount={membershipCount}
+      activeOrganizationName={activeOrganizationName}
+    />
+  );
+}
+
+/** `null` until the membership list has settled, so an empty page is not treated as zero memberships. */
+function membershipCountOf(
+  isLoaded: boolean,
+  isLoading: boolean,
+  isFetching: boolean,
+  count: number | undefined,
+  loadedLength: number,
+): number | null {
+  if (!isLoaded || isLoading) return null;
+  if (loadedLength === 0 && isFetching) return null;
+  if (typeof count === "number") return count;
+  return loadedLength;
 }
