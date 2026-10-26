@@ -8,6 +8,7 @@ import { buildApp } from "./app";
 import type { ApplyDeps } from "./apply";
 import { iamClientFromEnv } from "./iam";
 import { publisherFromEnv, startPrecedentWorker } from "./precedent-sync";
+import { eraProblemInjector } from "./problems";
 import { rehearsalTenantActive } from "./rehearsal-operator";
 import { rehearsalTokenDepsFromEnv } from "./rehearsal-tokens";
 import { tenantTokenDepsFromEnv } from "./tenant-tokens";
@@ -71,6 +72,9 @@ const rehearse = apply && {
   plannerSecret: process.env.PLANNER_WORKER_SECRET,
   precedentRegistry: async (orgId: string) => (await loadRegistry(apply.db, orgId)).snapshot,
 };
+// Live demo (#331): only when this API holds the Era admin token. No database needed.
+const problemInjector = eraProblemInjector();
+const problems = problemInjector && { iam, inject: problemInjector };
 const executionRehearsals = apply && { db: apply.db, boss: apply.boss, iam };
 // T1.23/T3.16: the rehearsal worker's minter and operator routes, when this API holds the rehearsal
 // admin token and worker secret. A token is minted only for a claimed rehearsal not yet reset.
@@ -85,6 +89,7 @@ const app = buildApp({
   runs,
   precedents,
   rehearse,
+  problems,
   executionRehearsals,
   iam,
   tenantTokens: tenantTokenDepsFromEnv(),

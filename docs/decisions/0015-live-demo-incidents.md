@@ -20,3 +20,11 @@ Until now the planner knew one incident, `INC-BILL-0927`, from `scenarios/billin
 - New IAM rules (#335): `POST /api/incidents` needs `rehearsal:rehearse:incident`; `GET /api/incidents` needs `rehearsal:read:plan`.
 - `PlanJob` gains an optional field (additive). Old jobs and the built-in incident parse as before.
 - Creating the problem records an incident refers to (`POST /api/company/problems`) means the API calls Era `/_admin/.../inject` for the org's own tenant only. The planner never does. That route follows in a separate PR, and this record covers it.
+
+## Addendum: support backlog and created problems (#331, PR 2)
+
+7. **A support backlog plans with ticket steps only.** A filed `support_backlog` incident runs the planner in backlog mode: its own system prompt (`support-backlog.v1`, its own `PROMPT_VERSION`) and its own tool set and schema hash. A ticket is waiting while its status is `new`. For each waiting ticket the plan may raise the priority, add a private note and post a public reply, in that order, then a run summary. These are the existing typed operations (`patchFields`, `appendPrivateNote`, `appendPublicReply`, `postSummary`). The text comes from new approved templates in `packages/core/src/templates.ts` (`backlog-followup@1` note and reply, `backlog-summary@1`), never from the model. No money moves, so the billing policy adds no rule. The reply goes last because answering may move a ticket out of `new`, and an earlier step's re-check would then hold it.
+8. **Creating a problem injects preset records only.** `POST /api/company/problems` takes `{ preset, count }` and injects the records from `scenarios/incidents/<kind>.json` into the planning and operational worlds. The body never carries a record. IDs carry a per-request stamp, because Era's inject doesn't dedupe. The route exists only when the API holds `ERA_ADMIN_TOKEN`.
+9. **`service_outage` has no preset and no remedy yet.** No typed operation credits an outage without a duplicate obligation, so the planner proposes nothing for it and the plan fails with the model's reason.
+
+Until each org has its own tenant (#330 PR B), created problems land in the shared demo tenant: every org sees them, and `INC-BILL-0927` then plans more than its eight refunds until `pnpm demo:reset`.

@@ -1,13 +1,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type { PlanManifest, PrecedentBasis } from "@rehearsal/contracts";
 import { validateGraph } from "@rehearsal/core";
-import {
-  briefMessage,
-  type IncidentBrief,
-  LOOP_LIMITS,
-  PROMPT_VERSION,
-  SYSTEM_PROMPT,
-} from "./prompt";
+import { briefMessage, type IncidentBrief, LOOP_LIMITS, promptFor } from "./prompt";
 import type { PlanningSession } from "./tools";
 
 /**
@@ -95,7 +89,7 @@ export async function runPlanningLoop(opts: PlanningLoopOptions): Promise<Planni
       {
         model: opts.model,
         max_tokens: limits.maxTokensPerTurn,
-        system: SYSTEM_PROMPT,
+        system: promptFor(opts.session.mode).system,
         tools,
         tool_choice: { type: "auto" },
         output_config: { effort: LOOP_LIMITS.effort },
@@ -199,11 +193,11 @@ function finish(
     incidentId: opts.brief.incident,
     planId: opts.meta.planId,
     model: opts.model,
-    promptVersion: PROMPT_VERSION,
+    promptVersion: promptFor(opts.session.mode).version,
     adapters: opts.meta.adapters,
     precedentBasis: opts.meta.precedentBasis,
   });
-  const coverage = opts.session.coverage(opts.brief.customers.map((c) => c.customerId));
+  const coverage = opts.session.coverageOf(opts.brief.customers);
   if (coverage.length > 0) {
     throw new PlanningLoopError("incomplete_plan", JSON.stringify(coverage));
   }

@@ -5,6 +5,8 @@ export interface CoverageIssue {
   kind: "unexamined" | "incomplete_query" | "missing_remedy";
   customerId: string;
   chargeIds: string[];
+  /** Backlog runs: the waiting tickets nothing followed up. */
+  ticketIds?: string[];
 }
 
 /** The invoice rule shared by proposing remedies and checking recorded coverage. */
@@ -81,6 +83,48 @@ export function assessCoverage(
           });
         }
       }
+    }
+  }
+  return issues;
+}
+
+/**
+ * Backlog coverage (live demo, #331): every customer's tickets were listed in full, and every one of
+ * their waiting tickets (status `new`, theirs by `external_id`) got a follow-up note.
+ */
+export function assessBacklogCoverage(
+  customers: readonly { customerId: string; requesterId: string }[],
+  queries: readonly QueryObservation[],
+  actions: readonly Action[],
+): CoverageIssue[] {
+  const issues: CoverageIssue[] = [];
+  for (const { customerId, requesterId } of customers) {
+    const listed = queries.filter(
+      (q) =>
+        q.predicate.kind === "zendesk.tickets.byRequester" &&
+        q.predicate.requesterId === requesterId,
+    );
+    const query = listed.at(-1);
+    if (!query) {
+      issues.push({ kind: "unexamined", customerId, chargeIds: [] });
+      continue;
+    }
+    if (!query.complete || query.matchingIds.some((id) => !query.projections[id])) {
+      issues.push({ kind: "incomplete_query", customerId, chargeIds: [] });
+      continue;
+    }
+    const waiting = query.matchingIds.filter((id) => {
+      const t = query.projections[id];
+      return t?.status === "new" && t.external_id === customerId;
+    });
+    const missing = waiting.filter(
+      (id) =>
+        !actions.some(
+          (a) => a.kind === "zendesk.ticket.appendPrivateNote" && a.args.ticketId === id,
+        ),
+    );
+    if (missing.length > 0) {
+      issues.push({ kind: "missing_remedy", customerId, chargeIds: [], ticketIds: missing });
     }
   }
   return issues;

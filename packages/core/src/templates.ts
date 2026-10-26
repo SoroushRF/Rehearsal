@@ -10,6 +10,9 @@ import type { ResolvedBindings } from "./ports";
 const TEMPLATES: Record<string, (v: Readonly<Record<string, string | number>>) => string> = {
   "refund-confirmed@1": (v) =>
     `Refund ${v.refundId} for ${formatCad(Number(v.amountMinor))} has been issued for the duplicate charge.`,
+  // Live demo (#331): a support backlog follow-up. It states only what the plan itself did.
+  "backlog-followup@1": () =>
+    "Flagged in a support backlog review: this ticket was waiting for a first reply.",
 };
 
 function formatCad(minor: number): string {
@@ -64,6 +67,11 @@ const REPLY_TEMPLATES: Record<string, ReplyTemplate> = {
     values: { customerName: "name", amountMinor: "minor" },
     render: (v) =>
       `Hi ${v.customerName},\n\nWe've refunded ${formatCad(Number(v.amountMinor))} for the duplicate charge on your account. Sorry for the trouble.`,
+  },
+  "backlog-followup@1": {
+    values: { customerName: "name" },
+    render: (v) =>
+      `Hi ${v.customerName},\n\nSorry for the wait. Someone on our support team is now on your ticket and will follow up here.`,
   },
 };
 
@@ -177,6 +185,12 @@ const SUMMARY_TEMPLATES: Record<string, SummaryTemplate> = {
     counts: ["refunded", "held"],
     render: (v) =>
       `Billing remediation ${v.incidentId}: ${v.refunded} refund(s) issued, ${v.held} step(s) held for review.`,
+  },
+  "backlog-summary@1": {
+    literals: ["incidentId"],
+    counts: ["followedUp", "held"],
+    render: (v) =>
+      `Support backlog ${v.incidentId}: ${v.followedUp} ticket(s) followed up, ${v.held} step(s) held for review.`,
   },
 };
 

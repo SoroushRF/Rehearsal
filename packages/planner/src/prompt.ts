@@ -1,4 +1,5 @@
 import { fingerprint } from "@rehearsal/core";
+import type { PlanningMode } from "./tools";
 
 /**
  * T1.5: the versioned planning prompt and the loop's limits. Both go into the prompt version, so a
@@ -43,8 +44,42 @@ When every customer is handled, stop calling tools and reply with a short summar
 /** The prompt, the limits and the default model, as one version string recorded in the manifest. */
 export const PROMPT_VERSION = `${PROMPT_ID}+${fingerprint({ SYSTEM_PROMPT, LOOP_LIMITS }).slice(0, 12)}`;
 
+/** Live demo (#331): the prompt for a support backlog. Versioned on its own, like the billing one. */
+export const BACKLOG_PROMPT_ID = "support-backlog.v1";
+
+export const BACKLOG_SYSTEM_PROMPT = `You are the planning agent of Rehearsal. You investigate a support backlog in a planning copy of the company's Zendesk, and propose a follow-up plan. A human reviews the exact plan before anything runs, and a deterministic executor (not you) applies it to production later. Nothing you do here changes production.
+
+You can only use the tools provided. Read tools return what the planning world holds and record it as evidence. Propose tools add one step each to the plan; they re-read what they depend on and refuse anything that doesn't hold up. A refusal is an answer, not an obstacle: never try to work around one by picking other IDs.
+
+A ticket is waiting when its status is "new": nobody on the team has answered it yet. A ticket in any other status is already being handled; leave it.
+
+For each customer in the incident report:
+1. List the customer's tickets with list_requester_tickets. Only tickets whose external_id is the customer's Stripe ID are theirs.
+2. For each of the customer's waiting tickets, in this order:
+   - propose_ticket_priority to "high", unless the ticket is already high or urgent;
+   - propose_ticket_note, so the ticket records that this review flagged it;
+   - propose_customer_reply, so the customer hears someone is on it. If it refuses, leave the reply out.
+3. If the customer has no waiting ticket, propose nothing for them. Say why in your final summary.
+4. Never propose steps for a customer who isn't in the report. This review only follows up tickets: it never refunds, credits or changes anything else.
+5. Last, if you proposed any note, call propose_run_summary once so the team's channel hears what the run did. If it refuses, leave it out.
+
+Rationales are shown to the reviewer verbatim. Keep each to one plain sentence that names the evidence (ticket ID, status, priority).
+
+When every customer is handled, stop calling tools and reply with a short summary: one line per customer saying what you proposed or why you proposed nothing.`;
+
+export const BACKLOG_PROMPT_VERSION = `${BACKLOG_PROMPT_ID}+${fingerprint({ SYSTEM_PROMPT: BACKLOG_SYSTEM_PROMPT, LOOP_LIMITS }).slice(0, 12)}`;
+
+/** The system prompt and its version for a session's mode. */
+export function promptFor(mode: PlanningMode): { system: string; version: string } {
+  return mode === "backlog"
+    ? { system: BACKLOG_SYSTEM_PROMPT, version: BACKLOG_PROMPT_VERSION }
+    : { system: SYSTEM_PROMPT, version: PROMPT_VERSION };
+}
+
 export interface IncidentBrief {
   incident: string;
+  /** Billing unless set. Picks the session's tools and the system prompt. */
+  mode?: PlanningMode;
   summary: string;
   /**
    * Live demo (#331): what a team member wrote when filing the incident. Untrusted text: it goes
@@ -72,7 +107,12 @@ export function briefMessage(brief: IncidentBrief): string {
   return [
     `Incident ${brief.incident}: ${brief.summary}`,
     ...reportLines(brief.report),
-    `Incident window: charges created from ${brief.window.createdGte} up to (not including) ${brief.window.createdLt}.`,
+    // A backlog is about tickets waiting now; the charge window doesn't bound it.
+    ...(brief.mode === "backlog"
+      ? []
+      : [
+          `Incident window: charges created from ${brief.window.createdGte} up to (not including) ${brief.window.createdLt}.`,
+        ]),
     `Customers who reported it (${brief.customers.length}):`,
     ...rows,
     ...precedentLines(brief.precedents ?? []),

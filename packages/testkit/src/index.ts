@@ -4,5 +4,6 @@ export * from "./challenges";
 export * from "./clock";
 export * from "./incident";
 export * from "./journal";
+export * from "./problems";
 export * from "./provider";
 export * from "./rehearsal";
