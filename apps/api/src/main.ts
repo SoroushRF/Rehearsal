@@ -52,6 +52,8 @@ const approvals = apply && {
   policies,
 };
 const runs = apply && { db: apply.db, iam };
+// Live demo (#330): the company overview reads the operational world with the API's admin token.
+const company = apply && { db: apply.db, iam };
 // Agent Memory is optional: without it a promotion is recorded and waits, and nothing plans from it.
 const publisherFor = publisherFromEnv();
 const precedents = apply && {
@@ -83,6 +85,7 @@ const app = buildApp({
   plans,
   approvals,
   runs,
+  company,
   precedents,
   rehearse,
   executionRehearsals,

@@ -8,6 +8,7 @@ import { type ApprovalDeps, registerApprovalRoutes } from "./approvals";
 import { registerAuditRoute } from "./audit";
 import { registerMeRoute } from "./auth";
 import { registerCancelRoute } from "./cancel";
+import { type CompanyDeps, registerCompanyRoutes } from "./company";
 import {
   type ExecutionRehearsalDeps,
   registerExecutionRehearsalRoutes,
@@ -35,6 +36,8 @@ export function buildApp(
     plans?: PlanDeps;
     approvals?: ApprovalDeps;
     runs?: RunDeps;
+    /** Live demo (#330): the signed-in org's company overview. */
+    company?: CompanyDeps;
     rehearse?: RehearseDeps;
     /** T2.19: request and read an execution rehearsal of a stored plan. */
     executionRehearsals?: ExecutionRehearsalDeps;
@@ -85,6 +88,8 @@ export function buildApp(
     app.post("/api/plans/:id/approvals", unavailable);
     app.post("/api/plans/:id/approvals/:grantId/revoke", unavailable);
   }
+  if (deps.company) registerCompanyRoutes(app, deps.company);
+  else app.get("/api/company", unavailable);
   if (deps.runs) {
     registerRunRoutes(app, deps.runs);
     registerAuditRoute(app, deps.runs);
