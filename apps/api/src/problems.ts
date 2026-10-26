@@ -1,5 +1,6 @@
 import { randomInt } from "node:crypto";
 import { CreateProblem } from "@rehearsal/contracts";
+import { orgTenant } from "@rehearsal/core";
 import { eraAdmin, resolveWorld } from "@rehearsal/providers";
 import { type ProblemRecords, problemRecords } from "@rehearsal/testkit";
 import type { FastifyInstance } from "fastify";
@@ -15,6 +16,11 @@ export interface ProblemDeps {
   iam?: IamClient;
   /** Writes the same records into both of the org's worlds. */
   inject: (orgId: string, records: ProblemRecords) => Promise<void>;
+  /**
+   * Seeds a new org's worlds first (#330). Seeding resets a world that lacks the cohort, so a
+   * problem injected before it would be wiped. Absent: nothing is seeded (tests).
+   */
+  ensureSeeded?: (orgId: string) => Promise<void>;
 }
 
 export function registerProblemRoutes(app: FastifyInstance, deps: ProblemDeps) {
@@ -36,6 +42,12 @@ export function registerProblemRoutes(app: FastifyInstance, deps: ProblemDeps) {
     );
     if (!records) return reply.code(400).send({ error: "unsupported_preset" });
     try {
+      await deps.ensureSeeded?.(gate.person.orgId);
+    } catch (err) {
+      req.log.error({ err }, "org worlds could not be seeded");
+      return reply.code(502).send({ error: "world_unavailable" });
+    }
+    try {
       await deps.inject(gate.person.orgId, records);
     } catch (err) {
       req.log.error({ err, preset: body.data.preset }, "problem inject failed");
@@ -46,15 +58,16 @@ export function registerProblemRoutes(app: FastifyInstance, deps: ProblemDeps) {
 }
 
 /**
- * The injector over the Era worlds this API's environment names. Every org shares the demo tenant
- * until each org has its own (#330 PR B); then this takes `orgTenant(orgId)`.
+ * The injector over the Era worlds this API's environment names, into the org's own tenant
+ * (`orgTenant(orgId)`, #330) only: no org's problem reaches another org's data.
  */
 export function eraProblemInjector(
   env: NodeJS.ProcessEnv = process.env,
 ): ProblemDeps["inject"] | undefined {
   const adminToken = env.ERA_ADMIN_TOKEN;
   if (!adminToken) return undefined;
-  return async (_orgId, records) => {
+  return async (orgId, records) => {
+    const tenant = orgTenant(orgId);
     for (const world of ["planning", "operational"] as const) {
       const writes = [
         { vendor: "stripe", body: records.stripe, count: records.stripe.charges.length },
@@ -62,7 +75,12 @@ export function eraProblemInjector(
       ] as const;
       for (const { vendor, body, count } of writes) {
         if (count === 0) continue;
-        const res = await eraAdmin(resolveWorld(vendor, world, env), adminToken, "/inject", body);
+        const res = await eraAdmin(
+          resolveWorld(vendor, world, env, tenant),
+          adminToken,
+          "/inject",
+          body,
+        );
         if (!res.ok) throw new Error(`${vendor} ${world} inject → ${res.status}`);
       }
     }
