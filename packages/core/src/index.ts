@@ -9,6 +9,7 @@ export * from "./effects";
 export * from "./executor";
 export * from "./guards";
 export * from "./hash";
+export * from "./org-tenant";
 export * from "./policy";
 export * from "./ports";
 export * from "./precedents";
