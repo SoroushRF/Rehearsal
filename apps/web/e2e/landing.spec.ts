@@ -11,9 +11,9 @@ test("the landing page is public and static: no API call, no sign-in", async ({ 
 
   await page.goto("/");
   await expect(
-    page.getByRole("heading", { level: 1, name: /Dress rehearsal\s*for AI agents/ }),
+    page.getByRole("heading", { level: 1, name: /Change control\s*for AI agents/ }),
   ).toBeVisible();
-  await expect(page).toHaveTitle("Rehearsal: a dress rehearsal for AI agents");
+  await expect(page).toHaveTitle("Rehearsal: change control for AI agents");
   await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
   await expect(page.getByRole("figure", { name: /example plan/ })).toContainText(
     "4 to add, 2 to change, 0 to destroy",
