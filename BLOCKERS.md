@@ -6,7 +6,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 
 ## Top blockers
 
-88 of 100 tasks done. These open tasks hold up the most other work:
+91 of 100 tasks done. These open tasks hold up the most other work:
 
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
@@ -49,9 +49,9 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T1.28** Run and publish versioned benchmark comparisons [#176](https://github.com/SoroushRF/Rehearsal/issues/176) | 🟥 blocked | T4.13 (T4, ready) | T2.7 (T2) |
 | **T1.29** Plans carry a PrecedentBasis; the review page shows recalled precedents with their trace _(stretch)_ [#235](https://github.com/SoroushRF/Rehearsal/issues/235) | ✅ done |  |  |
 | **T1.30** Flag a plan that leaves out an eligible customer [#274](https://github.com/SoroushRF/Rehearsal/issues/274) | ✅ done |  |  |
-| **T1.41** Demo blocker: target the org tenant when injecting the phantom [#348](https://github.com/SoroushRF/Rehearsal/issues/348) | 🟨 ready | — |  |
-| **T1.42** Serialize org resets with planning/apply admission [#349](https://github.com/SoroushRF/Rehearsal/issues/349) | 🟨 ready | — |  |
-| **T1.43** Reserve built-in incident IDs when allocating filed incidents [#350](https://github.com/SoroushRF/Rehearsal/issues/350) | 🟨 ready | — |  |
+| **T1.41** Demo blocker: target the org tenant when injecting the phantom [#348](https://github.com/SoroushRF/Rehearsal/issues/348) | ✅ done |  |  |
+| **T1.42** Serialize org resets with planning/apply admission [#349](https://github.com/SoroushRF/Rehearsal/issues/349) | ✅ done |  |  |
+| **T1.43** Reserve built-in incident IDs when allocating filed incidents [#350](https://github.com/SoroushRF/Rehearsal/issues/350) | ✅ done |  |  |
 
 ## T2 Review & Approve
 
@@ -178,9 +178,9 @@ flowchart LR
     T1_27["T1.27 Extend the scorecard to the full operation"]:::done
     T1_28["T1.28 Run and publish versioned benchmark compar"]:::blocked
     T1_30["T1.30 Flag a plan that leaves out an eligible cu"]:::done
-    T1_41["T1.41 Demo blocker: target the org tenant when i"]:::ready
-    T1_42["T1.42 Serialize org resets with planning/apply a"]:::ready
-    T1_43["T1.43 Reserve built-in incident IDs when allocat"]:::ready
+    T1_41["T1.41 Demo blocker: target the org tenant when i"]:::done
+    T1_42["T1.42 Serialize org resets with planning/apply a"]:::done
+    T1_43["T1.43 Reserve built-in incident IDs when allocat"]:::done
   end
   subgraph T2[T2 Review & Approve]
     T2_1["T2.1 Plan diff view from fixture bundles"]:::done
