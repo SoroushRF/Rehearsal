@@ -105,6 +105,17 @@ This run predates later merges to `main`. The final T1.28 run on the tagged subm
 
 **Disclosures (fill in truthfully).** AI coding tools were used to write parts of this repository **[fill: which, by whom]**; prior work: **[fill]**. Partner services actually used: **[fill]**. No ML model was trained or served.
 
+## Judges trying it live
+
+Each judge gets their own company only if they are in their own organization:
+
+- Give judges the **sign-up link**. On first sign-in Clerk asks them to create an organization; that org gets its own Era tenants, seeded with the demo company, and its own plans, approvals, runs and receipts. Nothing they do reaches another org.
+- **Never** share one demo login, and never invite a judge into our org: people in one org share everything, on purpose.
+- **Reset** (next to *Create problem*) puts their own world back to the seeded company. It is refused while one of their plans or runs is in progress.
+- Nobody runs `pnpm demo:fault` while judging. Era faults are container-wide and would hit every org; the script refuses a non-local Era unless `REHEARSAL_SHARED_FAULTS=1`.
+
+Evidence: `evals/providers/test/org-tenant.test.ts` passes on local Era images. It checks per-org seeding, that a refund, a created problem or a reset in org A leaves org B unchanged, and that the operator mints no token for an org without a live job.
+
 ## Before recording
 
 - [ ] Deployed URL up and `pnpm smoke:*` passing against it (T2.5) **[fill: URL]**
