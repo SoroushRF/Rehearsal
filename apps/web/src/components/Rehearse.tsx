@@ -1,18 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { type ApiFetch, call, explain, RefusedError } from "../api";
 import { useTenantKey } from "../identity";
 import { Alert, Button, Card, Icon, Spinner } from "./ui";
 
 /**
- * The one incident this deployment can rehearse (scenarios/billing/incident.v1.json). The API
- * refuses anything else; there is no list of incidents to read it from yet.
+ * The incident rehearsed when none was picked: the built-in one (scenarios/billing/incident.v1.json)
+ * the replay and the tests use. Filed incidents are rehearsed by their own ID.
  */
 export const INCIDENT_ID = "INC-BILL-0927";
 
 const Started = z.object({ rehearsalId: z.string(), planId: z.string(), state: z.string() });
-const Rehearsal = z.object({
+export const Rehearsal = z.object({
   rehearsalId: z.string(),
   planId: z.string(),
   state: z.enum(["queued", "planning", "retrying", "stored", "failed"]),
@@ -20,7 +20,7 @@ const Rehearsal = z.object({
   planHash: z.string().optional(),
   summary: z.string().optional(),
 });
-type Rehearsal = z.infer<typeof Rehearsal>;
+export type Rehearsal = z.infer<typeof Rehearsal>;
 
 const POLL_MS = 2000;
 const done = (r: Rehearsal | undefined) => r?.state === "stored" || r?.state === "failed";
@@ -43,11 +43,19 @@ const reached = (s: Rehearsal["state"]) => (s === "queued" ? 0 : s === "stored" 
  */
 export function RehearseBar({
   apiFetch,
+  incidentId = INCIDENT_ID,
+  autoStart = false,
   onStored,
+  onState,
   allowed = true,
 }: {
   apiFetch: ApiFetch;
+  incidentId?: string;
+  /** Start once on mount: the person already chose "Rehearse" on this incident. */
+  autoStart?: boolean;
   onStored: (planId: string) => void;
+  /** Where the rehearsal stands, for the process diagram. */
+  onState?: (state: Rehearsal["state"] | null) => void;
   /** False when the signed-in person lacks `rehearsal:rehearse:incident`. */
   allowed?: boolean;
 }) {
@@ -57,7 +65,7 @@ export function RehearseBar({
 
   const start = useMutation({
     mutationFn: () =>
-      call(apiFetch, Started, `/api/incidents/${encodeURIComponent(INCIDENT_ID)}/rehearse`, {}),
+      call(apiFetch, Started, `/api/incidents/${encodeURIComponent(incidentId)}/rehearse`, {}),
     onSuccess: (s) => setRehearsalId(s.rehearsalId),
   });
   const status = useQuery({
@@ -75,6 +83,18 @@ export function RehearseBar({
     queryClient.invalidateQueries({ queryKey: key("plans") });
     onStored(storedPlanId);
   }, [storedPlanId, queryClient, key, onStored]);
+
+  // A ref, not state: StrictMode's second effect run must not spend a second rehearsal.
+  const started = useRef(false);
+  const { mutate } = start;
+  useEffect(() => {
+    if (!autoStart || !allowed || started.current) return;
+    started.current = true;
+    mutate();
+  }, [autoStart, allowed, mutate]);
+
+  const shown = r?.state ?? (start.isPending || rehearsalId !== null ? "queued" : null);
+  useEffect(() => onState?.(shown), [shown, onState]);
 
   const running = start.isPending || (rehearsalId !== null && !done(r));
   return (
@@ -103,7 +123,7 @@ export function RehearseBar({
             start.mutate();
           }}
         >
-          Rehearse {INCIDENT_ID}
+          Rehearse <span className="font-mono">{incidentId}</span>
         </Button>
       </div>
 
@@ -123,7 +143,9 @@ export function RehearseBar({
             {r.state === "failed" || r.state === "retrying" ? <> {failure(r)}</> : null}
           </p>
           {r.state === "stored" && r.summary && (
-            <p className="mt-1 text-sm leading-5 text-muted">Planner's summary: {r.summary}</p>
+            <p data-testid="planner-summary" className="mt-1 text-sm leading-5 text-muted">
+              Planner's summary: {r.summary}
+            </p>
           )}
         </div>
       )}

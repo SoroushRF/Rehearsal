@@ -2,7 +2,7 @@ import { useAuth } from "@clerk/react";
 import { useState } from "react";
 import { AccountBar, clerkKey, useApiFetch } from "./auth";
 import { AppShell, Segmented } from "./components/AppShell";
-import { LivePlans } from "./components/LivePlans";
+import { LiveApp } from "./components/LivePlans";
 import { PlanReview } from "./components/PlanReview";
 import { ReplayPage } from "./components/ReplayPage";
 import { Alert, Card } from "./components/ui";
@@ -46,7 +46,7 @@ function SignedInOrFixtures({ bundles }: { bundles: FixtureBundle[] }) {
         </div>
       }
     >
-      <LivePlans apiFetch={apiFetch} />
+      <LiveApp apiFetch={apiFetch} />
     </IdentityScope>
   );
 }

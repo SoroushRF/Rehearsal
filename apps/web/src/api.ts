@@ -107,6 +107,15 @@ export async function call<T>(
   return schema.parse(json);
 }
 
+/**
+ * The API has no such route (it isn't deployed yet), as opposed to a route refusing: Fastify's
+ * own 404, or the SPA fallback's `not_found`. Domain 404s carry their own code.
+ */
+export const routeMissing = (err: unknown) =>
+  err instanceof RefusedError &&
+  err.status === 404 &&
+  ["not_found", "Not Found", "http_404"].includes(err.refusal.error);
+
 const roleNames: Record<Role, string> = {
   finance_lead: "a finance lead",
   support_lead: "a support lead",
