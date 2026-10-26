@@ -121,7 +121,7 @@ export function LiveApp({ apiFetch, initialView }: { apiFetch: ApiFetch; initial
   return (
     <div className="flex flex-col gap-6">
       <TopNav>
-        <nav aria-label="Sections" className="flex items-stretch gap-4 overflow-x-auto sm:gap-6">
+        <nav aria-label="Sections" className="flex items-stretch gap-3 overflow-x-auto sm:gap-6">
           {[...views, ...(members ? [{ id: "members" as const, text: "Members" }] : [])].map(
             (o) => (
               <button
