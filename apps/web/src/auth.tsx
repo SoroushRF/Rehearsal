@@ -90,22 +90,13 @@ export function usePermissions(apiFetch: ApiFetch): {
   return { permissions: me.data?.permissions ?? null, ready: me.isFetched };
 }
 
-/** Clerk role and permissions as the API verified them. */
-export function VerifiedIdentity({
-  clerkRole,
-  permissions,
-}: {
-  clerkRole: string | null;
-  permissions: readonly string[];
-}) {
+/** Clerk role as the API verified it. Permission identifiers stay on `/api/me` for gating. */
+export function VerifiedIdentity({ clerkRole }: { clerkRole: string | null }) {
   return (
     <span data-testid="verified-identity" className="flex max-w-xl flex-wrap items-center gap-1.5">
       <Badge tone="info" icon="users" hint="Clerk organization role verified by the API">
         {clerkRole ?? "No role"}
       </Badge>
-      <span data-testid="verified-permissions" className="text-xs leading-4 text-muted">
-        {permissions.length > 0 ? permissions.join(", ") : "No permissions"}
-      </span>
     </span>
   );
 }
@@ -160,5 +151,5 @@ function VerifiedRoles() {
   if (!orgId) return <Badge tone="warn">Choose an organization</Badge>;
   if (me.isPending) return <span className="text-xs text-subtle">checking permissions…</span>;
   if (me.isError || me.data === null) return <Badge tone="danger">Permissions not verified</Badge>;
-  return <VerifiedIdentity clerkRole={me.data.clerkRole} permissions={me.data.permissions} />;
+  return <VerifiedIdentity clerkRole={me.data.clerkRole} />;
 }

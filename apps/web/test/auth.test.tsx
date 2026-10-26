@@ -18,15 +18,11 @@ describe("GET /api/me", () => {
   });
 
   it("shows the Clerk role and the permissions in the header", () => {
-    const html = renderToStaticMarkup(
-      <VerifiedIdentity
-        clerkRole="org:finance_lead"
-        permissions={["rehearsal:apply:plan", "rehearsal:approve:finance_step"]}
-      />,
-    );
+    const html = renderToStaticMarkup(<VerifiedIdentity clerkRole="org:finance_lead" />);
     expect(html).toContain("org:finance_lead");
-    expect(html).toContain("rehearsal:apply:plan");
-    expect(html).toContain("rehearsal:approve:finance_step");
+    expect(html).not.toContain("rehearsal:apply:plan");
+    expect(html).not.toContain("rehearsal:approve:finance_step");
+    expect(html).not.toContain("No permissions");
   });
 });
 
