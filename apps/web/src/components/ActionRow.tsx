@@ -1,40 +1,23 @@
-import type { Action, CompensationClass, ProtectionLevel } from "@rehearsal/contracts";
+import type { Action, CompensationClass } from "@rehearsal/contracts";
 import { compensationLabel, formatMoney, protectionLabel, roleLabel } from "../format";
 import { outcomeLabel } from "../runs";
-import { Chip, Icon, type IconName, type Tone } from "./ui";
+import { Icon } from "./ui";
 
-/** Which effect this is, as a colored tile: money moves, a field changes, or a note is added. */
-const KIND: Record<Action["kind"], { icon: IconName; tile: string; label: string }> = {
-  "stripe.refund.create": { icon: "refund", tile: "bg-accent-soft text-accent", label: "Refund" },
-  "zendesk.ticket.patchFields": { icon: "edit", tile: "bg-info-bg text-info", label: "Ticket" },
-  "zendesk.ticket.appendPrivateNote": { icon: "note", tile: "bg-sunken text-muted", label: "Note" },
-  "stripe.customer.balanceCredit": {
-    icon: "refund",
-    tile: "bg-accent-soft text-accent",
-    label: "Invoice credit",
-  },
-  "zendesk.ticket.appendPublicReply": {
-    icon: "send",
-    tile: "bg-warn-bg text-warn",
-    label: "Reply to customer",
-  },
-  "slack.message.postSummary": {
-    icon: "send",
-    tile: "bg-info-bg text-info",
-    label: "Slack summary",
-  },
+/** Which effect this is, as a plan-diff op: + adds something new, ~ changes something in place. */
+const KIND: Record<Action["kind"], { op: "+" | "~"; label: string }> = {
+  "stripe.refund.create": { op: "+", label: "Refund" },
+  "zendesk.ticket.patchFields": { op: "~", label: "Ticket" },
+  "zendesk.ticket.appendPrivateNote": { op: "+", label: "Note" },
+  "stripe.customer.balanceCredit": { op: "+", label: "Invoice credit" },
+  "zendesk.ticket.appendPublicReply": { op: "+", label: "Reply to customer" },
+  "slack.message.postSummary": { op: "+", label: "Slack summary" },
 };
 
-const compensationTone: Record<CompensationClass, { tone: Tone; icon: IconName }> = {
-  conditional_reversible: { tone: "good", icon: "undo" },
-  compensable_by_new_action: { tone: "warn", icon: "refund" },
-  irreversible: { tone: "danger", icon: "lock" },
-};
-
-const protectionTone: Record<ProtectionLevel, Tone> = {
-  native_guard_with_documented_limits: "neutral",
-  best_effort_reread: "warn",
-  no_atomic_guard: "warn",
+/** Only the risk is colored in a step's facts. */
+const compensationColor: Record<CompensationClass, string> = {
+  conditional_reversible: "text-ok",
+  compensable_by_new_action: "text-warn",
+  irreversible: "text-danger",
 };
 
 /** Present only when the reviewer can uncheck actions (a live plan, not a fixture). */
@@ -73,10 +56,20 @@ export function ActionRow({
       data-testid="action-row"
       data-action-id={action.id}
       data-dropped={dropped ? "true" : undefined}
-      className={`ledger-row group relative flex gap-2.5 px-3 transition-colors sm:gap-4 sm:px-5 ${
+      className={`ledger-row group relative flex gap-2.5 pr-3 transition-colors sm:gap-3 sm:pr-5 ${
         selected ? "bg-accent-soft/60" : dropped ? "bg-sunken/70" : "hover:bg-sunken/50"
       }`}
     >
+      <span
+        className={`diff-op ${dropped ? "opacity-50" : ""}`}
+        data-op={kind.op}
+        data-risk={action.compensation}
+        title={kind.label}
+        aria-hidden
+      >
+        {kind.op}
+      </span>
+
       {include && (
         <input
           type="checkbox"
@@ -85,16 +78,9 @@ export function ActionRow({
           // A dependent can't be re-included on its own; re-check what it depends on instead.
           disabled={include.droppedWithDependency && !include.unchecked}
           onChange={include.onToggle}
-          className="mt-2.5 h-[18px] w-[18px] shrink-0 cursor-pointer accent-[var(--accent)] disabled:cursor-not-allowed"
+          className="order-last mt-1 h-[18px] w-[18px] shrink-0 cursor-pointer accent-[var(--accent)] disabled:cursor-not-allowed"
         />
       )}
-
-      <span
-        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg sm:h-10 sm:w-10 sm:rounded-xl ${kind.tile} ${dropped ? "opacity-50" : ""}`}
-        title={kind.label}
-      >
-        <Icon name={kind.icon} className="h-4 w-4 sm:h-5 sm:w-5" />
-      </span>
 
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-3">
@@ -123,46 +109,31 @@ export function ActionRow({
         <Message action={action} dropped={!!dropped} />
 
         <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-            <Chip
-              tone={compensationTone[action.compensation].tone}
-              icon={compensationTone[action.compensation].icon}
-              hint={comp.hint}
+          <p className="step-meta min-w-0">
+            <span
+              title={comp.hint}
+              className={`font-semibold ${compensationColor[action.compensation]}`}
             >
               {comp.text}
-            </Chip>
-            <Chip tone={protectionTone[action.protection]} icon="shield" hint={prot.hint}>
-              {prot.text}
-            </Chip>
-            <Chip
-              tone={action.requiredRole === "finance_lead" ? "info" : "neutral"}
-              icon="users"
-              hint="Role that must approve this step"
-            >
-              {roleLabel[action.requiredRole]}
-            </Chip>
+            </span>
+            <span title={prot.hint}>{prot.text}</span>
+            <span title="Role that must approve this step">
+              signs: {roleLabel[action.requiredRole]}
+            </span>
             {dependsOnLabels.length > 0 && (
-              <Chip
-                tone="accent"
-                icon="arrow"
-                hint="This step only runs once the step it follows has been confirmed"
-              >
+              <span title="This step only runs once the step it follows has been confirmed">
                 After {dependsOnLabels.join(", ")}
-              </Chip>
+              </span>
             )}
-            {dropped && <Chip tone="neutral">Won't run</Chip>}
-          </div>
+            {dropped && <span className="text-ink">Won't run</span>}
+          </p>
           <button
             type="button"
             onClick={onShowEvidence}
             aria-pressed={selected}
-            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-2.5 text-[13px] font-medium text-ink shadow-card hover:bg-sunken"
+            className="shrink-0 text-[13px] font-medium text-accent underline underline-offset-4 hover:text-accent-hover aria-pressed:no-underline"
           >
-            <Icon name="eye" className="h-3.5 w-3.5 text-subtle" />
-            Evidence
-            <span className="tnum rounded-full bg-sunken px-1.5 text-xs leading-5 text-muted">
-              {evidenceCount}
-            </span>
+            Evidence <span className="tnum">({evidenceCount})</span>
           </button>
         </div>
       </div>

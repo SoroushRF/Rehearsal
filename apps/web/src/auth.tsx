@@ -22,12 +22,12 @@ export const clerkKey: string | undefined = import.meta.env.VITE_CLERK_PUBLISHAB
 /** Clerk's own components (sign-in, user menu, org switcher) follow the app's colors and type. */
 const clerkAppearance = {
   variables: {
-    colorPrimary: "#c5f13a",
-    colorPrimaryForeground: "#17150f",
-    colorText: "#17150f",
-    colorTextSecondary: "#484436",
-    borderRadius: "0.5rem",
-    fontFamily: '"Inter Variable", ui-sans-serif, system-ui, sans-serif',
+    colorPrimary: "#2238b8",
+    colorPrimaryForeground: "#ffffff",
+    colorText: "#12161b",
+    colorTextSecondary: "#434a52",
+    borderRadius: "0.25rem",
+    fontFamily: '"Archivo Variable", ui-sans-serif, system-ui, sans-serif',
     fontSize: "0.9375rem",
   },
   elements: { organizationSwitcherTrigger: { padding: "0.25rem 0.5rem" } },

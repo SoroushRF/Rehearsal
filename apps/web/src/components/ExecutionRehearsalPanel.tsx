@@ -25,7 +25,7 @@ import {
 import { shortHash } from "../format";
 import { useTenantKey } from "../identity";
 import { RehearsalReportToggle } from "./RehearsalReport";
-import { Alert, Button, Card, Chip, Icon } from "./ui";
+import { Alert, Button, Chip } from "./ui";
 
 const POLL_MS = 2000;
 
@@ -218,11 +218,8 @@ export function ExecutionRehearsalPanel({
 
 function Panel({ children }: { children: React.ReactNode }) {
   return (
-    <Card aria-label="Execution rehearsal" className="p-4 sm:p-5">
+    <section aria-label="Execution rehearsal" className="border-y border-line py-4">
       <div className="flex items-start gap-3">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent">
-          <Icon name="flask" className="h-5 w-5" />
-        </span>
         <div>
           <h2 className="text-[15px] leading-6 font-semibold text-ink">
             Rehearse this plan before approving
@@ -235,7 +232,7 @@ function Panel({ children }: { children: React.ReactNode }) {
         </div>
       </div>
       {children}
-    </Card>
+    </section>
   );
 }
 

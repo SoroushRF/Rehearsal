@@ -1,14 +1,15 @@
-@import "@fontsource-variable/inter";
-@import "@fontsource-variable/fraunces";
-@import "@fontsource-variable/jetbrains-mono";
+@import "@fontsource-variable/archivo/wdth.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+@import "@fontsource/ibm-plex-mono/600.css";
 @import "tailwindcss";
 
 /*
  * Design tokens. Components use only these semantic names (bg-surface, text-muted, border-line,
  * tone-ok, …), never raw palette colors, so light and dark stay consistent.
  *
- * Identity: warm paper, ink, and one lime used as a highlighter. In light the accent is a deep
- * olive so text and buttons stay readable on paper; in dark the accent is the lime itself.
+ * Identity: a signed change order. Cool form paper, ink, and one signing-ink blue. Steps read like
+ * a plan diff (+ adds, ~ changes) with the risk as a rail down the left edge.
  *
  * Risk legend, used the same way everywhere:
  *   ok     reversible, safe            danger  irreversible, can't be taken back
@@ -16,90 +17,94 @@
  */
 :root {
   color-scheme: light;
-  --canvas: #f3eee3;
-  --surface: #fbf8f0;
-  --sunken: #ebe5d6;
-  --line: #ddd5c2;
-  --line-strong: #bdb299;
-  --ink: #17150f;
-  --muted: #484436;
-  --subtle: #5f594a;
-  --accent: #2f4408;
-  --accent-hover: #1f2f04;
-  --accent-soft: #e4ebb9;
-  --on-accent: #f7f4ea;
-  --lime: #c5f13a;
-  --on-lime: #17150f;
-  --stamp: #17150f;
-  --ok-solid: #2f8f3f;
-  --warn-solid: #d9930a;
+  --canvas: #eef0ee;
+  --surface: #fbfbfa;
+  --sunken: #e6e9e6;
+  --line: #d6dad7;
+  --line-strong: #aeb4b0;
+  --ink: #12161b;
+  --muted: #434a52;
+  --subtle: #40464e;
+  --accent: #2238b8;
+  --accent-hover: #182a8f;
+  --accent-soft: #e5e8f8;
+  --on-accent: #ffffff;
+  --lime: #2238b8;
+  --on-lime: #ffffff;
+  --stamp: #12161b;
+  --ok-solid: #2f8f4f;
+  --warn-solid: #c98a12;
   --danger-solid: #c8372d;
-  --info-solid: #3b6fb0;
+  --info-solid: #5d6570;
 
-  --ok-fg: #1d5a2a;
-  --ok-bg: #e1eed3;
-  --ok-line: #b2cf98;
-  --warn-fg: #7a4300;
-  --warn-bg: #fbebc4;
-  --warn-line: #e6c675;
-  --danger-fg: #a1241b;
-  --danger-bg: #f9e0d9;
-  --danger-line: #eab0a4;
-  --info-fg: #24497a;
-  --info-bg: #e0e8f1;
-  --info-line: #b1c4db;
+  --ok-fg: #17552d;
+  --ok-bg: #e3efe6;
+  --ok-line: #a9cbb3;
+  --warn-fg: #683c00;
+  --warn-bg: #f6ecd9;
+  --warn-line: #dfc28e;
+  --danger-fg: #b1261d;
+  --danger-bg: #f8e3e0;
+  --danger-line: #e6aea7;
+  --info-fg: #2c3440;
+  --info-bg: #e6e9ee;
+  --info-line: #c2c8d0;
 
-  --elev-card: 0 1px 0 rgb(23 21 15 / 0.05), 0 1px 2px rgb(23 21 15 / 0.05);
-  --elev-raised: 0 10px 28px rgb(23 21 15 / 0.12), 0 2px 6px rgb(23 21 15 / 0.07);
-  --ring: 0 0 0 3px rgb(47 68 8 / 0.4);
+  --elev-card: none;
+  --elev-raised: 0 12px 32px rgb(18 22 27 / 0.14), 0 2px 6px rgb(18 22 27 / 0.08);
+  --ring: 0 0 0 2px var(--canvas), 0 0 0 4px var(--accent);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
-    --canvas: #11120d;
-    --surface: #1a1c14;
-    --sunken: #151610;
-    --line: #2b2e21;
-    --line-strong: #444832;
-    --ink: #efeedd;
-    --muted: #c4c2ae;
-    --subtle: #a09e88;
-    --accent: #c5f13a;
-    --accent-hover: #d7f86b;
-    --accent-soft: #272f0d;
-    --on-accent: #11120d;
-    --lime: #c5f13a;
-    --on-lime: #11120d;
-    --ok-solid: #3ecb82;
-    --warn-solid: #f0b429;
-    --danger-solid: #ff6b76;
-    --info-solid: #5aa2f0;
+    --canvas: #0d0f12;
+    --surface: #14171b;
+    --sunken: #1b1f24;
+    --line: #262b31;
+    --line-strong: #3a4149;
+    --ink: #e7e9ec;
+    --muted: #b3bac3;
+    --subtle: #8b939d;
+    --accent: #9aaaff;
+    --accent-hover: #b8c3ff;
+    --accent-soft: #1b2142;
+    --on-accent: #0d0f12;
+    --lime: #9aaaff;
+    --on-lime: #0d0f12;
+    --stamp: #e7e9ec;
+    --ok-solid: #4cc27a;
+    --warn-solid: #e3ad55;
+    --danger-solid: #ff6b62;
+    --info-solid: #8b939d;
 
-    --ok-fg: #72dca0;
-    --ok-bg: #0e2a1b;
-    --ok-line: #1d5236;
-    --warn-fg: #f3b967;
-    --warn-bg: #2b1f0a;
-    --warn-line: #5b4311;
-    --danger-fg: #ff9ba3;
-    --danger-bg: #2f1418;
-    --danger-line: #63262d;
-    --info-fg: #8fbbf6;
-    --info-bg: #0f2038;
-    --info-line: #274b78;
+    --ok-fg: #6fcf8f;
+    --ok-bg: #10261a;
+    --ok-line: #1f4a30;
+    --warn-fg: #e3ad55;
+    --warn-bg: #2a1f0c;
+    --warn-line: #5a4314;
+    --danger-fg: #ff8a80;
+    --danger-bg: #2e1513;
+    --danger-line: #612a25;
+    --info-fg: #c9ced5;
+    --info-bg: #1b1f24;
+    --info-line: #3a4149;
 
-    --elev-card: 0 1px 2px rgb(0 0 0 / 0.4);
     --elev-raised: 0 12px 32px rgb(0 0 0 / 0.55), 0 2px 6px rgb(0 0 0 / 0.4);
-    --ring: 0 0 0 3px rgb(197 241 58 / 0.45);
   }
 }
 
 @theme inline {
-  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-display: "Fraunces Variable", Georgia, "Times New Roman", serif;
-  --font-mono:
-    "JetBrains Mono Variable", ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+  --font-sans: "Archivo Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Archivo Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+
+  /* Square-ish corners everywhere: a form, not a stack of bubbles. */
+  --radius-md: 3px;
+  --radius-lg: 4px;
+  --radius-xl: 4px;
+  --radius-2xl: 6px;
 
   --color-canvas: var(--canvas);
   --color-surface: var(--surface);
@@ -149,17 +154,16 @@ body {
   font-family: var(--font-sans);
   font-size: 15px;
   line-height: 1.5;
-  font-feature-settings: "cv11", "ss03";
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
-/* Page and section titles are set in the display serif; everything you act on stays in the sans. */
+/* Page and section titles are set condensed and heavy; everything you act on stays at normal width. */
 h1,
 h2 {
   font-family: var(--font-display);
-  font-optical-sizing: auto;
-  letter-spacing: -0.02em;
+  font-stretch: 80%;
+  letter-spacing: -0.01em;
 }
 
 /* Money and counts line up in columns. */
@@ -171,78 +175,76 @@ h2 {
 :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
   outline: none;
   box-shadow: var(--ring);
-  border-radius: 0.5rem;
+  border-radius: 0.25rem;
 }
 
 ::selection {
-  background: var(--lime);
-  color: var(--on-lime);
+  background: var(--accent-soft);
+  color: var(--ink);
 }
 
 /* ---------- Brand ---------- */
 
-/* The logo tile: a dark stamp with a lime flask; in dark mode the lime is the tile. */
-.brand-mark {
-  display: inline-flex;
-  height: 2rem;
-  width: 2rem;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  border-radius: 0.5rem;
-  background: var(--stamp);
-  color: var(--lime);
-  box-shadow: var(--elev-card);
-}
-@media (prefers-color-scheme: dark) {
-  .brand-mark,
-  .ledger-index {
-    background: var(--lime);
-    color: var(--on-lime);
-  }
-}
+/* A lowercase wordmark and what the product does, no logo tile. */
 .brand-name {
   font-family: var(--font-display);
-  font-size: 1.25rem;
-  font-weight: 600;
+  font-size: 1.2rem;
+  font-weight: 800;
+  font-stretch: 85%;
   letter-spacing: -0.02em;
   color: var(--ink);
 }
-
-/* A highlighter stroke behind a phrase. The text keeps ink on lime in both themes. */
-.mark {
-  background: linear-gradient(transparent 58%, var(--lime) 58% 92%, transparent 92%);
-  color: var(--ink);
-  padding: 0 0.12em;
-  margin: 0 -0.12em;
-  -webkit-box-decoration-break: clone;
-  box-decoration-break: clone;
-}
-@media (prefers-color-scheme: dark) {
-  .mark {
-    background: none;
-    color: var(--lime);
-  }
-}
-
-/* Small mono caption used for section labels and ledger headings. */
-.workspace-label {
-  margin: 0;
+.brand-tag {
   font-family: var(--font-mono);
   font-size: 0.6875rem;
+  color: var(--subtle);
+  white-space: nowrap;
+}
+
+/* Text tabs in the top bar: an ink underline marks the current section. */
+.top-tab {
+  display: inline-flex;
+  height: 100%;
+  align-items: center;
+  border-bottom: 2px solid transparent;
+  padding-top: 2px;
+  font-size: 0.875rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.top-tab:hover {
+  color: var(--ink);
+}
+.top-tab[aria-current="page"] {
+  border-bottom-color: var(--ink);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* An ink underline under a phrase. */
+.mark {
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+  color: var(--ink);
+}
+
+/* Small caption used for section labels. Sentence case, no tracking. */
+.workspace-label {
+  margin: 0;
+  font-size: 0.8125rem;
   font-weight: 500;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
   color: var(--subtle);
 }
 
-/* ---------- Review workspace: a ledger ---------- */
+/* ---------- Review workspace: a change order ---------- */
 
 .review-heading {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  border-bottom: 2px solid var(--ink);
+  border-bottom: 1px solid var(--line-strong);
   padding-bottom: 1rem;
 }
 .review-title {
@@ -256,14 +258,15 @@ h2 {
   margin: 0;
   min-width: 0;
   overflow-wrap: anywhere;
-  font-size: 1.875rem;
-  line-height: 1.15;
-  font-weight: 600;
+  font-size: 2.25rem;
+  line-height: 1.05;
+  font-weight: 800;
+  font-stretch: 75%;
   color: var(--ink);
 }
 @media (min-width: 640px) {
   .review-title h2 {
-    font-size: 2.5rem;
+    font-size: 2.875rem;
   }
 }
 .review-context {
@@ -278,63 +281,43 @@ h2 {
   margin: 0;
 }
 
-/* Plan → Review → Apply, with the current step highlighted. */
-.review-stage {
+/* Where the process stands, as one line: Copy ✓ ── Plan ✓ ── Approve ── Apply ── Receipts. */
+.stage-line {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem;
+  align-items: baseline;
+  gap: 0.25rem 0;
   margin: 0;
   padding: 0;
   list-style: none;
   font-family: var(--font-mono);
   font-size: 0.75rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-.review-stage li {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
-  padding: 0.25rem 0.75rem 0.25rem 0.375rem;
   color: var(--subtle);
 }
-.review-stage li[aria-current="step"] {
-  border-color: var(--ink);
-  background: var(--ink);
-  color: var(--surface);
+.stage-line li + li::before {
+  content: "──";
+  margin: 0 0.625rem;
+  color: var(--line-strong);
 }
-.stage-number {
-  display: inline-flex;
-  height: 1.25rem;
-  min-width: 1.25rem;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  background: var(--sunken);
-  color: var(--muted);
-  font-size: 0.6875rem;
+.stage-line li[data-done="true"] {
+  color: var(--ink);
 }
-.review-stage li[aria-current="step"] .stage-number {
-  background: var(--lime);
-  color: var(--on-lime);
+.stage-line li[data-done="true"]::after {
+  content: " ✓";
+}
+.stage-line li[aria-current="step"] {
+  font-weight: 600;
+  color: var(--accent);
 }
 
-/* One customer's page of the ledger: a heavy top rule, a ruled head, then the steps. */
-.ledger-section {
-  border-radius: 0.75rem;
-  border-color: var(--line-strong);
-  border-top: 3px solid var(--ink);
-}
+/* One customer's section of the order. */
 .ledger-customer {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem 1rem;
-  border-bottom: 1px dashed var(--line-strong);
-  background: var(--sunken);
+  border-bottom: 1px solid var(--line);
   padding: 0.875rem 0.75rem;
 }
 @media (min-width: 640px) {
@@ -342,24 +325,13 @@ h2 {
     padding-inline: 1.25rem;
   }
 }
+.ledger-customer h3 {
+  font-family: var(--font-mono);
+  font-weight: 500;
+}
 .ledger-customer .tnum {
   font-family: var(--font-mono);
   font-size: 1.0625rem;
-  letter-spacing: -0.02em;
-}
-.ledger-index {
-  display: inline-flex;
-  height: 1.75rem;
-  min-width: 1.75rem;
-  align-items: center;
-  justify-content: center;
-  border-radius: 0.375rem;
-  background: var(--stamp);
-  padding: 0 0.375rem;
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--lime);
 }
 .ledger-row {
   padding-block: 1rem;
@@ -372,25 +344,90 @@ h2 {
   );
 }
 
-/* The summary reads like the bottom line of a statement. */
+/* The plan diff: + adds, ~ changes. The rail on its left edge is the step's risk. */
+.diff-op {
+  display: flex;
+  width: 2.25rem;
+  flex-shrink: 0;
+  align-self: stretch;
+  justify-content: center;
+  border-left: 3px solid var(--line-strong);
+  font-family: var(--font-mono);
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1.5rem;
+}
+.diff-op[data-op="+"] {
+  color: var(--ok-fg);
+}
+.diff-op[data-op="~"] {
+  color: var(--warn-fg);
+}
+.diff-op[data-risk="irreversible"] {
+  border-left-color: var(--danger-fg);
+}
+.diff-op[data-risk="compensable_by_new_action"] {
+  border-left-color: var(--warn-fg);
+}
+
+/* A step's facts on one mono line; only the risk is colored. */
+.step-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.125rem 0.875rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  color: var(--subtle);
+  text-transform: lowercase;
+}
+
+/* The summary is the signature block of the order. */
 .ledger-summary {
-  border-radius: 0.75rem;
-  border-color: var(--line-strong);
-  border-top: 3px solid var(--lime);
+  border-color: var(--ink);
 }
 .ledger-summary-amount {
   margin: 0.25rem 0 0;
   font-family: var(--font-display);
-  font-size: 2.25rem;
-  line-height: 1.1;
-  font-weight: 600;
-  letter-spacing: -0.03em;
+  font-size: 2.625rem;
+  line-height: 1.05;
+  font-weight: 800;
+  font-stretch: 75%;
+  letter-spacing: -0.01em;
 }
 .ledger-summary-note {
   margin: 0.5rem 0 0;
   font-size: 0.8125rem;
   line-height: 1.25rem;
   color: var(--muted);
+}
+.sign-line {
+  display: flex;
+  min-height: 1.875rem;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--ink);
+  padding-bottom: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--subtle);
+}
+.sign-line span:last-child {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+}
+
+/* The landing page prints a plan the way the product does. */
+.plan-readout {
+  overflow-x: auto;
+  border: 1px solid var(--ink);
+  background: var(--surface);
+  padding: 1.125rem 1.375rem;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.75;
+  color: var(--ink);
+  white-space: pre;
 }
 
 @keyframes shimmer {

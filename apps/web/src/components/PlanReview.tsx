@@ -1,12 +1,12 @@
 import type { PlanManifest } from "@rehearsal/contracts";
 import { type ReactNode, useCallback, useState } from "react";
-import { formatMoney, roleLabel, shortHash, sumMoney } from "../format";
+import { formatMoney, roleLabel, sumMoney } from "../format";
 import { droppedBy, groupByCase, requiredRoles } from "../plan";
 import type { PrecedentCheck } from "../precedent-holds";
 import { ActionRow } from "./ActionRow";
 import { EvidenceDrawer } from "./EvidenceDrawer";
 import { PrecedentBasisCard } from "./PrecedentBasisCard";
-import { Card, Chip, CopyButton, Icon, Stat } from "./ui";
+import { Card, Chip, CopyButton, Stat } from "./ui";
 
 /**
  * The whole job on one page: every effect, grouped by customer, with the hash being approved.
@@ -79,23 +79,12 @@ export function PlanReview({
               : "Inspect the plan and the evidence behind each effect."}
           </p>
         </div>
-        <ol className="review-stage" aria-label="Plan and apply process">
-          <li>
-            <span className="stage-number">01</span>Plan
-          </li>
-          <li aria-current="step">
-            <span className="stage-number">02</span>Review
-          </li>
-          <li>
-            <span className="stage-number">03</span>Apply
-          </li>
-        </ol>
       </header>
 
       {/* Steps, grouped by customer */}
       <div className="order-3 flex min-w-0 flex-col gap-5 lg:order-none lg:col-start-1 lg:row-start-2">
         <p className="workspace-label">Planned effects · {cases.length} customer cases</p>
-        {cases.map((c, index) => (
+        {cases.map((c) => (
           <Card
             key={c.caseId}
             data-testid="case-card"
@@ -104,7 +93,6 @@ export function PlanReview({
           >
             <div className="ledger-customer">
               <div className="flex min-w-0 items-center gap-3">
-                <span className="ledger-index">{String(index + 1).padStart(2, "0")}</span>
                 <div className="min-w-0">
                   <h3 className="truncate text-[15px] leading-5 font-semibold text-ink">
                     {c.customerId ?? "Unknown customer"}
@@ -208,30 +196,26 @@ export function PlanReview({
           </dl>
 
           <div className="mt-4 border-t border-line pt-4">
-            <p className="text-xs font-semibold tracking-wider text-subtle uppercase">
-              Needs sign-off
-            </p>
-            <div className="mt-2 flex flex-wrap gap-1.5">
+            <p className="workspace-label">Signatures required</p>
+            <div className="mt-1 flex flex-col gap-3">
               {roles.map((r) => (
-                <Chip key={r} tone={r === "finance_lead" ? "info" : "neutral"} icon="users">
-                  {roleLabel[r]}
-                </Chip>
+                <p key={r} className="sign-line">
+                  <span>{roleLabel[r]}</span>
+                  <span>{review ? "unsigned" : "read-only"}</span>
+                </p>
               ))}
             </div>
           </div>
 
           <div className="mt-4 border-t border-line pt-4">
-            <p className="flex items-center gap-1.5 text-xs font-semibold tracking-wider text-subtle uppercase">
-              <Icon name="hash" className="h-3.5 w-3.5" />
-              Plan hash
-            </p>
+            <p className="workspace-label">Plan hash (sha-256)</p>
             <p className="mt-1.5 flex items-center gap-1">
               <code
                 data-testid="plan-hash"
                 title={planHash}
-                className="rounded-md bg-sunken px-2 py-1 font-mono text-[13px] text-ink"
+                className="font-mono text-[12.5px] [word-spacing:0.25rem] text-ink"
               >
-                {shortHash(planHash)}
+                {groupedHash(planHash)}
               </code>
               <CopyButton value={planHash} label="Copy full plan hash" />
             </p>
@@ -249,3 +233,6 @@ export function PlanReview({
     </div>
   );
 }
+
+/** The start of the hash in groups of four, read like a key fingerprint. */
+const groupedHash = (hash: string) => `${hash.slice(0, 24).replace(/(.{4})(?!$)/g, "$1 ")} …`;
