@@ -71,8 +71,27 @@ export async function adminOrThrow(
   if (!res.ok) throw new Error(`${path} → ${res.status} ${await res.text()}`);
 }
 
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/**
+ * Faults hit every org's tenant in the container, so setting one on a shared (non-local) Era would
+ * break every judge's run at once. Refused there unless REHEARSAL_SHARED_FAULTS=1. Clearing is
+ * always allowed.
+ */
+export function assertFaultsAllowed(
+  world: Pick<WorldConfig, "baseUrl">,
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  if (LOCAL_HOSTS.has(new URL(world.baseUrl).hostname)) return;
+  if (env.REHEARSAL_SHARED_FAULTS === "1") return;
+  throw new Error(
+    `refusing to set container-wide faults on shared Era ${world.baseUrl}: every org's tenant would see them. Set REHEARSAL_SHARED_FAULTS=1 to do it anyway.`,
+  );
+}
+
 /** Container-wide fault controls. They answer every tenant in that container. */
 export async function faults(world: WorldConfig, config: Record<string, unknown> | null) {
+  if (config !== null) assertFaultsAllowed(world);
   const path = config === null ? "/_admin/faults/reset" : "/_admin/faults";
   const res = await fetch(`${world.baseUrl}${path}`, {
     method: "POST",
