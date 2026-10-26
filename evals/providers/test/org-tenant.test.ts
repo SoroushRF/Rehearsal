@@ -8,11 +8,12 @@ import {
   type WorldConfig,
   workerWorlds,
 } from "@rehearsal/providers";
-import { incidentRecords } from "@rehearsal/testkit";
+import { incidentRecords, problemRecords } from "@rehearsal/testkit";
 import { describe, expect, it } from "vitest";
 import { buildApp } from "../../../apps/api/src/app";
 import { readOperationalWorld } from "../../../apps/api/src/company";
-import { ensureOrgSeeded } from "../../../apps/api/src/org-worlds";
+import { ensureOrgSeeded, resetOrgWorlds } from "../../../apps/api/src/org-worlds";
+import { eraProblemInjector } from "../../../apps/api/src/problems";
 import { tenantTokenDepsFromEnv } from "../../../apps/api/src/tenant-tokens";
 import { ENABLED } from "../src/harness";
 
@@ -111,5 +112,27 @@ describe.skipIf(!ENABLED)("one Era tenant per org (#330)", () => {
     } finally {
       await app.close();
     }
+  }, 120_000);
+
+  it("a problem created in org A, and A's reset, leave org B as it was (#331)", async () => {
+    const a = `org_${randomUUID()}`;
+    const b = `org_${randomUUID()}`;
+    await Promise.all([ensureOrgSeeded(a), ensureOrgSeeded(b)]);
+    const seededA = await readOperationalWorld(a);
+    const beforeB = await readOperationalWorld(b);
+
+    const records = problemRecords("duplicate_charge", 2, `r${Date.now().toString(36)}`, 9_400_000);
+    const inject = eraProblemInjector();
+    if (!records || !inject) throw new Error("no injector");
+    await inject(a, records);
+    const ids = records.stripe.charges.map((c) => String(c.id));
+    const withProblem = await readOperationalWorld(a);
+    expect(ids.every((id) => withProblem.charges.some((c) => c.id === id))).toBe(true);
+    expect(await readOperationalWorld(b)).toEqual(beforeB);
+
+    await resetOrgWorlds(a);
+    const resetA = await readOperationalWorld(a);
+    expect(resetA.charges.map((c) => c.id).sort()).toEqual(seededA.charges.map((c) => c.id).sort());
+    expect(await readOperationalWorld(b)).toEqual(beforeB);
   }, 120_000);
 });

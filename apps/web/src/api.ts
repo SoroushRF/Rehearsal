@@ -162,6 +162,10 @@ export function explain(err: unknown): string {
       return "This plan doesn't exist in your organization.";
     case "database_unavailable":
       return "The API has no database right now.";
+    case "work_in_progress":
+      return "A plan or run is still in progress here. Reset once it finishes.";
+    case "world_unavailable":
+      return "The company's world couldn't be reached. Try again.";
     default:
       if (err.status === 403) return "You don't have permission to do that.";
       return `Refused: ${r.error}.`;

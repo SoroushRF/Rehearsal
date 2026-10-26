@@ -7,7 +7,7 @@ import policyV3 from "../../../scenarios/billing/policy.v3.json" with { type: "j
 import { buildApp } from "./app";
 import type { ApplyDeps } from "./apply";
 import { iamClientFromEnv } from "./iam";
-import { ensureOrgSeeded, workerHasWork } from "./org-worlds";
+import { ensureOrgSeeded, resetOrgWorlds, workerHasWork } from "./org-worlds";
 import { publisherFromEnv, startPrecedentWorker } from "./precedent-sync";
 import { eraProblemInjector } from "./problems";
 import { rehearsalTenantActive } from "./rehearsal-operator";
@@ -89,6 +89,12 @@ const problems = problemInjector && {
   iam,
   inject: problemInjector,
   ensureSeeded: (orgId: string) => ensureOrgSeeded(orgId),
+  reset: (orgId: string) => resetOrgWorlds(orgId),
+  ...(apply && {
+    busy: async (orgId: string) =>
+      (await workerHasWork(apply.db, "planner", orgId)) ||
+      (await workerHasWork(apply.db, "executor", orgId)),
+  }),
 };
 const executionRehearsals = apply && { db: apply.db, boss: apply.boss, iam };
 // T1.23/T3.16: the rehearsal worker's minter and operator routes, when this API holds the rehearsal

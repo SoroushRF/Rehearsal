@@ -21,6 +21,12 @@ export interface ProblemDeps {
    * problem injected before it would be wiped. Absent: nothing is seeded (tests).
    */
   ensureSeeded?: (orgId: string) => Promise<void>;
+  /**
+   * "Reset my world": back to the seeded cohort. Absent: `POST /api/company/reset` isn't
+   * registered. Refused while `busy` says a plan or apply job for the org is still live.
+   */
+  reset?: (orgId: string) => Promise<void>;
+  busy?: (orgId: string) => Promise<boolean>;
 }
 
 export function registerProblemRoutes(app: FastifyInstance, deps: ProblemDeps) {
@@ -52,6 +58,23 @@ export function registerProblemRoutes(app: FastifyInstance, deps: ProblemDeps) {
     } catch (err) {
       req.log.error({ err, preset: body.data.preset }, "problem inject failed");
       return reply.code(502).send({ error: "inject_failed" });
+    }
+    return reply.code(204).send();
+  });
+
+  const { reset, busy } = deps;
+  if (!reset) return;
+  app.post("/api/company/reset", async (req, reply) => {
+    const gate = await authorizeCollection(deps.iam, bearerToken(req), "POST /api/company/reset");
+    if (!gate.ok) return refuse(reply, gate, "not_found");
+    const { orgId } = gate.person;
+    // A run mid-apply would keep writing into the world being reset.
+    if (await busy?.(orgId)) return reply.code(409).send({ error: "work_in_progress" });
+    try {
+      await reset(orgId);
+    } catch (err) {
+      req.log.error({ err }, "org worlds could not be reset");
+      return reply.code(502).send({ error: "world_unavailable" });
     }
     return reply.code(204).send();
   });

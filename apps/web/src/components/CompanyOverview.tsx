@@ -93,7 +93,12 @@ export function CompanyOverview({
           </span>
           {fixture && <Chip tone="neutral">fixture</Chip>}
         </div>
-        {canCreateProblem && !fixture && <CreateProblem apiFetch={apiFetch} kinds={kinds} />}
+        {canCreateProblem && !fixture && (
+          <div className="flex flex-wrap items-center gap-2">
+            <CreateProblem apiFetch={apiFetch} kinds={kinds} />
+            <ResetWorld apiFetch={apiFetch} />
+          </div>
+        )}
       </div>
 
       <div
@@ -484,5 +489,59 @@ function CreateProblem({
         <Alert className="w-full">{explain(create.error)}</Alert>
       )}
     </form>
+  );
+}
+
+/**
+ * Puts the org's own world back to the seeded company: every created problem and applied write
+ * there goes. Plans and runs stay. Asks once before it does it; hidden where the route isn't deployed.
+ */
+function ResetWorld({ apiFetch }: { apiFetch: ApiFetch }) {
+  const key = useTenantKey();
+  const queryClient = useQueryClient();
+  const [confirming, setConfirming] = useState(false);
+  const [missing, setMissing] = useState(false);
+  const reset = useMutation({
+    mutationFn: () => call(apiFetch, z.unknown(), "/api/company/reset", {}),
+    onSuccess: () => {
+      setConfirming(false);
+      return queryClient.invalidateQueries({ queryKey: key("company") });
+    },
+    onError: (err) => {
+      if (routeMissing(err)) setMissing(true);
+    },
+  });
+  if (missing) return null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {confirming ? (
+        <>
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={reset.isPending}
+            onClick={() => reset.mutate()}
+          >
+            Reset world
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={reset.isPending}
+            onClick={() => setConfirming(false)}
+          >
+            Cancel
+          </Button>
+        </>
+      ) : (
+        <Button variant="ghost" size="sm" onClick={() => setConfirming(true)}>
+          Reset
+        </Button>
+      )}
+      {reset.isError && !routeMissing(reset.error) && (
+        <Alert className="w-full">{explain(reset.error)}</Alert>
+      )}
+    </div>
   );
 }

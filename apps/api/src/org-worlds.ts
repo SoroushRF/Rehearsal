@@ -59,18 +59,29 @@ async function hasCohort(vendor: "stripe" | "zendesk", world: WorldConfig): Prom
 /**
  * Seed one org's four worlds with the INC-BILL-0927 cohort (T1.2, the same seed `demo:reset`
  * plants), each world only if it doesn't hold the cohort yet. A world is reset before it is
- * seeded, so a half-seeded one is rebuilt whole; a seeded one is never reset.
+ * seeded, so a half-seeded one is rebuilt whole; a seeded one is never reset unless `fresh` asks
+ * for it. `fresh` also clears the org's Slack, back to Era's default channels.
  */
-async function seedOrg(tenant: string, env: NodeJS.ProcessEnv): Promise<void> {
+async function seedOrg(tenant: string, env: NodeJS.ProcessEnv, fresh = false): Promise<void> {
   const adminToken = env.ERA_ADMIN_TOKEN;
   if (!adminToken) throw new Error("ERA_ADMIN_TOKEN is not set");
-  for (const { vendor, world } of WORLDS) {
+  const bind = async (
+    vendor: "stripe" | "zendesk" | "slack",
+    world: "planning" | "operational",
+  ) => {
     const config = resolveWorld(vendor, world, env, tenant);
     const { token } = await mintTenantToken(config, adminToken);
-    const bound = { ...config, tenantToken: token };
-    if (await hasCohort(vendor, bound)) continue;
+    return { ...config, tenantToken: token };
+  };
+  for (const { vendor, world } of WORLDS) {
+    const bound = await bind(vendor, world);
+    if (!fresh && (await hasCohort(vendor, bound))) continue;
     await adminOrThrow(bound, "/reset");
     await seedIncident(vendor, bound);
+  }
+  // Slack only where summaries are posted, as the company overview reads it.
+  if (fresh && env.RUN_SUMMARY_CHANNEL && env.ERA_SLACK_OPERATIONAL_URL) {
+    await adminOrThrow(await bind("slack", "operational"), "/reset");
   }
 }
 
@@ -100,4 +111,27 @@ export function ensureOrgSeeded(
     });
   inFlight.set(tenant, next);
   return next;
+}
+
+/**
+ * "Reset my world" (#331): put the org's worlds back to the seeded cohort, dropping every problem
+ * created and every write applied there. Only Era state goes: plans, approvals, runs and receipts
+ * stay, append-only. A seeding already running for the org finishes first.
+ */
+export async function resetOrgWorlds(
+  orgId: string,
+  opts: { env?: NodeJS.ProcessEnv; reset?: (tenant: string) => Promise<void> } = {},
+): Promise<void> {
+  const tenant = orgTenant(orgId);
+  await inFlight.get(tenant)?.catch(() => undefined);
+  const reset = opts.reset ?? ((t: string) => seedOrg(t, opts.env ?? process.env, true));
+  const next = reset(tenant).then(() => {
+    seeded.add(tenant);
+  });
+  inFlight.set(tenant, next);
+  try {
+    await next;
+  } finally {
+    if (inFlight.get(tenant) === next) inFlight.delete(tenant);
+  }
 }
