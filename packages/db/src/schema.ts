@@ -298,3 +298,26 @@ export const rehearsalDirtyMarks = pgTable(
   },
   (t) => [index().on(t.containerSet), uniqueIndex().on(t.rehearsalId)],
 );
+
+/**
+ * Live demo (#331): incidents an org files itself. Append-only; `POST /api/incidents/:id/rehearse`
+ * loads the row by (org, id). The ID is unique across orgs so a URL never names two incidents.
+ */
+export const incidents = pgTable(
+  "incidents",
+  {
+    incidentId: text("incident_id").primaryKey(),
+    orgId: text("org_id").notNull(),
+    kind: text("kind").notNull(),
+    title: text("title").notNull(),
+    description: text("description").notNull(),
+    windowGte: timestamp("window_gte", { withTimezone: true }).notNull(),
+    windowLt: timestamp("window_lt", { withTimezone: true }).notNull(),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index().on(t.orgId, t.createdAt),
+    check("incidents_window", sql`${t.windowGte} < ${t.windowLt}`),
+  ],
+);

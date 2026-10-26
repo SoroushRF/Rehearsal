@@ -1,7 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { PlanManifest } from "@rehearsal/contracts";
+import { PlanManifest, StoredIncident } from "@rehearsal/contracts";
 import { planHash, validateGraph } from "@rehearsal/core";
-import { type Db, type PgBoss, PLAN_QUEUE, type RegistrySnapshot } from "@rehearsal/db";
+import {
+  type Db,
+  loadIncident,
+  type PgBoss,
+  PLAN_QUEUE,
+  type RegistrySnapshot,
+} from "@rehearsal/db";
 import { checkPrecedentBasis } from "@rehearsal/memory";
 import {
   PLANNER_JOB_ROUTES,
@@ -47,6 +53,7 @@ export interface RehearseDeps {
 export const INCIDENTS: ReadonlySet<string> = new Set([incident.incident]);
 
 const JobId = z.uuid();
+const FiledIncidentId = StoredIncident.shape.incidentId;
 const Complete = z.strictObject({
   manifest: z.unknown(),
   summary: z.string().max(4000),
@@ -80,7 +87,13 @@ export function registerRehearseRoutes(app: FastifyInstance, deps: RehearseDeps)
       "POST /api/incidents/:id/rehearse",
     );
     if (!gate.ok) return refuse(reply, gate, "incident_not_found");
-    if (!INCIDENTS.has(req.params.id)) return reply.code(404).send({ error: "incident_not_found" });
+    // A built-in incident the worker knows by ID, or one this org filed (#331), sent with the job.
+    const builtIn = INCIDENTS.has(req.params.id);
+    const filed =
+      builtIn || !FiledIncidentId.safeParse(req.params.id).success
+        ? undefined
+        : await loadIncident(deps.db, gate.person.orgId, req.params.id);
+    if (!builtIn && !filed) return reply.code(404).send({ error: "incident_not_found" });
 
     const job: PlanJob = {
       orgId: gate.person.orgId,
@@ -89,6 +102,15 @@ export function registerRehearseRoutes(app: FastifyInstance, deps: RehearseDeps)
       requestedBy: gate.person.userId,
       ...(deps.precedentRegistry && {
         precedents: registryForJob(await deps.precedentRegistry(gate.person.orgId)),
+      }),
+      ...(filed && {
+        incident: {
+          incidentId: filed.incidentId,
+          kind: filed.kind,
+          title: filed.title,
+          description: filed.description,
+          window: filed.window,
+        },
       }),
     };
     const jobId = await deps.boss.send(PLAN_QUEUE, PlanJob.parse(job));
@@ -161,7 +183,10 @@ export function registerRehearseRoutes(app: FastifyInstance, deps: RehearseDeps)
     if (m.revision !== 1 || m.parentRevision !== null || m.excluded.length > 0) {
       return refuse("a planner run produces revision 1 only");
     }
-    if (m.actions.length === 0) return refuse("plan has no steps");
+    // An out-of-scope incident plans nothing; the model's reason is what the reviewer needs to see.
+    if (m.actions.length === 0) {
+      return refuse(`plan has no steps: ${body.data.summary}`.slice(0, 2000));
+    }
     const problems = validateGraph(m.actions);
     if (problems.length > 0) return refuse(`plan graph is invalid: ${JSON.stringify(problems)}`);
     const precedentProblem = checkJobBasis(m, job);
