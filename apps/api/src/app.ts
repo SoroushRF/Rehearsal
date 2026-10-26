@@ -13,6 +13,7 @@ import {
   registerExecutionRehearsalRoutes,
 } from "./execution-rehearsals";
 import type { IamClient } from "./iam";
+import { registerIncidentRoutes } from "./incidents";
 import { registerMemberRoutes } from "./members";
 import { type PlanDeps, registerPlanRoutes } from "./plans";
 import { type PrecedentDeps, registerPrecedentRoutes } from "./precedents";
@@ -100,10 +101,14 @@ export function buildApp(
     app.get("/api/precedents", unavailable);
   }
 
-  if (deps.rehearse) registerRehearseRoutes(app, deps.rehearse);
-  else {
+  if (deps.rehearse) {
+    registerRehearseRoutes(app, deps.rehearse);
+    registerIncidentRoutes(app, deps.rehearse);
+  } else {
     app.post("/api/incidents/:id/rehearse", unavailable);
     app.get("/api/rehearsals/:id", unavailable);
+    app.post("/api/incidents", unavailable);
+    app.get("/api/incidents", unavailable);
   }
 
   if (deps.executionRehearsals) registerExecutionRehearsalRoutes(app, deps.executionRehearsals);

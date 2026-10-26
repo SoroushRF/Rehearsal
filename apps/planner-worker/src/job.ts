@@ -9,6 +9,7 @@ import {
   type PlanningReader,
   PlanningSession,
   runPlanningLoop,
+  storedIncidentBrief,
   type TurnLog,
 } from "@rehearsal/planner";
 import { type ClaimedPlanJob, type PlannerJobsClient, registryOfJob } from "@rehearsal/providers";
@@ -63,7 +64,11 @@ export async function handlePlanJob(
     return { kind: "failed", reason, message };
   };
 
-  const brief = incidentBrief(job.incidentId);
+  // A filed incident comes with the job (the worker has no database); a built-in one by ID.
+  if (job.incident && job.incident.incidentId !== job.incidentId) {
+    return fail("unknown_incident", "the job's incident is not the one it names");
+  }
+  const brief = job.incident ? storedIncidentBrief(job.incident) : incidentBrief(job.incidentId);
   if (!brief) return fail("unknown_incident", `no brief for ${job.incidentId}`);
 
   let recalled: Awaited<ReturnType<typeof recallBasis>> = null;

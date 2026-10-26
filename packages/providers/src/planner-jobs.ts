@@ -1,4 +1,4 @@
-import { Sha256Hex } from "@rehearsal/contracts";
+import { Sha256Hex, StoredIncident } from "@rehearsal/contracts";
 import { z } from "zod";
 
 /**
@@ -25,6 +25,19 @@ export const PlanJobRegistry = z.strictObject({
 });
 export type PlanJobRegistry = z.infer<typeof PlanJobRegistry>;
 
+/**
+ * Live demo (#331): an incident the org filed, copied from its stored row by the API. The worker has
+ * no database, so the job carries it. Absent for the built-in incidents, which the worker knows.
+ */
+export const PlanJobIncident = StoredIncident.pick({
+  incidentId: true,
+  kind: true,
+  title: true,
+  description: true,
+  window: true,
+});
+export type PlanJobIncident = z.infer<typeof PlanJobIncident>;
+
 /** A request to rehearse one incident for one org. The plan ID is fixed when the job is created. */
 export const PlanJob = z.object({
   orgId: z.string().min(1),
@@ -33,6 +46,7 @@ export const PlanJob = z.object({
   requestedBy: z.string().min(1),
   /** Absent when precedents aren't wired (core mode): the plan then carries no basis. */
   precedents: PlanJobRegistry.optional(),
+  incident: PlanJobIncident.optional(),
 });
 export type PlanJob = z.infer<typeof PlanJob>;
 
