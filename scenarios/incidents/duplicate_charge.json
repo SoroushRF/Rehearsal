@@ -1,0 +1,7 @@
+{
+  "preset": "duplicate_charge",
+  "customers": ["k01", "k03", "c03", "c05", "c07"],
+  "amountMinor": 2900,
+  "currency": "cad",
+  "chargedAt": "2026-09-18T15:00:00.000Z"
+}

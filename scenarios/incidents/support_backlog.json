@@ -1,0 +1,7 @@
+{
+  "preset": "support_backlog",
+  "customers": ["k01", "k02", "k03", "c04", "c06"],
+  "openedAt": "2026-09-22T14:00:00.000Z",
+  "subject": "Still waiting to hear back",
+  "body": "Hi, we sent a question about our account a few days ago and haven't heard back yet. Could someone take a look?"
+}

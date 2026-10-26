@@ -7,7 +7,7 @@ import {
   ZENDESK_TICKET_PROJECTION,
   zendeskTicketProjection,
 } from "@rehearsal/providers";
-import { FakeClock, INCIDENT, incidentRecords } from "@rehearsal/testkit";
+import { FakeClock, INCIDENT, incidentRecords, type ProblemRecords } from "@rehearsal/testkit";
 import { type PlanningReader, PlanningSession, type PlanningSessionOptions } from "../src";
 
 export const POLICY = {
@@ -23,12 +23,18 @@ export const CTX = { world: "planning", tenant: "t1-4" } as const;
 /** In-memory planning world over the seeded cohort, with the real read projections. */
 export function world(
   opts: Partial<
-    Pick<PlanningSessionOptions, "runSummary" | "customerNames" | "credits" | "policy">
+    Pick<PlanningSessionOptions, "runSummary" | "customerNames" | "credits" | "policy" | "mode">
   > = {},
+  /** Records a "create a problem" request added on top of the cohort (#331). */
+  extra?: ProblemRecords,
 ) {
   const records = incidentRecords();
-  const charges = new Map(records.stripe.charges.map((c) => [String(c.id), c]));
-  const tickets = new Map(records.zendesk.tickets.map((t) => [String(t.id), t]));
+  const charges = new Map(
+    [...records.stripe.charges, ...(extra?.stripe.charges ?? [])].map((c) => [String(c.id), c]),
+  );
+  const tickets = new Map(
+    [...records.zendesk.tickets, ...(extra?.zendesk.tickets ?? [])].map((t) => [String(t.id), t]),
+  );
   /** A Stripe customer's billing currency; unset reads as null, as for a customer never billed. */
   const customerCurrencies = new Map<string, string>();
   const reads: string[] = [];
@@ -108,8 +114,29 @@ export function world(
         capturedAt: at,
       };
     },
-    async query() {
-      throw new Error("not used");
+    async query(predicate: QueryPredicate, cutoff) {
+      if (predicate.kind !== "zendesk.tickets.byRequester") throw new Error("unsupported");
+      reads.push(`tickets of ${predicate.requesterId}`);
+      const hits = [...tickets.values()].filter(
+        (t) => String(t.requester_id) === predicate.requesterId,
+      );
+      const matchingIds = hits.map((t) => String(t.id)).sort();
+      const projections = Object.fromEntries(
+        hits.map((t) => [String(t.id), zendeskTicketProjection(t)]),
+      );
+      return {
+        id: `q_${fingerprint(predicate).slice(0, 16)}`,
+        world: "planning",
+        vendor: "zendesk",
+        predicate,
+        cutoff,
+        complete: true,
+        matchingIds,
+        projectionVersion: ZENDESK_TICKET_PROJECTION,
+        projections,
+        fingerprint: fingerprint({ matchingIds, projections }),
+        capturedAt: at,
+      };
     },
   };
   const session = new PlanningSession({

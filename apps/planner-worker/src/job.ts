@@ -102,6 +102,7 @@ export async function handlePlanJob(
     ctx: deps.ctx,
     policy: deps.policy,
     window: brief.window,
+    ...(brief.mode && { mode: brief.mode }),
     ...(deps.summaryChannelId && {
       runSummary: { channelId: deps.summaryChannelId, incidentId: brief.incident },
     }),

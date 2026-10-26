@@ -28,7 +28,7 @@ export function incidentBrief(
 const KIND_SUMMARY: Record<PlanJobIncident["kind"], string> = {
   duplicate_charge: "Customers may have been charged more than once for the same invoice.",
   service_outage: "Customers may be owed a credit for a service outage.",
-  support_backlog: "Customer tickets may be waiting at the wrong priority.",
+  support_backlog: "Customer tickets may be waiting for a first reply.",
 };
 
 /**
@@ -42,6 +42,7 @@ export function storedIncidentBrief(
   const base = incidentBrief(spec.incident, spec) as IncidentBrief;
   return {
     incident: incident.incidentId,
+    ...(incident.kind === "support_backlog" && { mode: "backlog" as const }),
     summary: KIND_SUMMARY[incident.kind],
     report: { title: incident.title, description: incident.description },
     window: incident.window,

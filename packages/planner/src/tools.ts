@@ -18,7 +18,7 @@ import {
   type WorldContext,
 } from "@rehearsal/core";
 import { z } from "zod";
-import { assessCoverage, duplicateInvoiceGroup } from "./coverage";
+import { assessBacklogCoverage, assessCoverage, duplicateInvoiceGroup } from "./coverage";
 
 /**
  * T1.4: the typed tools the planner model may call. Every tool reads the planning world itself
@@ -30,6 +30,12 @@ import { assessCoverage, duplicateInvoiceGroup } from "./coverage";
 
 /** The read half of a ProviderPort (structurally the same as `ProviderReader` in providers). */
 export type PlanningReader = Pick<ProviderPort, "vendor" | "observe" | "query">;
+
+/**
+ * What a session plans. `billing` remedies duplicate charges; `backlog` (live demo, #331) follows up
+ * tickets nobody has answered, with ticket steps only and no money moving.
+ */
+export type PlanningMode = "billing" | "backlog";
 
 export interface PlanningSessionOptions {
   readers: { stripe: PlanningReader; zendesk: PlanningReader };
@@ -54,6 +60,8 @@ export interface PlanningSessionOptions {
    * propose_balance_credit still refuses unless the policy has a credit limit (v2 and later).
    */
   credits?: boolean;
+  /** Billing unless set. The server picks it from the incident's kind; the model never does. */
+  mode?: PlanningMode;
   clock?: Clock;
 }
 
@@ -131,23 +139,69 @@ export type PlanningToolName = keyof typeof PLANNING_TOOLS;
 export type ToolInput<N extends PlanningToolName> = z.infer<(typeof PLANNING_TOOLS)[N]["input"]>;
 
 /**
+ * The backlog session's tools: the ticket reads, and ticket steps that need no refund. A ticket is
+ * waiting while its status is `new`. Names match the billing tools they stand in for.
+ */
+export const BACKLOG_TOOLS = {
+  get_ticket: PLANNING_TOOLS.get_ticket,
+  list_requester_tickets: PLANNING_TOOLS.list_requester_tickets,
+  propose_ticket_priority: {
+    description:
+      "Propose raising the priority of a customer's waiting ticket (status new). The tool checks the ticket is the customer's and still waiting, and that the priority goes up.",
+    input: PLANNING_TOOLS.propose_ticket_priority.input,
+  },
+  propose_ticket_note: {
+    description:
+      "Propose a private note on a customer's waiting ticket recording that this review flagged it. The text is the approved backlog-followup template; you don't write it.",
+    input: z.strictObject({ customerId: CustomerId, ticketId: TicketId }),
+  },
+  propose_customer_reply: {
+    description:
+      "Propose a public reply on a customer's waiting ticket telling them someone is on it. The customer reads it. The text is the approved backlog-followup template with their name from the incident report; you don't write it, and the reviewer approves the exact text. Propose it after the ticket's other steps.",
+    input: z.strictObject({ customerId: CustomerId, ticketId: TicketId }),
+  },
+  propose_run_summary: {
+    description:
+      "Propose one Slack post to the team channel summarising the run: how many tickets were followed up and how many steps were held. Call it once, after every other step; no step can be proposed after it. The text is rendered from the approved backlog-summary template when the run finishes; you don't write it.",
+    input: z.strictObject({}),
+  },
+} as const;
+
+export type BacklogToolName = keyof typeof BACKLOG_TOOLS;
+type BacklogInput<N extends BacklogToolName> = z.infer<(typeof BACKLOG_TOOLS)[N]["input"]>;
+
+function definitions(tools: Record<string, { description: string; input: z.ZodType }>) {
+  return Object.entries(tools).map(([name, t]) => ({
+    name,
+    description: t.description,
+    input_schema: z.toJSONSchema(t.input),
+  }));
+}
+
+/**
  * Tool definitions in the Anthropic `tools` shape. The balance-credit tool is offered only to a
  * session with credits on (T1.14), so a refund-only run sees the same tools as before it existed.
  */
 export function planningToolDefinitions(opts: { credits?: boolean } = {}) {
-  return Object.entries(PLANNING_TOOLS)
-    .filter(([name]) => opts.credits || name !== "propose_balance_credit")
-    .map(([name, t]) => ({
-      name,
-      description: t.description,
-      input_schema: z.toJSONSchema(t.input),
-    }));
+  return definitions(
+    Object.fromEntries(
+      Object.entries(PLANNING_TOOLS).filter(
+        ([name]) => opts.credits || name !== "propose_balance_credit",
+      ),
+    ),
+  );
+}
+
+export function backlogToolDefinitions() {
+  return definitions(BACKLOG_TOOLS);
 }
 
 /** Recorded in every manifest, so a plan says exactly which tool surface produced it. */
 export const TOOL_SCHEMA_HASH = fingerprint(planningToolDefinitions());
 /** The same with propose_balance_credit offered. */
 export const CREDIT_TOOL_SCHEMA_HASH = fingerprint(planningToolDefinitions({ credits: true }));
+/** The backlog session's tools. */
+export const BACKLOG_TOOL_SCHEMA_HASH = fingerprint(backlogToolDefinitions());
 
 export type ToolResult = { ok: true; result: unknown } | { ok: false; error: string };
 
@@ -157,6 +211,10 @@ class Refusal extends Error {}
 const NOTE_TEMPLATE = { id: "refund-confirmed", version: 1 } as const;
 const REPLY_TEMPLATE = { id: "refund-issued", version: 1 } as const;
 const SUMMARY_TEMPLATE = { id: "run-summary", version: 1 } as const;
+const BACKLOG_NOTE_TEMPLATE = { id: "backlog-followup", version: 1 } as const;
+const BACKLOG_REPLY_TEMPLATE = { id: "backlog-followup", version: 1 } as const;
+const BACKLOG_SUMMARY_TEMPLATE = { id: "backlog-summary", version: 1 } as const;
+const PRIORITY_RANK = { low: 0, normal: 1, high: 2, urgent: 3 } as const;
 const SUMMARY_ID = "run_summary";
 
 export class PlanningSession {
@@ -175,11 +233,17 @@ export class PlanningSession {
 
   /** Run one tool call. Bad input and refusals come back as errors the model can read. */
   async call(name: string, input: unknown): Promise<ToolResult> {
-    if (!Object.hasOwn(PLANNING_TOOLS, name)) return { ok: false, error: `unknown tool ${name}` };
-    const parsed = PLANNING_TOOLS[name as PlanningToolName].input.safeParse(input);
+    const backlog = this.mode === "backlog";
+    const tools: Record<string, { input: z.ZodType }> = backlog ? BACKLOG_TOOLS : PLANNING_TOOLS;
+    const tool = Object.hasOwn(tools, name) ? tools[name] : undefined;
+    if (!tool) return { ok: false, error: `unknown tool ${name}` };
+    const parsed = tool.input.safeParse(input);
     if (!parsed.success) return { ok: false, error: z.prettifyError(parsed.error) };
     try {
-      return { ok: true, result: await this.#run(name as PlanningToolName, parsed.data) };
+      const result = backlog
+        ? await this.#runBacklog(name as BacklogToolName, parsed.data)
+        : await this.#run(name as PlanningToolName, parsed.data);
+      return { ok: true, result };
     } catch (e) {
       if (e instanceof Refusal) return { ok: false, error: e.message };
       // A failed read is reported, never papered over; the evidence simply isn't recorded.
@@ -197,6 +261,18 @@ export class PlanningSession {
     return structuredClone(this.#actions);
   }
 
+  get mode(): PlanningMode {
+    return this.#opts.mode ?? "billing";
+  }
+
+  /** What the finished plan still misses for the brief's customers, in this session's mode. */
+  coverageOf(customers: readonly { customerId: string; requesterId: string }[]) {
+    if (this.mode === "backlog") {
+      return assessBacklogCoverage(customers, this.queryObservations, this.actions);
+    }
+    return this.coverage(customers.map((c) => c.customerId));
+  }
+
   coverage(customerIds: readonly string[]) {
     return assessCoverage(
       customerIds,
@@ -208,6 +284,7 @@ export class PlanningSession {
 
   /** The tools this session offers the model. */
   toolDefinitions() {
+    if (this.mode === "backlog") return backlogToolDefinitions();
     return planningToolDefinitions({ credits: this.#opts.credits });
   }
 
@@ -233,7 +310,12 @@ export class PlanningSession {
         planner: {
           model: meta.model,
           promptVersion: meta.promptVersion,
-          toolSchemaHash: this.#opts.credits ? CREDIT_TOOL_SCHEMA_HASH : TOOL_SCHEMA_HASH,
+          toolSchemaHash:
+            this.mode === "backlog"
+              ? BACKLOG_TOOL_SCHEMA_HASH
+              : this.#opts.credits
+                ? CREDIT_TOOL_SCHEMA_HASH
+                : TOOL_SCHEMA_HASH,
         },
         adapters: meta.adapters,
       },
@@ -291,6 +373,29 @@ export class PlanningSession {
       }
       case "propose_run_summary":
         return this.#proposeSummary();
+    }
+  }
+
+  async #runBacklog(name: BacklogToolName, input: unknown): Promise<unknown> {
+    const as = <N extends BacklogToolName>(_: N) => input as BacklogInput<N>;
+    switch (name) {
+      case "get_ticket":
+      case "list_requester_tickets":
+        return this.#run(name, input);
+      case "propose_ticket_priority": {
+        const i = as(name);
+        return this.#backlogPriority(i.customerId, i.ticketId, i.priority, i.rationale);
+      }
+      case "propose_ticket_note": {
+        const i = as(name);
+        return this.#backlogNote(i.customerId, i.ticketId);
+      }
+      case "propose_customer_reply": {
+        const i = as(name);
+        return this.#backlogReply(i.customerId, i.ticketId);
+      }
+      case "propose_run_summary":
+        return this.#backlogSummary();
     }
   }
 
@@ -632,6 +737,147 @@ export class PlanningSession {
         bindings: {
           incidentId: target.incidentId,
           refunded: { $count: "outcomes", stepIds: refunds, outcomes: ["confirmed"] },
+          held: {
+            $count: "outcomes",
+            stepIds: steps,
+            outcomes: ["held", "unknown_outcome", "rejected", "skipped_dependency"],
+          },
+        },
+      },
+    });
+    return summary(action);
+  }
+
+  /**
+   * A customer's ticket that nobody on the team has answered. The public reply goes last, since
+   * answering may move the ticket out of `new` and a later step's re-check would then hold it.
+   */
+  async #waitingTicket(ticketId: string, customerId: string): Promise<Observation> {
+    const ticket = await this.#ticketForCustomer(ticketId, customerId);
+    const status = ticket.projection.status;
+    if (status !== "new") {
+      throw new Refusal(`ticket ${ticketId} is ${String(status)}, not waiting for a first reply`);
+    }
+    if (this.#actions.some((a) => a.id === `reply_${ticketId}`)) {
+      throw new Refusal(`the reply on ticket ${ticketId} is already proposed; it has to come last`);
+    }
+    return ticket;
+  }
+
+  /** The steps already proposed for one waiting ticket, which a later step of it runs after. */
+  #backlogSteps(ticketId: string): string[] {
+    return this.#actions
+      .filter((a) => a.obligationId === `obl_backlog_${ticketId}`)
+      .map((a) => a.id);
+  }
+
+  async #backlogPriority(
+    customerId: string,
+    ticketId: string,
+    priority: z.infer<typeof ZendeskPriority>,
+    rationale: string,
+  ) {
+    const ticket = await this.#waitingTicket(ticketId, customerId);
+    const current = ZendeskPriority.nullable().safeParse(ticket.projection.priority ?? null);
+    if (!current.success) throw new Refusal(`ticket ${ticketId} has an unexpected priority`);
+    if (current.data !== null && PRIORITY_RANK[priority] <= PRIORITY_RANK[current.data]) {
+      throw new Refusal(`ticket ${ticketId} is already ${current.data}; only raise a priority`);
+    }
+    const action = this.#add({
+      id: `patch_${ticketId}`,
+      kind: "zendesk.ticket.patchFields",
+      caseId: `case_${customerId}`,
+      obligationId: `obl_backlog_${ticketId}`,
+      dependsOn: [],
+      requiredRole: "support_lead",
+      evidence: [ticket.id],
+      queryEvidence: [],
+      compensation: "conditional_reversible",
+      protection: "native_guard_with_documented_limits",
+      rationale,
+      // The contract's `before.status` has no `new`; the ticket's evidence pins it instead.
+      args: { ticketId, set: { priority }, before: { priority: current.data } },
+    });
+    return summary(action);
+  }
+
+  async #backlogNote(customerId: string, ticketId: string) {
+    const ticket = await this.#waitingTicket(ticketId, customerId);
+    const action = this.#add({
+      id: `note_${ticketId}`,
+      kind: "zendesk.ticket.appendPrivateNote",
+      caseId: `case_${customerId}`,
+      obligationId: `obl_backlog_${ticketId}`,
+      dependsOn: this.#backlogSteps(ticketId),
+      requiredRole: "support_lead",
+      evidence: [ticket.id],
+      queryEvidence: [],
+      compensation: "irreversible",
+      protection: "no_atomic_guard",
+      rationale: `Record on ticket ${ticketId} that the backlog review flagged it.`,
+      args: { ticketId, public: false, template: BACKLOG_NOTE_TEMPLATE, bindings: {} },
+    });
+    return summary(action);
+  }
+
+  async #backlogReply(customerId: string, ticketId: string) {
+    const name = this.#opts.customerNames?.[customerId];
+    if (name === undefined) {
+      throw new Refusal(`customer replies aren't enabled for ${customerId}; leave the reply out`);
+    }
+    const ticket = await this.#waitingTicket(ticketId, customerId);
+    const values = { customerName: name };
+    let body: string;
+    try {
+      body = renderReply(BACKLOG_REPLY_TEMPLATE, values);
+    } catch (err) {
+      throw new Refusal(`can't render the reply for ${customerId}: ${(err as Error).message}`);
+    }
+    const action = this.#add({
+      id: `reply_${ticketId}`,
+      kind: "zendesk.ticket.appendPublicReply",
+      caseId: `case_${customerId}`,
+      obligationId: `obl_backlog_${ticketId}`,
+      dependsOn: this.#backlogSteps(ticketId),
+      requiredRole: "support_lead",
+      evidence: [ticket.id],
+      queryEvidence: [],
+      compensation: "irreversible",
+      protection: "no_atomic_guard",
+      rationale: `Tell the customer on ticket ${ticketId} that someone is on it.`,
+      args: { ticketId, public: true, template: BACKLOG_REPLY_TEMPLATE, values, body },
+    });
+    return { ...summary(action), body };
+  }
+
+  #backlogSummary() {
+    const target = this.#opts.runSummary;
+    if (!target) throw new Refusal("no run summary channel is configured; skip the summary");
+    const steps = this.#actions.map((a) => a.id);
+    const notes = this.#actions
+      .filter((a) => a.kind === "zendesk.ticket.appendPrivateNote")
+      .map((a) => a.id);
+    if (notes.length === 0) {
+      throw new Refusal("no ticket is followed up, so there is nothing to sum up");
+    }
+    const action = this.#add({
+      id: SUMMARY_ID,
+      kind: "slack.message.postSummary",
+      caseId: "run",
+      obligationId: SUMMARY_ID,
+      dependsOn: steps,
+      requiredRole: "support_lead",
+      evidence: [],
+      queryEvidence: [],
+      compensation: "irreversible",
+      protection: "no_atomic_guard",
+      rationale: `Tell ${target.channelId} how many tickets were followed up and how many steps were held.`,
+      args: {
+        channelId: target.channelId,
+        template: BACKLOG_SUMMARY_TEMPLATE,
+        bindings: {
+          incidentId: target.incidentId,
+          followedUp: { $count: "outcomes", stepIds: notes, outcomes: ["confirmed"] },
           held: {
             $count: "outcomes",
             stepIds: steps,

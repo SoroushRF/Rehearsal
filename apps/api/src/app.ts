@@ -18,6 +18,7 @@ import { registerIncidentRoutes } from "./incidents";
 import { registerMemberRoutes } from "./members";
 import { type PlanDeps, registerPlanRoutes } from "./plans";
 import { type PrecedentDeps, registerPrecedentRoutes } from "./precedents";
+import { type ProblemDeps, registerProblemRoutes } from "./problems";
 import { type RehearsalOperatorDeps, registerRehearsalOperatorRoutes } from "./rehearsal-operator";
 import { type RehearsalTokenDeps, registerRehearsalTokenRoute } from "./rehearsal-tokens";
 import { type RehearseDeps, registerRehearseRoutes } from "./rehearse";
@@ -39,6 +40,8 @@ export function buildApp(
     /** Live demo (#330): the signed-in org's company overview. */
     company?: CompanyDeps;
     rehearse?: RehearseDeps;
+    /** Live demo (#331): create a problem. Absent: the route answers 404 and the UI hides it. */
+    problems?: ProblemDeps;
     /** T2.19: request and read an execution rehearsal of a stored plan. */
     executionRehearsals?: ExecutionRehearsalDeps;
     precedents?: PrecedentDeps;
@@ -115,6 +118,7 @@ export function buildApp(
     app.post("/api/incidents", unavailable);
     app.get("/api/incidents", unavailable);
   }
+  if (deps.problems) registerProblemRoutes(app, deps.problems);
 
   if (deps.executionRehearsals) registerExecutionRehearsalRoutes(app, deps.executionRehearsals);
   else {

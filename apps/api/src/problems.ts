@@ -1,0 +1,70 @@
+import { randomInt } from "node:crypto";
+import { CreateProblem } from "@rehearsal/contracts";
+import { eraAdmin, resolveWorld } from "@rehearsal/providers";
+import { type ProblemRecords, problemRecords } from "@rehearsal/testkit";
+import type { FastifyInstance } from "fastify";
+import { authorizeCollection, bearerToken, type IamClient, refuse } from "./iam";
+
+/**
+ * Live demo (#331): "create a problem" injects a preset's records into the org's planning and
+ * operational worlds, so a team can cause the incident it files. Only the API holds the Era admin
+ * token, and only preset records go in: the body names a kind and a count, never a record
+ * (decision 0015). Without an injector the route isn't registered, so the UI hides the button.
+ */
+export interface ProblemDeps {
+  iam?: IamClient;
+  /** Writes the same records into both of the org's worlds. */
+  inject: (orgId: string, records: ProblemRecords) => Promise<void>;
+}
+
+export function registerProblemRoutes(app: FastifyInstance, deps: ProblemDeps) {
+  app.post("/api/company/problems", async (req, reply) => {
+    const gate = await authorizeCollection(
+      deps.iam,
+      bearerToken(req),
+      "POST /api/company/problems",
+    );
+    if (!gate.ok) return refuse(reply, gate, "not_found");
+    const body = CreateProblem.safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: "invalid_request" });
+    const stamp = `${Date.now().toString(36)}${randomInt(36 ** 3).toString(36)}`;
+    const records = problemRecords(
+      body.data.preset,
+      body.data.count,
+      stamp,
+      randomInt(9_300_000, 9_900_000),
+    );
+    if (!records) return reply.code(400).send({ error: "unsupported_preset" });
+    try {
+      await deps.inject(gate.person.orgId, records);
+    } catch (err) {
+      req.log.error({ err, preset: body.data.preset }, "problem inject failed");
+      return reply.code(502).send({ error: "inject_failed" });
+    }
+    return reply.code(204).send();
+  });
+}
+
+/**
+ * The injector over the Era worlds this API's environment names. Every org shares the demo tenant
+ * until each org has its own (#330 PR B); then this takes `orgTenant(orgId)`.
+ */
+export function eraProblemInjector(
+  env: NodeJS.ProcessEnv = process.env,
+): ProblemDeps["inject"] | undefined {
+  const adminToken = env.ERA_ADMIN_TOKEN;
+  if (!adminToken) return undefined;
+  return async (_orgId, records) => {
+    for (const world of ["planning", "operational"] as const) {
+      const writes = [
+        { vendor: "stripe", body: records.stripe, count: records.stripe.charges.length },
+        { vendor: "zendesk", body: records.zendesk, count: records.zendesk.tickets.length },
+      ] as const;
+      for (const { vendor, body, count } of writes) {
+        if (count === 0) continue;
+        const res = await eraAdmin(resolveWorld(vendor, world, env), adminToken, "/inject", body);
+        if (!res.ok) throw new Error(`${vendor} ${world} inject → ${res.status}`);
+      }
+    }
+  };
+}

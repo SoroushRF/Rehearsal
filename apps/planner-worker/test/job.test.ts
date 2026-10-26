@@ -2,7 +2,13 @@ import type Anthropic from "@anthropic-ai/sdk";
 import type { PlanManifest } from "@rehearsal/contracts";
 import { type BillingPolicyV1, fingerprint } from "@rehearsal/core";
 import { precedentDigest } from "@rehearsal/memory";
-import type { MessagesClient, PlanningReader } from "@rehearsal/planner";
+import {
+  BACKLOG_PROMPT_VERSION,
+  BACKLOG_SYSTEM_PROMPT,
+  BACKLOG_TOOL_SCHEMA_HASH,
+  type MessagesClient,
+  type PlanningReader,
+} from "@rehearsal/planner";
 import {
   type ClaimedPlanJob,
   type CompletePlanJob,
@@ -11,8 +17,9 @@ import {
   STRIPE_CHARGE_PROJECTION,
   stripeChargeProjection,
   ZENDESK_TICKET_PROJECTION,
+  zendeskTicketProjection,
 } from "@rehearsal/providers";
-import { INCIDENT, incidentRecords } from "@rehearsal/testkit";
+import { INCIDENT, incidentRecords, problemRecords } from "@rehearsal/testkit";
 import { describe, expect, it } from "vitest";
 import policy from "../../../scenarios/billing/policy.v1.json" with { type: "json" };
 import { handlePlanJob, type PlanJobContext } from "../src/job";
@@ -235,6 +242,110 @@ describe("plan job", () => {
     const result = await handlePlanJob(mismatched, deps(model([]), jobs));
     expect(result).toMatchObject({ kind: "failed", reason: "unknown_incident" });
     expect(completed).toEqual([]);
+  });
+
+  it("plans a support backlog with the backlog prompt and ticket tools only", async () => {
+    const extra = problemRecords("support_backlog", 2, "w1", 9_300_000);
+    if (!extra) throw new Error("no preset");
+    const tickets = [...records.zendesk.tickets, ...extra.zendesk.tickets];
+    const backlogZendesk: PlanningReader = {
+      vendor: "zendesk",
+      async observe(entity) {
+        const t = tickets.find((x) => String(x.id) === entity.id);
+        if (!t) throw new Error("404");
+        const projection = zendeskTicketProjection(t);
+        return {
+          id: `obs_${entity.id}`,
+          world: "planning",
+          entity,
+          projectionVersion: ZENDESK_TICKET_PROJECTION,
+          projection,
+          fingerprint: fingerprint(projection),
+          capturedAt: new Date().toISOString(),
+        };
+      },
+      async query(predicate, cutoff) {
+        if (predicate.kind !== "zendesk.tickets.byRequester") throw new Error("unsupported");
+        const hits = tickets.filter((t) => String(t.requester_id) === predicate.requesterId);
+        const projections = Object.fromEntries(
+          hits.map((t) => [String(t.id), zendeskTicketProjection(t)]),
+        );
+        const matchingIds = Object.keys(projections).sort();
+        return {
+          id: `q_${predicate.requesterId}`,
+          world: "planning",
+          vendor: "zendesk",
+          predicate,
+          cutoff,
+          complete: true,
+          matchingIds,
+          projectionVersion: ZENDESK_TICKET_PROJECTION,
+          projections,
+          fingerprint: fingerprint({ matchingIds, projections }),
+          capturedAt: new Date().toISOString(),
+        };
+      },
+    };
+    const waiting = extra.zendesk.tickets.map((t) => ({
+      customerId: String(t.external_id),
+      ticketId: String(t.id),
+    }));
+    const turns = [
+      reply(
+        records.cases.map((c) => [
+          "list_requester_tickets",
+          { requesterId: String(c.requesterId) },
+        ]),
+      ),
+      reply(
+        waiting.flatMap((w) => [
+          ["propose_ticket_priority", { ...w, priority: "high", rationale: "Waiting, normal." }],
+          ["propose_ticket_note", w],
+        ]),
+      ),
+      reply([]),
+    ];
+    const requests: Anthropic.MessageCreateParamsNonStreaming[] = [];
+    const client: MessagesClient = {
+      async create(req) {
+        requests.push(req);
+        return model(turns.splice(0, 1)).create(req);
+      },
+    };
+    const { jobs, completed, failed } = fakeJobs();
+    const backlogJob: ClaimedPlanJob = {
+      ...JOB,
+      data: {
+        ...JOB.data,
+        incidentId: "INC-BACKLOG-0042",
+        incident: {
+          incidentId: "INC-BACKLOG-0042",
+          kind: "support_backlog",
+          title: "Tickets waiting",
+          description: "Customers say nobody has answered them for days.",
+          window: INCIDENT.window,
+        },
+      },
+    };
+    const result = await handlePlanJob(backlogJob, {
+      ...deps(client, jobs),
+      readers: { stripe, zendesk: backlogZendesk },
+    });
+    expect(failed).toEqual([]);
+    expect(result).toMatchObject({ kind: "stored" });
+    const manifest = completed[0]?.[1].manifest as PlanManifest;
+    expect(manifest.versions.planner).toMatchObject({
+      promptVersion: BACKLOG_PROMPT_VERSION,
+      toolSchemaHash: BACKLOG_TOOL_SCHEMA_HASH,
+    });
+    expect(manifest.actions.map((a) => a.kind)).toEqual(
+      waiting.flatMap(() => ["zendesk.ticket.patchFields", "zendesk.ticket.appendPrivateNote"]),
+    );
+    expect(requests[0]?.system).toBe(BACKLOG_SYSTEM_PROMPT);
+    expect(requests[0]?.tools?.map((t) => ("name" in t ? t.name : ""))).not.toContain(
+      "propose_duplicate_refund",
+    );
+    expect(String(requests[0]?.messages[0]?.content)).not.toContain("Incident window");
   });
 
   it("reports incomplete coverage instead of storing a partial plan", async () => {

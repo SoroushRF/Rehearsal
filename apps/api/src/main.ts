@@ -9,6 +9,7 @@ import type { ApplyDeps } from "./apply";
 import { iamClientFromEnv } from "./iam";
 import { ensureOrgSeeded, workerHasWork } from "./org-worlds";
 import { publisherFromEnv, startPrecedentWorker } from "./precedent-sync";
+import { eraProblemInjector } from "./problems";
 import { rehearsalTenantActive } from "./rehearsal-operator";
 import { rehearsalTokenDepsFromEnv } from "./rehearsal-tokens";
 import { tenantTokenDepsFromEnv } from "./tenant-tokens";
@@ -82,6 +83,9 @@ const rehearse = apply && {
   // Each org plans in its own tenant (#330): seed it before the first plan job.
   ensureSeeded: (orgId: string) => ensureOrgSeeded(orgId),
 };
+// Live demo (#331): only when this API holds the Era admin token. No database needed.
+const problemInjector = eraProblemInjector();
+const problems = problemInjector && { iam, inject: problemInjector };
 const executionRehearsals = apply && { db: apply.db, boss: apply.boss, iam };
 // T1.23/T3.16: the rehearsal worker's minter and operator routes, when this API holds the rehearsal
 // admin token and worker secret. A token is minted only for a claimed rehearsal not yet reset.
@@ -97,6 +101,7 @@ const app = buildApp({
   company,
   precedents,
   rehearse,
+  problems,
   executionRehearsals,
   iam,
   tenantTokens: tenantTokens && {
