@@ -1,6 +1,8 @@
 import { sql } from "drizzle-orm";
 import { fromDrizzle, PgBoss } from "pg-boss";
 import { z } from "zod";
+import type { Db } from "./index";
+import { withOrgWorlds } from "./org-world-lock";
 
 export type { PgBoss };
 
@@ -99,6 +101,19 @@ export async function startQueue(url = process.env.DATABASE_URL): Promise<PgBoss
 }
 
 type DrizzleTx = Parameters<typeof fromDrizzle>[0];
+
+/** Seed and commit the plan job before a reset can check whether the org is idle. */
+export function enqueuePlan(
+  db: Db,
+  boss: PgBoss,
+  job: { orgId: string },
+  before: () => Promise<void>,
+): Promise<string | null> {
+  return withOrgWorlds(db, job.orgId, async (tx) => {
+    await before();
+    return boss.send(PLAN_QUEUE, job, { db: fromDrizzle(tx, sql) });
+  });
+}
 
 /**
  * Enqueue inside the caller's transaction, so the run row and its job commit or roll back

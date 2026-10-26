@@ -42,4 +42,17 @@ describe.skipIf(!process.env.DB_TESTS)("incidents (real Postgres)", () => {
     expect(second.incidentId).not.toBe(first.incidentId);
     expect((await loadIncident(db, org, first.incidentId))?.title).toBe(draft.title);
   });
+
+  it("never allocates the built-in incident ID", async () => {
+    const next = 1000 + Math.floor(Math.random() * 9000);
+    const picks = [927, 927, next];
+    const stored = await insertIncident(
+      db,
+      `org_${randomUUID()}`,
+      "user_1",
+      draft,
+      () => picks.shift() as number,
+    );
+    expect(stored.incidentId).toBe(`INC-BILL-${next}`);
+  });
 });

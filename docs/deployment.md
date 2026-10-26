@@ -72,6 +72,21 @@ and approved plans in Postgres even if worlds are reseeded.
 The fallback remains a Linux VM running Compose if Render cannot run the private stack.
 A public saved replay is fixture evidence until replaced by an export of an actual run.
 
+## Next coordinated release
+
+Deploy one reviewed commit to IAM, API/web, planner, executor and rehearsal worker. The API's existing pre-deploy migration applies `0009_incidents.sql`. Drain planning/apply/rehearsal jobs before the switch, update IAM before exposing the new API routes, and keep new work paused until all workers report ready at the selected commit. Existing stored plans and receipts remain history; create a fresh plan after the move to per-org tenants. The Era image services do not need a restart for these source changes.
+
+For the recorded guard moment, target the actual Clerk organization explicitly from the private network:
+
+```sh
+pnpm demo:phantom --org=org_ACTUAL_DEMO_ORGANIZATION
+pnpm demo:conflict --org=org_ACTUAL_DEMO_ORGANIZATION
+```
+
+`DEMO_ORG_ID` is the equivalent environment setting. Both derive exactly the workers' `orgTenant(orgId)` and print the selected tenant before accessing Era. With neither option, the legacy shared `ERA_TENANT` still applies; it is unsuitable for a signed-in org's demo. Do not reset the org after approval or before applying the phantom plan: it would remove the injected trap.
+
+After release, run the standalone Render smoke, verify worker ready logs, and use a fresh org plan for company → create problem → file incident → plan → review → approve → apply. For the guard case inject the phantom into that same org between approval and apply, then verify the query-membership hold and unchanged planning world. Keep Slack summaries disabled until #312 is addressed; the recorded full integration gate remains unpassed (#323), and public-reply disposable rehearsals are not part of the proven cloud path.
+
 ## October 25 cloud release
 
 Public app: https://rehearsal-api-40b8.onrender.com/app . Project: Rehearsal in the owner's

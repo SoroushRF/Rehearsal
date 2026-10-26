@@ -1,6 +1,13 @@
 import { ApplyRequest, PlanManifest } from "@rehearsal/contracts";
 import { approvalStatus, type BillingPolicy, explainShortfall } from "@rehearsal/core";
-import { type Db, type PgBoss, requestApply, schema, toApprovalGrant } from "@rehearsal/db";
+import {
+  type Db,
+  OrgWorldBusy,
+  type PgBoss,
+  requestApply,
+  schema,
+  toApprovalGrant,
+} from "@rehearsal/db";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import {
@@ -131,7 +138,11 @@ export function registerApplyRoute(app: FastifyInstance, deps: ApplyDeps) {
       revision: plan.revision,
       planHash: plan.planHash,
       now: at,
+    }).catch((error: unknown) => {
+      if (error instanceof OrgWorldBusy) return null;
+      throw error;
     });
+    if (!result) return reply.code(409).send({ error: "work_in_progress" });
 
     switch (result.kind) {
       case "accepted":

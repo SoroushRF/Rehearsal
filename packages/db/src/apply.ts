@@ -5,6 +5,7 @@ import { and, desc, eq, gt, inArray, isNull, lte } from "drizzle-orm";
 import type { PgBoss } from "pg-boss";
 import { toApprovalGrant } from "./apply-store";
 import type { Db } from "./index";
+import { lockOrgWorlds } from "./org-world-lock";
 import { enqueueApply } from "./queue";
 import { approvalGrants, planVersions, runs } from "./schema";
 
@@ -43,6 +44,7 @@ const REUSABLE_STATES = ["approved", "applying", "completed", "cancelled"];
  */
 export async function requestApply(db: Db, boss: PgBoss, cmd: ApplyCommand): Promise<ApplyResult> {
   return db.transaction(async (tx) => {
+    await lockOrgWorlds(tx, cmd.orgId);
     const [plan] = await tx
       .select()
       .from(planVersions)

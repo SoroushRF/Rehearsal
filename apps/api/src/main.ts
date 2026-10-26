@@ -1,13 +1,21 @@
 import type { BillingPolicy } from "@rehearsal/core";
-import { createDb, loadRegistry, type PgBoss, startQueue } from "@rehearsal/db";
+import {
+  createDb,
+  enqueuePlan,
+  loadRegistry,
+  type PgBoss,
+  startQueue,
+  withOrgWorlds,
+} from "@rehearsal/db";
 import { iamClientViolations } from "@rehearsal/iam/boot";
+import type { PlanJob } from "@rehearsal/providers";
 import policyV1 from "../../../scenarios/billing/policy.v1.json" with { type: "json" };
 import policyV2 from "../../../scenarios/billing/policy.v2.json" with { type: "json" };
 import policyV3 from "../../../scenarios/billing/policy.v3.json" with { type: "json" };
 import { buildApp } from "./app";
 import type { ApplyDeps } from "./apply";
 import { iamClientFromEnv } from "./iam";
-import { ensureOrgSeeded, resetOrgWorlds, workerHasWork } from "./org-worlds";
+import { ensureOrgSeeded, resetIdleOrgWorlds, workerHasWork } from "./org-worlds";
 import { publisherFromEnv, startPrecedentWorker } from "./precedent-sync";
 import { eraProblemInjector } from "./problems";
 import { rehearsalTenantActive } from "./rehearsal-operator";
@@ -60,7 +68,8 @@ const tenantTokens = tenantTokenDepsFromEnv();
 const company = apply && {
   db: apply.db,
   iam,
-  ensureSeeded: (orgId: string) => ensureOrgSeeded(orgId),
+  ensureSeeded: (orgId: string) =>
+    withOrgWorlds(apply.db, orgId, async () => ensureOrgSeeded(orgId)),
 };
 // Agent Memory is optional: without it a promotion is recorded and waits, and nothing plans from it.
 const publisherFor = publisherFromEnv();
@@ -81,21 +90,21 @@ const rehearse = apply && {
   plannerSecret: process.env.PLANNER_WORKER_SECRET,
   precedentRegistry: async (orgId: string) => (await loadRegistry(apply.db, orgId)).snapshot,
   // Each org plans in its own tenant (#330): seed it before the first plan job.
-  ensureSeeded: (orgId: string) => ensureOrgSeeded(orgId),
+  enqueue: (job: PlanJob) =>
+    enqueuePlan(apply.db, apply.boss, job, () => ensureOrgSeeded(job.orgId)),
 };
 // Live demo (#331): only when this API holds the Era admin token. Each org's own tenant, seeded first.
 const problemInjector = eraProblemInjector();
-const problems = problemInjector && {
-  iam,
-  inject: problemInjector,
-  ensureSeeded: (orgId: string) => ensureOrgSeeded(orgId),
-  reset: (orgId: string) => resetOrgWorlds(orgId),
-  ...(apply && {
-    busy: async (orgId: string) =>
-      (await workerHasWork(apply.db, "planner", orgId)) ||
-      (await workerHasWork(apply.db, "executor", orgId)),
-  }),
-};
+const problems = apply &&
+  problemInjector && {
+    iam,
+    inject: (orgId: string, records: Parameters<typeof problemInjector>[1]) =>
+      withOrgWorlds(apply.db, orgId, async () => {
+        await ensureOrgSeeded(orgId);
+        await problemInjector(orgId, records);
+      }),
+    reset: (orgId: string) => resetIdleOrgWorlds(apply.db, orgId),
+  };
 const executionRehearsals = apply && { db: apply.db, boss: apply.boss, iam };
 // T1.23/T3.16: the rehearsal worker's minter and operator routes, when this API holds the rehearsal
 // admin token and worker secret. A token is minted only for a claimed rehearsal not yet reset.

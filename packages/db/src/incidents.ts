@@ -1,6 +1,7 @@
 import { randomInt } from "node:crypto";
 import { type IncidentDraft, type IncidentKind, StoredIncident } from "@rehearsal/contracts";
 import { and, desc, eq } from "drizzle-orm";
+import builtIn from "../../../scenarios/billing/incident.v1.json" with { type: "json" };
 import type { Db } from "./index";
 import { incidents } from "./schema";
 
@@ -38,6 +39,7 @@ export async function insertIncident(
 ): Promise<StoredIncident> {
   for (let attempt = 0; attempt < 8; attempt++) {
     const incidentId = `INC-${INCIDENT_ID_KIND[draft.kind]}-${String(pick()).padStart(4, "0")}`;
+    if (incidentId === builtIn.incident) continue;
     const [row] = await db
       .insert(incidents)
       .values({

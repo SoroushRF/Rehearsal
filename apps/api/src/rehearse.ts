@@ -4,6 +4,7 @@ import { planHash, validateGraph } from "@rehearsal/core";
 import {
   type Db,
   loadIncident,
+  OrgWorldBusy,
   type PgBoss,
   PLAN_QUEUE,
   type RegistrySnapshot,
@@ -52,6 +53,8 @@ export interface RehearseDeps {
    * empty world. Absent: nothing is seeded (the shared tenant, tests).
    */
   ensureSeeded?: (orgId: string) => Promise<void>;
+  /** Production seeding and enqueue share the reset lock and commit the job before releasing it. */
+  enqueue?: (job: PlanJob) => Promise<string | null>;
 }
 
 /** Incidents this deployment can rehearse. The planner worker loads the brief by ID. */
@@ -94,10 +97,9 @@ export function registerRehearseRoutes(app: FastifyInstance, deps: RehearseDeps)
     if (!gate.ok) return refuse(reply, gate, "incident_not_found");
     // A built-in incident the worker knows by ID, or one this org filed (#331), sent with the job.
     const builtIn = INCIDENTS.has(req.params.id);
-    const filed =
-      builtIn || !FiledIncidentId.safeParse(req.params.id).success
-        ? undefined
-        : await loadIncident(deps.db, gate.person.orgId, req.params.id);
+    const filed = !FiledIncidentId.safeParse(req.params.id).success
+      ? undefined
+      : await loadIncident(deps.db, gate.person.orgId, req.params.id);
     if (!builtIn && !filed) return reply.code(404).send({ error: "incident_not_found" });
     try {
       await deps.ensureSeeded?.(gate.person.orgId);
@@ -124,7 +126,16 @@ export function registerRehearseRoutes(app: FastifyInstance, deps: RehearseDeps)
         },
       }),
     };
-    const jobId = await deps.boss.send(PLAN_QUEUE, PlanJob.parse(job));
+    let jobId: string | null;
+    try {
+      jobId = deps.enqueue
+        ? await deps.enqueue(PlanJob.parse(job))
+        : await deps.boss.send(PLAN_QUEUE, PlanJob.parse(job));
+    } catch (error) {
+      if (error instanceof OrgWorldBusy) return reply.code(409).send({ error: "work_in_progress" });
+      req.log.error({ err: error }, "plan job could not be queued");
+      return reply.code(502).send({ error: "world_unavailable" });
+    }
     if (!jobId) return reply.code(503).send({ error: "not_enqueued" });
     return reply.code(202).send({ rehearsalId: jobId, planId: job.planId, state: "queued" });
   });

@@ -23,7 +23,7 @@ describe("rehearse routes", () => {
     buildApp({
       webRoot: null,
       rehearse: {
-        db: {} as Db,
+        db: { select: () => ({ from: () => ({ where: async () => [] }) }) } as unknown as Db,
         boss,
         iam: fakeIam(me ? [me] : []),
         plannerSecret: SECRET,
