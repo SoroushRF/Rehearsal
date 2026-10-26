@@ -2,8 +2,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { AppShell } from "../src/components/AppShell";
-import { LivePlans } from "../src/components/LivePlans";
+import { LiveApp } from "../src/components/LivePlans";
 import { IdentityScope, identityOf } from "../src/identity";
+import { appView } from "../src/route";
 import "../src/index.css";
 
 /**
@@ -11,6 +12,10 @@ import "../src/index.css";
  * stand in for Clerk: they change the signed-in user or organization, or sign out, through the same
  * `IdentityScope` the real app uses. Each request names its identity in `x-test-identity`.
  */
+/** The plans page unless the test opens another section with `?view=`. */
+const view = new URLSearchParams(window.location.search).has("view")
+  ? appView(window.location.search)
+  : "plans";
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
 function Harness() {
@@ -44,7 +49,7 @@ function Harness() {
       }
     >
       <IdentityScope identity={identity} fallback={<p data-testid="signed-out">Signed out</p>}>
-        <LivePlans apiFetch={apiFetch} />
+        <LiveApp apiFetch={apiFetch} initialView={view} />
       </IdentityScope>
     </AppShell>
   );

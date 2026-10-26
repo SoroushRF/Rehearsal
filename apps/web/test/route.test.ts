@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { needsAuth, routeFor } from "../src/route";
+import { appView, needsAuth, routeFor } from "../src/route";
 
 describe("routeFor", () => {
   it.each([
@@ -21,5 +21,17 @@ describe("routeFor", () => {
     expect(needsAuth("app")).toBe(true);
     expect(needsAuth("landing")).toBe(false);
     expect(needsAuth("replay")).toBe(false);
+  });
+});
+
+describe("appView", () => {
+  it.each([
+    ["", "company"],
+    ["?view=incidents", "incidents"],
+    ["?view=plans&bundle=x", "plans"],
+    ["?view=members", "members"],
+    ["?view=nope", "company"],
+  ])("%s opens %s", (search, expected) => {
+    expect(appView(search)).toBe(expected);
   });
 });

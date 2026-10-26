@@ -1,4 +1,4 @@
-import { ApprovalGrant } from "@rehearsal/contracts";
+import { ApprovalGrant, type IncidentKind, type RunState } from "@rehearsal/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
@@ -20,14 +20,17 @@ import { useTenantKey } from "../identity";
 import { APPROVAL_SEATS, actionAllowed } from "../permissions";
 import { droppedBy, requiredRoles } from "../plan";
 import { explainPrecedentHold, PrecedentCheck } from "../precedent-holds";
-import { RunView } from "../runs";
+import { type AppView, appView } from "../route";
+import { FINISHED, RunEvents, RunView } from "../runs";
 import { Segmented } from "./AppShell";
 import { AuditPanel } from "./AuditPanel";
+import { CompanyOverview } from "./CompanyOverview";
 import { ExecutionRehearsalPanel } from "./ExecutionRehearsalPanel";
+import { IncidentForm } from "./IncidentForm";
 import { MembersPanel } from "./MembersPanel";
 import { PlanReview } from "./PlanReview";
 import { PrecedentPanel } from "./PrecedentPanel";
-import { RehearseBar } from "./Rehearse";
+import { INCIDENT_ID, type Rehearsal, RehearseBar } from "./Rehearse";
 import { RunTimeline } from "./RunTimeline";
 import { Alert, Button, Card, Chip, Icon, Skeleton, Spinner } from "./ui";
 
@@ -41,9 +44,167 @@ const GrantList = z.object({
 const Approved = z.object({ grant: ApprovalGrant, existing: z.boolean() });
 const RunList = z.object({ runs: z.array(RunView) });
 const planPath = (planId: string) => `/api/plans/${encodeURIComponent(planId)}`;
+const POLL_MS = 2000;
+
+/**
+ * Incident kinds this deployment can plan, in the form and the problem presets. Only kinds the
+ * planner and policy have been shown to handle; the rest would only ever plan nothing.
+ */
+export const LIVE_KINDS: readonly IncidentKind[] = ["duplicate_charge", "support_backlog"];
+
+/** The five steps of the process, as `ProcessDiagram` numbers them. */
+export type Stage = 1 | 2 | 3 | 4 | 5;
+
+/** Where the process stands on the plans page: rehearsing, reviewing, applying, or done. */
+export function stageOf(
+  rehearsal: Rehearsal["state"] | null,
+  hasPlan: boolean,
+  run: RunState | null,
+): Stage {
+  if (rehearsal === "queued" || rehearsal === "planning" || rehearsal === "retrying") return 2;
+  if (run === "applying") return 4;
+  if (run && FINISHED.includes(run)) return 5;
+  return hasPlan ? 3 : 1;
+}
+
+/**
+ * The signed-in app, in the order a person works: their company, the incidents they filed, then
+ * plans rehearsed from those (review, approve, apply). Members sits apart, last.
+ */
+export function LiveApp({ apiFetch, initialView }: { apiFetch: ApiFetch; initialView?: AppView }) {
+  const key = useTenantKey();
+  const queryClient = useQueryClient();
+  const access = usePermissions(apiFetch);
+  const [view, setView] = useState<AppView>(() => initialView ?? appView(window.location.search));
+  // `nonce` remounts the plans page so choosing "Rehearse" on a row starts exactly one rehearsal.
+  const [incident, setIncident] = useState({ id: INCIDENT_ID, nonce: 0 });
+  const [focusRun, setFocusRun] = useState<{ runId: string; planId: string } | null>(null);
+  const [finished, setFinished] = useState<string | null>(null);
+
+  const go = useCallback((next: AppView) => {
+    setView(next);
+    const url = new URL(window.location.href);
+    url.searchParams.set("view", next);
+    window.history.replaceState(null, "", url);
+  }, []);
+  const rehearse = (id: string) => {
+    setIncident((prev) => ({ id, nonce: prev.nonce + 1 }));
+    go("plans");
+  };
+  const openRun = async (runId: string) => {
+    // The snapshot names only the run; its first page of events names the plan it applied.
+    const page = await call(
+      apiFetch,
+      RunEvents,
+      `/api/runs/${encodeURIComponent(runId)}/events?after=0`,
+    ).catch(() => null);
+    if (page) setFocusRun({ runId, planId: page.run.planId });
+    go("plans");
+  };
+  const onRunFinished = useCallback(
+    (runId: string) => {
+      setFinished(runId);
+      queryClient.invalidateQueries({ queryKey: key("company") });
+    },
+    [queryClient, key],
+  );
+
+  const canRehearse = actionAllowed(access.permissions, "rehearse");
+  const members =
+    actionAllowed(access.permissions, "invite") || actionAllowed(access.permissions, "manageRole");
+  const views: { id: AppView; text: string }[] = [
+    { id: "company", text: "Company" },
+    { id: "incidents", text: "Incidents" },
+    { id: "plans", text: "Plans" },
+  ];
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="flex items-center justify-between gap-3">
+        <Segmented label="Sections" value={view} onChange={go} options={views} />
+        {members && (
+          <button
+            type="button"
+            aria-current={view === "members" ? "page" : undefined}
+            onClick={() => go("members")}
+            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2 text-[13px] text-muted hover:text-ink aria-[current=page]:text-ink"
+          >
+            <Icon name="users" className="h-4 w-4" />
+            Members
+          </button>
+        )}
+      </div>
+
+      <div hidden={view !== "company"}>
+        <CompanyOverview
+          apiFetch={apiFetch}
+          kinds={LIVE_KINDS}
+          canCreateProblem={canRehearse}
+          onOpenRun={openRun}
+        />
+      </div>
+      <div hidden={view !== "incidents"}>
+        <IncidentForm
+          apiFetch={apiFetch}
+          kinds={LIVE_KINDS}
+          allowed={canRehearse}
+          active={incident.id}
+          onRehearse={rehearse}
+        />
+      </div>
+      {/* Kept mounted while hidden, so a rehearsal or a run keeps being followed. */}
+      <div hidden={view !== "plans"}>
+        {finished && (
+          <div
+            data-testid="run-finished"
+            className="enter mb-6 flex flex-wrap items-center justify-between gap-3 border-y border-line py-3"
+          >
+            <p className="text-sm text-ink">
+              Run <code className="font-mono">{finished}</code> finished.
+            </p>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                setFinished(null);
+                go("company");
+              }}
+            >
+              See what changed
+            </Button>
+          </div>
+        )}
+        <LivePlans
+          key={`${incident.id}#${incident.nonce}`}
+          apiFetch={apiFetch}
+          incidentId={incident.id}
+          autoStart={incident.nonce > 0}
+          focusRun={focusRun}
+          onRunFinished={onRunFinished}
+        />
+      </div>
+      {view === "members" && <MembersPanel apiFetch={apiFetch} permissions={access.permissions} />}
+    </div>
+  );
+}
 
 /** Plans stored for the reviewer's organization, reviewed and approved through the API. */
-export function LivePlans({ apiFetch }: { apiFetch: ApiFetch }) {
+export function LivePlans({
+  apiFetch,
+  incidentId = INCIDENT_ID,
+  autoStart = false,
+  focusRun = null,
+  onRunFinished,
+}: {
+  apiFetch: ApiFetch;
+  /** The incident the rehearse bar starts. */
+  incidentId?: string;
+  autoStart?: boolean;
+  /** A run to open, e.g. from a changed row on the company page. */
+  focusRun?: { runId: string; planId: string } | null;
+  /** A run followed here reached a final state. */
+  onRunFinished?: (runId: string) => void;
+}) {
   const key = useTenantKey();
   const access = usePermissions(apiFetch);
   const plans = useQuery({
@@ -51,9 +212,14 @@ export function LivePlans({ apiFetch }: { apiFetch: ApiFetch }) {
     queryFn: () => call(apiFetch, PlanList, "/api/plans"),
   });
   const [chosen, setChosen] = useState<string | null>(null);
+  useEffect(() => {
+    if (focusRun) setChosen(focusRun.planId);
+  }, [focusRun]);
   const planId = chosen ?? plans.data?.plans[0]?.planId ?? null;
   // A freshly stored plan is the one to look at next.
   const showStored = useCallback((id: string) => setChosen(id), []);
+  const [rehearsal, setRehearsal] = useState<Rehearsal["state"] | null>(null);
+  const [run, setRun] = useState<RunState | null>(null);
 
   if (plans.isPending) return <PageSkeleton what="plans" />;
   if (plans.isError) return <Alert className="mt-2">{explain(plans.error)}</Alert>;
@@ -64,12 +230,15 @@ export function LivePlans({ apiFetch }: { apiFetch: ApiFetch }) {
       data-ready={access.ready ? "true" : "false"}
       className="flex flex-col gap-6"
     >
-      <MembersPanel apiFetch={apiFetch} permissions={access.permissions} />
       <RehearseBar
         apiFetch={apiFetch}
+        incidentId={incidentId}
+        autoStart={autoStart}
         onStored={showStored}
+        onState={setRehearsal}
         allowed={actionAllowed(access.permissions, "rehearse")}
       />
+      <ProcessSlot active={stageOf(rehearsal, planId !== null, run)} />
 
       {!planId ? (
         <Card className="flex flex-col items-center gap-3 border-dashed bg-transparent px-6 py-14 text-center shadow-none">
@@ -101,6 +270,9 @@ export function LivePlans({ apiFetch }: { apiFetch: ApiFetch }) {
             apiFetch={apiFetch}
             planId={planId}
             permissions={access.permissions}
+            initialRun={focusRun?.planId === planId ? focusRun.runId : null}
+            onRunState={setRun}
+            onRunFinished={onRunFinished}
           />
         </>
       )}
@@ -127,6 +299,37 @@ function PageSkeleton({ what }: { what: string }) {
   );
 }
 
+const STAGES = ["Copy", "Plan", "Approve", "Apply", "Receipts"] as const;
+
+/**
+ * Where the process stands, until `ProcessDiagram` lands and replaces this with one line:
+ * `<ProcessDiagram active={active} />`. Approve is the gate between the two worlds.
+ */
+function ProcessSlot({ active }: { active: Stage }) {
+  return (
+    <ol
+      aria-label={`Process: ${STAGES.join(", ")}. Now at ${STAGES[active - 1]}.`}
+      data-testid="process-slot"
+      data-active={active}
+      className="grid grid-cols-5 border-b border-line text-[13px]"
+    >
+      {STAGES.map((label, i) => {
+        const on = i + 1 === active;
+        return (
+          <li
+            key={label}
+            aria-current={on ? "step" : undefined}
+            className={`flex items-baseline gap-1.5 border-t-2 px-1 py-2 transition-colors sm:px-2 ${on ? "border-t-lime text-ink" : "border-t-transparent text-subtle"} ${i === 2 || i === 3 ? "border-l border-l-line" : ""}`}
+          >
+            <span className="font-mono text-xs tnum">{i + 1}</span>
+            <span className="truncate">{label}</span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
 /** Approvals and their checks for a plan. Shared by the plan page and its approval panel. */
 function useApprovals(apiFetch: ApiFetch, planId: string) {
   const key = useTenantKey();
@@ -140,10 +343,16 @@ function LivePlan({
   apiFetch,
   planId,
   permissions,
+  initialRun = null,
+  onRunState,
+  onRunFinished,
 }: {
   apiFetch: ApiFetch;
   planId: string;
   permissions: readonly string[] | null;
+  initialRun?: string | null;
+  onRunState?: (state: RunState | null) => void;
+  onRunFinished?: ((runId: string) => void) | undefined;
 }) {
   const queryClient = useQueryClient();
   const key = useTenantKey();
@@ -154,7 +363,10 @@ function LivePlan({
   });
   const [unchecked, setUnchecked] = useState<ReadonlySet<string>>(new Set());
   const [lastRevision, setLastRevision] = useState<NewRevision | null>(null);
-  const [shownRun, setShownRun] = useState<string | null>(null);
+  const [shownRun, setShownRun] = useState<string | null>(initialRun);
+  useEffect(() => {
+    if (initialRun) setShownRun(initialRun);
+  }, [initialRun]);
 
   const revise = useMutation({
     mutationFn: (base: StoredPlan) =>
@@ -196,6 +408,13 @@ function LivePlan({
         </Alert>
       )}
 
+      {manifest.actions.length === 0 && (
+        <p data-testid="empty-plan" className="border-y border-line py-3 text-sm text-ink">
+          No steps planned. Nothing in this incident is in scope for the typed operations; the
+          planner's reason is above.
+        </p>
+      )}
+
       <PlanReview
         manifest={manifest}
         planHash={planHash}
@@ -227,6 +446,8 @@ function LivePlan({
         shownRun={shownRun}
         onShow={setShownRun}
         canCancel={actionAllowed(permissions, "cancel")}
+        onState={onRunState}
+        onFinished={onRunFinished}
       />
 
       {unchecked.size > 0 && (
@@ -505,12 +726,16 @@ function RunSection({
   shownRun,
   onShow,
   canCancel,
+  onState,
+  onFinished,
 }: {
   apiFetch: ApiFetch;
   planId: string;
   shownRun: string | null;
   onShow: (id: string) => void;
   canCancel: boolean;
+  onState?: ((state: RunState | null) => void) | undefined;
+  onFinished?: ((runId: string) => void) | undefined;
 }) {
   const key = useTenantKey();
   const queryClient = useQueryClient();
@@ -527,8 +752,20 @@ function RunSection({
   const runs = useQuery({
     queryKey: key("runs", planId),
     queryFn: () => call(apiFetch, RunList, `${planPath(planId)}/runs`),
+    // Followed until every run is final, so the page knows when to refresh the company.
+    refetchInterval: (q) =>
+      q.state.data?.runs.some((r) => !FINISHED.includes(r.state)) ? POLL_MS : false,
   });
   const runId = shownRun ?? runs.data?.runs[0]?.id ?? null;
+  const state = runs.data?.runs.find((r) => r.id === runId)?.state ?? null;
+  useEffect(() => onState?.(state), [state, onState]);
+  // Only a run seen unfinished here counts as finishing now, not one that was already done.
+  const seenOpen = useRef(new Set<string>());
+  useEffect(() => {
+    if (!runId || !state) return;
+    if (!FINISHED.includes(state)) seenOpen.current.add(runId);
+    else if (seenOpen.current.delete(runId)) onFinished?.(runId);
+  }, [runId, state, onFinished]);
   const top = useRef<HTMLElement>(null);
   // Starting a run brings its report into view: the outcome is what the reviewer came for.
   useEffect(() => {

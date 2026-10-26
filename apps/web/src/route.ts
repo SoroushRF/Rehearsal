@@ -19,3 +19,17 @@ export function routeFor(pathname: string, search: string): Route {
 
 /** Only the app needs the sign-in provider; the other two pages are static. */
 export const needsAuth = (route: Route) => route === "app";
+
+/**
+ * The signed-in app's sections, in the order a person works through them: their company, the
+ * incidents they filed, the plans rehearsed from those, and (secondary) the members.
+ *
+ *   /app?view=company|incidents|plans|members
+ */
+export const APP_VIEWS = ["company", "incidents", "plans", "members"] as const;
+export type AppView = (typeof APP_VIEWS)[number];
+
+export function appView(search: string): AppView {
+  const v = new URLSearchParams(search).get("view");
+  return APP_VIEWS.find((x) => x === v) ?? "company";
+}

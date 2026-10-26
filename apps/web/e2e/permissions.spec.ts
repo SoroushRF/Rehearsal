@@ -27,6 +27,8 @@ test("a member without invite permission does not see an invite form", async ({ 
   await page.goto("/e2e/live.html");
   await page.getByTestId("action-row").first().waitFor();
   await expect(page.getByTestId("access")).toHaveAttribute("data-ready", "true");
+  // No members section at all: nothing to open.
+  await expect(page.getByRole("button", { name: "Members" })).toHaveCount(0);
   await expect(page.getByTestId("invite-form")).toHaveCount(0);
   await expect(page.getByTestId("role-form")).toHaveCount(0);
   expect(await violations(page)).toEqual([]);
@@ -35,7 +37,7 @@ test("a member without invite permission does not see an invite form", async ({ 
 test("an owner can invite a member and change a role", async ({ page }) => {
   const api = fakeApi({ me: OWNER });
   await page.route("**/api/**", api.handle);
-  await page.goto("/e2e/live.html");
+  await page.goto("/e2e/live.html?view=members");
   await expect(page.getByTestId("access")).toHaveAttribute("data-ready", "true");
   await expect(page.getByTestId("invite-form")).toBeVisible();
   await expect(page.getByTestId("role-form")).toBeVisible();
@@ -45,7 +47,7 @@ test("an owner can invite a member and change a role", async ({ page }) => {
   await page.getByRole("button", { name: "Send invite" }).click();
   await expect(page.getByText("Invited ada@example.com as org:support_lead.")).toBeVisible();
 
-  await page.getByLabel("Member").fill("user_b");
+  await page.getByLabel("Member", { exact: true }).fill("user_b");
   await page.getByLabel("New role").selectOption("org:finance_lead");
   await page.getByRole("button", { name: "Change role" }).click();
   await expect(page.getByText("user_b is now org:finance_lead.")).toBeVisible();
