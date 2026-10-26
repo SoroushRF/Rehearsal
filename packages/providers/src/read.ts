@@ -1,9 +1,14 @@
-import type {
-  EntityRef,
-  Observation,
-  QueryObservation,
-  QueryPredicate,
-  World,
+import {
+  type CompanyCharge,
+  type CompanyCustomer,
+  type CompanySlackMessage,
+  type CompanyTicket,
+  Currency,
+  type EntityRef,
+  type Observation,
+  type QueryObservation,
+  type QueryPredicate,
+  type World,
 } from "@rehearsal/contracts";
 import { type Clock, fingerprint, type ProviderPort, type WorldContext } from "@rehearsal/core";
 import { z } from "zod";
@@ -443,4 +448,194 @@ export function zendeskReader(target: ReadTarget): ProviderReader {
       );
     },
   };
+}
+
+// --- Company overview (live demo, #330) -----------------------------------------------------------
+//
+// Read-only lists of one world's records for `GET /api/company`, projected to the contract's row
+// shapes. Each list stops at `limit` rows (at most 200) or at the first page that is missing,
+// malformed or repeated; a short list is a partial view, never a claim that nothing else exists.
+
+/** The most rows any company list returns. */
+export const COMPANY_LIST_CAP = 200;
+
+const cap = (limit: number) => Math.max(0, Math.min(COMPANY_LIST_CAP, Math.floor(limit)));
+const iso = (unixSeconds: number) => new Date(unixSeconds * 1000).toISOString();
+
+const ListedCharge = z.object({
+  id: z.string().min(1),
+  customer: z.string().min(1),
+  amount: z.int().nonnegative(),
+  amount_refunded: z.int().nonnegative(),
+  currency: z.string().regex(/^[a-z]{3}$/),
+  invoice: z.string().nullable().optional(),
+  created: z.int().nonnegative(),
+});
+const ListedCustomer = z.object({
+  id: z.string().min(1),
+  email: z.string().nullable().optional(),
+  balance: z.int().optional(),
+});
+const StripeList = <T extends z.ZodType>(row: T) =>
+  z.object({ data: z.array(row), has_more: z.boolean() });
+
+/** Pages scanned at most for one list, whatever `keep` filters out. */
+const COMPANY_MAX_PAGES = 20;
+
+/**
+ * Pages a Stripe list endpoint with `starting_after` until `limit` kept rows, the end, or
+ * {@link COMPANY_MAX_PAGES} pages.
+ */
+async function stripeList<T extends { id: string }>(
+  target: ReadTarget,
+  path: string,
+  row: z.ZodType<T>,
+  limit: number,
+  keep: (r: T) => boolean = () => true,
+): Promise<T[]> {
+  const out: T[] = [];
+  const seen = new Set<string>();
+  let after: string | undefined;
+  for (let page = 0; out.length < limit && page < COMPANY_MAX_PAGES; page++) {
+    const params = new URLSearchParams({ limit: "100" });
+    if (after) params.set("starting_after", after);
+    const parsed = StripeList(row).safeParse(await getJson(target, `${path}?${params}`));
+    if (!parsed.success) break;
+    const { data, has_more } = parsed.data;
+    if (data.some((r) => seen.has(r.id))) break;
+    for (const r of data) {
+      seen.add(r.id);
+      if (keep(r)) out.push(r);
+    }
+    const last = data.at(-1)?.id;
+    if (!has_more || !last || last === after) break;
+    after = last;
+  }
+  return out.slice(0, limit);
+}
+
+/** The world's charges, newest first as Stripe lists them. */
+export async function listCharges(
+  target: ReadTarget,
+  limit = COMPANY_LIST_CAP,
+): Promise<CompanyCharge[]> {
+  // The contract's currency list is CAD only (#329). A charge in another currency is left out of
+  // the overview rather than failing the whole snapshot; the plan's own evidence still has it.
+  // The shared world is mostly other currencies, so the scan keeps going past them.
+  const rows = await stripeList(
+    target,
+    "/v1/charges",
+    ListedCharge,
+    cap(limit),
+    (c) => Currency.safeParse(c.currency).success,
+  );
+  return rows.flatMap((c) => {
+    const currency = Currency.safeParse(c.currency);
+    if (!currency.success) return [];
+    return [
+      {
+        id: c.id,
+        customer: c.customer,
+        invoice: c.invoice ?? null,
+        amountMinor: c.amount,
+        currency: currency.data,
+        created: iso(c.created),
+        refundedMinor: c.amount_refunded,
+      },
+    ];
+  });
+}
+
+/** The world's customers, with their balance in minor units (negative is credit owed). */
+export async function listCustomers(
+  target: ReadTarget,
+  limit = COMPANY_LIST_CAP,
+): Promise<CompanyCustomer[]> {
+  const rows = await stripeList(target, "/v1/customers", ListedCustomer, cap(limit));
+  return rows.map((c) => ({ id: c.id, email: c.email ?? null, balanceMinor: c.balance ?? 0 }));
+}
+
+const ListedTicket = z.object({
+  id: TicketId,
+  subject: z.string().nullable().optional(),
+  status: z.string(),
+  priority: z.string().nullable(),
+  requester_id: TicketId.nullable(),
+  updated_at: z.string(),
+});
+const ListedTicketPage = z.object({
+  tickets: z.array(ListedTicket),
+  next_page: z.string().min(1).nullable(),
+});
+
+/** The world's tickets, following `next_page` on the same origin only. */
+export async function listTickets(
+  target: ReadTarget,
+  limit = COMPANY_LIST_CAP,
+): Promise<CompanyTicket[]> {
+  const max = cap(limit);
+  const origin = new URL(target.config.baseUrl).origin;
+  const out: CompanyTicket[] = [];
+  const seen = new Set<string>();
+  const ids = new Set<number>();
+  let path: string | null = `/api/v2/tickets.json?per_page=${Math.min(100, max) || 1}`;
+  while (path && out.length < max && !seen.has(path)) {
+    seen.add(path);
+    const parsed = ListedTicketPage.safeParse(await getJson(target, path));
+    if (!parsed.success) break;
+    for (const t of parsed.data.tickets) {
+      const id = Number(t.id);
+      if (!Number.isSafeInteger(id) || id <= 0) continue;
+      if (ids.has(id)) return out;
+      ids.add(id);
+      const updated = Date.parse(t.updated_at);
+      out.push({
+        id,
+        subject: t.subject ?? "",
+        status: t.status,
+        priority: t.priority,
+        requester: t.requester_id === null ? "" : String(t.requester_id),
+        updatedAt: Number.isFinite(updated) ? new Date(updated).toISOString() : iso(0),
+      });
+    }
+    const next = parsed.data.next_page;
+    if (!next) break;
+    const url = new URL(next, origin);
+    if (url.origin !== origin) break;
+    path = `${url.pathname}${url.search}`;
+  }
+  return out.slice(0, max);
+}
+
+const SlackHistoryPage = z.object({
+  ok: z.boolean(),
+  messages: z.array(z.object({ ts: z.string().min(1), text: z.string().optional() })).optional(),
+  has_more: z.boolean().optional(),
+  response_metadata: z.object({ next_cursor: z.string().optional() }).optional(),
+});
+
+/** One channel's messages, newest first, from `conversations.history`. */
+export async function listSlackMessages(
+  target: ReadTarget,
+  channel: string,
+  limit = COMPANY_LIST_CAP,
+): Promise<CompanySlackMessage[]> {
+  const max = cap(limit);
+  const out: CompanySlackMessage[] = [];
+  const cursors = new Set<string>();
+  let cursor = "";
+  while (out.length < max) {
+    const params = new URLSearchParams({ channel, limit: String(Math.min(200, max - out.length)) });
+    if (cursor) params.set("cursor", cursor);
+    const parsed = SlackHistoryPage.safeParse(
+      await getJson(target, `/api/conversations.history?${params}`),
+    );
+    if (!parsed.success || !parsed.data.ok) break;
+    for (const m of parsed.data.messages ?? []) out.push({ ts: m.ts, channel, text: m.text ?? "" });
+    const next = parsed.data.response_metadata?.next_cursor ?? "";
+    if (!parsed.data.has_more || !next || cursors.has(next)) break;
+    cursors.add(next);
+    cursor = next;
+  }
+  return out.slice(0, max);
 }
