@@ -7,6 +7,7 @@ import policyV3 from "../../../scenarios/billing/policy.v3.json" with { type: "j
 import { buildApp } from "./app";
 import type { ApplyDeps } from "./apply";
 import { iamClientFromEnv } from "./iam";
+import { ensureOrgSeeded, workerHasWork } from "./org-worlds";
 import { publisherFromEnv, startPrecedentWorker } from "./precedent-sync";
 import { rehearsalTenantActive } from "./rehearsal-operator";
 import { rehearsalTokenDepsFromEnv } from "./rehearsal-tokens";
@@ -53,7 +54,13 @@ const approvals = apply && {
 };
 const runs = apply && { db: apply.db, iam };
 // Live demo (#330): the company overview reads the operational world with the API's admin token.
-const company = apply && { db: apply.db, iam };
+// Each org reads its own operational tenant, seeded with the demo cohort on first use.
+const tenantTokens = tenantTokenDepsFromEnv();
+const company = apply && {
+  db: apply.db,
+  iam,
+  ensureSeeded: (orgId: string) => ensureOrgSeeded(orgId),
+};
 // Agent Memory is optional: without it a promotion is recorded and waits, and nothing plans from it.
 const publisherFor = publisherFromEnv();
 const precedents = apply && {
@@ -90,7 +97,11 @@ const app = buildApp({
   rehearse,
   executionRehearsals,
   iam,
-  tenantTokens: tenantTokenDepsFromEnv(),
+  tenantTokens: tenantTokens && {
+    ...tenantTokens,
+    // A worker gets an org's tenant only while its own queue has that org's job (#330).
+    ...(apply && { hasWork: (role, orgId) => workerHasWork(apply.db, role, orgId) }),
+  },
   rehearsalTokens,
   rehearsalOperator,
 });

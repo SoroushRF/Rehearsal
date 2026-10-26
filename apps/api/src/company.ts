@@ -8,6 +8,7 @@ import {
   PlanManifest,
   Receipt,
 } from "@rehearsal/contracts";
+import { orgTenant } from "@rehearsal/core";
 import { type Db, schema } from "@rehearsal/db";
 import {
   listCharges,
@@ -128,14 +129,12 @@ function targetsOf(action: Action, receipt: Receipt): string[] {
   }
 }
 
-/**
- * The operational world of the org. Until each org has its own tenant (#330, PR B), every org
- * reads the shared operational tenant (`ERA_TENANT`).
- */
+/** The org's own operational tenant, `orgTenant(orgId)` (#330). */
 export async function readOperationalWorld(
-  _orgId: string,
+  orgId: string,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<CompanyWorld> {
+  const tenant = orgTenant(orgId);
   const adminToken = env.ERA_ADMIN_TOKEN;
   if (!adminToken) throw new Error("ERA_ADMIN_TOKEN is not set");
   const target = async (config: WorldConfig, authorization: string): Promise<ReadTarget> => {
@@ -148,17 +147,20 @@ export async function readOperationalWorld(
     };
   };
   const stripe = await target(
-    resolveWorld("stripe", "operational", env),
+    resolveWorld("stripe", "operational", env, tenant),
     "Bearer sk_test_rehearsal_overview",
   );
   const zendesk = await target(
-    resolveWorld("zendesk", "operational", env),
+    resolveWorld("zendesk", "operational", env, tenant),
     "Bearer rehearsal-overview",
   );
   const channel = env.RUN_SUMMARY_CHANNEL;
   const slack =
     channel && env.ERA_SLACK_OPERATIONAL_URL
-      ? await target(resolveWorld("slack", "operational", env), "Bearer xoxb-rehearsal-overview")
+      ? await target(
+          resolveWorld("slack", "operational", env, tenant),
+          "Bearer xoxb-rehearsal-overview",
+        )
       : null;
   const [charges, customers, tickets, messages]: [
     CompanyCharge[],

@@ -57,20 +57,41 @@ if (worlds.stripe.tenant !== worlds.zendesk.tenant) {
 // The simulators accept any bearer; real read-only credentials would come from the environment.
 // A read that times out comes back to the model as a failed read; the run's deadline still holds.
 const READ_TIMEOUT_MS = 30_000;
-const readers = {
-  stripe: stripeReader({
-    world: "planning",
-    config: worlds.stripe,
-    authorization: "Bearer sk_test_rehearsal_planner",
-    timeoutMs: READ_TIMEOUT_MS,
-  }),
-  zendesk: zendeskReader({
-    world: "planning",
-    config: worlds.zendesk,
-    authorization: "Bearer rehearsal-planner",
-    timeoutMs: READ_TIMEOUT_MS,
-  }),
-};
+/** Planning-world readers for one set of worlds (one tenant). */
+function readersFor(w: ReturnType<typeof workerWorlds>) {
+  return {
+    stripe: stripeReader({
+      world: "planning",
+      config: w.stripe,
+      authorization: "Bearer sk_test_rehearsal_planner",
+      timeoutMs: READ_TIMEOUT_MS,
+    }),
+    zendesk: zendeskReader({
+      world: "planning",
+      config: w.zendesk,
+      authorization: "Bearer rehearsal-planner",
+      timeoutMs: READ_TIMEOUT_MS,
+    }),
+  };
+}
+const readers = readersFor(worlds);
+/**
+ * Each org plans in its own planning tenant (#330), built on its first job and kept: the token
+ * sources refresh themselves, and the operator mints for an org only while its job is live.
+ */
+const orgReaders = new Map<
+  string,
+  { readers: ReturnType<typeof readersFor>; ctx: { world: "planning"; tenant: string } }
+>();
+function forOrg(orgId: string) {
+  let found = orgReaders.get(orgId);
+  if (!found) {
+    const w = workerWorlds("planner", process.env, { orgId });
+    found = { readers: readersFor(w), ctx: { world: "planning", tenant: w.stripe.tenant } };
+    orgReaders.set(orgId, found);
+  }
+  return found;
+}
 const client = gemini
   ? geminiMessagesClient(
       new GoogleGenAI({
@@ -134,7 +155,7 @@ console.log(
 while (!stopping) {
   try {
     const job = await jobs.next();
-    if (job) await handlePlanJob(job, ctx);
+    if (job) await handlePlanJob(job, { ...ctx, ...forOrg(job.data.orgId) });
     else await new Promise((r) => setTimeout(r, IDLE_POLL_MS));
   } catch (err) {
     console.error("planner-worker:", (err as Error).message);

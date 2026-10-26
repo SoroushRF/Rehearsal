@@ -1,4 +1,4 @@
-import { APPLY_QUEUE, createDb, reapStuckRuns, startQueue } from "@rehearsal/db";
+import { APPLY_QUEUE, ApplyJob, createDb, reapStuckRuns, startQueue } from "@rehearsal/db";
 import { iamClientViolations } from "@rehearsal/iam/boot";
 import {
   primeTokens,
@@ -51,57 +51,80 @@ if (!admit) {
 const worlds = workerWorlds("executor");
 await primeTokens(worlds);
 
-// The simulators accept any bearer; real credentials would come from the environment here.
-const target = (vendor: "stripe" | "zendesk") => ({
-  world: "operational" as const,
-  config: worlds[vendor],
-  authorization:
-    vendor === "stripe" ? "Bearer sk_test_rehearsal_executor" : "Bearer rehearsal-executor",
-});
-// The run summary (T1.7) is optional: without ERA_SLACK_OPERATIONAL_URL admission refuses a plan
-// that posts one, before anything is sent.
-const slack = worlds.slack
-  ? writeOnly(
-      slackProviderWriter({
-        world: "operational",
-        config: worlds.slack,
-        authorization: "Bearer xoxb-rehearsal-executor",
-      }),
-    )
-  : undefined;
 const clock = { now: () => new Date() }; // wall time: the reconcile window depends on it
+const db = createDb();
+const runAdmit = admit;
 
-const ctx: WorkerContext = {
-  db: createDb(),
-  providers: {
-    stripe: withWriter(
-      stripeReader({ ...target("stripe"), clock }),
-      stripeWriter(target("stripe")),
-    ),
-    zendesk: withWriter(
-      zendeskReader({ ...target("zendesk"), clock }),
-      zendeskWriter(target("zendesk")),
-    ),
-    ...(slack && { slack }),
-  },
-  worlds: {
-    stripe: { world: "operational", tenant: worlds.stripe.tenant },
-    zendesk: { world: "operational", tenant: worlds.zendesk.tenant },
-    ...(worlds.slack && { slack: { world: "operational", tenant: worlds.slack.tenant } }),
-  },
-  clock,
-  admit,
-  policies: [policyV1, policyV2, policyV3] as WorkerContext["policies"][number][],
-  // Independent cases applied at once per run (cases sharing a record always run in order).
-  executor: { caseConcurrency: Number(process.env.EXECUTOR_CASE_CONCURRENCY ?? 4) || 1 },
-};
+/** Readers and writers bound to one set of operational worlds (one tenant). */
+function contextFor(worlds: ReturnType<typeof workerWorlds>): WorkerContext {
+  // The simulators accept any bearer; real credentials would come from the environment here.
+  const target = (vendor: "stripe" | "zendesk") => ({
+    world: "operational" as const,
+    config: worlds[vendor],
+    authorization:
+      vendor === "stripe" ? "Bearer sk_test_rehearsal_executor" : "Bearer rehearsal-executor",
+  });
+  // The run summary (T1.7) is optional: without ERA_SLACK_OPERATIONAL_URL admission refuses a
+  // plan that posts one, before anything is sent.
+  const slack = worlds.slack
+    ? writeOnly(
+        slackProviderWriter({
+          world: "operational",
+          config: worlds.slack,
+          authorization: "Bearer xoxb-rehearsal-executor",
+        }),
+      )
+    : undefined;
+  return {
+    db,
+    providers: {
+      stripe: withWriter(
+        stripeReader({ ...target("stripe"), clock }),
+        stripeWriter(target("stripe")),
+      ),
+      zendesk: withWriter(
+        zendeskReader({ ...target("zendesk"), clock }),
+        zendeskWriter(target("zendesk")),
+      ),
+      ...(slack && { slack }),
+    },
+    worlds: {
+      stripe: { world: "operational", tenant: worlds.stripe.tenant },
+      zendesk: { world: "operational", tenant: worlds.zendesk.tenant },
+      ...(worlds.slack && { slack: { world: "operational", tenant: worlds.slack.tenant } }),
+    },
+    clock,
+    admit: runAdmit,
+    policies: [policyV1, policyV2, policyV3] as WorkerContext["policies"][number][],
+    // Independent cases applied at once per run (cases sharing a record always run in order).
+    executor: { caseConcurrency: Number(process.env.EXECUTOR_CASE_CONCURRENCY ?? 4) || 1 },
+  };
+}
+
+const ctx = contextFor(worlds);
+/**
+ * Each org's own operational tenant (#330), built on its first job and kept: the token sources
+ * refresh themselves, and the operator mints for an org only while its job is live.
+ */
+const orgContexts = new Map<string, WorkerContext>();
+function orgContext(data: unknown): WorkerContext {
+  const parsed = ApplyJob.safeParse(data);
+  if (!parsed.success) return ctx; // malformed: handleApplyJob skips it before any world is read
+  const { orgId } = parsed.data;
+  let found = orgContexts.get(orgId);
+  if (!found) {
+    found = contextFor(workerWorlds("executor", process.env, { orgId }));
+    orgContexts.set(orgId, found);
+  }
+  return found;
+}
 
 const boss = await startQueue();
 // One job at a time per worker: a run holds its plan's lock, and runs of one plan serialize anyway.
 await boss.work(APPLY_QUEUE, { batchSize: 1, includeMetadata: true }, async ([job]) => {
   if (!job) return;
   // The job's own stored limit, not today's queue setting: queued jobs keep the limit they had.
-  const result = await handleApplyJob(job.data, ctx, {
+  const result = await handleApplyJob(job.data, orgContext(job.data), {
     retryCount: job.retryCount,
     retryLimit: job.retryLimit,
   });
