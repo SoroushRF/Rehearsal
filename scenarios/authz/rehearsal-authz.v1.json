@@ -120,6 +120,26 @@
       "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
     },
     {
+      "action": "GET /api/company",
+      "rbac": { "anyOf": ["rehearsal:read:plan"] },
+      "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
+    },
+    {
+      "action": "POST /api/incidents",
+      "rbac": { "anyOf": ["rehearsal:rehearse:incident"] },
+      "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
+    },
+    {
+      "action": "GET /api/incidents",
+      "rbac": { "anyOf": ["rehearsal:read:plan"] },
+      "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
+    },
+    {
+      "action": "POST /api/company/problems",
+      "rbac": { "anyOf": ["rehearsal:rehearse:incident"] },
+      "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
+    },
+    {
       "action": "POST /api/plans/:id/revisions",
       "rbac": { "anyOf": ["rehearsal:revise:plan"] },
       "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
