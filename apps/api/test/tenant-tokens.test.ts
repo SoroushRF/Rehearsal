@@ -1,3 +1,4 @@
+import { orgTenant } from "@rehearsal/core";
 import type { WorldConfig } from "@rehearsal/providers";
 import { describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app";
@@ -82,6 +83,86 @@ describe("tenant token minter", () => {
     const app = buildApp();
     const res = await app.inject({ method: "POST", url: "/internal/era/tenant-token" });
     expect(res.statusCode).toBe(404);
+    await app.close();
+  });
+});
+
+describe("tenant token minter, one tenant per org (#330)", () => {
+  function orgSetup(working: Record<string, string[]>) {
+    const mint = vi.fn(async (world: WorldConfig, _admin: string) => ({
+      token: `jwt-for-${world.baseUrl}/${world.tenant}`,
+      expiresAt: 1,
+    }));
+    const deps = tenantTokenDepsFromEnv(env);
+    if (!deps) throw new Error("minter not configured");
+    const asked: [string, string][] = [];
+    const app = buildApp({
+      tenantTokens: {
+        ...deps,
+        mint,
+        hasWork: async (role, orgId) => {
+          asked.push([role, orgId]);
+          return working[role]?.includes(orgId) ?? false;
+        },
+      },
+    });
+    const post = (secret: string, payload: object) =>
+      app.inject({
+        method: "POST",
+        url: "/internal/era/tenant-token",
+        headers: { authorization: `Bearer ${secret}` },
+        payload,
+      });
+    return { app, mint, post, asked };
+  }
+
+  it("mints the org's own tenant in the worker's own world while it has that org's job", async () => {
+    const { app, mint, post } = orgSetup({ planner: ["org_a"], executor: ["org_a"] });
+    const planner = await post("planner-secret", { vendor: "stripe", orgId: "org_a" });
+    expect(planner.json().token).toBe(`jwt-for-http://stripe-planning/${orgTenant("org_a")}`);
+    const executor = await post("executor-secret", { vendor: "zendesk", orgId: "org_a" });
+    expect(executor.json().token).toBe(`jwt-for-http://zendesk-operational/${orgTenant("org_a")}`);
+    // Naming a world changes nothing: the role picks it.
+    const sneaky = await post("planner-secret", {
+      vendor: "stripe",
+      orgId: "org_a",
+      world: "operational",
+    });
+    expect(sneaky.json().token).toBe(`jwt-for-http://stripe-planning/${orgTenant("org_a")}`);
+    expect(mint).toHaveBeenCalledTimes(3);
+    await app.close();
+  });
+
+  it("refuses another org's tenant to a worker that has no job for it", async () => {
+    const { app, mint, post, asked } = orgSetup({ planner: ["org_a"], executor: [] });
+    const other = await post("planner-secret", { vendor: "stripe", orgId: "org_b" });
+    expect(other.statusCode).toBe(403);
+    expect(other.json()).toEqual({ error: "no_work_for_org" });
+    // The planner's work for org A gives the executor nothing in org A.
+    expect((await post("executor-secret", { vendor: "stripe", orgId: "org_a" })).statusCode).toBe(
+      403,
+    );
+    expect(asked).toEqual([
+      ["planner", "org_b"],
+      ["executor", "org_a"],
+    ]);
+    expect(mint).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("refuses every org mint when the API can't check for work", async () => {
+    const deps = tenantTokenDepsFromEnv(env);
+    if (!deps) throw new Error("minter not configured");
+    const mint = vi.fn();
+    const app = buildApp({ tenantTokens: { ...deps, mint } });
+    const res = await app.inject({
+      method: "POST",
+      url: "/internal/era/tenant-token",
+      headers: { authorization: "Bearer executor-secret" },
+      payload: { vendor: "stripe", orgId: "org_a" },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(mint).not.toHaveBeenCalled();
     await app.close();
   });
 });

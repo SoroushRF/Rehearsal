@@ -1,4 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
+import { orgTenant } from "@rehearsal/core";
 import {
   type MintedToken,
   mintTenantToken,
@@ -21,9 +22,18 @@ export interface TenantTokenDeps {
   secrets: Partial<Record<WorkerRole, string>>;
   env?: NodeJS.ProcessEnv;
   mint?: (world: WorldConfig, adminToken: string) => Promise<MintedToken>;
+  /**
+   * Whether this worker has live work for the org right now (#330): its own queue holds a job of
+   * that org that isn't finished. Absent, a mint that names an org is refused.
+   */
+  hasWork?: (role: WorkerRole, orgId: string) => Promise<boolean>;
 }
 
-const MintRequest = z.object({ vendor: z.enum(["stripe", "zendesk", "slack"]) });
+const MintRequest = z.object({
+  vendor: z.enum(["stripe", "zendesk", "slack"]),
+  /** The org of the job the worker is on: mint for that org's own tenant (#330). */
+  orgId: z.string().min(1).max(128).optional(),
+});
 
 /** Minter config from the environment, or undefined when this API is not the operator. */
 export function tenantTokenDepsFromEnv(env = process.env): TenantTokenDeps | undefined {
@@ -67,12 +77,23 @@ export function registerTenantTokenRoute(app: FastifyInstance, deps: TenantToken
     if (!role) return reply.code(401).send({ error: "unauthorized" });
     const body = MintRequest.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: "invalid_request" });
+    const { vendor, orgId } = body.data;
+    // Another org's tenant only while this worker is actually working for that org. The world
+    // stays the worker's own (planner → planning, executor → operational) whatever it names.
+    if (orgId !== undefined && !(await deps.hasWork?.(role, orgId))) {
+      return reply.code(403).send({ error: "no_work_for_org" });
+    }
     try {
       // Slack is optional: an API without its URL refuses that mint like any other failure.
-      const world = resolveWorld(body.data.vendor, WORKER_ROLES[role].world, deps.env);
+      const world = resolveWorld(
+        vendor,
+        WORKER_ROLES[role].world,
+        deps.env,
+        orgId === undefined ? undefined : orgTenant(orgId),
+      );
       return await mint(world, deps.adminToken);
     } catch (error) {
-      req.log.error({ err: error, role, vendor: body.data.vendor }, "tenant token mint failed");
+      req.log.error({ err: error, role, vendor }, "tenant token mint failed");
       return reply.code(502).send({ error: "mint_failed" });
     }
   });

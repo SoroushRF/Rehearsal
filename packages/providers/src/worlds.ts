@@ -30,15 +30,23 @@ export function worldEnvKey(vendor: Vendor, world: World): string {
   return ENV_KEYS[vendor][world];
 }
 
+/**
+ * One vendor's world. `tenant` is an org's own tenant (`orgTenant(orgId)`, #330); without it, the
+ * shared tenant (`ERA_TENANT`) that scripts and tests without an org use.
+ */
 export function resolveWorld(
   vendor: Vendor,
   world: World,
   env: NodeJS.ProcessEnv = process.env,
+  tenant?: string,
 ): WorldConfig {
   const key = ENV_KEYS[vendor][world];
   const baseUrl = env[key];
   if (!baseUrl) throw new Error(`${key} is not set`);
-  return { baseUrl: baseUrl.replace(/\/$/, ""), tenant: env.ERA_TENANT ?? "rehearsal-demo" };
+  return {
+    baseUrl: baseUrl.replace(/\/$/, ""),
+    tenant: tenant ?? env.ERA_TENANT ?? "rehearsal-demo",
+  };
 }
 
 /**

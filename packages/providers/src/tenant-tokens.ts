@@ -1,4 +1,5 @@
 import type { World } from "@rehearsal/contracts";
+import { orgTenant } from "@rehearsal/core";
 import { z } from "zod";
 import { NO_REDIRECTS } from "./era";
 import {
@@ -81,7 +82,15 @@ type RehearsalVendor = "stripe" | "zendesk";
 export function workerWorlds(
   role: WorkerRole,
   env: NodeJS.ProcessEnv = process.env,
-  options: { clock?: { now(): Date }; fetch?: typeof fetch } = {},
+  options: {
+    clock?: { now(): Date };
+    fetch?: typeof fetch;
+    /**
+     * The org whose job this is (#330): its own tenant, `orgTenant(orgId)`, in this worker's own
+     * world. The operator mints it only while this worker's queue has live work for that org.
+     */
+    orgId?: string;
+  } = {},
 ): Record<"stripe" | "zendesk", WorldConfig> & { slack?: WorldConfig } {
   const { world, secretEnv } = WORKER_ROLES[role];
   const apiUrl = env.REHEARSAL_API_URL?.replace(/\/$/, "");
@@ -95,14 +104,15 @@ export function workerWorlds(
       const res = await doFetch(`${apiUrl}${TENANT_TOKEN_ROUTE}`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${secret}` },
-        body: JSON.stringify({ vendor }),
+        body: JSON.stringify({ vendor, ...(options.orgId ? { orgId: options.orgId } : {}) }),
         ...NO_REDIRECTS,
       });
       if (!res.ok) throw new Error(`mint ${vendor}/${world} → ${res.status}`);
       return MintedToken.parse(await res.json());
     };
+    const tenant = options.orgId ? orgTenant(options.orgId) : undefined;
     return {
-      ...resolveWorld(vendor, world, env),
+      ...resolveWorld(vendor, world, env, tenant),
       tenantToken: new RefreshingTokenSource(mint, options.clock),
     };
   };
