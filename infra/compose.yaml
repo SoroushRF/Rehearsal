@@ -1,4 +1,4 @@
-# Local stack: Postgres + a planning ("fork") and an operational ("production") world per vendor.
+# Local stack: Postgres, IAM, and a planning ("fork") and an operational ("production") world per vendor.
 # Separate containers per world because Era fault settings are container-wide.
 # Images are pinned to the multi-arch index digest inspected on 2026-10-18 (amd64 + arm64).
 # Ports bind to 127.0.0.1 only: anyone who can reach a simulator can use its /_admin routes.
@@ -45,6 +45,25 @@ services:
       test: ["CMD-SHELL", "pg_isready -U rehearsal"]
       interval: 5s
       retries: 10
+
+  # Identity stays its own service (decision 0014): mTLS, not part of the API. Clerk comes from
+  # the repo .env via env_file; environment below replaces any host paths in that file.
+  iam:
+    image: node:24-bookworm
+    working_dir: /repo
+    command: ["./node_modules/.bin/tsx", "apps/iam/src/main.ts"]
+    volumes:
+      - ..:/repo
+      - ./iam/dev:/certs:ro
+    env_file: ../.env
+    environment:
+      IAM_HOST: 0.0.0.0
+      IAM_PORT: "3443"
+      IAM_TLS_CERT: /certs/server.crt
+      IAM_TLS_KEY: /certs/server.key
+      IAM_TLS_CLIENT_CA: /certs/ca.crt
+      IAM_RULES_DIR: /repo/scenarios/authz
+    ports: ["127.0.0.1:3443:3443"]
 
   stripe-planning:
     <<: *stripe

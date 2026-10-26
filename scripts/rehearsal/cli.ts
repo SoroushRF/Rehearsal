@@ -32,7 +32,7 @@ const IAM_DEV_CERTS = resolve(ROOT, "infra/iam/dev");
 const HELP = `pnpm rehearsal <command> [flags]
 
   doctor          check Docker, env files, Postgres and the Era worlds
-  up              start the Era worlds (and the compose Postgres when .env points at it),
+  up              start the Era worlds (and the compose Postgres when .env points at it) and IAM,
                   wait until they're writable, then reset and seed them
                     --core       skip the Slack worlds
                     --no-reset   leave the worlds' current state alone
@@ -221,6 +221,7 @@ async function up(flags: Set<string>): Promise<boolean> {
   const api = loadEnv(ENV_FILES.api);
   const slack = !flags.has("--core");
   const services = [
+    "iam",
     ...(usesComposePostgres(api) ? ["postgres"] : []),
     ...ERA_CORE,
     ...(slack ? ERA_SLACK : []),
@@ -304,7 +305,11 @@ async function startAll(flags: Set<string>): Promise<boolean> {
     );
     return false;
   }
-  launch("iam", ENV_FILES.api, ["--filter", "@rehearsal/iam", "start"], iamMaterial.iam);
+  if (await tcpOpen("127.0.0.1", IAM_PORT)) {
+    console.log("IAM is already listening on 127.0.0.1:3443");
+  } else {
+    launch("iam", ENV_FILES.api, ["--filter", "@rehearsal/iam", "start"], iamMaterial.iam);
+  }
   launch("api", ENV_FILES.api, ["--filter", "@rehearsal/api", "start"], iamMaterial.api);
   // The workers mint their Era tenant tokens through the API at startup, so it has to be up first.
   let apiUp = false;
