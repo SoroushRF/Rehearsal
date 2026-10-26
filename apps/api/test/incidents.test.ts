@@ -1,6 +1,7 @@
 import { StoredIncident } from "@rehearsal/contracts";
-import { createDb, type Db, migrateDb, type PgBoss, PLAN_QUEUE } from "@rehearsal/db";
+import { createDb, type Db, migrateDb, type PgBoss, PLAN_QUEUE, schema } from "@rehearsal/db";
 import { PlanJob } from "@rehearsal/providers";
+import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app";
 import { bearer, type Caller, fakeIam, member, support } from "./fake-iam";
@@ -125,5 +126,56 @@ describe.skipIf(!process.env.DB_TESTS)("filed incidents (real Postgres)", () => 
     expect(sent.length).toBe(before);
     const list = await app.inject({ method: "GET", url: "/api/incidents", headers: bearer(other) });
     expect(list.json()).toEqual([]);
+  });
+
+  it("uses a legacy colliding filed incident's report, and the built-in brief for other orgs", async () => {
+    const me = support(`org_${crypto.randomUUID()}`, "user_1");
+    const other = support(`org_${crypto.randomUUID()}`, "user_2");
+    await db
+      .insert(schema.incidents)
+      .values({
+        incidentId: "INC-BILL-0927",
+        orgId: me.orgId,
+        kind: draft.kind,
+        title: draft.title,
+        description: draft.description,
+        windowGte: new Date(draft.window.createdGte),
+        windowLt: new Date(draft.window.createdLt),
+        createdBy: me.userId,
+      })
+      .onConflictDoNothing();
+    const app = appFor(me, other);
+    try {
+      expect(
+        (
+          await app.inject({
+            method: "POST",
+            url: "/api/incidents/INC-BILL-0927/rehearse",
+            headers: bearer(me),
+          })
+        ).statusCode,
+      ).toBe(202);
+      expect(PlanJob.parse(sent.at(-1)?.[1]).incident?.description).toBe(draft.description);
+      expect(
+        (
+          await app.inject({
+            method: "POST",
+            url: "/api/incidents/INC-BILL-0927/rehearse",
+            headers: bearer(other),
+          })
+        ).statusCode,
+      ).toBe(202);
+      expect(PlanJob.parse(sent.at(-1)?.[1]).incident).toBeUndefined();
+    } finally {
+      await app.close();
+      await db
+        .delete(schema.incidents)
+        .where(
+          and(
+            eq(schema.incidents.incidentId, "INC-BILL-0927"),
+            eq(schema.incidents.orgId, me.orgId),
+          ),
+        );
+    }
   });
 });

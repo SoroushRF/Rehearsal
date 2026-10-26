@@ -3,13 +3,22 @@ import { orgTenant } from "@rehearsal/core";
 import {
   APPLY_QUEUE,
   createDb,
+  enqueuePlan,
   migrateDb,
+  OrgWorldBusy,
   type PgBoss,
   PLAN_QUEUE,
+  requestApply,
   startQueue,
+  withOrgWorlds,
 } from "@rehearsal/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { ensureOrgSeeded, workerHasWork } from "../src/org-worlds";
+import {
+  ensureOrgSeeded,
+  resetIdleOrgWorlds,
+  resetOrgWorlds,
+  workerHasWork,
+} from "../src/org-worlds";
 
 describe("ensureOrgSeeded (#330)", () => {
   it("seeds an org once, even when callers race, and keeps orgs apart", async () => {
@@ -39,12 +48,55 @@ describe("ensureOrgSeeded (#330)", () => {
     await ensureOrgSeeded(org, { seed });
     expect(calls).toBe(2);
   });
+
+  it("waits for reset even when the org was already seeded, and retries after a failed reset", async () => {
+    const org = `org_${randomUUID()}`;
+    await ensureOrgSeeded(org, { seed: async () => {} });
+    let release!: () => void;
+    let entered!: () => void;
+    const started = new Promise<void>((r) => {
+      entered = r;
+    });
+    const blocked = new Promise<void>((r) => {
+      release = r;
+    });
+    const resetting = resetOrgWorlds(org, {
+      reset: async () => {
+        entered();
+        await blocked;
+      },
+    });
+    await started;
+    let returned = false;
+    const seeding = ensureOrgSeeded(org).then(() => {
+      returned = true;
+    });
+    await Promise.resolve();
+    expect(returned).toBe(false);
+    release();
+    await Promise.all([resetting, seeding]);
+    await expect(
+      resetOrgWorlds(org, {
+        reset: async () => {
+          throw new Error("failed reset");
+        },
+      }),
+    ).rejects.toThrow("failed reset");
+    let seededAgain = false;
+    await ensureOrgSeeded(org, {
+      seed: async () => {
+        seededAgain = true;
+      },
+    });
+    expect(seededAgain).toBe(true);
+  });
 });
 
 // Needs a real Postgres: `pnpm infra:up` then `DB_TESTS=1 pnpm --filter @rehearsal/api test`.
 describe.skipIf(!process.env.DB_TESTS)("workerHasWork (#330, real pg-boss)", () => {
   const url = process.env.DATABASE_URL ?? "postgres://rehearsal:rehearsal@localhost:5432/rehearsal";
   const db = createDb(url);
+  const other = createDb(url);
   let boss: PgBoss;
   beforeAll(async () => {
     await migrateDb(db);
@@ -53,6 +105,7 @@ describe.skipIf(!process.env.DB_TESTS)("workerHasWork (#330, real pg-boss)", () 
   afterAll(async () => {
     await boss?.stop({ graceful: false });
     await db.$client.end();
+    await other.$client.end();
   });
 
   it("is true only for the org whose job sits in that worker's own queue, until it finishes", async () => {
@@ -83,5 +136,69 @@ describe.skipIf(!process.env.DB_TESTS)("workerHasWork (#330, real pg-boss)", () 
     expect(await workerHasWork(db, "executor", org)).toBe(true);
     await boss.cancel(APPLY_QUEUE, run);
     expect(await workerHasWork(db, "executor", org)).toBe(false);
+  });
+
+  it("blocks planning, apply and a second reset across connections for the whole reset", async () => {
+    const org = `org_${randomUUID()}`;
+    let release!: () => void;
+    let entered!: () => void;
+    const started = new Promise<void>((r) => {
+      entered = r;
+    });
+    const blocked = new Promise<void>((r) => {
+      release = r;
+    });
+    const resetting = resetIdleOrgWorlds(db, org, async () => {
+      entered();
+      await blocked;
+    });
+    await started;
+    try {
+      await expect(
+        enqueuePlan(other, boss, { orgId: org }, async () => {
+          throw new Error("seed ran during reset");
+        }),
+      ).rejects.toBeInstanceOf(OrgWorldBusy);
+      await expect(
+        requestApply(other, boss, {
+          orgId: org,
+          userId: "u",
+          planId: "p",
+          revision: 1,
+          planHash: "a".repeat(64),
+          now: new Date(),
+        }),
+      ).rejects.toBeInstanceOf(OrgWorldBusy);
+      await expect(
+        resetIdleOrgWorlds(other, org, async () => {
+          throw new Error("second reset ran");
+        }),
+      ).rejects.toBeInstanceOf(OrgWorldBusy);
+      await expect(
+        withOrgWorlds(other, `org_${randomUUID()}`, async () => "other org works"),
+      ).resolves.toBe("other org works");
+    } finally {
+      release();
+      await resetting;
+    }
+    const id = await enqueuePlan(other, boss, { orgId: org }, async () => {});
+    expect(id).toBeTruthy();
+    await expect(
+      resetIdleOrgWorlds(db, org, async () => {
+        throw new Error("reset despite queued work");
+      }),
+    ).rejects.toBeInstanceOf(OrgWorldBusy);
+    if (id) await boss.cancel(PLAN_QUEUE, id);
+    await expect(resetIdleOrgWorlds(db, org, async () => {})).resolves.toBeUndefined();
+  });
+
+  it("releases the database lock after a failed reset", async () => {
+    const org = `org_${randomUUID()}`;
+    await expect(
+      resetIdleOrgWorlds(db, org, async () => {
+        throw new Error("Era down");
+      }),
+    ).rejects.toThrow("Era down");
+    await expect(resetIdleOrgWorlds(other, org, async () => {})).resolves.toBeUndefined();
   });
 });

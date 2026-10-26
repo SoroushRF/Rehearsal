@@ -71,12 +71,22 @@ See [beyond.md](../beyond.md) for scope, parallel work, external gates and the r
 |---|---|---|---|---|---|
 | T1.30 | Flag incomplete incident coverage before approval | M5 | A shared recorded-evidence check distinguishes unread/partial queries from eligible duplicates missing a refund or credit; the model loop refuses to store incomplete plans, and scripted F7 is caught before approval without becoming a success. Fixture regressions pass; no UI or repair added | [#274](https://github.com/SoroushRF/Rehearsal/issues/274) | — |
 
+## Release fixes (Oct 25)
+
+| ID | Task | Milestone | Done when | Issue | Blocked by |
+|---|---|---|---|---|---|
+| T1.41 | Target the signed-in org in operator demo traps | M5 | `--org=org_...` or `DEMO_ORG_ID` binds phantom/conflict to the same derived tenant as the workers; fixture routing checks pass | [#348](https://github.com/SoroushRF/Rehearsal/issues/348) | — |
+| T1.42 | Serialize reset with planning/apply admission | M5 | Postgres lock covers idle check through reset, seed and job commit; separate-connection concurrency and failure recovery tests pass | [#349](https://github.com/SoroushRF/Rehearsal/issues/349) | — |
+| T1.43 | Reserve built-in incident IDs | M5 | Allocation skips the built-in ID; a legacy collision uses the org's stored report; regression tests pass | [#350](https://github.com/SoroushRF/Rehearsal/issues/350) | — |
+
 ## Decisions
 
 - **2026-10-22:** The planner worker has no database. It takes `plan` jobs and hands back manifests through `/internal/planner/jobs/*` with its own secret; the API checks each manifest against its job before storing revision 1. See [0006](../decisions/0006-planner-jobs-through-api.md).
 - **2026-10-21:** Era tenant tokens are minted by the API (the operator, sole holder of `ERA_ADMIN_TOKEN`). Each worker fetches its own world's token with its own secret and refreshes it 5 min before expiry. Requests fail closed when no valid token is available. See [0002](../decisions/0002-era-tenant-token-minting.md).
 
 ## Handoff log
+
+- **2026-10-25 (Codex, release fixes):** `fix/live-demo-release-gates` addresses #348–#350. T2 API and T3 database changes are limited to the reset/admission interlock and incident lookup/allocation; no plan hashes, worker credentials or execution guard rules changed. Locks are held in Postgres transactions, so other API processes also refuse overlapping reset/admission. Era state and historical receipts are not migrated or reset by deployment. The actual cloud flow still needs a smoke after the coordinated release; the fixture and local Postgres regressions do not establish cloud acceptance.
 
 - **2026-10-24 (Codex, backlog planning):** Filed 9 owned M5 issues (T1.20 #162, T1.21 #163, T1.22 #166, T1.23 #167, T1.24 #178, T1.25 #180, T1.26 #181, T1.27 #161, T1.28 #176) with scope/track labels, acceptance criteria and linked blockers. Added the cross-track dependency map in [beyond.md](../beyond.md); native GitHub dependencies mirror these rows. No feature implementation or live validation is claimed. Next: finish the full prerequisites, then follow the graph; optional killer work stays off the main release path.
 

@@ -7,6 +7,7 @@ export * from "./apply";
 export * from "./apply-store";
 export * from "./incidents";
 export * from "./journal";
+export * from "./org-world-lock";
 export * from "./precedents";
 export * from "./queue";
 export * from "./rehearsal-lifecycle";

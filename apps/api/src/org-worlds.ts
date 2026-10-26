@@ -1,5 +1,5 @@
 import { orgTenant } from "@rehearsal/core";
-import { APPLY_QUEUE, type Db, PLAN_QUEUE } from "@rehearsal/db";
+import { APPLY_QUEUE, type Db, OrgWorldBusy, PLAN_QUEUE, withOrgWorlds } from "@rehearsal/db";
 import {
   eraFetch,
   mintTenantToken,
@@ -20,12 +20,41 @@ import { seedIncident } from "../../../scripts/seed/incident";
  */
 
 /** Whether this worker's own queue has a job for the org that isn't finished. */
-export async function workerHasWork(db: Db, role: WorkerRole, orgId: string): Promise<boolean> {
+export async function workerHasWork(
+  db: Pick<Db, "execute">,
+  role: WorkerRole,
+  orgId: string,
+): Promise<boolean> {
   const queue = role === "planner" ? PLAN_QUEUE : APPLY_QUEUE;
   const rows = await db.execute(
     sql`select 1 from pgboss.job where name = ${queue} and state in ('created', 'retry', 'active') and data->>'orgId' = ${orgId} limit 1`,
   );
   return rows.rows.length > 0;
+}
+
+/** Hold admission closed from the idle check until the reset finishes, across API processes. */
+export function resetIdleOrgWorlds(
+  db: Db,
+  orgId: string,
+  reset: (orgId: string) => Promise<void> = resetOrgWorlds,
+): Promise<void> {
+  return withOrgWorlds(db, orgId, async (tx) => {
+    if (
+      (await workerHasWork(tx, "planner", orgId)) ||
+      (await workerHasWork(tx, "executor", orgId))
+    ) {
+      throw new OrgWorldBusy();
+    }
+    // A crashed worker may still owe recovery even when its queue job has expired.
+    const { rows } = await tx.execute(sql`
+      select 1 from runs where org_id = ${orgId} and state in ('approved', 'applying')
+      union all
+      select 1 from step_attempts where org_id = ${orgId} and state in ('dispatched', 'unknown_outcome')
+      limit 1
+    `);
+    if (rows.length > 0) throw new OrgWorldBusy();
+    await reset(orgId);
+  });
 }
 
 const WORLDS = [
@@ -98,9 +127,9 @@ export function ensureOrgSeeded(
   opts: { env?: NodeJS.ProcessEnv; seed?: (tenant: string) => Promise<void> } = {},
 ): Promise<void> {
   const tenant = orgTenant(orgId);
-  if (seeded.has(tenant)) return Promise.resolve();
   const running = inFlight.get(tenant);
   if (running) return running;
+  if (seeded.has(tenant)) return Promise.resolve();
   const seed = opts.seed ?? ((t: string) => seedOrg(t, opts.env ?? process.env));
   const next = seed(tenant)
     .then(() => {
@@ -124,6 +153,7 @@ export async function resetOrgWorlds(
 ): Promise<void> {
   const tenant = orgTenant(orgId);
   await inFlight.get(tenant)?.catch(() => undefined);
+  seeded.delete(tenant);
   const reset = opts.reset ?? ((t: string) => seedOrg(t, opts.env ?? process.env, true));
   const next = reset(tenant).then(() => {
     seeded.add(tenant);

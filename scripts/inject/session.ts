@@ -1,3 +1,4 @@
+import { orgTenant } from "@rehearsal/core";
 import {
   eraAdmin,
   eraFetch,
@@ -48,9 +49,23 @@ export function adminToken(): string {
   return token;
 }
 
-/** A world bound to the demo tenant with a signed token. A plaintext tenant header is ignored. */
+/** Explicit operator org overrides the legacy shared tenant, just as signed-in workers route it. */
+export function demoTenant(
+  env: NodeJS.ProcessEnv = process.env,
+  args = process.argv.slice(2),
+): string | undefined {
+  const option = args.find((arg) => arg.startsWith("--org="));
+  if (args.includes("--org")) throw new Error("use --org=org_... or DEMO_ORG_ID");
+  const orgId = option ? option.slice("--org=".length) : env.DEMO_ORG_ID;
+  if (orgId === undefined) return undefined;
+  if (!/^org_[A-Za-z0-9]+$/.test(orgId)) throw new Error("invalid demo org ID: expected org_...");
+  return orgTenant(orgId);
+}
+
+/** A world bound to the selected org or legacy demo tenant with a signed token. */
 export async function bind(vendor: EraVendor, world: World): Promise<WorldConfig> {
-  const config = resolveWorld(vendor, world);
+  const config = resolveWorld(vendor, world, process.env, demoTenant());
+  console.log(`${vendor}/${world}: tenant ${config.tenant}`);
   const { token } = await mintTenantToken(config, adminToken());
   return { ...config, tenantToken: token };
 }

@@ -1,6 +1,7 @@
 import { randomInt } from "node:crypto";
 import { CreateProblem } from "@rehearsal/contracts";
 import { orgTenant } from "@rehearsal/core";
+import { OrgWorldBusy } from "@rehearsal/db";
 import { eraAdmin, resolveWorld } from "@rehearsal/providers";
 import { type ProblemRecords, problemRecords } from "@rehearsal/testkit";
 import type { FastifyInstance } from "fastify";
@@ -56,6 +57,7 @@ export function registerProblemRoutes(app: FastifyInstance, deps: ProblemDeps) {
     try {
       await deps.inject(gate.person.orgId, records);
     } catch (err) {
+      if (err instanceof OrgWorldBusy) return reply.code(409).send({ error: "work_in_progress" });
       req.log.error({ err, preset: body.data.preset }, "problem inject failed");
       return reply.code(502).send({ error: "inject_failed" });
     }
@@ -73,6 +75,7 @@ export function registerProblemRoutes(app: FastifyInstance, deps: ProblemDeps) {
     try {
       await reset(orgId);
     } catch (err) {
+      if (err instanceof OrgWorldBusy) return reply.code(409).send({ error: "work_in_progress" });
       req.log.error({ err }, "org worlds could not be reset");
       return reply.code(502).send({ error: "world_unavailable" });
     }
