@@ -21,7 +21,7 @@ const FOCUS_CSS = `.landing-cta:focus-visible{box-shadow:var(--ring)}`;
 export function Landing() {
   useEffect(() => {
     const before = document.title;
-    document.title = "Rehearsal: terraform plan for AI agents";
+    document.title = "Rehearsal: a dress rehearsal for AI agents";
     return () => {
       document.title = before;
     };
@@ -42,7 +42,7 @@ export function Landing() {
         className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-4 py-16 sm:px-6 sm:py-24"
       >
         <h1 className="max-w-xl text-[44px] leading-[0.98] font-extrabold text-ink [font-stretch:75%] sm:text-[68px]">
-          Terraform plan
+          Dress rehearsal
           <br />
           for AI agents.
         </h1>
