@@ -32,7 +32,8 @@ function Harness() {
   return (
     <AppShell
       account={
-        <div className="flex flex-wrap gap-2 text-xs">
+        // Test-only identity buttons; off on phones so they do not cover the brand in layout checks.
+        <div className="hidden flex-wrap gap-2 text-xs sm:flex">
           <button type="button" onClick={() => setWho({ userId: "user_a", orgId: "org_a" })}>
             Be user A in org A
           </button>

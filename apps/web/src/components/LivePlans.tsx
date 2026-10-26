@@ -120,17 +120,20 @@ export function LiveApp({ apiFetch, initialView }: { apiFetch: ApiFetch; initial
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between gap-3">
-        <Segmented label="Sections" value={view} onChange={go} options={views} />
+      <div className="flex items-center justify-between gap-2 sm:gap-3">
+        <div className="min-w-0">
+          <Segmented label="Sections" value={view} onChange={go} options={views} />
+        </div>
         {members && (
           <button
             type="button"
             aria-current={view === "members" ? "page" : undefined}
             onClick={() => go("members")}
-            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2 text-[13px] text-muted hover:text-ink aria-[current=page]:text-ink"
+            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-1.5 text-[13px] sm:px-2 text-muted hover:text-ink aria-[current=page]:text-ink"
           >
             <Icon name="users" className="h-4 w-4" />
-            Members
+            {/* Icon only on the narrowest phones, so all three sections stay in view. */}
+            <span className="max-[419px]:sr-only">Members</span>
           </button>
         )}
       </div>
@@ -311,7 +314,7 @@ function ProcessSlot({ active }: { active: Stage }) {
       aria-label={`Process: ${STAGES.join(", ")}. Now at ${STAGES[active - 1]}.`}
       data-testid="process-slot"
       data-active={active}
-      className="grid grid-cols-5 border-b border-line text-[13px]"
+      className="flex border-b border-line text-[13px] sm:grid sm:grid-cols-5"
     >
       {STAGES.map((label, i) => {
         const on = i + 1 === active;
@@ -319,10 +322,11 @@ function ProcessSlot({ active }: { active: Stage }) {
           <li
             key={label}
             aria-current={on ? "step" : undefined}
-            className={`flex items-baseline gap-1.5 border-t-2 px-1 py-2 transition-colors sm:px-2 ${on ? "border-t-lime text-ink" : "border-t-transparent text-subtle"} ${i === 2 || i === 3 ? "border-l border-l-line" : ""}`}
+            className={`flex min-w-0 items-baseline gap-1.5 border-t-2 px-2.5 py-2 transition-colors ${on ? "flex-1 border-t-lime text-ink" : "shrink-0 border-t-transparent text-subtle"} ${i === 2 || i === 3 ? "border-l border-l-line" : ""}`}
           >
             <span className="font-mono text-xs tnum">{i + 1}</span>
-            <span className="truncate">{label}</span>
+            {/* On phones only the current step is named; the others keep their number. */}
+            <span className={`truncate ${on ? "" : "hidden sm:inline"}`}>{label}</span>
           </li>
         );
       })}

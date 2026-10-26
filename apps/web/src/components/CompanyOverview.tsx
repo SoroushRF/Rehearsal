@@ -86,9 +86,9 @@ export function CompanyOverview({
   return (
     <section aria-label="Company" className="flex flex-col gap-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div className="flex items-baseline gap-3">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <h2 className="text-2xl text-ink">Company</h2>
-          <span className="font-mono text-xs text-subtle tnum">
+          <span className="font-mono text-xs whitespace-nowrap text-subtle tnum">
             {new Date(snapshot.asOf).toLocaleString()}
           </span>
           {fixture && <Chip tone="neutral">fixture</Chip>}
@@ -99,7 +99,7 @@ export function CompanyOverview({
       <div
         role="tablist"
         aria-label="Records"
-        className="-mx-1 flex gap-1 overflow-x-auto border-b border-line px-1"
+        className="-mx-4 flex gap-1 overflow-x-auto border-b border-line px-4 sm:-mx-1 sm:px-1"
       >
         {TABS.map((t) => {
           const ids = idsOf(snapshot, t);
@@ -113,7 +113,7 @@ export function CompanyOverview({
               aria-selected={t === tab}
               aria-controls={`panel-${t}`}
               onClick={() => setTab(t)}
-              className="-mb-px flex items-center gap-2 border-b-2 border-transparent px-3 py-2 text-sm whitespace-nowrap text-muted hover:text-ink aria-selected:border-ink aria-selected:text-ink"
+              className="relative -mb-px flex shrink-0 items-center gap-1.5 border-b-2 border-transparent px-2.5 py-2 text-sm whitespace-nowrap text-muted hover:text-ink aria-selected:border-ink aria-selected:text-ink sm:gap-2 sm:px-3"
             >
               {tabLabel[t]}
               <span className="font-mono text-xs text-subtle tnum">{ids.length}</span>
@@ -160,36 +160,49 @@ function Charges({ s, prev, onOpenRun }: RowsProps) {
   const before = new Map(prev?.charges.map((c) => [c.id, c]));
   return (
     <Table
-      head={["Charge", "Customer", "Invoice", "Amount", "Refunded"]}
-      narrow={[1, 2]}
+      head={[
+        { label: "Charge" },
+        { label: "Customer", hide: "md" },
+        { label: "Invoice", hide: "md" },
+        { label: "Amount", right: true },
+        { label: "Refunded", right: true, hide: "sm" },
+      ]}
       empty={s.charges.length === 0}
     >
       {s.charges.map((c) => {
         const old = before.get(c.id);
+        const refunded = (
+          <Delta
+            old={
+              old && old.refundedMinor !== c.refundedMinor
+                ? formatMoney({ amountMinor: old.refundedMinor, currency: c.currency })
+                : null
+            }
+          >
+            {c.refundedMinor === 0
+              ? "—"
+              : formatMoney({ amountMinor: c.refundedMinor, currency: c.currency })}
+          </Delta>
+        );
         return (
-          <Row key={c.id} id={c.id} run={s.changed[c.id]} onOpenRun={onOpenRun}>
-            <Cell mono>{c.id}</Cell>
-            <Cell mono narrow>
+          <Row key={c.id} id={c.id} lead={c.id} run={s.changed[c.id]} onOpenRun={onOpenRun}>
+            <Cell mono hide="md">
               {c.customer}
             </Cell>
-            <Cell mono narrow>
+            <Cell mono hide="md">
               {c.invoice ?? "—"}
             </Cell>
             <Cell mono right>
               {formatMoney({ amountMinor: c.amountMinor, currency: c.currency })}
+              {(c.refundedMinor > 0 || (old && old.refundedMinor !== c.refundedMinor)) && (
+                <span className="mt-0.5 block text-xs text-subtle sm:hidden">
+                  <span className="font-sans">Refunded </span>
+                  {refunded}
+                </span>
+              )}
             </Cell>
-            <Cell mono right>
-              <Delta
-                old={
-                  old && old.refundedMinor !== c.refundedMinor
-                    ? formatMoney({ amountMinor: old.refundedMinor, currency: c.currency })
-                    : null
-                }
-              >
-                {c.refundedMinor === 0
-                  ? "—"
-                  : formatMoney({ amountMinor: c.refundedMinor, currency: c.currency })}
-              </Delta>
+            <Cell mono right hide="sm">
+              {refunded}
             </Cell>
           </Row>
         );
@@ -208,13 +221,19 @@ function Balance({ minor }: { minor: number }) {
 function Customers({ s, prev, onOpenRun }: RowsProps) {
   const before = new Map(prev?.customers.map((c) => [c.id, c]));
   return (
-    <Table head={["Customer", "Email", "Balance"]} narrow={[1]} empty={s.customers.length === 0}>
+    <Table
+      head={[
+        { label: "Customer" },
+        { label: "Email", hide: "md" },
+        { label: "Balance", right: true },
+      ]}
+      empty={s.customers.length === 0}
+    >
       {s.customers.map((c) => {
         const old = before.get(c.id);
         return (
-          <Row key={c.id} id={c.id} run={s.changed[c.id]} onOpenRun={onOpenRun}>
-            <Cell mono>{c.id}</Cell>
-            <Cell narrow>{c.email ?? "—"}</Cell>
+          <Row key={c.id} id={c.id} lead={c.id} run={s.changed[c.id]} onOpenRun={onOpenRun}>
+            <Cell hide="md">{c.email ?? "—"}</Cell>
             <Cell mono right>
               <Delta
                 old={
@@ -237,17 +256,28 @@ function Tickets({ s, prev, onOpenRun }: RowsProps) {
   const before = new Map(prev?.tickets.map((t) => [t.id, t]));
   return (
     <Table
-      head={["Ticket", "Subject", "Status", "Priority", "Requester", "Updated"]}
-      narrow={[2, 4, 5]}
+      head={[
+        { label: "Ticket" },
+        { label: "Subject" },
+        { label: "Status", hide: "md" },
+        { label: "Priority" },
+        { label: "Requester", hide: "lg" },
+        { label: "Updated", hide: "lg" },
+      ]}
       empty={s.tickets.length === 0}
     >
       {s.tickets.map((t) => {
         const old = before.get(t.id);
         return (
-          <Row key={t.id} id={String(t.id)} run={s.changed[String(t.id)]} onOpenRun={onOpenRun}>
-            <Cell mono>#{t.id}</Cell>
+          <Row
+            key={t.id}
+            id={String(t.id)}
+            lead={`#${t.id}`}
+            run={s.changed[String(t.id)]}
+            onOpenRun={onOpenRun}
+          >
             <Cell>{t.subject}</Cell>
-            <Cell narrow>
+            <Cell hide="md">
               <Delta old={old && old.status !== t.status ? old.status : null}>{t.status}</Delta>
             </Cell>
             <Cell>
@@ -255,8 +285,8 @@ function Tickets({ s, prev, onOpenRun }: RowsProps) {
                 {t.priority ?? "—"}
               </Delta>
             </Cell>
-            <Cell narrow>{t.requester}</Cell>
-            <Cell mono narrow>
+            <Cell hide="lg">{t.requester}</Cell>
+            <Cell mono nowrap hide="lg">
               {new Date(t.updatedAt).toLocaleString()}
             </Cell>
           </Row>
@@ -268,11 +298,13 @@ function Tickets({ s, prev, onOpenRun }: RowsProps) {
 
 function Slack({ s, onOpenRun }: Omit<RowsProps, "prev">) {
   return (
-    <Table head={["Channel", "Time", "Message"]} narrow={[1]} empty={s.slack.length === 0}>
+    <Table
+      head={[{ label: "Channel" }, { label: "Time", hide: "md" }, { label: "Message" }]}
+      empty={s.slack.length === 0}
+    >
       {s.slack.map((m) => (
-        <Row key={m.ts} id={m.ts} run={s.changed[m.ts]} onOpenRun={onOpenRun}>
-          <Cell mono>{m.channel}</Cell>
-          <Cell mono narrow>
+        <Row key={m.ts} id={m.ts} lead={m.channel} run={s.changed[m.ts]} onOpenRun={onOpenRun}>
+          <Cell mono nowrap hide="md">
             {slackTime(m.ts)}
           </Cell>
           <Cell>{m.text}</Cell>
@@ -288,15 +320,22 @@ function slackTime(ts: string) {
   return Number.isFinite(seconds) ? new Date(seconds * 1000).toLocaleString() : ts;
 }
 
+/** Below this width a column is hidden, so the page never scrolls sideways on a phone. */
+type Hide = "sm" | "md" | "lg";
+const hidden: Record<Hide, string> = {
+  sm: "hidden sm:table-cell",
+  md: "hidden md:table-cell",
+  lg: "hidden lg:table-cell",
+};
+/** Tighter cells on phones; the first keeps room for the changed marker. */
+const pad = "px-2 py-2.5 first:pl-3 sm:px-3";
+
 function Table({
   head,
-  narrow = [],
   empty,
   children,
 }: {
-  head: string[];
-  /** Column indexes hidden on phone widths, so the page never scrolls sideways. */
-  narrow?: number[];
+  head: { label: string; hide?: Hide; right?: boolean }[];
   empty: boolean;
   children: ReactNode;
 }) {
@@ -305,16 +344,16 @@ function Table({
     <table className="w-full text-sm">
       <thead>
         <tr className="text-left text-xs tracking-wider text-subtle uppercase">
-          {head.map((h, i) => (
+          {head.map((h) => (
             <th
-              key={h}
+              key={h.label}
               scope="col"
-              className={`px-3 py-2 font-medium ${narrow.includes(i) ? "hidden md:table-cell" : ""} ${["Amount", "Refunded", "Balance"].includes(h) ? "text-right" : ""}`}
+              className={`${pad} py-2 font-medium ${h.hide ? hidden[h.hide] : ""} ${h.right ? "text-right" : ""}`}
             >
-              {h}
+              {h.label}
             </th>
           ))}
-          <th scope="col" className="w-0 px-3 py-2">
+          <th scope="col" className={`w-0 ${pad} py-2 ${hidden.md}`}>
             <span className="sr-only">Run</span>
           </th>
         </tr>
@@ -324,17 +363,35 @@ function Table({
   );
 }
 
+/**
+ * One record. `lead` is its first cell (the ID); a run that changed it is linked in its own
+ * column on wide screens and under the ID on phones.
+ */
 function Row({
   id,
+  lead,
   run,
   onOpenRun,
   children,
 }: {
   id: string;
+  lead: ReactNode;
   run: string | undefined;
   onOpenRun: (runId: string) => void;
   children: ReactNode;
 }) {
+  const link = (className: string) =>
+    run && (
+      <button
+        type="button"
+        title={run}
+        aria-label={run}
+        onClick={() => onOpenRun(run)}
+        className={`font-mono whitespace-nowrap text-accent underline decoration-line-strong underline-offset-2 hover:decoration-accent ${className}`}
+      >
+        {shortRun(run)}
+      </button>
+    );
   return (
     <tr
       data-testid="company-row"
@@ -342,36 +399,38 @@ function Row({
       data-changed={run ? "true" : "false"}
       className={`border-t border-line align-top ${run ? "enter bg-accent-soft/40 shadow-[inset_4px_0_0_var(--lime)]" : ""}`}
     >
+      <td className={`${pad} font-mono text-[13px] whitespace-nowrap text-ink tnum`}>
+        {lead}
+        {link("mt-1 block text-left text-xs md:hidden")}
+      </td>
       {children}
-      <td className="px-3 py-2.5 text-right whitespace-nowrap">
-        {run && (
-          <button
-            type="button"
-            onClick={() => onOpenRun(run)}
-            className="font-mono text-xs text-accent underline decoration-line-strong underline-offset-2 hover:decoration-accent"
-          >
-            {run}
-          </button>
-        )}
+      <td className={`${pad} text-right whitespace-nowrap ${hidden.md}`}>
+        {link("align-top text-[13px] leading-5")}
       </td>
     </tr>
   );
 }
 
+/** Run IDs are long (`run_` + a UUID); the link shows the start, the title the whole ID. */
+const shortRun = (runId: string) => (runId.length > 14 ? `${runId.slice(0, 12)}…` : runId);
+
 function Cell({
   mono,
   right,
-  narrow,
+  nowrap,
+  hide,
   children,
 }: {
   mono?: boolean;
   right?: boolean;
-  narrow?: boolean;
+  /** Dates and times stay on one line. */
+  nowrap?: boolean;
+  hide?: Hide;
   children: ReactNode;
 }) {
   return (
     <td
-      className={`px-3 py-2.5 ${mono ? "font-mono text-[13px] tnum" : ""} ${right ? "text-right whitespace-nowrap" : ""} ${narrow ? "hidden md:table-cell" : ""} break-words text-ink`}
+      className={`${pad} ${mono ? "font-mono text-[13px] tnum" : ""} ${right ? "text-right" : ""} ${nowrap ? "whitespace-nowrap" : ""} ${hide ? hidden[hide] : ""} break-words text-ink`}
     >
       {children}
     </td>
@@ -382,13 +441,15 @@ function Cell({
 function Delta({ old, children }: { old: ReactNode | null; children: ReactNode }) {
   if (old === null) return <>{children}</>;
   return (
-    <span className="whitespace-nowrap">
-      <span className="text-subtle line-through">{old}</span>
-      <span className="mx-1 text-subtle" aria-hidden>
-        →
+    <span className="inline-flex flex-wrap items-baseline justify-end gap-x-1">
+      <span className="whitespace-nowrap text-subtle line-through">{old}</span>
+      <span className="whitespace-nowrap">
+        <span className="text-subtle" aria-hidden>
+          →{" "}
+        </span>
+        <span className="sr-only">changed to </span>
+        {children}
       </span>
-      <span className="sr-only">changed to</span>
-      {children}
     </span>
   );
 }
@@ -441,7 +502,7 @@ function CreateProblem({
   return (
     <form
       aria-label="Create a problem"
-      className="flex flex-wrap items-center gap-2"
+      className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 sm:flex"
       onSubmit={(e) => {
         e.preventDefault();
         create.mutate();
@@ -477,11 +538,17 @@ function CreateProblem({
           </option>
         ))}
       </select>
-      <Button type="submit" variant="secondary" loading={create.isPending}>
+      <Button
+        type="submit"
+        variant="secondary"
+        size="sm"
+        loading={create.isPending}
+        className="col-span-2 sm:col-auto"
+      >
         Create problem
       </Button>
       {create.isError && !routeMissing(create.error) && (
-        <Alert className="w-full">{explain(create.error)}</Alert>
+        <Alert className="col-span-2 w-full">{explain(create.error)}</Alert>
       )}
     </form>
   );
