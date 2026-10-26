@@ -183,3 +183,27 @@ for (const scheme of ["light", "dark"] as const) {
     });
   }
 }
+
+test("no section scrolls sideways, from a small phone to a wide desktop", async ({ browser }) => {
+  // The fixture company: long IDs, a changed row and every tab, the widest content there is.
+  for (const width of [320, 360, 375, 390, 414, 768, 1024, 1440]) {
+    const context = await browser.newContext({ viewport: { width, height: 900 } });
+    const page = await context.newPage();
+    await open(page, fakeApi({ deployed: false }));
+    await page.getByRole("tab", { name: /Charges/ }).waitFor();
+    for (const view of ["company", "incidents", "plans"]) {
+      await page
+        .getByRole("navigation", { name: "Sections" })
+        .getByText(view, { exact: false })
+        .click();
+      for (const tab of view === "company" ? ["Charges", "Customers", "Tickets", "Slack"] : [""]) {
+        if (tab) await page.getByRole("tab", { name: new RegExp(tab) }).click();
+        const overflow = await page.evaluate(
+          () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        );
+        expect(overflow, `${view} ${tab} at ${width}px`).toBeLessThanOrEqual(0);
+      }
+    }
+    await context.close();
+  }
+});
