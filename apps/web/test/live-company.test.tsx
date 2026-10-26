@@ -59,6 +59,11 @@ describe("company overview", () => {
       withCompany,
     );
     expect(reader).not.toContain('aria-label="Create a problem"');
+    expect(reader).not.toContain(">Reset<");
+  });
+
+  it("offers a reset of the org's own world next to it", () => {
+    expect(out).toContain(">Reset<");
   });
 
   it("shows a skeleton while the world seeds", () => {

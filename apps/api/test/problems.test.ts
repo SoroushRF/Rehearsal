@@ -105,6 +105,65 @@ describe("POST /api/company/problems", () => {
   });
 });
 
+describe("POST /api/company/reset", () => {
+  const app = (me: Caller) =>
+    buildApp({ webRoot: null, problems: { iam: fakeIam([me]), inject: async () => {} } });
+  const post = (me: Caller | null, a: ReturnType<typeof buildApp>) =>
+    a.inject({ method: "POST", url: "/api/company/reset", headers: me ? bearer(me) : {} });
+  const withReset = (me: Caller, reset: (orgId: string) => Promise<void>, busy = false) =>
+    buildApp({
+      webRoot: null,
+      problems: {
+        iam: fakeIam([me]),
+        inject: async () => {},
+        reset,
+        busy: async () => busy,
+      },
+    });
+
+  it("resets only the caller's own org, for a person who may rehearse", async () => {
+    const reset: string[] = [];
+    const me = support("org_4", "user_1");
+    const a = withReset(me, async (orgId) => {
+      reset.push(orgId);
+    });
+    expect((await post(null, a)).statusCode).toBe(401);
+    expect(
+      (
+        await post(
+          member("org_4"),
+          withReset(member("org_4"), async () => {}),
+        )
+      ).statusCode,
+    ).toBe(403);
+    expect((await post(me, a)).statusCode).toBe(204);
+    expect(reset).toEqual(["org_4"]);
+  });
+
+  it("refuses while the org has a live plan or apply job, and says when Era fails", async () => {
+    const me = support("org_5", "user_1");
+    let called = false;
+    const busy = withReset(
+      me,
+      async () => {
+        called = true;
+      },
+      true,
+    );
+    expect((await post(me, busy)).json()).toEqual({ error: "work_in_progress" });
+    expect(called).toBe(false);
+    const down = withReset(me, async () => {
+      throw new Error("era down");
+    });
+    expect((await post(me, down)).json()).toEqual({ error: "world_unavailable" });
+  });
+
+  it("isn't there without a reset", async () => {
+    const me = support("org_1", "user_1");
+    expect((await post(me, app(me))).statusCode).toBe(404);
+  });
+});
+
 describe("eraProblemInjector", () => {
   afterEach(() => vi.unstubAllGlobals());
   const env = {
