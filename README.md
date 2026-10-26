@@ -2,11 +2,9 @@
 
 # Rehearsal
 
-### Terraform plan for AI agents.
-
 An agent plans a batch of refunds and support updates inside a copy of the company. A person approves that exact plan once. A program with no model applies it, and holds any step the world no longer matches.
 
-[Try it live](https://rehearsal-api-40b8.onrender.com/app) · [Watch a recorded run](https://rehearsal-api-40b8.onrender.com/?replay=phantom) · [Devpost](https://devpost.com/software/rehearsal-gq5m13)
+[Try it live](https://rehearsal-api-40b8.onrender.com/app) · [Devpost](https://devpost.com/software/rehearsal-gq5m13)
 
 [![Build North](https://img.shields.io/badge/Build_North-2026-c5f13a?style=flat-square&labelColor=111111)](https://devpost.com/software/rehearsal-gq5m13)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
@@ -108,8 +106,6 @@ On the same 28 tasks, with a scripted planner, Rehearsal confirmed 27. Direct wr
 The moments we built the product for pass on those simulators: a phantom charge held after approval, a teammate's edit preserved, a throttled refund applied once, and a lost response reconciled instead of repeated.
 
 Around that loop: the review app, hash-bound grants, two-person approval where policy asks for it, precedents a finance lead can promote, a disposable-world rehearsal that approves nothing, and an IAM service the API and the executor call over mutual TLS.
-
-The recorded run linked above is a fixture replay of the executor on a fake provider. The banner on that page says so.
 
 ## What we learned
 
