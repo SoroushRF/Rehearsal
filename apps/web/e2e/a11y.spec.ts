@@ -2,6 +2,21 @@ import { expect, test } from "@playwright/test";
 import { violations } from "./axe";
 import { fakeApi } from "./fake-live-api";
 
+// T2.27: with normal motion, a scan started while the plan fades in measured faded colors. Slowed
+// tenfold, the fade lasts ~2.8 s, so a scan that doesn't wait for it always samples a faded frame.
+test("the scan waits for the plan's entrance fade instead of measuring it half-faded", async ({
+  page,
+}) => {
+  await page.route("**/api/**", fakeApi().handle);
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Animation.enable");
+  await cdp.send("Animation.setPlaybackRate", { playbackRate: 0.1 });
+  await page.goto("/e2e/live.html");
+  await page.getByTestId("action-row").first().waitFor();
+  expect(await page.evaluate(() => document.getAnimations().length)).toBeGreaterThan(0);
+  expect(await violations(page)).toEqual([]);
+});
+
 for (const scheme of ["light", "dark"] as const) {
   test.describe(`${scheme} mode`, () => {
     // Reduced motion also stops the page fade-in, which would otherwise be measured half-faded.

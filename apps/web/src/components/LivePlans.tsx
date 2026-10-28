@@ -302,8 +302,8 @@ function PageSkeleton({ what }: { what: string }) {
 const STAGES = ["Copy", "Plan", "Approve", "Apply", "Receipts"] as const;
 
 /**
- * Where the process stands, until `ProcessDiagram` lands and replaces this with one line:
- * `<ProcessDiagram active={active} />`. Approve is the gate between the two worlds.
+ * Where the process stands, as one line of the five steps; Approve is the gate between the two
+ * worlds. The change-order restyle (#353) chose this line over the circle `ProcessDiagram`.
  */
 function ProcessSlot({ active }: { active: Stage }) {
   return (

@@ -60,6 +60,15 @@ See [beyond.md](../beyond.md) for scope, parallel work, external gates and the r
 | T2.24 | _Stretch:_ _Killer:_ Clerk verification UI | M5 | Real verification UI preserves reviewed intent through cancel/stale/retry paths | [#183](https://github.com/SoroushRF/Rehearsal/issues/183) | [T2.23](https://github.com/SoroushRF/Rehearsal/issues/182), [T2.3](https://github.com/SoroushRF/Rehearsal/issues/12) |
 | T2.25 | Distinctive startup demo design for the landing page and the review workspace | M5 | Paper/ink/lime identity, display type and a ledger-style review; fixture/saved/simulator labels, exact-hash approval and message text unchanged; no horizontal overflow, axe clean in light and dark. **Done:** tokens, fonts and ledger layout in `apps/web` only. | [#244](https://github.com/SoroushRF/Rehearsal/issues/244) | |
 
+### Post-hackathon fixes (Oct 25–28)
+
+| ID | Task | Milestone | Done when | Issue | Blocked by |
+|---|---|---|---|---|---|
+| T2.26 | History rehearsal retries respect the pending-revision interlock | M5 | Every start button, main or history row, asks one admission check; a disabled row says why; after the revision exists a row sends the new revision and hash. **Done (fixture):** `startBlocked` in `execution-rehearsal.ts`, browser regressions for failed, cancelled and older-revision rows | [#294](https://github.com/SoroushRF/Rehearsal/issues/294) | |
+| T2.27 | Accessibility scans wait for the plan's entrance fade | M5 | Scans measure settled colors without turning off the contrast rule or adding retries. **Done (fixture):** `violations()` waits until no finite animation runs; a regression slows animations tenfold and fails on the old scan | [#295](https://github.com/SoroushRF/Rehearsal/issues/295) | |
+| T2.28 | Steps with no recorded result aren't called "Never ran" | M5 | Neutral wording where a receipt is missing; contract docs and a regression for a committed effect whose receipt didn't settle | [#296](https://github.com/SoroushRF/Rehearsal/issues/296) | |
+| T2.29 | Prove the selected demo release through the deployed full workflow | M5 | Deployed acceptance at one exact SHA through real sign-in, as listed in the issue; tracking only, not authorization to deploy or reset | [#359](https://github.com/SoroushRF/Rehearsal/issues/359) | #357, #358, #312, #323, #175, #283, #279, #282, #331, #284, #285 |
+
 ## Decisions
 
 _(add dated entries)_
@@ -67,6 +76,8 @@ _(add dated entries)_
 - **2026-10-22:** The demo currency is CAD; the seeded cohort already matches the policy ([0005](../decisions/0005-currency-cad.md)).
 
 ## Handoff log
+
+- **2026-10-28, Parsa (#294, #295, #332).** Branch `t2/294-295-review-fixes`, `apps/web` only. T2.26 and T2.27 done (fixture evidence, rows above). #332's last item, `ProcessDiagram` on the plans page, is superseded: the change-order restyle (#353) chose the one-line stage line (`ProcessSlot`) and dropped the circle diagram from the landing too, so `ProcessDiagram.tsx` is unused. Browser tests ran with `PW_CHANNEL=chrome`. Next: T2.28 (#296) in its own PR, because it touches a `packages/contracts` comment and needs a reviewer from another track.
 
 - **2026-10-25, Parsa (#332, live company UI).** Branch `t2/332-live-company`, `apps/web` only. Signed-in home is Company → Incidents → Plans, Members moved to its own secondary section (#325). `CompanyOverview` reads `GET /api/company` (tabs, counts, lime marker + run link on `changed` rows, old → new against the previous load); `IncidentForm` files `POST /api/incidents` and lists `GET /api/incidents`, each row rehearses by ID only; `RehearseBar` takes `incidentId` (default `INC-BILL-0927`). While a route is not deployed (plain 404) the GETs show the labelled `fixture` and Create problem hides. Kinds offered: `LIVE_KINDS` in `LivePlans.tsx`. **Not done:** `ProcessDiagram` (#333) not on `main` yet; `ProcessSlot` holds its place and `stageOf` gives `active`. After a run finishes the company is refetched and a "See what changed" button appears (no auto-switch, so receipts stay on screen). Evidence: `fixture` (fake API in Playwright).
 
