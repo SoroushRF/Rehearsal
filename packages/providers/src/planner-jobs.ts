@@ -65,15 +65,39 @@ export function registryOfJob(r: PlanJobRegistry): {
   };
 }
 
+/** Request history is diagnostic data, never execution authority or confirmed token usage. */
+export const PlanModelAttempt = z.strictObject({
+  turn: z.int().positive(),
+  attempt: z.int().positive(),
+  outcome: z.enum([
+    "succeeded",
+    "timeout",
+    "rate_limit",
+    "conflict",
+    "network",
+    "server_error",
+    "error",
+    "aborted",
+  ]),
+  reservedOutputTokens: z.int().positive(),
+});
+export const PlanModelAttempts = z.array(PlanModelAttempt).max(44);
+
 export interface CompletePlanJob {
   manifest: unknown;
   summary: string;
-  stats?: { turns: number; toolCalls: number; usage: Record<string, number> };
+  stats?: {
+    turns: number;
+    toolCalls: number;
+    usage: Record<string, number>;
+    modelAttempts?: z.infer<typeof PlanModelAttempts>;
+  };
 }
 
 export interface FailPlanJob {
   reason: string;
   message: string;
+  modelAttempts?: z.infer<typeof PlanModelAttempts>;
 }
 
 /**

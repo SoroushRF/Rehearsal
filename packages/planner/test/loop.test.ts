@@ -161,6 +161,35 @@ describe("planning loop", () => {
     expect(requests[3]?.messages.slice(0, 5)).toEqual(requests[2]?.messages);
   });
 
+  it("retries a later model turn without repeating already proposed effects", async () => {
+    const { session } = world();
+    const turns = happyScript();
+    let count = 0;
+    let next = 0;
+    const requests: string[] = [];
+    const client: MessagesClient = {
+      async create(params) {
+        requests.push(JSON.stringify(params));
+        if (count++ === 2) throw new TypeError("fetch failed");
+        const response = turns[next++];
+        if (!response) throw new Error("script ended");
+        return response;
+      },
+    };
+    const result = await runPlanningLoop({
+      client,
+      model: MODEL,
+      session,
+      brief: BRIEF,
+      meta: META,
+      limits: { retryDelayMs: 1 },
+    });
+    expect(result.manifest.actions).toHaveLength(24);
+    expect(new Set(result.manifest.actions.map((a) => a.id)).size).toBe(24);
+    expect(requests[2]).toBe(requests[3]);
+    expect(result.turns).toBe(4);
+  });
+
   it("tells the agent who reported the incident, but not what happened to them", () => {
     const text = briefMessage(BRIEF);
     for (const c of CASES) {

@@ -74,6 +74,8 @@ A public saved replay is fixture evidence until replaced by an export of an actu
 
 ## Next coordinated release
 
+For planner recovery (#284 / PR #355), deploy the API before starting the new planner worker. The new worker sends `modelAttempts` on `/internal/planner/jobs/:id/fail`; the previous API's strict schema rejects that extra field with 400, leaving the job active until expiry. The updated API accepts old workers, so API-first is the compatible rolling order. For a rollback to the previous API, stop/roll back the planner worker first. Completion diagnostics are optional and an invalid/oversized diagnostic array is discarded without rejecting a valid plan.
+
 Deploy one reviewed commit to IAM, API/web, planner, executor and rehearsal worker. The API's existing pre-deploy migration applies `0009_incidents.sql`. Drain planning/apply/rehearsal jobs before the switch, update IAM before exposing the new API routes, and keep new work paused until all workers report ready at the selected commit. Existing stored plans and receipts remain history; create a fresh plan after the move to per-org tenants. The Era image services do not need a restart for these source changes.
 
 For the recorded guard moment, target the actual Clerk organization explicitly from the private network:

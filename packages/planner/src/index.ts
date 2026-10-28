@@ -14,5 +14,6 @@ export const fixturePlanner: PlannerPort = {
 export * from "./brief";
 export * from "./coverage";
 export * from "./loop";
+export * from "./model-retry";
 export * from "./prompt";
 export * from "./tools";
