@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { RefusedError } from "../src/api";
 import {
   activeFor,
+  CREATE_REVISION_FIRST,
   type ExecutionRehearsalSummary,
   explainRehearsalRefusal,
   isTerminal,
@@ -11,6 +12,7 @@ import {
   relationTo,
   requestFor,
   SCENARIOS,
+  startBlocked,
 } from "../src/execution-rehearsal";
 
 const job = rehearsalJobFixture();
@@ -62,6 +64,23 @@ describe("activeFor", () => {
     expect(activeFor([summary()], current, "phantom_membership")).toBeUndefined();
     expect(activeFor([summary({ state: "failed" })], current, "clean")).toBeUndefined();
     expect(activeFor([summary()], { ...current, revision: 9 }, "clean")).toBeUndefined();
+  });
+});
+
+describe("startBlocked", () => {
+  const ended = [summary({ state: "failed" }), summary({ state: "cancelled" })];
+
+  it("refuses every start while unchecked boxes have no revision, finished jobs included", () => {
+    for (const id of ["clean", "phantom_membership"] as const) {
+      expect(startBlocked(ended, current, id, true)).toBe(CREATE_REVISION_FIRST);
+    }
+    expect(startBlocked([], current, "clean", true)).toBe(CREATE_REVISION_FIRST);
+  });
+
+  it("refuses a scenario already going for this revision, and nothing else", () => {
+    expect(startBlocked([summary()], current, "clean", false)).toMatch(/already running/);
+    expect(startBlocked([summary()], current, "phantom_membership", false)).toBeNull();
+    expect(startBlocked(ended, current, "clean", false)).toBeNull();
   });
 });
 
