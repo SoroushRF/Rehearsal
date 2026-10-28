@@ -10,6 +10,8 @@ import type { ResolvedBindings } from "./ports";
 const TEMPLATES: Record<string, (v: Readonly<Record<string, string | number>>) => string> = {
   "refund-confirmed@1": (v) =>
     `Refund ${v.refundId} for ${formatCad(Number(v.amountMinor))} has been issued for the duplicate charge.`,
+  "credit-confirmed@1": (v) =>
+    `A credit of ${formatCad(Number(v.amountMinor))} has been added to the customer's invoice balance for the duplicate charge.`,
   // Live demo (#331): a support backlog follow-up. It states only what the plan itself did.
   "backlog-followup@1": () =>
     "Flagged in a support backlog review: this ticket was waiting for a first reply.",
@@ -63,6 +65,11 @@ interface ReplyTemplate {
 }
 
 const REPLY_TEMPLATES: Record<string, ReplyTemplate> = {
+  "credit-issued@1": {
+    values: { customerName: "name", amountMinor: "minor" },
+    render: (v) =>
+      `Hi ${v.customerName},\n\nWe've added ${formatCad(Number(v.amountMinor))} to your invoice balance for the duplicate charge on your account. This credit will go toward future invoices. Sorry for the trouble.`,
+  },
   "refund-issued@1": {
     values: { customerName: "name", amountMinor: "minor" },
     render: (v) =>
@@ -180,6 +187,18 @@ interface SummaryTemplate {
 }
 
 const SUMMARY_TEMPLATES: Record<string, SummaryTemplate> = {
+  "credit-summary@1": {
+    literals: ["incidentId"],
+    counts: ["credited", "held"],
+    render: (v) =>
+      `Billing remediation ${v.incidentId}: 0 refund(s) issued, ${v.credited} balance credit(s) issued, ${v.held} step(s) held for review.`,
+  },
+  "run-summary@2": {
+    literals: ["incidentId"],
+    counts: ["refunded", "credited", "held"],
+    render: (v) =>
+      `Billing remediation ${v.incidentId}: ${v.refunded} refund(s) issued, ${v.credited} balance credit(s) issued, ${v.held} step(s) held for review.`,
+  },
   "run-summary@1": {
     literals: ["incidentId"],
     counts: ["refunded", "held"],

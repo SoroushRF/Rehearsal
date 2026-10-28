@@ -152,7 +152,12 @@ describe("planning loop", () => {
     // Every tool but the balance credit, which only a session with credits on offers (T1.14).
     expect(first?.tools?.map((t) => (t as Anthropic.Tool).name).sort()).toEqual(
       Object.keys(PLANNING_TOOLS)
-        .filter((name) => name !== "propose_balance_credit")
+        .filter(
+          (name) =>
+            !["propose_balance_credit", "propose_credit_note", "propose_credit_reply"].includes(
+              name,
+            ),
+        )
         .sort(),
     );
     expect(first?.messages).toEqual([{ role: "user", content: briefMessage(BRIEF) }]);

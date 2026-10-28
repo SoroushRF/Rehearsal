@@ -192,6 +192,8 @@ describe("planning tools", () => {
       "list_customer_charges",
       "list_requester_tickets",
       "propose_balance_credit",
+      "propose_credit_note",
+      "propose_credit_reply",
       "propose_customer_reply",
       "propose_duplicate_refund",
       "propose_refund_note",
@@ -204,7 +206,10 @@ describe("planning tools", () => {
     }
     expect(CREDIT_TOOL_SCHEMA_HASH).toBe(fingerprint(defs));
     // Without credits the surface is exactly what it was before T1.14.
-    const refundOnly = defs.filter((d) => d.name !== "propose_balance_credit");
+    const refundOnly = defs.filter(
+      (d) =>
+        !["propose_balance_credit", "propose_credit_note", "propose_credit_reply"].includes(d.name),
+    );
     expect(planningToolDefinitions()).toEqual(refundOnly);
     expect(TOOL_SCHEMA_HASH).toBe(fingerprint(refundOnly));
   });
