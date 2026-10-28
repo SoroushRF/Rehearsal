@@ -75,7 +75,8 @@ See [beyond.md](../beyond.md) for scope, parallel work, external gates and the r
 
 | ID | Task | Milestone | Done when | Issue | Blocked by |
 |---|---|---|---|---|---|
-| T1.38 | Bounded planner transport recovery | M5 | **Implemented (fixture):** transient model requests retry within per-request/run deadlines, request and reserved output-token budgets; successful tool calls are not replayed. Attempt outcomes survive in job output. Full checks and PR CI recorded in the PR; not merged or deployed. | [#284](https://github.com/SoroushRF/Rehearsal/issues/284) | — |
+| T1.38 | Bounded planner transport recovery | M5 | **Implemented (fixture):** transient model requests retry within per-request/run deadlines, a 44-request / 704,000 reserved output-token budget and provider retry hints; successful tool calls are not replayed. Attempt outcomes survive within one job attempt; pg-boss retries can replace earlier output (T1.46 / #361). Deploy API before planner. Full checks and PR CI recorded in [#355](https://github.com/SoroushRF/Rehearsal/pull/355); not merged or deployed. | [#284](https://github.com/SoroushRF/Rehearsal/issues/284) | — |
+| T1.46 | Preserve model-attempt history across whole-job retries | M5 | **Post-hackathon follow-up:** append-only, org-scoped attempt diagnostics survive a failed job attempt followed by successful retry; real-Postgres regression covers both histories. Optional diagnostics never affect plan authority or reject valid completions. | [#361](https://github.com/SoroushRF/Rehearsal/issues/361) | — |
 
 ## Release fixes (Oct 25)
 
@@ -91,6 +92,8 @@ See [beyond.md](../beyond.md) for scope, parallel work, external gates and the r
 - **2026-10-21:** Era tenant tokens are minted by the API (the operator, sole holder of `ERA_ADMIN_TOKEN`). Each worker fetches its own world's token with its own secret and refreshes it 5 min before expiry. Requests fail closed when no valid token is available. See [0002](../decisions/0002-era-tenant-token-minting.md).
 
 ## Handoff log
+
+- **2026-10-28 (Codex, #355 review):** Reproduced the review's SDK error and token-headroom regressions, then covered actual Anthropic 529/connection/timeout errors, 408/409/5xx, all 40 turns plus four retries, provider retry headers and deadline cancellation. Optional invalid/oversized diagnostics are discarded rather than rejecting a valid completion/failure report. API-first rollout and worker-first rollback are documented in `deployment.md`. Cross-job diagnostic retention remains a non-blocking follow-up in T1.46 / #361. Evidence is fixture; no new live model/Era run. PR remains open; no merge, deployment or reviewer request.
 
 - **2026-10-28 (Codex, #284):** `fix/284-planner-recovery` adds bounded model-request retries and job request history. Minimal T2 API changes accept and expose the optional diagnostic history; no schema migration, approval, admission or credential-boundary changes. SDK retries are disabled so the loop owns the request budget. Evidence is fixture, including timeout/429/network/exhaustion/late-response and no-replayed-tools regressions. The owner requested self-review with no reviewer requests and open PRs only; no merge or deployment is authorized.
 

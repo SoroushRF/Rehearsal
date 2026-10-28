@@ -73,6 +73,7 @@ export const PlanModelAttempt = z.strictObject({
     "succeeded",
     "timeout",
     "rate_limit",
+    "conflict",
     "network",
     "server_error",
     "error",

@@ -339,6 +339,53 @@ describe.skipIf(!process.env.DB_TESTS)("rehearse through the plan queue (real Po
     });
   });
 
+  it.each([
+    {
+      modelAttempts: [
+        { turn: 1, attempt: 1, outcome: "future_outcome", reservedOutputTokens: 16000 },
+      ],
+    },
+    {
+      modelAttempts: Array.from({ length: 45 }, (_, n) => ({
+        turn: n + 1,
+        attempt: 1,
+        outcome: "succeeded",
+        reservedOutputTokens: 16000,
+      })),
+    },
+  ])(
+    "keeps a valid completion when optional diagnostics cannot be parsed",
+    async ({ modelAttempts }) => {
+      const { app, me, rehearsalId, manifest } = await claimed();
+      const res = await complete(app, rehearsalId, {
+        manifest,
+        summary: "8 refunds.",
+        stats: { turns: 1, toolCalls: 0, usage: {}, modelAttempts },
+      });
+      expect(res.statusCode).toBe(201);
+      const result = await status(app, rehearsalId, me);
+      expect(result.state).toBe("stored");
+      expect(result.modelAttempts).toBeUndefined();
+    },
+  );
+
+  it("keeps a failure report when optional diagnostics cannot be parsed", async () => {
+    const { app, me, rehearsalId } = await claimed();
+    const res = await app.inject({
+      method: "POST",
+      url: route(PLANNER_JOB_ROUTES.fail, rehearsalId),
+      headers: worker,
+      payload: { reason: "model_rate_limit", message: "quota", modelAttempts: [{ future: true }] },
+    });
+    expect(res.statusCode).toBe(204);
+    const result = await status(app, rehearsalId, me);
+    expect(result).toMatchObject({
+      state: "retrying",
+      error: { reason: "model_rate_limit", message: "quota" },
+    });
+    expect(result.modelAttempts).toBeUndefined();
+  });
+
   it("rejects a manifest that doesn't match the job, and fails the run", async () => {
     const { app, me, rehearsalId, planId, manifest } = await claimed();
     const res = await complete(app, rehearsalId, {

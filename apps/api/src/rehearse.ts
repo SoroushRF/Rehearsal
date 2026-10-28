@@ -71,14 +71,15 @@ const Complete = z.strictObject({
       turns: z.int().nonnegative(),
       toolCalls: z.int().nonnegative(),
       usage: z.record(z.string(), z.int().nonnegative()),
-      modelAttempts: PlanModelAttempts.optional(),
+      // Optional diagnostics must never reject a valid completion after planner/API version drift.
+      modelAttempts: PlanModelAttempts.optional().catch(undefined),
     })
     .optional(),
 });
 const Fail = z.strictObject({
   reason: z.string().max(100),
   message: z.string().max(2000),
-  modelAttempts: PlanModelAttempts.optional(),
+  modelAttempts: PlanModelAttempts.optional().catch(undefined),
 });
 
 /** pg-boss states, as the review page should read them. A failed run is retried once. */

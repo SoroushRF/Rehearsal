@@ -1,4 +1,4 @@
-import type Anthropic from "@anthropic-ai/sdk";
+import Anthropic from "@anthropic-ai/sdk";
 import type { MessagesClient } from "./loop";
 
 export interface ModelAttempt {
@@ -8,11 +8,12 @@ export interface ModelAttempt {
     | "succeeded"
     | "timeout"
     | "rate_limit"
+    | "conflict"
     | "network"
     | "server_error"
     | "error"
     | "aborted";
-  /** Reserved even for an unanswered request: its provider-side token use is unknown. */
+  /** Every request reserves its full output cap, whether answered or not. */
   reservedOutputTokens: number;
 }
 
@@ -82,7 +83,10 @@ export async function requestModel(
       opts.signal?.throwIfAborted();
       if (outcome === "error" || attempt >= limits.maxRequestAttempts) throw error;
       // Sleep is also covered by the overall job deadline.
-      await backoff(Math.min(limits.retryDelayMs * 2 ** (attempt - 1), 5_000), opts.signal);
+      await backoff(
+        retryDelay(error, Math.min(limits.retryDelayMs * 2 ** (attempt - 1), 5_000)),
+        opts.signal ?? AbortSignal.timeout(limits.requestTimeoutMs),
+      );
       continue;
     }
     opts.onAttempt?.({
@@ -98,10 +102,13 @@ export async function requestModel(
 function classify(error: unknown): ModelAttempt["outcome"] {
   if (!(error instanceof Error)) return "error";
   const e = error as Error & { status?: number; code?: string; cause?: unknown };
+  if (e instanceof Anthropic.APIConnectionTimeoutError) return "timeout";
+  if (e instanceof Anthropic.APIConnectionError) return "network";
   if (e.status === 429) return "rate_limit";
+  if (e.status === 409) return "conflict";
   if (e.status === 408 || e.name === "TimeoutError" || e.name === "APIConnectionTimeoutError")
     return "timeout";
-  if ([500, 502, 503, 504].includes(e.status ?? 0)) return "server_error";
+  if (typeof e.status === "number" && e.status >= 500) return "server_error";
   // An explicit non-transient HTTP status (notably 400/401/403) must not be retried.
   if (e.status !== undefined) return "error";
   if (e.name === "APIConnectionError" || (e instanceof TypeError && e.message === "fetch failed"))
@@ -118,6 +125,22 @@ function classify(error: unknown): ModelAttempt["outcome"] {
   )
     return "network";
   return "error";
+}
+
+/** Match SDK retry hints; invalid/past/unrepresentable delays use bounded exponential backoff. */
+function retryDelay(error: unknown, fallback: number): number {
+  const headers = (error as { headers?: unknown } | null)?.headers;
+  if (!(headers instanceof Headers)) return fallback;
+  const ms = headers.get("retry-after-ms");
+  const after = headers.get("retry-after");
+  const millis = ms === null ? Number.NaN : Number(ms);
+  if (millis > 0 && Number.isFinite(millis) && millis <= 2 ** 31 - 1) return millis;
+  if (after !== null && after.trim() !== "") {
+    const seconds = Number(after);
+    const delay = Number.isFinite(seconds) ? seconds * 1_000 : Date.parse(after) - Date.now();
+    if (delay > 0 && Number.isFinite(delay) && delay <= 2 ** 31 - 1) return delay;
+  }
+  return fallback;
 }
 
 function backoff(ms: number, signal?: AbortSignal): Promise<void> {
