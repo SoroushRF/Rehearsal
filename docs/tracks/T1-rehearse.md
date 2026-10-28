@@ -79,6 +79,17 @@ See [beyond.md](../beyond.md) for scope, parallel work, external gates and the r
 | T1.42 | Serialize reset with planning/apply admission | M5 | Postgres lock covers idle check through reset, seed and job commit; separate-connection concurrency and failure recovery tests pass | [#349](https://github.com/SoroushRF/Rehearsal/issues/349) | — |
 | T1.43 | Reserve built-in incident IDs | M5 | Allocation skips the built-in ID; a legacy collision uses the org's stored report; regression tests pass | [#350](https://github.com/SoroushRF/Rehearsal/issues/350) | — |
 
+## Demo-beyond follow-ups (Oct 28)
+
+All rows are planning only, labelled `demo-beyond`, and unassigned. They preserve the existing UI. Implementation, merges and operator runs require their own authorized work; nothing below is claimed implemented or validated.
+
+| ID | Task | Milestone | Done when | Issue | Blocked by |
+|---|---|---|---|---|---|
+| T1.44 | Rehearse plans containing public replies | M5 | Faithful disposable ticket snapshots, exact approved text and independent verification pass clean/applicable challenge tests on real Era; shared worlds stay unchanged | [#357](https://github.com/SoroushRF/Rehearsal/issues/357) | [#309](https://github.com/SoroushRF/Rehearsal/issues/309), [#305](https://github.com/SoroushRF/Rehearsal/issues/305), [#312](https://github.com/SoroushRF/Rehearsal/issues/312) |
+| T1.45 | Rehearse balance-credit plans | M5 | Customer/charge/prior-remedy state is rebuilt faithfully; credit-only and mixed plans, follow-ups, counts and recovery pass real Era checks with no operational effects | [#358](https://github.com/SoroushRF/Rehearsal/issues/358) | [T1.44](https://github.com/SoroushRF/Rehearsal/issues/357), [#312](https://github.com/SoroushRF/Rehearsal/issues/312), [T1.39](https://github.com/SoroushRF/Rehearsal/issues/285) |
+
+The remaining data-driven customer roster work reuses [#331](https://github.com/SoroushRF/Rehearsal/issues/331), including its server-derived population requirement; no duplicate issue was opened. The complete demo-beyond set is discoverable by its GitHub label, including existing repair, precise-guard, benchmark and optional precedent-validation issues.
+
 ## Decisions
 
 - **2026-10-22:** The planner worker has no database. It takes `plan` jobs and hands back manifests through `/internal/planner/jobs/*` with its own secret; the API checks each manifest against its job before storing revision 1. See [0006](../decisions/0006-planner-jobs-through-api.md).

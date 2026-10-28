@@ -60,6 +60,14 @@ See [beyond.md](../beyond.md) for scope, parallel work, external gates and the r
 | T2.24 | _Stretch:_ _Killer:_ Clerk verification UI | M5 | Real verification UI preserves reviewed intent through cancel/stale/retry paths | [#183](https://github.com/SoroushRF/Rehearsal/issues/183) | [T2.23](https://github.com/SoroushRF/Rehearsal/issues/182), [T2.3](https://github.com/SoroushRF/Rehearsal/issues/12) |
 | T2.25 | Distinctive startup demo design for the landing page and the review workspace | M5 | Paper/ink/lime identity, display type and a ledger-style review; fixture/saved/simulator labels, exact-hash approval and message text unchanged; no horizontal overflow, axe clean in light and dark. **Done:** tokens, fonts and ledger layout in `apps/web` only. | [#244](https://github.com/SoroushRF/Rehearsal/issues/244) | |
 
+## Demo-beyond acceptance (Oct 28)
+
+| ID | Task | Milestone | Done when | Issue | Blocked by |
+|---|---|---|---|---|---|
+| T2.29 | Prove the selected deployed demo release | M5 | Exact deployed versions and real sign-in full-operation plan/rehearsal/approval/apply/receipts, repair and fault controls are recorded with honest evidence labels; existing UI retained. **Planning only; unassigned.** No deployment, write approval, reset or merge performed | [#359](https://github.com/SoroushRF/Rehearsal/issues/359) | [T1.44](https://github.com/SoroushRF/Rehearsal/issues/357), [T1.45](https://github.com/SoroushRF/Rehearsal/issues/358), [#312](https://github.com/SoroushRF/Rehearsal/issues/312), [T4.13](https://github.com/SoroushRF/Rehearsal/issues/175), [#323](https://github.com/SoroushRF/Rehearsal/issues/323), [T1.37](https://github.com/SoroushRF/Rehearsal/issues/283), [T4.28](https://github.com/SoroushRF/Rehearsal/issues/282), [#279](https://github.com/SoroushRF/Rehearsal/issues/279), [#331](https://github.com/SoroushRF/Rehearsal/issues/331), [#284](https://github.com/SoroushRF/Rehearsal/issues/284), [#285](https://github.com/SoroushRF/Rehearsal/issues/285) |
+
+Label: `demo-beyond`. This extends the deployment evidence beyond the earlier T2.5 run and T4.13's local, narrower acceptance scope. Precedents (#238/#181) are an additional acceptance prerequisite only if selected for the demo.
+
 ## Decisions
 
 _(add dated entries)_
