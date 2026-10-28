@@ -66,7 +66,8 @@ export type Headline = { tone: Tone; title: string; body: string };
 
 /**
  * Words for the verdict. "Passed" is never "safe": it means this scenario, on this snapshot, read
- * back as expected. Anything not established is said to be unknown rather than fine.
+ * back as expected. Anything not established is said to be unknown rather than fine. A step with
+ * no recorded result is never said not to have run: a send can land and its receipt fail to save.
  */
 export function headline(report: ExecutionRehearsalReport, stale: boolean): Headline {
   const where = `under "${report.scenario.id.replaceAll("_", " ")}"`;
@@ -74,14 +75,14 @@ export function headline(report: ExecutionRehearsalReport, stale: boolean): Head
     return {
       tone: "danger",
       title: "The rehearsal failed before it finished",
-      body: "Steps with no result never ran. Nothing here shows how the plan behaves; try again or ask an operator.",
+      body: "A step with no recorded result may still have been sent. Nothing here shows how the plan behaves; try again or ask an operator.",
     };
   }
   if (report.state === "cancelled") {
     return {
       tone: "warn",
       title: "The rehearsal was cancelled",
-      body: "Only the steps that ran are shown. The rest were not tried.",
+      body: "Steps with a recorded result show how they ended. For the rest, no result was recorded, which doesn't prove they weren't sent.",
     };
   }
   switch (report.verdict) {
@@ -101,15 +102,18 @@ export function headline(report: ExecutionRehearsalReport, stale: boolean): Head
       return {
         tone: "warn",
         title: `Some outcomes could not be established ${where}`,
-        body: "A step is still unknown or never ran. Unknown is not the same as fine.",
+        body: "A step's outcome is unknown or wasn't recorded. Unknown is not the same as fine.",
       };
   }
 }
 
-/** What the executor saw for one step, in a few words. */
+/**
+ * What the executor saw for one step, in a few words. No result means none was recorded, not that
+ * nothing was sent: the report has no dispatch history to prove that.
+ */
 export function observedLabel(step: RehearsalStepReport): string {
   const r = step.result;
-  if (!r) return "Never ran";
+  if (!r) return "No result recorded";
   return OBSERVED[r.outcome];
 }
 const OBSERVED = {

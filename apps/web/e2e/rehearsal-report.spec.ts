@@ -179,7 +179,8 @@ test("a failed rehearsal gets a useful view", async ({ page }) => {
   const view = await openReport(page, api);
 
   await expect(view).toContainText("The rehearsal failed before it finished");
-  await expect(view.getByText("Never ran").first()).toBeVisible();
+  await expect(view.getByText("No result recorded").first()).toBeVisible();
+  await expect(view).not.toContainText(/never ran/i);
 });
 
 test("a rehearsal with no stored report says so plainly", async ({ page }) => {

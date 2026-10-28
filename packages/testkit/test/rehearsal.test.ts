@@ -120,7 +120,7 @@ describe("execution rehearsal contracts (T1.21)", () => {
     expect(report.state).toBe("completed");
     expect(ExecutionRehearsalReport.safeParse(missing).success).toBe(false);
     // The same report is representable as unknown, and so are a failed or cancelled run's
-    // steps that never ran.
+    // steps with no recorded result.
     expect(ExecutionRehearsalReport.safeParse({ ...missing, verdict: "unknown" }).success).toBe(
       true,
     );
