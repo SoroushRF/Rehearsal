@@ -6,7 +6,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 
 ## Top blockers
 
-91 of 100 tasks done. These open tasks hold up the most other work:
+91 of 103 tasks done. These open tasks hold up the most other work:
 
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
@@ -84,6 +84,9 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T2.23** Server-side fresh verification bound to the plan _(stretch)_ [#182](https://github.com/SoroushRF/Rehearsal/issues/182) | 🟨 ready | — | T2.24 |
 | **T2.24** Clerk verification UI _(stretch)_ [#183](https://github.com/SoroushRF/Rehearsal/issues/183) | 🟥 blocked | T2.23 (T2, ready) |  |
 | **T2.25** Distinctive startup demo design for landing and review workspace [#244](https://github.com/SoroushRF/Rehearsal/issues/244) | ✅ done |  |  |
+| **T2.26** History rehearsal retries bypass the pending-revision interlock [#294](https://github.com/SoroushRF/Rehearsal/issues/294) | 🟨 ready | — |  |
+| **T2.27** Accessibility scans race the plan entrance fade and report transient contrast failures [#295](https://github.com/SoroushRF/Rehearsal/issues/295) | 🟨 ready | — |  |
+| **T2.28** Missing rehearsal results are labelled Never ran after receipt-storage failure [#296](https://github.com/SoroushRF/Rehearsal/issues/296) | 👀 in review [PR #363](https://github.com/SoroushRF/Rehearsal/pull/363) | — |  |
 
 ## T3 Apply
 
@@ -205,6 +208,9 @@ flowchart LR
     T2_21["T2.21 Review UI: compare expected and observed r"]:::done
     T2_22["T2.22 Operator task tests and findings"]:::ready
     T2_25["T2.25 Distinctive startup demo design for landin"]:::done
+    T2_26["T2.26 History rehearsal retries bypass the pendi"]:::ready
+    T2_27["T2.27 Accessibility scans race the plan entrance"]:::ready
+    T2_28["T2.28 Missing rehearsal results are labelled Nev"]:::review
   end
   subgraph T3[T3 Apply]
     T3_1["T3.1 Drizzle migrations, Postgres journal, pg-bo"]:::done
