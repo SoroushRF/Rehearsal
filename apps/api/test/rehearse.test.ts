@@ -271,7 +271,15 @@ describe.skipIf(!process.env.DB_TESTS)("rehearse through the plan queue (real Po
     const { app, me, rehearsalId, planId, manifest } = await claimed();
     expect(await status(app, rehearsalId, me)).toMatchObject({ state: "planning", planId });
 
-    const res = await complete(app, rehearsalId, { manifest, summary: "8 refunds." });
+    const modelAttempts = [
+      { turn: 1, attempt: 1, outcome: "rate_limit", reservedOutputTokens: 16000 },
+      { turn: 1, attempt: 2, outcome: "succeeded", reservedOutputTokens: 16000 },
+    ];
+    const res = await complete(app, rehearsalId, {
+      manifest,
+      summary: "8 refunds.",
+      stats: { turns: 1, toolCalls: 0, usage: {}, modelAttempts },
+    });
     expect(res.statusCode).toBe(201);
     const { planHash } = res.json();
     const stored = await loadPlan(db, me.orgId, planId, 1);
@@ -280,6 +288,7 @@ describe.skipIf(!process.env.DB_TESTS)("rehearse through the plan queue (real Po
       state: "stored",
       planHash,
       summary: "8 refunds.",
+      modelAttempts,
     });
 
     // The job is finished; a second completion can't land anywhere.

@@ -71,6 +71,12 @@ See [beyond.md](../beyond.md) for scope, parallel work, external gates and the r
 |---|---|---|---|---|---|
 | T1.30 | Flag incomplete incident coverage before approval | M5 | A shared recorded-evidence check distinguishes unread/partial queries from eligible duplicates missing a refund or credit; the model loop refuses to store incomplete plans, and scripted F7 is caught before approval without becoming a success. Fixture regressions pass; no UI or repair added | [#274](https://github.com/SoroushRF/Rehearsal/issues/274) | — |
 
+## Demo reliability fixes (Oct 28)
+
+| ID | Task | Milestone | Done when | Issue | Blocked by |
+|---|---|---|---|---|---|
+| T1.38 | Bounded planner transport recovery | M5 | **Implemented (fixture):** transient model requests retry within per-request/run deadlines, request and reserved output-token budgets; successful tool calls are not replayed. Attempt outcomes survive in job output. Full checks and PR CI recorded in the PR; not merged or deployed. | [#284](https://github.com/SoroushRF/Rehearsal/issues/284) | — |
+
 ## Release fixes (Oct 25)
 
 | ID | Task | Milestone | Done when | Issue | Blocked by |
@@ -85,6 +91,8 @@ See [beyond.md](../beyond.md) for scope, parallel work, external gates and the r
 - **2026-10-21:** Era tenant tokens are minted by the API (the operator, sole holder of `ERA_ADMIN_TOKEN`). Each worker fetches its own world's token with its own secret and refreshes it 5 min before expiry. Requests fail closed when no valid token is available. See [0002](../decisions/0002-era-tenant-token-minting.md).
 
 ## Handoff log
+
+- **2026-10-28 (Codex, #284):** `fix/284-planner-recovery` adds bounded model-request retries and job request history. Minimal T2 API changes accept and expose the optional diagnostic history; no schema migration, approval, admission or credential-boundary changes. SDK retries are disabled so the loop owns the request budget. Evidence is fixture, including timeout/429/network/exhaustion/late-response and no-replayed-tools regressions. The owner requested self-review with no reviewer requests and open PRs only; no merge or deployment is authorized.
 
 - **2026-10-25 (Codex, release fixes):** `fix/live-demo-release-gates` addresses #348–#350. T2 API and T3 database changes are limited to the reset/admission interlock and incident lookup/allocation; no plan hashes, worker credentials or execution guard rules changed. Locks are held in Postgres transactions, so other API processes also refuse overlapping reset/admission. Era state and historical receipts are not migrated or reset by deployment. The actual cloud flow still needs a smoke after the coordinated release; the fixture and local Postgres regressions do not establish cloud acceptance.
 

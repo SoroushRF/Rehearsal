@@ -14,6 +14,7 @@ import {
   PLANNER_JOB_ROUTES,
   PlanJob,
   type PlanJobRegistry,
+  PlanModelAttempts,
   registryOfJob,
 } from "@rehearsal/providers";
 import type { FastifyInstance, FastifyReply } from "fastify";
@@ -70,10 +71,15 @@ const Complete = z.strictObject({
       turns: z.int().nonnegative(),
       toolCalls: z.int().nonnegative(),
       usage: z.record(z.string(), z.int().nonnegative()),
+      modelAttempts: PlanModelAttempts.optional(),
     })
     .optional(),
 });
-const Fail = z.strictObject({ reason: z.string().max(100), message: z.string().max(2000) });
+const Fail = z.strictObject({
+  reason: z.string().max(100),
+  message: z.string().max(2000),
+  modelAttempts: PlanModelAttempts.optional(),
+});
 
 /** pg-boss states, as the review page should read them. A failed run is retried once. */
 const STATE = {
@@ -154,12 +160,14 @@ export function registerRehearseRoutes(app: FastifyInstance, deps: RehearseDeps)
     });
     if (!gate.ok) return refuse(reply, gate, "rehearsal_not_found");
     const output = (found.job.output ?? {}) as Record<string, unknown>;
+    const attempts = PlanModelAttempts.safeParse(output.modelAttempts);
     const state = STATE[found.job.state];
     return {
       rehearsalId: found.job.id,
       planId: found.data.planId,
       incidentId: found.data.incidentId,
       state,
+      ...(attempts.success ? { modelAttempts: attempts.data } : {}),
       // The last failure, which a retry may still turn into a stored plan.
       ...((state === "failed" || state === "retrying") && {
         error: { reason: output.reason, message: output.message },

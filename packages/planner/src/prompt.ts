@@ -18,6 +18,12 @@ export const LOOP_LIMITS = {
   maxToolCalls: 200,
   /** Output tokens per turn. Non-streaming requests stay well under the SDK's HTTP timeout. */
   maxTokensPerTurn: 16_000,
+  /** Retries share these run-wide budgets; unanswered requests reserve their full output cap. */
+  maxModelRequests: 44,
+  maxOutputTokens: 640_000,
+  requestTimeoutMs: 120_000,
+  maxRequestAttempts: 3,
+  retryDelayMs: 1_000,
   /** Agentic multistep tool use: medium is the documented starting point for Sonnet 5.5. */
   effort: "medium",
 } as const;
