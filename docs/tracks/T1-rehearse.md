@@ -65,6 +65,12 @@ See [beyond.md](../beyond.md) for scope, parallel work, external gates and the r
 | T1.28 | _Benchmark:_ Run and publish versioned benchmark comparisons | M5 | Early full baseline plus frozen-head beyond results support every published metric | [#176](https://github.com/SoroushRF/Rehearsal/issues/176) | [T1.27](https://github.com/SoroushRF/Rehearsal/issues/161), [T4.13](https://github.com/SoroushRF/Rehearsal/issues/175) |
 | T1.29 | _Stretch:_ Plans carry a `PrecedentBasis` (contracts + planner; review view is T2) | M5 | Optional `precedentBasis` on `PlanManifest`, in the hash, existing hashes unchanged; the planner recalls in the org scope, keeps only registry-active precedents and records citations with fact and trace IDs. **In progress (fixture):** contracts part (schemas moved from `@rehearsal/memory`, golden-hash test) and planner part (the API puts the org registry on the plan job; the worker recalls in the org scope with `recallBasis`, drops anything not active, shows the model what it keeps and records the basis; the API refuses a basis the job's registry doesn't support) (contracts merged in #252; planner in its PR). The review view and approval check landed in #254 (T2). Not run against the hosted service yet | [#235](https://github.com/SoroushRF/Rehearsal/issues/235) | [T1.8](https://github.com/SoroushRF/Rehearsal/issues/9), [T2.17](https://github.com/SoroushRF/Rehearsal/issues/147) |
 
+## Credit planning fix (Oct 28)
+
+| ID | Task | Milestone | Done when | Issue | Blocked by |
+|---|---|---|---|---|---|
+| T1.39 | Credit/refund branches and typed refusals | M5 | **Implemented:** only `credit_limit` permits fallback; credit follow-ups and separate summary counts use approved templates. 198 planner/worker/core fixture tests pass. [Model evidence](../validation/T1.39-credit-planning-2026-10-28.md): 2 positive completions and 1 correctly unresolved currency control. Open PR awaiting the owner's team; not merged or deployed. Minimal T3/T4 scope: additive templates only. | [#285](https://github.com/SoroushRF/Rehearsal/issues/285) | — |
+
 ## Benchmark fixes (Oct 25)
 
 | ID | Task | Milestone | Done when | Issue | Blocked by |

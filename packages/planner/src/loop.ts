@@ -159,7 +159,9 @@ export async function runPlanningLoop(opts: PlanningLoopOptions): Promise<Planni
       results.push({
         type: "tool_result",
         tool_use_id: call.id,
-        content: JSON.stringify(result.ok ? result.result : { error: result.error }),
+        content: JSON.stringify(
+          result.ok ? result.result : { error: result.error, reason: result.reason },
+        ),
         ...(!result.ok && { is_error: true }),
       });
     }
