@@ -30,6 +30,7 @@ export interface FakeCharge {
   status: string;
   /** Unix seconds. Charges without it match any window (the fixture snapshots don't carry it). */
   created?: number;
+  invoice?: string | null;
 }
 export interface FakeTicket {
   id: string;

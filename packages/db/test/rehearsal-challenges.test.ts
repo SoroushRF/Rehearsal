@@ -92,6 +92,7 @@ describe.skipIf(!process.env.DB_TESTS)("challenged rehearsals (T3.16, real Postg
               amount: c.amountMinor,
               amount_refunded: 0,
               currency: c.currency,
+              invoice: c.invoice ?? null,
               status: "succeeded",
               created: c.created,
             });
