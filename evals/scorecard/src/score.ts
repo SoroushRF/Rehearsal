@@ -7,12 +7,13 @@ import {
   type ScorecardTask,
 } from "./tasks";
 
-export const MODES = ["direct", "per_call", "rehearsal"] as const;
+export const MODES = ["direct", "per_call", "competent", "rehearsal"] as const;
 export type Mode = (typeof MODES)[number];
 
 export const MODE_LABEL: Record<Mode, string> = {
   direct: "Direct (no review)",
   per_call: "Per-call approval",
+  competent: "Competent script",
   rehearsal: "Rehearsal",
 };
 
@@ -304,6 +305,8 @@ const NOTES = [
   "Reviewer actions: Rehearsal counts one signature per required role on each plan. Per-call",
   "  counts one decision per write call, from a modelled reviewer who rejects exactly what the",
   "  planning tools' policy checks reject; no person was in the loop for either.",
+  "Competent script (T1.25): no plan or reviewer, but every write is checked against the world as",
+  "  it is when sent, with one idempotency key per step and lost responses settled by reading.",
   "Latency and Era calls cover the write phase only (guard and reconcile reads included).",
   "A planner failure is neither a success nor a hold: it is counted on its own and left out of the",
   "  planned-task rate. Effects of ours outside the answer key count as invalid allows.",

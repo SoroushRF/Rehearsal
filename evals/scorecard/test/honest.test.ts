@@ -117,17 +117,21 @@ describe("honest scoring (T1.31)", () => {
     const file = "evals/scorecard/results/model-gemini-4-argon-full-ops.txt";
     const r = rescore(file, readFileSync(file, "utf8"));
     expect(r.failed.map((f) => f.taskId)).toEqual(["F1", "F3", "F4", "F5"]);
-    expect([r.after.rehearsal.success, r.after.per_call.success, r.after.direct.success]).toEqual([
-      4, 3, 0,
-    ]);
+    // Written before the competent script existed: only the three modes it has are rescored.
+    expect(r.modes).toEqual(["direct", "per_call", "rehearsal"]);
     expect([
-      r.before.rehearsal.success,
-      r.before.per_call.success,
-      r.before.direct.success,
+      r.after.rehearsal?.success,
+      r.after.per_call?.success,
+      r.after.direct?.success,
+    ]).toEqual([4, 3, 0]);
+    expect([
+      r.before.rehearsal?.success,
+      r.before.per_call?.success,
+      r.before.direct?.success,
     ]).toEqual([5, 4, 1]);
     // T9's timeout made 24 of Rehearsal's 26 wrongful holds in the 20-task run.
     const twenty = "evals/scorecard/results/model-gemini-4-argon.txt";
     const t = rescore(twenty, readFileSync(twenty, "utf8"));
-    expect([t.before.rehearsal.wrongfulHolds, t.after.rehearsal.wrongfulHolds]).toEqual([26, 2]);
+    expect([t.before.rehearsal?.wrongfulHolds, t.after.rehearsal?.wrongfulHolds]).toEqual([26, 2]);
   });
 });

@@ -26,6 +26,8 @@ import { type DecidedIntent, type Intent, stepIdOf } from "./agent";
  *   rest. They see the call, not later changes in the world.
  * - rehearsal: the accepted intents are the plan; one approval per signing role; the executor
  *   applies it with the read guard, and is restarted to reconcile anything left unknown.
+ * - competent (T1.25, `competent.ts`): no plan and no reviewer, but every intent is checked against
+ *   the world as it is before it's sent, with durable idempotency and read reconciliation.
  */
 
 export interface ApplyResult {
@@ -37,10 +39,10 @@ export interface ApplyResult {
 }
 
 /** Slack only for a task with a run summary. */
-type Ports = Partial<Record<HarnessVendor, ProviderPort>>;
-type Contexts = Partial<Record<HarnessVendor, { world: "operational"; tenant: string }>>;
+export type Ports = Partial<Record<HarnessVendor, ProviderPort>>;
+export type Contexts = Partial<Record<HarnessVendor, { world: "operational"; tenant: string }>>;
 
-const vendorOf = (action: Action): HarnessVendor =>
+export const vendorOf = (action: Action): HarnessVendor =>
   action.kind.startsWith("stripe.")
     ? "stripe"
     : action.kind.startsWith("slack.")
@@ -131,7 +133,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * direct tool call would carry. Same IDs and shapes as the planning tools produce. The summary
  * counts every step the agent decided on before it.
  */
-function actionFor(intent: Intent, decided: readonly DecidedIntent[]): Action {
+export function actionFor(intent: Intent, decided: readonly DecidedIntent[]): Action {
   const common = {
     id: stepIdOf(intent),
     caseId: `case_${intent.caseKey}`,

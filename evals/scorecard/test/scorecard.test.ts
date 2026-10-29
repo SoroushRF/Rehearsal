@@ -314,7 +314,7 @@ describe("scoring", () => {
       runOf(tasks[0] as ScorecardTask, "rehearsal", {}, { reviewerActions: 2, latencyMs: 1500 }),
       runOf(tasks[1] as ScorecardTask, "rehearsal", {}, { reviewerActions: 2 }),
     ];
-    const [direct, perCall, rehearsal] = summarize(tasks, runs);
+    const [direct, perCall, competent, rehearsal] = summarize(tasks, runs);
     expect(direct).toMatchObject({
       tasks: 2,
       success: 1,
@@ -324,10 +324,13 @@ describe("scoring", () => {
       eraCalls: 30,
     });
     expect(perCall).toMatchObject({ tasks: 0, success: 0 });
+    expect(competent).toMatchObject({ mode: "competent", tasks: 0 });
     expect(rehearsal).toMatchObject({ success: 2, reviewerActions: 4, latencyMs: 1500 });
 
     const text = formatScorecard(tasks, runs);
     expect(text).toContain("Confirmed success");
-    expect(text).toMatch(/T1 +\| ALLOW c01\.refunds, ALLOW c01\.notes +\| not run +\| ok/);
+    expect(text).toMatch(
+      /T1 +\| ALLOW c01\.refunds, ALLOW c01\.notes +\| not run +\| not run +\| ok/,
+    );
   });
 });

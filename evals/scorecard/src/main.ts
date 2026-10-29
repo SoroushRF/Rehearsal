@@ -15,6 +15,7 @@ import {
   runAgent,
   sessionOps,
 } from "./agent";
+import { applyCompetent } from "./competent";
 import {
   addUsage,
   describeModelPlan,
@@ -137,7 +138,15 @@ try {
                 log: ["caught before approval: incomplete coverage"],
               })
             : applyPlan(manifest, ports, ctxOf(op), POLICIES)
-          : applyCalls(intents, ports, ctxOf(op), { taskId: task.id, review: mode === "per_call" }),
+          : mode === "competent"
+            ? applyCompetent(intents, ports, ctxOf(op), {
+                taskId: task.id,
+                policy: policyFor(task),
+              })
+            : applyCalls(intents, ports, ctxOf(op), {
+                taskId: task.id,
+                review: mode === "per_call",
+              }),
       );
       const latencyMs = Math.round(performance.now() - t0);
       const run: ModeRun = {
