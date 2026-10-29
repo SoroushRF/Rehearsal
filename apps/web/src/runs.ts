@@ -96,8 +96,11 @@ const READ_BACK = [
   "read back, not re-sent",
 ];
 
+/** What a step's line needs: an operational receipt, or a simulated step's result. */
+export type StepResult = Pick<Receipt, "outcome" | "providerRef" | "holdReason" | "limitations">;
+
 /** One line per receipt: what happened to this step and why. `kind` is the step's operation. */
-export function explainReceipt(r: Receipt, kind?: string): string {
+export function explainReceipt(r: StepResult, kind?: string): string {
   switch (r.outcome) {
     // Say "read back" only when the receipt's own limitations show a read happened.
     case "confirmed": {

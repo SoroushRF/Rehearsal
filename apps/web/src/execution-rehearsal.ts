@@ -57,8 +57,8 @@ export type ScenarioInfo = { id: RehearsalScenarioId; title: string; what: strin
 export const SCENARIOS: readonly ScenarioInfo[] = [
   {
     id: "clean",
-    title: "Clean control",
-    what: "Nothing goes wrong. Shows what the plan does when the world matches the evidence.",
+    title: "Simulation",
+    what: "Runs the plan the way Apply would, in a replica of the company, with nothing going wrong.",
   },
   {
     id: "phantom_membership",
@@ -81,6 +81,11 @@ export const SCENARIOS: readonly ScenarioInfo[] = [
     what: "Something changes that doesn't concern the plan. Nothing should be held for it.",
   },
 ];
+/** The simulation: the plan run as Apply would run it, nothing injected. The panel's main button. */
+export const SIMULATION: RehearsalScenarioId = "clean";
+/** The failure tests, behind "Advanced" on the panel. */
+export const CHALLENGES = SCENARIOS.filter((s) => s.id !== SIMULATION);
+
 export const scenarioInfo = (id: RehearsalScenarioId): ScenarioInfo =>
   SCENARIOS.find((s) => s.id === id) ?? { id, title: id, what: "" };
 

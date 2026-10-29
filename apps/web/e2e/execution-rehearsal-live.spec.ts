@@ -120,9 +120,9 @@ test("a reviewer starts one clean rehearsal, follows it to the end, and nothing 
   test.setTimeout(90_000);
   const w = await world(page);
   await page.goto("/e2e/live.html");
-  const start = page.getByRole("button", { name: "Rehearse revision 1" });
+  // The main button is the clean simulation; the challenges sit behind "Advanced".
+  const start = page.getByRole("button", { name: "Simulate this plan" });
   await start.waitFor();
-  await expect(page.getByLabel(/Clean control/)).toBeChecked();
   // Two quick clicks make one rehearsal on the real server.
   await start.dblclick();
 
@@ -144,7 +144,7 @@ test("a rehearsal the worker can't seed fails, says why, and trying again starts
   test.setTimeout(90_000);
   const w = await world(page, { refused: true });
   await page.goto("/e2e/live.html");
-  await page.getByRole("button", { name: "Rehearse revision 1" }).click();
+  await page.getByRole("button", { name: "Simulate this plan" }).click();
 
   const item = page.getByTestId("exec-rehearsal");
   await expect(item).toHaveAttribute("data-state", "failed", LONG);
@@ -167,7 +167,7 @@ test("a revision made elsewhere stops a stale start; the old rehearsal stays tie
   test.setTimeout(120_000);
   const w = await world(page);
   await page.goto("/e2e/live.html");
-  const start = page.getByRole("button", { name: "Rehearse revision 1" });
+  const start = page.getByRole("button", { name: "Simulate this plan" });
   await start.click();
   await expect(page.getByTestId("exec-rehearsal")).toHaveAttribute("data-state", "completed", LONG);
 
@@ -186,7 +186,7 @@ test("a revision made elsewhere stops a stale start; the old rehearsal stays tie
   const old = page.getByTestId("exec-rehearsal");
   await expect(old).toHaveAttribute("data-relation", "older_revision");
   await expect(old).toContainText("Not the revision you're reviewing");
-  await page.getByRole("button", { name: "Rehearse revision 2" }).click();
+  await page.getByRole("button", { name: "Simulate this plan" }).click();
   await expect(page.getByTestId("exec-rehearsal")).toHaveCount(2, LONG);
   const current = page.locator('[data-testid="exec-rehearsal"][data-relation="current"]');
   await expect(current).toHaveAttribute("data-state", "completed", LONG);
@@ -201,11 +201,11 @@ test("switching organization shows only that org's rehearsals", async ({ page })
   test.setTimeout(90_000);
   await world(page);
   await page.goto("/e2e/live.html");
-  await page.getByRole("button", { name: "Rehearse revision 1" }).click();
+  await page.getByRole("button", { name: "Simulate this plan" }).click();
   await expect(page.getByTestId("exec-rehearsal")).toHaveAttribute("data-state", "completed", LONG);
 
   await page.getByRole("button", { name: "Switch to org B" }).click();
-  await expect(page.getByRole("button", { name: "Rehearse revision 1" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Simulate this plan" })).toBeVisible();
   await expect(page.getByTestId("exec-rehearsal")).toHaveCount(0);
   await page.getByRole("button", { name: "Sign in as user C in org B" }).click();
   await expect(page.getByTestId("exec-rehearsal")).toHaveCount(0);
@@ -223,7 +223,8 @@ test("switching organization shows only that org's rehearsals", async ({ page })
  */
 async function finishedReport(page: Page, scenario: RegExp) {
   await page.goto("/e2e/live.html");
-  const start = page.getByRole("button", { name: "Rehearse revision 1" });
+  await page.getByText("Advanced: test against failures").click();
+  const start = page.getByRole("button", { name: "Run this test" });
   await start.waitFor();
   await page.getByLabel(scenario).check();
   await start.click();

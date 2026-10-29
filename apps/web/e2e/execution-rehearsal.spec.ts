@@ -147,7 +147,9 @@ test("a reviewer starts one rehearsal, follows it to the end, and nothing is app
   await page.route("**/api/**", api.handle);
   await page.goto("/e2e/live.html");
 
-  const start = page.getByRole("button", { name: "Rehearse revision 1" });
+  // The failure tests sit behind "Advanced"; the main button is the plain simulation.
+  await page.getByText("Advanced: test against failures").click();
+  const start = page.getByRole("button", { name: "Run this test" });
   await start.waitFor();
   await page.getByLabel(/A new duplicate charge appears/).check();
   // Two quick clicks make one request: the button is busy, then blocked by the job it started.
@@ -180,13 +182,13 @@ test("a running rehearsal can be cancelled; it stops, says so, and can be tried 
   await page.route("**/api/**", api.handle);
   await page.goto("/e2e/live.html");
 
-  await page.getByRole("button", { name: "Rehearse revision 1" }).click();
+  await page.getByRole("button", { name: "Simulate this plan" }).click();
   const item = page.getByTestId("exec-rehearsal");
   await expect(item).toHaveAttribute("data-state", "running", { timeout: 15_000 });
-  await item.getByRole("button", { name: "Cancel rehearsal" }).click();
+  await item.getByRole("button", { name: "Cancel simulation" }).click();
   await expect(item).toHaveAttribute("data-state", "cancelled", { timeout: 15_000 });
   await expect(page.getByTestId("exec-rehearsal-say")).toContainText("read back, not re-sent");
-  await expect(item.getByRole("button", { name: "Cancel rehearsal" })).toHaveCount(0);
+  await expect(item.getByRole("button", { name: "Cancel simulation" })).toHaveCount(0);
   await expect(item.getByRole("button", { name: /Try again/ })).toBeVisible();
 
   const cancels = posts(api).filter((r) => r.path.endsWith("/cancel"));
@@ -206,7 +208,7 @@ test("a progress state is followed live and a failure says why, with a way to tr
   await page.route("**/api/**", api.handle);
   await page.goto("/e2e/live.html");
 
-  await page.getByRole("button", { name: "Rehearse revision 1" }).click();
+  await page.getByRole("button", { name: "Simulate this plan" }).click();
   const item = page.getByTestId("exec-rehearsal");
   await expect(item).toHaveAttribute("data-state", "failed", { timeout: 15_000 });
   await expect(page.getByTestId("exec-rehearsal-say")).toContainText("Era was unreachable.");
@@ -231,7 +233,7 @@ test("a rehearsal of an old revision stays tied to it and the new revision needs
   await expect(item).toContainText("Not the revision you're reviewing");
 
   // The start button is for what is on screen (revision 2), not for the old job.
-  await page.getByRole("button", { name: "Rehearse revision 2" }).click();
+  await page.getByRole("button", { name: "Simulate this plan" }).click();
   await expect(page.getByTestId("exec-rehearsal")).toHaveCount(2);
   expect(posts(api)[0]?.body).toMatchObject({ revision: 2 });
 });
@@ -260,12 +262,12 @@ test("while unchecked boxes have no revision, no history row can start a rehears
 
   const items = page.getByTestId("exec-rehearsal");
   await expect(items).toHaveCount(3);
-  const rowButtons = page.getByRole("button", { name: /(Try again|Rehearse) on revision 2/ });
+  const rowButtons = page.getByRole("button", { name: /(Try again|Simulate|Run) on revision 2/ });
   await expect(rowButtons).toHaveCount(3);
   for (const b of await rowButtons.all()) await expect(b).toBeEnabled();
 
   await page.getByLabel("Include refund_001").uncheck();
-  await expect(page.getByRole("button", { name: "Rehearse revision 2" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Simulate this plan" })).toBeDisabled();
   for (const b of await rowButtons.all()) {
     await expect(b).toBeDisabled();
     // A disabled button takes no click, even a forced one.
@@ -313,7 +315,7 @@ test("a refusal is explained in plain words", async ({ page }) => {
   });
   await page.route("**/api/**", api.handle);
   await page.goto("/e2e/live.html");
-  await page.getByRole("button", { name: "Rehearse revision 1" }).click();
+  await page.getByRole("button", { name: "Simulate this plan" }).click();
   await expect(page.getByTestId("exec-rehearsal-error")).toContainText("A newer revision (3)");
 });
 
@@ -341,13 +343,14 @@ test("switching organization drops the previous org's rehearsals and pending sta
   await page.goto("/e2e/live.html");
 
   await expect(page.getByTestId("exec-rehearsal")).toHaveCount(1);
+  await page.getByText("Advanced: test against failures").click();
   await page.getByLabel(/An unrelated change/).check();
 
   await page.getByRole("button", { name: "Switch to org B" }).click();
-  await expect(page.getByRole("button", { name: "Rehearse revision 1" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Simulate this plan" })).toBeVisible();
   await expect(page.getByTestId("exec-rehearsal")).toHaveCount(0);
-  // The scenario picked for A is not carried over.
-  await expect(page.getByLabel(/Clean control/)).toBeChecked();
+  // The challenge picked for A is not carried over.
+  await expect(page.getByLabel(/A new duplicate charge appears/)).toBeChecked();
 
   await page.getByRole("button", { name: "Be user A in org A" }).click();
   await expect(page.getByTestId("exec-rehearsal")).toHaveCount(1);
