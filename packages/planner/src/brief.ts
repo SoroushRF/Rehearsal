@@ -1,4 +1,5 @@
-import type { PlanJobIncident } from "@rehearsal/providers";
+import type { PlanManifest } from "@rehearsal/contracts";
+import type { PlanJobIncident, PlanJobRepair } from "@rehearsal/providers";
 import { INCIDENT, type IncidentSpec } from "@rehearsal/testkit";
 import type { IncidentBrief } from "./prompt";
 
@@ -47,5 +48,46 @@ export function storedIncidentBrief(
     report: { title: incident.title, description: incident.description },
     window: incident.window,
     customers: base.customers,
+  };
+}
+
+/**
+ * T1.37: the brief for a repair. Only the open cases' customers are planned again, told what the
+ * base revision already applied and why the rest stopped. Undefined when an open case has no
+ * customer in the brief: planning the others would quietly drop that case's work.
+ */
+export function repairBrief(
+  brief: IncidentBrief,
+  repair: PlanJobRepair,
+): IncidentBrief | undefined {
+  const open = new Set(repair.openCases);
+  const customers = brief.customers.filter((c) => open.has(`case_${c.customerId}`));
+  if (customers.length !== open.size) return undefined;
+  const kept = new Set(repair.kept);
+  return {
+    ...brief,
+    customers,
+    repair: {
+      baseRevision: repair.base.revision,
+      kept: repair.base.actions
+        .filter((a) => kept.has(a.id))
+        .map((a) => ({ id: a.id, kind: a.kind, caseId: a.caseId })),
+      stopped: repair.stopped,
+    },
+  };
+}
+
+/** The base revision's confirmed steps and exactly the evidence they cite, for `adopt`. */
+export function keptSteps(
+  repair: PlanJobRepair,
+): Pick<PlanManifest, "actions" | "observations" | "queryObservations"> {
+  const kept = new Set(repair.kept);
+  const actions = repair.base.actions.filter((a) => kept.has(a.id));
+  const observations = new Set(actions.flatMap((a) => a.evidence));
+  const queries = new Set(actions.flatMap((a) => a.queryEvidence));
+  return {
+    actions,
+    observations: repair.base.observations.filter((o) => observations.has(o.id)),
+    queryObservations: repair.base.queryObservations.filter((q) => queries.has(q.id)),
   };
 }

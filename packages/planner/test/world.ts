@@ -23,7 +23,10 @@ export const CTX = { world: "planning", tenant: "t1-4" } as const;
 /** In-memory planning world over the seeded cohort, with the real read projections. */
 export function world(
   opts: Partial<
-    Pick<PlanningSessionOptions, "runSummary" | "customerNames" | "credits" | "policy" | "mode">
+    Pick<
+      PlanningSessionOptions,
+      "runSummary" | "customerNames" | "credits" | "policy" | "mode" | "summaryId"
+    >
   > = {},
   /** Records a "create a problem" request added on top of the cohort (#331). */
   extra?: ProblemRecords,

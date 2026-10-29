@@ -15,6 +15,7 @@ export * from "./ports";
 export * from "./precedents";
 export * from "./rehearsal";
 export * from "./remedy";
+export * from "./repair";
 export * from "./step-guard";
 export * from "./templates";
 export * from "./verifier";

@@ -167,6 +167,99 @@ function deps(client: MessagesClient, jobs: PlannerJobsClient): PlanJobContext {
 }
 
 describe("plan job", () => {
+  it("repairs a held run: plans only the open case, on top of the steps already applied", async () => {
+    const first = fakeJobs();
+    await handlePlanJob(JOB, deps(model(refundOneDuplicate()), first.jobs));
+    const base = { ...(first.completed[0]?.[1].manifest as PlanManifest) };
+    const held = `refund_${duplicate.chargeIds[1]}`;
+    const kept = base.actions.filter((a) => a.id !== held).map((a) => a.id);
+    const repairJob: ClaimedPlanJob = {
+      ...JOB,
+      data: {
+        ...JOB.data,
+        repair: {
+          base,
+          basePlanHash: "a".repeat(64),
+          runId: "run_1",
+          kept,
+          openCases: [`case_${duplicate.customerId}`],
+          stopped: [{ id: held, why: "held: a new charge matched its query" }],
+        },
+      },
+    };
+    const prompts: unknown[] = [];
+    const results: unknown[] = [];
+    const other = records.cases.find((c) => c.kind === "duplicate" && c !== duplicate);
+    if (!other) throw new Error("one duplicate only");
+    const turns = [
+      reply([
+        ["list_customer_charges", { customerId: duplicate.customerId }],
+        // A step the base already applied can't be proposed again.
+        [
+          "propose_duplicate_refund",
+          {
+            chargeId: other.chargeIds[1],
+            duplicateOfChargeId: other.chargeIds[0],
+            rationale: "again",
+          },
+        ],
+        [
+          "propose_duplicate_refund",
+          {
+            chargeId: duplicate.chargeIds[1],
+            duplicateOfChargeId: duplicate.chargeIds[0],
+            rationale: "Charged twice for one invoice.",
+          },
+        ],
+      ]),
+      reply([]),
+    ];
+    const client: MessagesClient = {
+      async create(req) {
+        prompts.push(req.messages[0]?.content);
+        results.push(req.messages.at(-1)?.content);
+        return model(turns.splice(0, 1)).create(req);
+      },
+    };
+    const { jobs, completed, failed } = fakeJobs();
+    await handlePlanJob(repairJob, deps(client, jobs));
+    expect(failed).toEqual([]);
+    const repaired = completed[0]?.[1].manifest as PlanManifest;
+    expect(repaired).toMatchObject({ revision: 2, parentRevision: 1, planId: JOB.data.planId });
+    expect(repaired.actions.map((a) => a.id).sort()).toEqual(base.actions.map((a) => a.id).sort());
+    for (const id of kept) {
+      expect(repaired.actions.find((a) => a.id === id)).toEqual(
+        base.actions.find((a) => a.id === id),
+      );
+    }
+    expect(String(prompts[0])).toContain("This repairs revision 1");
+    expect(String(prompts[0])).toContain(`Customers who reported it (1):`);
+    expect(JSON.stringify(results[1])).toContain("which an earlier revision applied");
+  });
+
+  it("refuses a repair whose base is another plan", async () => {
+    const { jobs, failed } = fakeJobs();
+    const first = fakeJobs();
+    await handlePlanJob(JOB, deps(model(refundOneDuplicate()), first.jobs));
+    const base = first.completed[0]?.[1].manifest as PlanManifest;
+    const job: ClaimedPlanJob = {
+      ...JOB,
+      data: {
+        ...JOB.data,
+        repair: {
+          base: { ...base, planId: "plan_other" },
+          basePlanHash: "a".repeat(64),
+          runId: "run_1",
+          kept: [],
+          openCases: [`case_${duplicate.customerId}`],
+          stopped: [],
+        },
+      },
+    };
+    await handlePlanJob(job, deps(model([]), jobs));
+    expect(failed[0]?.[1]).toMatchObject({ reason: "invalid_repair" });
+  });
+
   it("plans in the planning world and hands revision 1 to the API", async () => {
     const { jobs, completed, failed } = fakeJobs();
     const result = await handlePlanJob(JOB, deps(model(refundOneDuplicate()), jobs));

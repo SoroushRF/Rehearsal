@@ -95,6 +95,15 @@ export interface IncidentBrief {
   window: { createdGte: string; createdLt: string };
   /** The customers who reported the problem. What happened to each is for the agent to find out. */
   customers: { customerId: string; name: string; requesterId: string }[];
+  /**
+   * A repair (T1.37): the revision being repaired, the steps it already applied (kept as they are)
+   * and why the rest stopped. The customers above are then only the cases still open.
+   */
+  repair?: {
+    baseRevision: number;
+    kept: { id: string; kind: string; caseId: string }[];
+    stopped: { id: string; why: string }[];
+  };
   /** Finance-approved precedents recalled for this org, already checked against the registry. */
   precedents?: {
     id: string;
@@ -122,8 +131,21 @@ export function briefMessage(brief: IncidentBrief): string {
     `Customers who reported it (${brief.customers.length}):`,
     ...rows,
     ...precedentLines(brief.precedents ?? []),
-    "Plan the remediation.",
+    ...repairLines(brief.repair),
+    brief.repair ? "Plan the remaining work for these customers only." : "Plan the remediation.",
   ].join("\n");
+}
+
+/** What a repair already did and why the rest stopped. Facts from the run's receipts, not advice. */
+function repairLines(repair: IncidentBrief["repair"]): string[] {
+  if (!repair) return [];
+  return [
+    `This repairs revision ${repair.baseRevision}, whose run stopped part-way. The planning world has been refreshed with records the run found.`,
+    "Already applied, kept exactly as they are (proposing one again is refused):",
+    ...repair.kept.map((k) => `- ${k.id}: ${k.kind} (${k.caseId})`),
+    "Stopped, and replaced by what you plan now:",
+    ...repair.stopped.map((h) => `- ${h.id}: ${h.why}`),
+  ];
 }
 
 /**
