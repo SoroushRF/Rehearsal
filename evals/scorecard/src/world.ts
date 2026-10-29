@@ -336,6 +336,93 @@ export async function readOutcomes(worlds: Worlds): Promise<Record<CaseKey, Case
   return out;
 }
 
+/** Every charge, customer and ticket the answer key reads back: the cohort and what drift adds. */
+export const KNOWN = {
+  charges: new Set(
+    records.cases.flatMap((c) => [
+      ...c.chargeIds,
+      phantomId(c.key),
+      LATE_ID(c.key),
+      OTHER_INVOICE_ID(c.key),
+    ]),
+  ),
+  customers: new Set(records.cases.map((c) => c.customerId)),
+  tickets: new Set(records.cases.map((c) => String(c.ticketId))),
+};
+
+/** What a tenant holds of ours, as read back for `countOutside`. */
+export interface OurEffects {
+  refunds: { charge: string; ours: boolean }[];
+  credits: { customer: string; ours: boolean }[];
+  comments: { ticket: string; ours: boolean }[];
+}
+
+/**
+ * T1.31: our effects (carrying an operation marker) on anything the answer key doesn't read back.
+ * The gold covers the cohort; a write anywhere else must still count against the mode.
+ */
+export function countOutside(effects: OurEffects, known: typeof KNOWN = KNOWN): number {
+  return (
+    effects.refunds.filter((r) => r.ours && !known.charges.has(r.charge)).length +
+    effects.credits.filter((c) => c.ours && !known.customers.has(c.customer)).length +
+    effects.comments.filter((c) => c.ours && !known.tickets.has(c.ticket)).length
+  );
+}
+
+/** Every refund in the tenant, every credit on a customer outside the cohort, and every comment on a ticket outside it. */
+export async function readOurEffects(worlds: Worlds): Promise<OurEffects> {
+  const ours = (metadata: unknown) =>
+    typeof (metadata as { rehearsal_op?: unknown } | null)?.rehearsal_op === "string";
+  const stripeAll = async <T extends { id: string }>(path: string): Promise<T[]> => {
+    const rows: T[] = [];
+    let after = "";
+    for (let page = 0; page < 50; page++) {
+      const sep = path.includes("?") ? "&" : "?";
+      const list = await getJson<{ data: T[]; has_more: boolean }>(
+        "stripe",
+        worlds.stripe,
+        `${path}${sep}limit=100${after && `&starting_after=${after}`}`,
+      );
+      rows.push(...list.data);
+      if (!list.has_more) return rows;
+      after = list.data.at(-1)?.id ?? "";
+      if (!after) break;
+    }
+    throw new Error(`${path}: more than 50 pages`);
+  };
+  const refunds = (
+    await stripeAll<{ id: string; charge: string; metadata?: unknown }>("/v1/refunds")
+  ).map((r) => ({ charge: String(r.charge), ours: ours(r.metadata) }));
+  const credits: OurEffects["credits"] = [];
+  for (const customer of await stripeAll<{ id: string }>("/v1/customers")) {
+    if (KNOWN.customers.has(customer.id)) continue;
+    const txs = await stripeAll<{ id: string; metadata?: unknown }>(
+      `/v1/customers/${customer.id}/balance_transactions`,
+    );
+    for (const t of txs) credits.push({ customer: customer.id, ours: ours(t.metadata) });
+  }
+  const comments: OurEffects["comments"] = [];
+  let next: string | null = "/api/v2/tickets.json?per_page=100";
+  for (let page = 0; next && page < 50; page++) {
+    const body: { tickets: { id: number }[]; next_page: string | null } = await getJson(
+      "zendesk",
+      worlds.zendesk,
+      next,
+    );
+    for (const t of body.tickets) {
+      if (KNOWN.tickets.has(String(t.id))) continue;
+      for (const c of await getComments(worlds.zendesk, t.id)) {
+        comments.push({ ticket: String(t.id), ours: MARKER.test(c.body) });
+      }
+    }
+    next = body.next_page
+      ? new URL(body.next_page).pathname + new URL(body.next_page).search
+      : null;
+  }
+  if (next) throw new Error("more than 50 pages of tickets");
+  return { refunds, credits, comments };
+}
+
 /** The run-summary posts in the channel (bot posts carrying a marker), with the refunds each claims. */
 export async function readSummary(worlds: Worlds): Promise<SummaryOutcome> {
   if (!worlds.slack) return { posts: 0, claimedRefunds: [] };

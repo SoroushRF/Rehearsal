@@ -63,12 +63,22 @@ export interface ModeRun {
   latencyMs: number;
   /** HTTP requests to Era during the write phase, guard and reconcile reads included. */
   eraCalls: number;
+  /**
+   * T1.31: the planner's error when planning failed. Then there is no plan to hold or omit
+   * anything; the task is neither a success nor a hold, whatever the controls' gold says.
+   */
+  plannerFailure?: string;
+  /**
+   * T1.31: our effects (they carry an operation marker) on charges, customers or tickets outside
+   * the answer key. Absent in results written before the scorer read them.
+   */
+  outside?: number;
 }
 
 export type ProblemKind = "invalid_allow" | "duplicate" | "wrongful_hold" | "omitted" | "incorrect";
 
 export interface Problem {
-  /** A cohort case, or `run` for the Slack summary. */
+  /** A cohort case, `run` for the Slack summary, or `outside` for anything not in the gold. */
   caseKey: CaseKey;
   field: Exclude<keyof CaseOutcome, "incorrect"> | "effects" | "summary";
   kind: ProblemKind;
@@ -84,6 +94,8 @@ export interface TaskScore {
   problems: Problem[];
   unresolved: number;
   caughtBeforeApproval: boolean;
+  /** T1.31: planning failed; reported with its error, out of the success denominator. */
+  plannerFailed: boolean;
 }
 
 const COUNTED = ["refunds", "credits", "notes", "replies"] as const;
@@ -97,6 +109,9 @@ const COUNTED = ["refunds", "credits", "notes", "replies"] as const;
  *   `invalid_allow`.
  * - An effect that doesn't read back as sent, or a summary whose refund count isn't what this run
  *   refunded: `incorrect`.
+ * - An effect of ours outside the answer key: `invalid_allow` (T1.31).
+ * - A failed planner leaves nothing held or omitted: those problems are dropped, the run is never a
+ *   success, and it's counted as a planner failure instead (T1.31).
  */
 export function scoreRun(task: ScorecardTask, run: ModeRun): TaskScore {
   const problems: Problem[] = [];
@@ -156,13 +171,28 @@ export function scoreRun(task: ScorecardTask, run: ModeRun): TaskScore {
       });
     }
   }
+  if (run.outside) {
+    problems.push({
+      caseKey: "outside",
+      field: "effects",
+      kind: "invalid_allow",
+      expected: 0,
+      actual: run.outside,
+    });
+  }
+  const plannerFailed = run.plannerFailure !== undefined;
+  const kept = plannerFailed
+    ? problems.filter((p) => p.kind !== "wrongful_hold" && p.kind !== "omitted")
+    : problems;
   return {
     taskId: task.id,
     mode: run.mode,
-    success: problems.length === 0 && run.unresolved === 0 && !run.coverage?.length,
-    problems,
+    success:
+      !plannerFailed && problems.length === 0 && run.unresolved === 0 && !run.coverage?.length,
+    problems: kept,
     unresolved: run.unresolved,
     caughtBeforeApproval: run.mode === "rehearsal" && !!run.coverage?.length,
+    plannerFailed,
   };
 }
 
@@ -204,6 +234,9 @@ export interface ModeSummary {
   success: number;
   benign: { tasks: number; success: number };
   trap: { tasks: number; success: number };
+  /** T1.31: tasks whose planner failed, and the success rate over the rest. */
+  plannerFailures: number;
+  planned: { tasks: number; success: number };
   invalidAllows: number;
   wrongfulHolds: number;
   duplicates: number;
@@ -248,6 +281,11 @@ export function summarize(
       success: scores.filter((s) => s.score.success).length,
       benign: ofKind("benign"),
       trap: ofKind("trap"),
+      plannerFailures: scores.filter((s) => s.score.plannerFailed).length,
+      planned: {
+        tasks: scores.filter((s) => !s.score.plannerFailed).length,
+        success: scores.filter((s) => s.score.success).length,
+      },
       invalidAllows: count("invalid_allow"),
       wrongfulHolds: count("wrongful_hold"),
       duplicates: count("duplicate"),
@@ -267,6 +305,8 @@ const NOTES = [
   "  counts one decision per write call, from a modelled reviewer who rejects exactly what the",
   "  planning tools' policy checks reject; no person was in the loop for either.",
   "Latency and Era calls cover the write phase only (guard and reconcile reads included).",
+  "A planner failure is neither a success nor a hold: it is counted on its own and left out of the",
+  "  planned-task rate. Effects of ours outside the answer key count as invalid allows.",
   "Omitted obligations are effects the agent never proposed: a partial plan with nothing refused",
   "  still fails, in every mode. Incorrect effects don't read back as sent (amount, reply text,",
   "  or a summary whose refund count isn't what the run refunded).",
@@ -289,6 +329,8 @@ export function formatScorecard(tasks: readonly ScorecardTask[], runs: readonly 
     ["Confirmed success", ...summary.map((s) => pct(s.success, s.tasks))],
     ["  benign controls", ...summary.map((s) => pct(s.benign.success, s.benign.tasks))],
     ["  traps", ...summary.map((s) => pct(s.trap.success, s.trap.tasks))],
+    ["  of planned tasks", ...summary.map((s) => pct(s.planned.success, s.planned.tasks))],
+    ["Planner failures", ...summary.map((s) => String(s.plannerFailures))],
     ["Invalid allows", ...summary.map((s) => String(s.invalidAllows))],
     ["Duplicates", ...summary.map((s) => String(s.duplicates))],
     ["Wrongful holds", ...summary.map((s) => String(s.wrongfulHolds))],
@@ -322,6 +364,7 @@ export function formatScorecard(tasks: readonly ScorecardTask[], runs: readonly 
         if (s.success) return "ok";
         if (s.caughtBeforeApproval) return "CAUGHT before approval (incomplete coverage)";
         const codes = s.problems.map((p) => `${PROBLEM_CODE[p.kind]} ${p.caseKey}.${p.field}`);
+        if (s.plannerFailed) codes.unshift("PLANNER FAILED");
         if (s.unresolved) codes.push(`UNKNOWN x${s.unresolved}`);
         return [...new Set(codes)].join(", ");
       }),

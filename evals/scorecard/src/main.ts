@@ -28,8 +28,10 @@ import { TASKS } from "./tasks";
 import {
   applyDrift,
   countingEraCalls,
+  countOutside,
   operationalPorts,
   readers,
+  readOurEffects,
   readOutcomes,
   readSummary,
   records,
@@ -150,6 +152,10 @@ try {
         promptOpportunities: applied.value.promptOpportunities,
         latencyMs,
         eraCalls: applied.calls,
+        outside: countOutside(await readOurEffects(op)),
+        ...(planned?.outcome.status === "failed" && {
+          plannerFailure: `${planned.outcome.reason}: ${planned.outcome.message}`.slice(0, 500),
+        }),
       };
       runs.push(run);
       const score = scoreRun(task, run);

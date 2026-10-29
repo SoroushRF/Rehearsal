@@ -262,6 +262,7 @@ describe("scoring", () => {
       problems: [],
       unresolved: 0,
       caughtBeforeApproval: false,
+      plannerFailed: false,
     });
   });
 
