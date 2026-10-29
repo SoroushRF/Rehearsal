@@ -361,6 +361,12 @@ export interface RehearsalRunContext {
   evidence: RehearsalEvidence;
   /** Operator side (decision 0013, §3): check the snapshot, reset the tenants and inject it. */
   provision: (manifest: PlanManifest, rehearsalId: string) => Promise<Provisioning>;
+  /**
+   * Worker side, once the tenants are seeded: check this worker's worlds are the rehearsal's own
+   * (each token minted for the container the worker calls). A throw refuses the rehearsal with its
+   * message before anything is sent, instead of every read failing into a hold. Absent, no check.
+   */
+  checkWorlds?: (rehearsalId: string) => Promise<void>;
   /** Operator side: reset the rehearsal's tenants once it has ended. Idempotent. */
   teardown: (rehearsalId: string, state: "completed" | "failed" | "cancelled") => Promise<void>;
   /**
@@ -692,6 +698,16 @@ export async function runRehearsalJob(
     return finish("failed", `snapshot refused: ${provisioned.refusals.join("; ")}`, null, null);
   }
   notFromEvidence = provisioned.notFromEvidence;
+  try {
+    await ctx.checkWorlds?.(id);
+  } catch (err) {
+    return finish(
+      "failed",
+      `the worker's rehearsal worlds were refused before any send: ${(err as Error).message}`,
+      null,
+      null,
+    );
+  }
   if (challenged) {
     await markContainerSetDirty(ctx.db, { set, orgId, rehearsalId: id, now: now() });
     marked = true;

@@ -299,6 +299,29 @@ describe.skipIf(!process.env.DB_TESTS)("challenged rehearsals (T3.16, real Postg
     asExpected(report);
   }, 30_000);
 
+  it("a worker whose worlds aren't the rehearsal's is refused with the reason, before any send (#323)", async () => {
+    const torn: string[] = [];
+    const { r, result, world } = await ran("clean", {
+      checkWorlds: async () => {
+        throw new Error(
+          "minted for http://127.0.0.1:8103, but configured for http://127.0.0.1:8102",
+        );
+      },
+      teardown: async (rid) => {
+        torn.push(rid);
+      },
+    });
+    expect(result).toMatchObject({ kind: "ran", state: "failed", report: null });
+    const stored = await loadRehearsal(db, r.orgId, r.id);
+    expect(stored?.events.find((e) => e.state === "failed")?.detail).toBe(
+      "the worker's rehearsal worlds were refused before any send: minted for http://127.0.0.1:8103, but configured for http://127.0.0.1:8102",
+    );
+    expect(world.effects).toEqual([]);
+    expect(await attemptKeys(r.orgId, r.id)).toEqual([]);
+    expect(torn).toEqual([r.id]);
+    await operationalUntouched(r.orgId);
+  }, 30_000);
+
   it("a scenario that needs the operator fails closed without its hook", async () => {
     const { result, world } = await ran("phantom_membership", { challenge: undefined });
     expect(result).toMatchObject({ kind: "ran", state: "failed" });
