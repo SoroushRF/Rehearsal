@@ -98,7 +98,11 @@ describe("a support_backlog session", () => {
       duplicateOfChargeId: "ch_y",
       rationale: "x",
     });
-    expect(refund).toEqual({ ok: false, error: "unknown tool propose_duplicate_refund" });
+    expect(refund).toEqual({
+      ok: false,
+      reason: "unknown_tool",
+      error: "unknown tool propose_duplicate_refund",
+    });
   });
 
   it("follows up a waiting ticket: priority, then note, then the reply, then the summary", async () => {

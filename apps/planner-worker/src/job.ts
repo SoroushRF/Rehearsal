@@ -186,6 +186,6 @@ export async function handlePlanJob(
 function describe(t: TurnLog): string {
   if (t.toolCalls.length === 0) return `${t.stopReason}`;
   return t.toolCalls
-    .map((c) => (c.ok ? c.name : `${c.name} ✗ ${c.error?.split("\n")[0]}`))
+    .map((c) => (c.ok ? c.name : `${c.name} ✗ ${c.reason ?? ""} ${c.error?.split("\n")[0]}`))
     .join(", ");
 }

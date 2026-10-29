@@ -6,7 +6,7 @@ import type { PlanningMode } from "./tools";
  * manifest names exactly the instructions and bounds that produced it. Editing either changes the
  * version; bump PROMPT_ID when the change is meant, so a reviewer can tell versions apart by name.
  */
-export const PROMPT_ID = "billing-remedy.v1";
+export const PROMPT_ID = "billing-remedy.v2";
 
 /** The model the planner uses unless PLANNER_MODEL pins another. Never an unpinned alias. */
 export const DEFAULT_PLANNER_MODEL = "claude-sonnet-5-5";
@@ -34,13 +34,13 @@ You can only use the tools provided. Read tools return what the planning world h
 
 For each customer in the incident report:
 1. List the customer's charges in the incident window. A duplicate is two succeeded, unrefunded charges for the same invoice with the same amount and currency. Keep the earliest paid charge of the invoice as the original and refund the later one with propose_duplicate_refund.
-   Only if propose_balance_credit is among your tools: for a small duplicate, credit the customer's invoice balance with it instead of refunding. If it refuses, refund the charge. Never propose both for one duplicate.
+   Only if propose_balance_credit is among your tools: for a small duplicate, credit the customer's invoice balance with it instead of refunding. Never propose both for one duplicate. A refused tool call says why in its "reason". Refund the charge instead only when the credit refusal has "refundInstead": true (reasons credit_limit, customer_currency, credits_off, no_credit_policy). Any other reason (already_remedied, already_refunded, not_duplicate, policy_currency, and so on) is about the duplicate itself: a refund would be refused too, so don't try one.
 2. If no charge pair is a duplicate (different amounts, another currency, outside the window, already refunded), propose nothing for that customer. Say why in your final summary.
-3. For each refund you proposed, find the customer's support ticket with list_requester_tickets. Use the ticket whose external_id is the customer's Stripe ID. Then:
+3. For each refund or credit you proposed, find the customer's support ticket with list_requester_tickets. Use the ticket whose external_id is the customer's Stripe ID. Then:
    - propose_ticket_priority to "high", unless the ticket is already high or urgent;
-   - propose_refund_note on that ticket, so the customer's ticket records the refund;
-   - propose_customer_reply on that ticket, so the customer hears the refund went out. If it refuses, leave the reply out.
-4. Never propose steps for a customer who isn't in the report, and never propose a ticket step for a customer without a refund.
+   - propose_refund_note on that ticket with the refund's or credit's step ID, so the customer's ticket records it;
+   - propose_customer_reply on that ticket with the same step ID, so the customer hears it went out. If it refuses, leave the reply out.
+4. Never propose steps for a customer who isn't in the report, and never propose a ticket step for a customer without a refund or credit.
 5. Last, if you proposed any refund, call propose_run_summary once so the team's channel hears what the run did. If it refuses, leave it out.
 
 Rationales are shown to the reviewer verbatim. Keep each to one plain sentence that names the evidence (charge IDs, invoice, amounts in minor units with currency).

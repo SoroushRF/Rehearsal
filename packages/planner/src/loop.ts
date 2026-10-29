@@ -8,7 +8,7 @@ import {
   untilAborted,
 } from "./model-retry";
 import { briefMessage, type IncidentBrief, LOOP_LIMITS, promptFor } from "./prompt";
-import type { PlanningSession } from "./tools";
+import { type PlanningSession, REFUND_INSTEAD, type RefusalReason } from "./tools";
 
 /**
  * T1.5: the bounded tool loop. The model sees only the planning tools, so it has no shell, browser
@@ -53,7 +53,8 @@ export interface PlanningLoopOptions {
 export interface TurnLog {
   turn: number;
   stopReason: Anthropic.StopReason | null;
-  toolCalls: { name: string; ok: boolean; error?: string }[];
+  /** A refused call's typed reason (T1.39), so a run's rejected calls can be counted by kind. */
+  toolCalls: { name: string; ok: boolean; error?: string; reason?: RefusalReason }[];
   usage: Anthropic.Usage;
 }
 
@@ -168,12 +169,20 @@ export async function runPlanningLoop(opts: PlanningLoopOptions): Promise<Planni
       log.toolCalls.push(
         result.ok
           ? { name: call.name, ok: true }
-          : { name: call.name, ok: false, error: result.error },
+          : { name: call.name, ok: false, error: result.error, reason: result.reason },
       );
       results.push({
         type: "tool_result",
         tool_use_id: call.id,
-        content: JSON.stringify(result.ok ? result.result : { error: result.error }),
+        content: JSON.stringify(
+          result.ok
+            ? result.result
+            : {
+                error: result.error,
+                reason: result.reason,
+                ...(REFUND_INSTEAD.has(result.reason) && { refundInstead: true }),
+              },
+        ),
         ...(!result.ok && { is_error: true }),
       });
     }
