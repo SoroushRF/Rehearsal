@@ -268,6 +268,8 @@ export async function applyPlan(
   ports: Ports,
   ctx: Contexts,
   policies: readonly BillingPolicy[],
+  /** Cases the executor applies at once (T1.33). The executor worker defaults to 4. */
+  caseConcurrency = 1,
 ): Promise<ApplyResult> {
   const log: string[] = [];
   const roles = [...new Set(manifest.actions.map((a) => a.requiredRole))].sort();
@@ -310,6 +312,7 @@ export async function applyPlan(
     admit: fakeRunAdmit({ now: () => clock.now() }),
     newId: (p: string) => `${p}_${++n}`,
     guard: createReadGuard({ providers: ports, worlds: ctx, clock }),
+    caseConcurrency,
   };
   const job = {
     orgId: manifest.orgId,

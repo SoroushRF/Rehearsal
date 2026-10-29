@@ -247,7 +247,16 @@ export interface ModeSummary {
   reviewerActions: number;
   promptOpportunities: number;
   latencyMs: number;
+  /** T1.33: the median task's write phase, so one slow task doesn't stand for the whole set. */
+  medianLatencyMs: number;
   eraCalls: number;
+}
+
+export function median(values: readonly number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length === 0) return 0;
+  return sorted.length % 2 ? (sorted[mid] ?? 0) : ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2;
 }
 
 export function summarize(
@@ -296,6 +305,7 @@ export function summarize(
       reviewerActions: sum((r) => r.reviewerActions),
       promptOpportunities: sum((r) => r.promptOpportunities),
       latencyMs: sum((r) => r.latencyMs),
+      medianLatencyMs: median(mine.map((r) => r.latencyMs)),
       eraCalls: sum((r) => r.eraCalls),
     };
   });
@@ -343,6 +353,7 @@ export function formatScorecard(tasks: readonly ScorecardTask[], runs: readonly 
     ["Reviewer actions", ...summary.map((s) => String(s.reviewerActions))],
     ["Prompt opportunities", ...summary.map((s) => String(s.promptOpportunities))],
     ["Write-phase latency (s)", ...summary.map((s) => (s.latencyMs / 1000).toFixed(1))],
+    ["  median per task (s)", ...summary.map((s) => (s.medianLatencyMs / 1000).toFixed(2))],
     ["Era API calls (writes)", ...summary.map((s) => String(s.eraCalls))],
   ];
   const lines = [table(rows), ...NOTES, ""];
@@ -359,26 +370,24 @@ export function formatScorecard(tasks: readonly ScorecardTask[], runs: readonly 
   for (const task of tasks) {
     const scores = byTask.get(task.id);
     if (!scores) continue;
-    taskRows.push([
-      task.id,
-      ...MODES.map((m) => {
-        const s = scores.get(m);
-        if (!s) return "not run";
-        if (s.success) return "ok";
-        if (s.caughtBeforeApproval) return "CAUGHT before approval (incomplete coverage)";
-        const codes = s.problems.map((p) => `${PROBLEM_CODE[p.kind]} ${p.caseKey}.${p.field}`);
-        if (s.plannerFailed) codes.unshift("PLANNER FAILED");
-        if (s.unresolved) codes.push(`UNKNOWN x${s.unresolved}`);
-        return [...new Set(codes)].join(", ");
-      }),
-      task.title,
-    ]);
+    taskRows.push([task.id, ...MODES.map((m) => scoreLabel(scores.get(m))), task.title]);
   }
   lines.push(table(taskRows));
   return lines.join("\n");
 }
 
-function table(rows: string[][]): string {
+/** One task's result in one mode, as the per-task table prints it. */
+export function scoreLabel(s: TaskScore | undefined): string {
+  if (!s) return "not run";
+  if (s.success) return "ok";
+  if (s.caughtBeforeApproval) return "CAUGHT before approval (incomplete coverage)";
+  const codes = s.problems.map((p) => `${PROBLEM_CODE[p.kind]} ${p.caseKey}.${p.field}`);
+  if (s.plannerFailed) codes.unshift("PLANNER FAILED");
+  if (s.unresolved) codes.push(`UNKNOWN x${s.unresolved}`);
+  return [...new Set(codes)].join(", ");
+}
+
+export function table(rows: string[][]): string {
   const widths = rows[0]?.map((_, i) => Math.max(...rows.map((r) => (r[i] ?? "").length))) ?? [];
   const line = (r: string[]) =>
     r

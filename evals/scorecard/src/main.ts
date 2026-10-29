@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { parseArgs } from "node:util";
@@ -45,6 +46,9 @@ import {
  * ERA_ADMIN_TOKEN in .env). Prints the comparison table and writes the results file.
  *   --only B1,T3   run some tasks
  *   --out <path>   results file (default evals/scorecard/results/latest.json)
+ *   --concurrency <n>  cases the executor applies at once in the Rehearsal mode (default 1; the
+ *                  executor worker runs EXECUTOR_CASE_CONCURRENCY, default 4). The baselines
+ *                  send one call at a time either way. Compare two runs with concurrency.ts (T1.33)
  * The F tasks (T1.27) also post a run summary, so they need the Slack worlds (ERA_SLACK_*_URL).
  *
  * With PLANNER_MODEL set, every task is planned by that model through the planner's bounded tool
@@ -57,8 +61,15 @@ const { values } = parseArgs({
   options: {
     only: { type: "string" },
     out: { type: "string" },
+    concurrency: { type: "string", default: "1" },
   },
 });
+const caseConcurrency = Number(values.concurrency);
+if (!Number.isInteger(caseConcurrency) || caseConcurrency < 1) {
+  throw new Error(
+    `--concurrency must be a whole number of cases, at least 1: ${values.concurrency}`,
+  );
+}
 const model = process.env.PLANNER_MODEL?.trim() || undefined;
 const only = values.only?.split(",").map((s) => s.trim());
 const tasks = only ? TASKS.filter((t) => only.includes(t.id)) : TASKS;
@@ -137,7 +148,7 @@ try {
                 promptOpportunities: 0,
                 log: ["caught before approval: incomplete coverage"],
               })
-            : applyPlan(manifest, ports, ctxOf(op), POLICIES)
+            : applyPlan(manifest, ports, ctxOf(op), POLICIES, caseConcurrency)
           : mode === "competent"
             ? applyCompetent(intents, ports, ctxOf(op), {
                 taskId: task.id,
@@ -203,6 +214,7 @@ const totalTokens = tokens.inputTokens + tokens.cacheReadTokens + tokens.outputT
 const modelRequests = plans.reduce((n, p) => n + p.turns, 0);
 const countPlans = (status: ModelAgentResult["outcome"]["status"]) =>
   plans.filter((p) => p.outcome.status === status).length;
+const concurrencyLine = `  executor case concurrency: ${caseConcurrency} in the Rehearsal mode (the executor worker defaults to 4); the baselines send one call at a time`;
 const modelPanel = (
   model
     ? [
@@ -215,12 +227,14 @@ const modelPanel = (
         "  Direct and per-call send every propose call the model made, including the ones the planning tools refused.",
         "  T6-T9's careless mistakes belong to the scripted agent. The model isn't told to make them, so those rows show whether it makes them on its own.",
         `  planning-phase Era reads: ${planningCalls} across ${tasks.length} tasks (shared by all modes)`,
+        concurrencyLine,
       ]
     : [
         "Model panel",
         `  planner: ${AGENT_ID} (${AGENT_VERSION}), a scripted rule-following agent; the same plan feeds every mode`,
         "  model tokens: 0 (no model was called; set PLANNER_MODEL for a real-model run, written to results/model-<model>.*)",
         `  planning-phase Era reads: ${planningCalls} across ${tasks.length} tasks (shared by all modes)`,
+        concurrencyLine,
       ]
 ).join("\n");
 console.log(`\n${table}\n\n${modelPanel}\n`);
@@ -249,6 +263,8 @@ writeFileSync(
       note: `Real Era images (pinned digests below)${model ? `; every task planned by ${model} with live model calls` : ""}. Faults are injected in the transport, not with Era's /_admin/faults. The per-call reviewer is modelled, not a person.`,
       ranAt: new Date(started).toISOString(),
       durationMs: Date.now() - started,
+      caseConcurrency,
+      commit: headCommit(),
       images: { stripe: pinnedImage("stripe"), zendesk: pinnedImage("zendesk") },
       planner: model
         ? {
@@ -281,6 +297,19 @@ writeFileSync(
   )}\n`,
 );
 console.log(`results → ${out}`);
+
+/** The commit the results came from, so a report can name it (T1.33, T1.36). */
+function headCommit(): string {
+  try {
+    const sha = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+    const dirty = execFileSync("git", ["status", "--porcelain", "--untracked-files=no"], {
+      encoding: "utf8",
+    }).trim();
+    return dirty ? `${sha}+uncommitted` : sha;
+  } catch {
+    return "unknown";
+  }
+}
 
 /** The planner worker's model client: Gemini on Vertex AI (ADC), or Claude with an API key. */
 async function modelClient(model: string): Promise<MessagesClient> {
