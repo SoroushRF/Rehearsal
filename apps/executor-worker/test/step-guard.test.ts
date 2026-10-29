@@ -307,3 +307,127 @@ describe("read guard in the executor", () => {
     expect(result.state).toBe("completed");
   });
 });
+
+/** Every read the guard makes, as `observe <kind>:<id>` or `query <kind>`. */
+function countReads(providers: Record<"stripe" | "zendesk", ProviderPort>) {
+  const reads: string[] = [];
+  const counted: Record<"stripe" | "zendesk", ProviderPort> = { ...providers };
+  for (const vendor of ["stripe", "zendesk"] as const) {
+    const port = providers[vendor];
+    counted[vendor] = {
+      ...port,
+      observe: async (entity, ctx) => {
+        reads.push(`observe ${entity.kind}:${entity.id}`);
+        return port.observe(entity, ctx);
+      },
+      query: async (predicate, cutoff, ctx) => {
+        reads.push(`query ${predicate.kind}`);
+        return port.query(predicate, cutoff, ctx);
+      },
+    };
+  }
+  return { counted, reads };
+}
+
+describe("fewer guard re-reads (T3.19)", () => {
+  it("a refund's guard reads the window query and the credits once, not the charge again", async () => {
+    const s = setup(happyPathBundle());
+    const { counted, reads } = countReads(s.providers);
+    s.deps.guard = createReadGuard({
+      providers: counted,
+      worlds: s.deps.worlds,
+      clock: s.deps.clock,
+    });
+    const result = await s.run();
+
+    expect(result.state).toBe("completed");
+    // Was 12 reads: each refund read its charge twice besides the query and the credits.
+    expect(reads).toEqual([
+      "query stripe.charges.byCustomerInWindow",
+      "observe customer_balance_transactions:cus_fixture_001",
+      "observe ticket:5531",
+      "observe ticket:5531",
+      "query stripe.charges.byCustomerInWindow",
+      "observe customer_balance_transactions:cus_fixture_002",
+      "observe ticket:5532",
+      "observe ticket:5532",
+    ]);
+  });
+
+  it("still holds a teammate's partial refund of the charge, seen in the query's row", async () => {
+    const s = setup(happyPathBundle());
+    const charge = s.world.charges.get("ch_fixture_001");
+    if (!charge) throw new Error("fixture has no ch_fixture_001");
+    charge.amount_refunded = 1000;
+    const result = await s.run();
+
+    expect(result.receipts.find((r) => r.actionId === "refund_001")?.holdReason).toMatchObject({
+      kind: "row_changed",
+      observationId: "obs_charge_001",
+      fields: expect.arrayContaining(["amount_refunded"]),
+    });
+    expect(s.world.refunds.map((r) => r.charge)).toEqual(["ch_fixture_002"]);
+  });
+
+  it("still holds a teammate's credit on the obligation the refund remedies", async () => {
+    const s = setup(happyPathBundle());
+    s.world.teammateCredit({
+      customerId: "cus_fixture_001",
+      amountMinor: 4210,
+      currency: "cad",
+      chargeId: "ch_fixture_001",
+    });
+    const result = await s.run();
+
+    expect(result.receipts.find((r) => r.actionId === "refund_001")?.holdReason).toMatchObject({
+      rule: "R5.remedy_already_completed",
+    });
+    expect(s.world.refunds.map((r) => r.charge)).toEqual(["ch_fixture_002"]);
+  });
+
+  it("reads the charge directly when the query lists it under another projection", async () => {
+    const s = setup(happyPathBundle());
+    const { counted, reads } = countReads(s.providers);
+    const query = counted.stripe.query;
+    counted.stripe.query = async (...args) => ({
+      ...(await query(...args)),
+      projectionVersion: "stripe.charge.other",
+    });
+    s.deps.guard = createReadGuard({
+      providers: counted,
+      worlds: s.deps.worlds,
+      clock: s.deps.clock,
+    });
+    const result = await s.run();
+
+    // The query no longer matches the approved one, so the refund holds, but only after the
+    // charge was read on its own (once: the remedy check is never reached).
+    expect(result.receipts.find((r) => r.actionId === "refund_001")?.holdReason).toMatchObject({
+      kind: "evidence_unavailable",
+      detail: "projection version differs",
+    });
+    expect(reads.filter((r) => r === "observe charge:ch_fixture_001")).toHaveLength(1);
+    expect(s.world.refunds).toEqual([]);
+  });
+
+  it("reads a charge the query doesn't list on its own", async () => {
+    const s = setup(happyPathBundle());
+    const { counted, reads } = countReads(s.providers);
+    const query = counted.stripe.query;
+    counted.stripe.query = async (...args) => {
+      const listed = await query(...args);
+      // A planned charge outside every query this action cites: drop it from the listing's rows.
+      const projections = { ...listed.projections };
+      delete projections.ch_fixture_001;
+      return { ...listed, projections };
+    };
+    s.deps.guard = createReadGuard({
+      providers: counted,
+      worlds: s.deps.worlds,
+      clock: s.deps.clock,
+    });
+    await s.run();
+
+    expect(reads.filter((r) => r === "observe charge:ch_fixture_001")).toHaveLength(1);
+  });
+});
