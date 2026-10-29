@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { BillingPolicyV1 } from "@rehearsal/core";
+import type { BillingPolicyV1, RunTimings } from "@rehearsal/core";
 import { planHash } from "@rehearsal/core";
 import {
   APPLY_QUEUE,
@@ -251,6 +251,61 @@ describe.skipIf(!process.env.DB_TESTS)(
       } finally {
         await release?.();
       }
+    });
+
+    it("records where the run's time went, counting a 429's retry and the guard's reads (T3.20)", async () => {
+      const r = await approvedRun();
+      r.world.fault("/v1/refunds", {
+        kind: "reject",
+        status: 429,
+        retryable: true,
+        retryAfterMs: 10,
+      });
+      const data = {
+        orgId: r.orgId,
+        runId: r.runId,
+        planId: r.planId,
+        revision: 1,
+        planHash: r.hash,
+      };
+      const result = await handleApplyJob(data, contextFor(r.world));
+      expect(stateOf(result)).toBe("completed");
+
+      const events = (await db.select().from(schema.runEvents)).filter(
+        (e) => e.runId === r.runId && e.type === "run.timings",
+      );
+      expect(events).toHaveLength(1);
+      const t = events[0]?.payload as RunTimings;
+      expect(t.version).toBe(1);
+      expect(t.retries.count).toBe(1);
+      // Two refunds, one sent twice; the notes and the summary are writes too.
+      expect(t.calls.write.calls).toBeGreaterThanOrEqual(3);
+      expect(t.calls.write.failed).toBe(0);
+      expect(t.calls.guard.calls).toBeGreaterThan(0);
+      expect(t.caseConcurrency).toBe(1);
+      expect(Object.keys(t.path).sort()).toEqual(["approvalWaitMs", "planningMs", "queueMs"]);
+      expect(r.world.refunds).toHaveLength(2);
+    });
+
+    it("records no timings for a delivery that deferred on the plan lock (T3.20)", async () => {
+      const r = await approvedRun();
+      const release = await new PgApplyStore(createDb(url)).lockPlan(r.orgId, r.planId);
+      try {
+        const data = {
+          orgId: r.orgId,
+          runId: r.runId,
+          planId: r.planId,
+          revision: 1,
+          planHash: r.hash,
+        };
+        await expect(handleApplyJob(data, contextFor(r.world))).rejects.toBeInstanceOf(RetryLater);
+      } finally {
+        await release?.();
+      }
+      const events = (await db.select().from(schema.runEvents)).filter(
+        (e) => e.runId === r.runId && e.type === "run.timings",
+      );
+      expect(events).toEqual([]);
     });
 
     it("records an honest partial state", async () => {

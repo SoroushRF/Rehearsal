@@ -156,6 +156,13 @@ export function describeEvent(e: RunEvent): string {
         ? `${r.data.actionId}: ${outcomeLabel[r.data.outcome]}. ${explainReceipt(r.data)}`
         : "Receipt recorded.";
     }
+    case "run.timings": {
+      const ms = (v: unknown) => (typeof v === "number" ? `${(v / 1000).toFixed(1)} s` : "n/a");
+      const calls = (p.calls ?? {}) as Record<string, { calls?: number }>;
+      const count = Object.values(calls).reduce((n, c) => n + (c.calls ?? 0), 0);
+      const retries = (p.retries ?? {}) as { count?: number };
+      return `Timings: executed in ${ms(p.executeMs)}, ${count} provider calls, ${retries.count ?? 0} retries.`;
+    }
     case "run.finished":
       return `Run finished: ${String(p.state)}${p.error ? ` (${String(p.error)})` : ""}.`;
     case "run.stopped":
