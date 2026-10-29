@@ -1,0 +1,4053 @@
+{
+  "split": "catalog",
+  "version": 1,
+  "generator": {
+    "version": 1,
+    "seed": 20271040
+  },
+  "oracle": {
+    "version": 1
+  },
+  "evidence": {
+    "data": "fixture",
+    "gold": "derived",
+    "eraSeed": "not_run",
+    "runs": "not_run"
+  },
+  "sets": [
+    {
+      "id": "g01",
+      "incident": "INC-BILL-2701",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 1
+      },
+      "ops": {
+        "credits": false,
+        "replies": false,
+        "summary": false
+      },
+      "cases": {
+        "a01": "dup_small",
+        "a02": "dup_mid",
+        "a03": "below_threshold",
+        "a04": "at_threshold",
+        "a05": "dup_large",
+        "a06": "usd_balance",
+        "a07": "ownership",
+        "a08": "window_start",
+        "a09": "window_end",
+        "a10": "straddle",
+        "a11": "triple",
+        "a12": "refunded_retry",
+        "a13": "refunded_original",
+        "a14": "credited_before",
+        "n01": "control_distinct",
+        "n02": "control_other_currency",
+        "n03": "control_outside_window",
+        "n04": "control_failed_retry"
+      },
+      "version": 1,
+      "gold": "8d087bc9834263fd7ba349fa6bd27c90736878cfbfbdfbfe29f8458d83b710b1"
+    },
+    {
+      "id": "g02",
+      "incident": "INC-BILL-2702",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 1
+      },
+      "ops": {
+        "credits": false,
+        "replies": true,
+        "summary": true
+      },
+      "cases": {
+        "a01": "dup_small",
+        "a02": "dup_mid",
+        "a03": "below_threshold",
+        "a04": "at_threshold",
+        "a05": "dup_large",
+        "a06": "usd_balance",
+        "a07": "ownership",
+        "a08": "window_start",
+        "a09": "window_end",
+        "a10": "straddle",
+        "a11": "triple",
+        "a12": "refunded_retry",
+        "a13": "refunded_original",
+        "a14": "credited_before",
+        "n01": "control_distinct",
+        "n02": "control_other_currency",
+        "n03": "control_outside_window",
+        "n04": "control_failed_retry"
+      },
+      "version": 1,
+      "gold": "dde8d9a0cfef9894d9b667f5cc63790237839f6392e3a334212ad2b61e89e61d"
+    },
+    {
+      "id": "g03",
+      "incident": "INC-BILL-2703",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": true,
+        "replies": false,
+        "summary": false
+      },
+      "cases": {
+        "a01": "dup_small",
+        "a02": "dup_mid",
+        "a03": "below_threshold",
+        "a04": "at_threshold",
+        "a05": "dup_large",
+        "a06": "usd_balance",
+        "a07": "ownership",
+        "a08": "window_start",
+        "a09": "window_end",
+        "a10": "straddle",
+        "a11": "triple",
+        "a12": "refunded_retry",
+        "a13": "refunded_original",
+        "a14": "credited_before",
+        "n01": "control_distinct",
+        "n02": "control_other_currency",
+        "n03": "control_outside_window",
+        "n04": "control_failed_retry"
+      },
+      "version": 1,
+      "gold": "6cc560fb16492b6af347eeee7b6d6bd55704249407ddb82f91d6b6812682f7fc"
+    },
+    {
+      "id": "g04",
+      "incident": "INC-BILL-2704",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": true,
+        "replies": true,
+        "summary": true
+      },
+      "cases": {
+        "a01": "dup_small",
+        "a02": "dup_mid",
+        "a03": "below_threshold",
+        "a04": "at_threshold",
+        "a05": "dup_large",
+        "a06": "usd_balance",
+        "a07": "ownership",
+        "a08": "window_start",
+        "a09": "window_end",
+        "a10": "straddle",
+        "a11": "triple",
+        "a12": "refunded_retry",
+        "a13": "refunded_original",
+        "a14": "credited_before",
+        "n01": "control_distinct",
+        "n02": "control_other_currency",
+        "n03": "control_outside_window",
+        "n04": "control_failed_retry"
+      },
+      "version": 1,
+      "gold": "0f1df1304c70ba9d61113a410e0db67d32639aa720b75fd249b60f269aece38a"
+    },
+    {
+      "id": "g05",
+      "incident": "INC-BILL-2705",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": true,
+        "replies": false,
+        "summary": true
+      },
+      "cases": {
+        "a01": "dup_small",
+        "a02": "dup_mid",
+        "a03": "below_threshold",
+        "a04": "at_threshold",
+        "a05": "dup_large",
+        "a06": "usd_balance",
+        "a07": "ownership",
+        "a08": "window_start",
+        "a09": "window_end",
+        "a10": "straddle",
+        "a11": "triple",
+        "a12": "refunded_retry",
+        "a13": "refunded_original",
+        "a14": "credited_before",
+        "n01": "control_distinct",
+        "n02": "control_other_currency",
+        "n03": "control_outside_window",
+        "n04": "control_failed_retry"
+      },
+      "version": 1,
+      "gold": "afb703dcdf6190e663f0c8d008650d51bde6e7145f125459ee32535e145bcdb1"
+    },
+    {
+      "id": "g06",
+      "incident": "INC-BILL-2706",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": true,
+        "replies": true,
+        "summary": false
+      },
+      "cases": {
+        "a01": "dup_small",
+        "a02": "dup_mid",
+        "a03": "below_threshold",
+        "a04": "at_threshold",
+        "a05": "dup_large",
+        "a06": "usd_balance",
+        "a07": "ownership",
+        "a08": "window_start",
+        "a09": "window_end",
+        "a10": "straddle",
+        "a11": "triple",
+        "a12": "refunded_retry",
+        "a13": "refunded_original",
+        "a14": "credited_before",
+        "n01": "control_distinct",
+        "n02": "control_other_currency",
+        "n03": "control_outside_window",
+        "n04": "control_failed_retry"
+      },
+      "version": 1,
+      "gold": "8b0800b4f5da69150819767d784f3a48880d6049ba993b02c122ff465f5084b5"
+    },
+    {
+      "id": "g07",
+      "incident": "INC-BILL-2707",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": false,
+        "replies": true,
+        "summary": false
+      },
+      "cases": {
+        "a01": "dup_small",
+        "a02": "dup_mid",
+        "a03": "below_threshold",
+        "a04": "at_threshold",
+        "a05": "dup_large",
+        "a06": "usd_balance",
+        "a07": "ownership",
+        "a08": "window_start",
+        "a09": "window_end",
+        "a10": "straddle",
+        "a11": "triple",
+        "a12": "refunded_retry",
+        "a13": "refunded_original",
+        "a14": "credited_before",
+        "n01": "control_distinct",
+        "n02": "control_other_currency",
+        "n03": "control_outside_window",
+        "n04": "control_failed_retry"
+      },
+      "version": 1,
+      "gold": "d025871dce786c28ef9d3f9f5e20d98aab39fc2bc90d987b524ed03af24a2d38"
+    },
+    {
+      "id": "g08",
+      "incident": "INC-BILL-2708",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": false,
+        "replies": false,
+        "summary": true
+      },
+      "cases": {
+        "a01": "dup_small",
+        "a02": "dup_mid",
+        "a03": "below_threshold",
+        "a04": "at_threshold",
+        "a05": "dup_large",
+        "a06": "usd_balance",
+        "a07": "ownership",
+        "a08": "window_start",
+        "a09": "window_end",
+        "a10": "straddle",
+        "a11": "triple",
+        "a12": "refunded_retry",
+        "a13": "refunded_original",
+        "a14": "credited_before",
+        "n01": "control_distinct",
+        "n02": "control_other_currency",
+        "n03": "control_outside_window",
+        "n04": "control_failed_retry"
+      },
+      "version": 1,
+      "gold": "cf498613edbc17d14f6a91b8c1c4b668b4a0adeee2ae9723d30cc00e8e1510bf"
+    }
+  ],
+  "configurations": [
+    {
+      "id": "G01-1",
+      "set": "g01",
+      "seed": 3073340494,
+      "incident": "INC-BILL-2701",
+      "family": "baseline",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 1
+      },
+      "ops": {
+        "credits": false,
+        "replies": false,
+        "summary": false
+      },
+      "perturbations": [],
+      "scope": "all",
+      "capabilities": [
+        "setup"
+      ],
+      "signature": "2b55342e40a84491"
+    },
+    {
+      "id": "G01-2",
+      "set": "g01",
+      "seed": 2674680941,
+      "incident": "INC-BILL-2701",
+      "family": "scoped",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 1
+      },
+      "ops": {
+        "credits": false,
+        "replies": false,
+        "summary": false
+      },
+      "perturbations": [],
+      "scope": [
+        "control_distinct",
+        "control_failed_retry",
+        "dup_mid",
+        "refunded_retry"
+      ],
+      "capabilities": [
+        "setup"
+      ],
+      "signature": "93a70e3676e67c67"
+    },
+    {
+      "id": "G01-3",
+      "set": "g01",
+      "seed": 449107046,
+      "incident": "INC-BILL-2701",
+      "family": "relevant_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 1
+      },
+      "ops": {
+        "credits": false,
+        "replies": false,
+        "summary": false
+      },
+      "perturbations": [
+        "phantom_charge@below_threshold"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "147be194f8bb3520"
+    },
+    {
+      "id": "G01-4",
+      "set": "g01",
+      "seed": 1993112306,
+      "incident": "INC-BILL-2701",
+      "family": "relevant_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 1
+      },
+      "ops": {
+        "credits": false,
+        "replies": false,
+        "summary": false
+      },
+      "perturbations": [
+        "phantom_charge@triple"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "b1abb5cc981bdc96"
+    },
+    {
+      "id": "G01-5",
+      "set": "g01",
+      "seed": 3019544962,
+      "incident": "INC-BILL-2701",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 1
+      },
+      "ops": {
+        "credits": false,
+        "replies": false,
+        "summary": false
+      },
+      "perturbations": [
+        "late_charge@below_threshold"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "05141280a6587810"
+    },
+    {
+      "id": "G01-6",
+      "set": "g01",
+      "seed": 3515739311,
+      "incident": "INC-BILL-2701",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 1
+      },
+      "ops": {
+        "credits": false,
+        "replies": false,
+        "summary": false
+      },
+      "perturbations": [
+        "early_charge@dup_small"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "623ee690ba1b2e62"
+    },
+    {
+      "id": "G01-7",
+      "set": "g01",
+      "seed": 1589548981,
+      "incident": "INC-BILL-2701",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 1
+      },
+      "ops": {
+        "credits": false,
+        "replies": false,
+        "summary": false
+      },
+      "perturbations": [
+        "stranger_charge"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "793575e0ffcb521e"
+    },
+    {
+      "id": "G01-8",
+      "set": "g01",
+      "seed": 1016217035,
+      "incident": "INC-BILL-2701",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 1
+      },
+      "ops": {
+        "credits": false,
+        "replies": false,
+        "summary": false
+      },
+      "perturbations": [
+        "public_comment@below_threshold"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "a95badd5c52cddee"
+    },
+    {
+      "id": "G01-9",
+      "set": "g01",
+      "seed": 128544286,
+      "incident": "INC-BILL-2701",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 1
+      },
+      "ops": {
+        "credits": false,
+        "replies": false,
+        "summary": false
+      },
+      "perturbations": [
+        "teammate_tag@dup_mid"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "776623425445466d"
+    },
+    {
+      "id": "G01-10",
+      "set": "g01",
+      "seed": 515725561,
+      "incident": "INC-BILL-2701",
+      "family": "teammate_edit",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 1
+      },
+      "ops": {
+        "credits": false,
+        "replies": false,
+        "summary": false
+      },
+      "perturbations": [
+        "teammate_priority:urgent@window_start"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "7c5d0a064f1c3652"
+    },
+    {
+      "id": "G01-11",
+      "set": "g01",
+      "seed": 580619953,
+      "incident": "INC-BILL-2701",
+      "family": "teammate_edit",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 1
+      },
+      "ops": {
+        "credits": false,
+        "replies": false,
+        "summary": false
+      },
+      "perturbations": [
+        "teammate_priority:low@credited_before"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "b7452474a8ef75b7"
+    },
+    {
+      "id": "G01-12",
+      "set": "g01",
+      "seed": 3142993955,
+      "incident": "INC-BILL-2701",
+      "family": "existing_remedy",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 1
+      },
+      "ops": {
+        "credits": false,
+        "replies": false,
+        "summary": false
+      },
+      "perturbations": [
+        "teammate_refund_original@dup_mid"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "3d901041b7b2d36d"
+    },
+    {
+      "id": "G01-13",
+      "set": "g01",
+      "seed": 464428926,
+      "incident": "INC-BILL-2701",
+      "family": "incomplete_read",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 1
+      },
+      "ops": {
+        "credits": false,
+        "replies": false,
+        "summary": false
+      },
+      "perturbations": [
+        "fail_charge_list_read@window_start"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "faults"
+      ],
+      "signature": "f18eae959df81d2c"
+    },
+    {
+      "id": "G01-14",
+      "set": "g01",
+      "seed": 3736962023,
+      "incident": "INC-BILL-2701",
+      "family": "lost_response",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 1
+      },
+      "ops": {
+        "credits": false,
+        "replies": false,
+        "summary": false
+      },
+      "perturbations": [
+        "throttle_first_refund",
+        "lose_refund_response@window_end"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "faults"
+      ],
+      "signature": "1409f16fdfbed928"
+    },
+    {
+      "id": "G01-15",
+      "set": "g01",
+      "seed": 3312298813,
+      "incident": "INC-BILL-2701",
+      "family": "lost_response",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 1
+      },
+      "ops": {
+        "credits": false,
+        "replies": false,
+        "summary": false
+      },
+      "perturbations": [
+        "lose_note_response@usd_balance"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "faults"
+      ],
+      "signature": "f82da74a8a31b658"
+    },
+    {
+      "id": "G01-16",
+      "set": "g01",
+      "seed": 3586226465,
+      "incident": "INC-BILL-2701",
+      "family": "lost_response",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 1
+      },
+      "ops": {
+        "credits": false,
+        "replies": false,
+        "summary": false
+      },
+      "perturbations": [
+        "lose_refund_response@triple"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "faults"
+      ],
+      "signature": "234d15ae7f4e9d2d"
+    },
+    {
+      "id": "G01-17",
+      "set": "g01",
+      "seed": 920541961,
+      "incident": "INC-BILL-2701",
+      "family": "combination",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 1
+      },
+      "ops": {
+        "credits": false,
+        "replies": false,
+        "summary": false
+      },
+      "perturbations": [
+        "phantom_charge@window_end",
+        "teammate_priority:high@below_threshold",
+        "lose_refund_response@triple"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "faults"
+      ],
+      "signature": "e8759ca44eb32dfd"
+    },
+    {
+      "id": "G01-18",
+      "set": "g01",
+      "seed": 2014122417,
+      "incident": "INC-BILL-2701",
+      "family": "combination",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 1
+      },
+      "ops": {
+        "credits": false,
+        "replies": false,
+        "summary": false
+      },
+      "perturbations": [
+        "late_charge@dup_mid",
+        "public_comment@at_threshold"
+      ],
+      "scope": [
+        "at_threshold",
+        "credited_before",
+        "dup_mid",
+        "straddle",
+        "triple"
+      ],
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "75aa70e8a0c5c372"
+    },
+    {
+      "id": "G02-1",
+      "set": "g02",
+      "seed": 3052745481,
+      "incident": "INC-BILL-2702",
+      "family": "baseline",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 1
+      },
+      "ops": {
+        "credits": false,
+        "replies": true,
+        "summary": true
+      },
+      "perturbations": [],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "summary_world"
+      ],
+      "signature": "53df9bc1e4e73849"
+    },
+    {
+      "id": "G02-2",
+      "set": "g02",
+      "seed": 2549264832,
+      "incident": "INC-BILL-2702",
+      "family": "scoped",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 1
+      },
+      "ops": {
+        "credits": false,
+        "replies": true,
+        "summary": true
+      },
+      "perturbations": [],
+      "scope": [
+        "control_outside_window",
+        "credited_before",
+        "dup_small",
+        "straddle"
+      ],
+      "capabilities": [
+        "setup",
+        "summary_world"
+      ],
+      "signature": "1bb8121dfa7dd27e"
+    },
+    {
+      "id": "G02-3",
+      "set": "g02",
+      "seed": 2594333956,
+      "incident": "INC-BILL-2702",
+      "family": "relevant_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 1
+      },
+      "ops": {
+        "credits": false,
+        "replies": true,
+        "summary": true
+      },
+      "perturbations": [
+        "phantom_charge@dup_large"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "a7e72434897ca5ee"
+    },
+    {
+      "id": "G02-4",
+      "set": "g02",
+      "seed": 3262602797,
+      "incident": "INC-BILL-2702",
+      "family": "relevant_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 1
+      },
+      "ops": {
+        "credits": false,
+        "replies": true,
+        "summary": true
+      },
+      "perturbations": [
+        "phantom_charge@triple"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "85f2c4713fa4fd3f"
+    },
+    {
+      "id": "G02-5",
+      "set": "g02",
+      "seed": 2707612804,
+      "incident": "INC-BILL-2702",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 1
+      },
+      "ops": {
+        "credits": false,
+        "replies": true,
+        "summary": true
+      },
+      "perturbations": [
+        "late_charge@dup_small"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "6273bc822a8d4fcf"
+    },
+    {
+      "id": "G02-6",
+      "set": "g02",
+      "seed": 2307909734,
+      "incident": "INC-BILL-2702",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 1
+      },
+      "ops": {
+        "credits": false,
+        "replies": true,
+        "summary": true
+      },
+      "perturbations": [
+        "early_charge@below_threshold"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "c71570dc6ce91170"
+    },
+    {
+      "id": "G02-7",
+      "set": "g02",
+      "seed": 275322031,
+      "incident": "INC-BILL-2702",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 1
+      },
+      "ops": {
+        "credits": false,
+        "replies": true,
+        "summary": true
+      },
+      "perturbations": [
+        "stranger_charge"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "80f9a93fc2cb4493"
+    },
+    {
+      "id": "G02-8",
+      "set": "g02",
+      "seed": 1239228823,
+      "incident": "INC-BILL-2702",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 1
+      },
+      "ops": {
+        "credits": false,
+        "replies": true,
+        "summary": true
+      },
+      "perturbations": [
+        "public_comment@dup_small"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "33cf55317e370c09"
+    },
+    {
+      "id": "G02-9",
+      "set": "g02",
+      "seed": 4100596921,
+      "incident": "INC-BILL-2702",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 1
+      },
+      "ops": {
+        "credits": false,
+        "replies": true,
+        "summary": true
+      },
+      "perturbations": [
+        "teammate_tag@at_threshold"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "6fb784789734dbc1"
+    },
+    {
+      "id": "G02-10",
+      "set": "g02",
+      "seed": 1275333585,
+      "incident": "INC-BILL-2702",
+      "family": "teammate_edit",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 1
+      },
+      "ops": {
+        "credits": false,
+        "replies": true,
+        "summary": true
+      },
+      "perturbations": [
+        "teammate_priority:urgent@window_start"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "59fad438b9dd6d46"
+    },
+    {
+      "id": "G02-11",
+      "set": "g02",
+      "seed": 201309209,
+      "incident": "INC-BILL-2702",
+      "family": "teammate_edit",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 1
+      },
+      "ops": {
+        "credits": false,
+        "replies": true,
+        "summary": true
+      },
+      "perturbations": [
+        "teammate_priority:low@credited_before"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "433d6fabe9e763c1"
+    },
+    {
+      "id": "G02-12",
+      "set": "g02",
+      "seed": 364456498,
+      "incident": "INC-BILL-2702",
+      "family": "existing_remedy",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 1
+      },
+      "ops": {
+        "credits": false,
+        "replies": true,
+        "summary": true
+      },
+      "perturbations": [
+        "teammate_refund_original@at_threshold"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "c6a43f1b3b575b2a"
+    },
+    {
+      "id": "G02-13",
+      "set": "g02",
+      "seed": 3502777648,
+      "incident": "INC-BILL-2702",
+      "family": "incomplete_read",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 1
+      },
+      "ops": {
+        "credits": false,
+        "replies": true,
+        "summary": true
+      },
+      "perturbations": [
+        "fail_charge_list_read@window_end"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "faults",
+        "summary_world"
+      ],
+      "signature": "071ad3a9fcb6ed8a"
+    },
+    {
+      "id": "G02-14",
+      "set": "g02",
+      "seed": 2772996951,
+      "incident": "INC-BILL-2702",
+      "family": "lost_response",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 1
+      },
+      "ops": {
+        "credits": false,
+        "replies": true,
+        "summary": true
+      },
+      "perturbations": [
+        "throttle_first_refund",
+        "lose_refund_response@usd_balance"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "faults",
+        "summary_world"
+      ],
+      "signature": "a50c50f8bea4f8da"
+    },
+    {
+      "id": "G02-15",
+      "set": "g02",
+      "seed": 580933432,
+      "incident": "INC-BILL-2702",
+      "family": "lost_response",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 1
+      },
+      "ops": {
+        "credits": false,
+        "replies": true,
+        "summary": true
+      },
+      "perturbations": [
+        "lose_note_response@dup_mid"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "faults",
+        "summary_world"
+      ],
+      "signature": "a7d484fe4fc72105"
+    },
+    {
+      "id": "G02-16",
+      "set": "g02",
+      "seed": 2393447256,
+      "incident": "INC-BILL-2702",
+      "family": "lost_response",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 1
+      },
+      "ops": {
+        "credits": false,
+        "replies": true,
+        "summary": true
+      },
+      "perturbations": [
+        "lose_reply_response@window_start"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "faults",
+        "summary_world"
+      ],
+      "signature": "0e04de1642c1cf4b"
+    },
+    {
+      "id": "G02-17",
+      "set": "g02",
+      "seed": 2265506921,
+      "incident": "INC-BILL-2702",
+      "family": "combination",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 1
+      },
+      "ops": {
+        "credits": false,
+        "replies": true,
+        "summary": true
+      },
+      "perturbations": [
+        "phantom_charge@dup_small",
+        "teammate_priority:high@usd_balance",
+        "lose_refund_response@triple"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "faults",
+        "summary_world"
+      ],
+      "signature": "7b9f9b684a689f7b"
+    },
+    {
+      "id": "G02-18",
+      "set": "g02",
+      "seed": 855161084,
+      "incident": "INC-BILL-2702",
+      "family": "combination",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 1
+      },
+      "ops": {
+        "credits": false,
+        "replies": true,
+        "summary": true
+      },
+      "perturbations": [
+        "late_charge@window_end",
+        "public_comment@triple"
+      ],
+      "scope": [
+        "control_failed_retry",
+        "credited_before",
+        "refunded_retry",
+        "triple",
+        "window_end"
+      ],
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "47dc8a8283b388e3"
+    },
+    {
+      "id": "G03-1",
+      "set": "g03",
+      "seed": 1885679497,
+      "incident": "INC-BILL-2703",
+      "family": "baseline",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": true,
+        "replies": false,
+        "summary": false
+      },
+      "perturbations": [],
+      "scope": "all",
+      "capabilities": [
+        "setup"
+      ],
+      "signature": "53e0a6aa21735936"
+    },
+    {
+      "id": "G03-2",
+      "set": "g03",
+      "seed": 1380568553,
+      "incident": "INC-BILL-2703",
+      "family": "scoped",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": true,
+        "replies": false,
+        "summary": false
+      },
+      "perturbations": [],
+      "scope": [
+        "control_distinct",
+        "dup_small",
+        "ownership",
+        "window_end"
+      ],
+      "capabilities": [
+        "setup"
+      ],
+      "signature": "082c010fbfcd17cc"
+    },
+    {
+      "id": "G03-3",
+      "set": "g03",
+      "seed": 1492062060,
+      "incident": "INC-BILL-2703",
+      "family": "relevant_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": true,
+        "replies": false,
+        "summary": false
+      },
+      "perturbations": [
+        "phantom_charge@dup_small"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "3fdd298186ff6b48"
+    },
+    {
+      "id": "G03-4",
+      "set": "g03",
+      "seed": 400142896,
+      "incident": "INC-BILL-2703",
+      "family": "relevant_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": true,
+        "replies": false,
+        "summary": false
+      },
+      "perturbations": [
+        "phantom_charge@triple"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "3a6ce83dcd362bf3"
+    },
+    {
+      "id": "G03-5",
+      "set": "g03",
+      "seed": 3089432199,
+      "incident": "INC-BILL-2703",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": true,
+        "replies": false,
+        "summary": false
+      },
+      "perturbations": [
+        "late_charge@window_end"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "26cad11b0e0e35d2"
+    },
+    {
+      "id": "G03-6",
+      "set": "g03",
+      "seed": 2340948148,
+      "incident": "INC-BILL-2703",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": true,
+        "replies": false,
+        "summary": false
+      },
+      "perturbations": [
+        "early_charge@below_threshold"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "17f31d3c86865491"
+    },
+    {
+      "id": "G03-7",
+      "set": "g03",
+      "seed": 3365403865,
+      "incident": "INC-BILL-2703",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": true,
+        "replies": false,
+        "summary": false
+      },
+      "perturbations": [
+        "stranger_charge"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "84d35e2386c534a3"
+    },
+    {
+      "id": "G03-8",
+      "set": "g03",
+      "seed": 1529495644,
+      "incident": "INC-BILL-2703",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": true,
+        "replies": false,
+        "summary": false
+      },
+      "perturbations": [
+        "public_comment@triple"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "2d5d5fc61f7ca0d4"
+    },
+    {
+      "id": "G03-9",
+      "set": "g03",
+      "seed": 2389443203,
+      "incident": "INC-BILL-2703",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": true,
+        "replies": false,
+        "summary": false
+      },
+      "perturbations": [
+        "teammate_tag@dup_small"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "1fb986142dc7d62e"
+    },
+    {
+      "id": "G03-10",
+      "set": "g03",
+      "seed": 2819549459,
+      "incident": "INC-BILL-2703",
+      "family": "teammate_edit",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": true,
+        "replies": false,
+        "summary": false
+      },
+      "perturbations": [
+        "teammate_priority:urgent@triple"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "b7b67c038ac4e22e"
+    },
+    {
+      "id": "G03-11",
+      "set": "g03",
+      "seed": 4282920404,
+      "incident": "INC-BILL-2703",
+      "family": "teammate_edit",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": true,
+        "replies": false,
+        "summary": false
+      },
+      "perturbations": [
+        "teammate_priority:low@refunded_original"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "754897fd6d3b990c"
+    },
+    {
+      "id": "G03-12",
+      "set": "g03",
+      "seed": 4278688559,
+      "incident": "INC-BILL-2703",
+      "family": "existing_remedy",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": true,
+        "replies": false,
+        "summary": false
+      },
+      "perturbations": [
+        "teammate_refund_original@dup_large"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "8cfc57c6b797a0b2"
+    },
+    {
+      "id": "G03-13",
+      "set": "g03",
+      "seed": 1390792159,
+      "incident": "INC-BILL-2703",
+      "family": "incomplete_read",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": true,
+        "replies": false,
+        "summary": false
+      },
+      "perturbations": [
+        "fail_charge_list_read@dup_small"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "faults"
+      ],
+      "signature": "ce71a6681ffa720e"
+    },
+    {
+      "id": "G03-14",
+      "set": "g03",
+      "seed": 1355998125,
+      "incident": "INC-BILL-2703",
+      "family": "lost_response",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": true,
+        "replies": false,
+        "summary": false
+      },
+      "perturbations": [
+        "throttle_first_refund",
+        "lose_refund_response@usd_balance"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "faults"
+      ],
+      "signature": "efe493d36df046b1"
+    },
+    {
+      "id": "G03-15",
+      "set": "g03",
+      "seed": 1746794315,
+      "incident": "INC-BILL-2703",
+      "family": "lost_response",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": true,
+        "replies": false,
+        "summary": false
+      },
+      "perturbations": [
+        "lose_note_response@below_threshold"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "faults"
+      ],
+      "signature": "eddf697e61e135f0"
+    },
+    {
+      "id": "G03-16",
+      "set": "g03",
+      "seed": 1022658801,
+      "incident": "INC-BILL-2703",
+      "family": "lost_response",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": true,
+        "replies": false,
+        "summary": false
+      },
+      "perturbations": [
+        "lose_credit_response@below_threshold"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "faults"
+      ],
+      "signature": "dae5ad435448fb09"
+    },
+    {
+      "id": "G03-17",
+      "set": "g03",
+      "seed": 792036144,
+      "incident": "INC-BILL-2703",
+      "family": "combination",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": true,
+        "replies": false,
+        "summary": false
+      },
+      "perturbations": [
+        "phantom_charge@below_threshold",
+        "teammate_priority:high@dup_mid",
+        "lose_refund_response@usd_balance"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "faults"
+      ],
+      "signature": "e4420cd2bb5f5dc3"
+    },
+    {
+      "id": "G03-18",
+      "set": "g03",
+      "seed": 4056945115,
+      "incident": "INC-BILL-2703",
+      "family": "combination",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": true,
+        "replies": false,
+        "summary": false
+      },
+      "perturbations": [
+        "late_charge@dup_mid",
+        "public_comment@window_start"
+      ],
+      "scope": [
+        "credited_before",
+        "dup_mid",
+        "dup_small",
+        "usd_balance",
+        "window_start"
+      ],
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "1eb5c3c86250cd41"
+    },
+    {
+      "id": "G04-1",
+      "set": "g04",
+      "seed": 2198996617,
+      "incident": "INC-BILL-2704",
+      "family": "baseline",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": true,
+        "replies": true,
+        "summary": true
+      },
+      "perturbations": [],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "summary_world"
+      ],
+      "signature": "87d75e5e52b742c8"
+    },
+    {
+      "id": "G04-2",
+      "set": "g04",
+      "seed": 1994454171,
+      "incident": "INC-BILL-2704",
+      "family": "scoped",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": true,
+        "replies": true,
+        "summary": true
+      },
+      "perturbations": [],
+      "scope": [
+        "refunded_original",
+        "refunded_retry",
+        "straddle",
+        "window_end"
+      ],
+      "capabilities": [
+        "setup",
+        "summary_world"
+      ],
+      "signature": "f8e8b762ae539835"
+    },
+    {
+      "id": "G04-3",
+      "set": "g04",
+      "seed": 3509747256,
+      "incident": "INC-BILL-2704",
+      "family": "relevant_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": true,
+        "replies": true,
+        "summary": true
+      },
+      "perturbations": [
+        "phantom_charge@below_threshold"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "7f4daaf44e9a270d"
+    },
+    {
+      "id": "G04-4",
+      "set": "g04",
+      "seed": 3882083156,
+      "incident": "INC-BILL-2704",
+      "family": "relevant_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": true,
+        "replies": true,
+        "summary": true
+      },
+      "perturbations": [
+        "phantom_charge@triple"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "73d8ccad84315128"
+    },
+    {
+      "id": "G04-5",
+      "set": "g04",
+      "seed": 3092720070,
+      "incident": "INC-BILL-2704",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": true,
+        "replies": true,
+        "summary": true
+      },
+      "perturbations": [
+        "late_charge@window_start"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "aebc524422ac6ee5"
+    },
+    {
+      "id": "G04-6",
+      "set": "g04",
+      "seed": 3747240546,
+      "incident": "INC-BILL-2704",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": true,
+        "replies": true,
+        "summary": true
+      },
+      "perturbations": [
+        "early_charge@dup_mid"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "65f83080b3c2ff6f"
+    },
+    {
+      "id": "G04-7",
+      "set": "g04",
+      "seed": 1178261227,
+      "incident": "INC-BILL-2704",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": true,
+        "replies": true,
+        "summary": true
+      },
+      "perturbations": [
+        "stranger_charge"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "41c70b0eedc5621b"
+    },
+    {
+      "id": "G04-8",
+      "set": "g04",
+      "seed": 4108832554,
+      "incident": "INC-BILL-2704",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": true,
+        "replies": true,
+        "summary": true
+      },
+      "perturbations": [
+        "public_comment@usd_balance"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "4a3f0ca798bbbf62"
+    },
+    {
+      "id": "G04-9",
+      "set": "g04",
+      "seed": 4090326016,
+      "incident": "INC-BILL-2704",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": true,
+        "replies": true,
+        "summary": true
+      },
+      "perturbations": [
+        "teammate_tag@dup_large"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "60892e5c6410ccb8"
+    },
+    {
+      "id": "G04-10",
+      "set": "g04",
+      "seed": 616684672,
+      "incident": "INC-BILL-2704",
+      "family": "teammate_edit",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": true,
+        "replies": true,
+        "summary": true
+      },
+      "perturbations": [
+        "teammate_priority:urgent@dup_small"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "487b0d5736d94033"
+    },
+    {
+      "id": "G04-11",
+      "set": "g04",
+      "seed": 183725199,
+      "incident": "INC-BILL-2704",
+      "family": "teammate_edit",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": true,
+        "replies": true,
+        "summary": true
+      },
+      "perturbations": [
+        "teammate_priority:low@refunded_original"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "f9f931d5a7fe4fd1"
+    },
+    {
+      "id": "G04-12",
+      "set": "g04",
+      "seed": 3621650498,
+      "incident": "INC-BILL-2704",
+      "family": "existing_remedy",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": true,
+        "replies": true,
+        "summary": true
+      },
+      "perturbations": [
+        "teammate_refund_original@below_threshold"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "0a018fbd69f46cd5"
+    },
+    {
+      "id": "G04-13",
+      "set": "g04",
+      "seed": 3384019914,
+      "incident": "INC-BILL-2704",
+      "family": "incomplete_read",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": true,
+        "replies": true,
+        "summary": true
+      },
+      "perturbations": [
+        "fail_charge_list_read@dup_mid"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "faults",
+        "summary_world"
+      ],
+      "signature": "4eec9cfe948c18bd"
+    },
+    {
+      "id": "G04-14",
+      "set": "g04",
+      "seed": 258275676,
+      "incident": "INC-BILL-2704",
+      "family": "lost_response",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": true,
+        "replies": true,
+        "summary": true
+      },
+      "perturbations": [
+        "throttle_first_refund",
+        "lose_refund_response@window_start"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "faults",
+        "summary_world"
+      ],
+      "signature": "d4bd68e3590f3e80"
+    },
+    {
+      "id": "G04-15",
+      "set": "g04",
+      "seed": 1526792023,
+      "incident": "INC-BILL-2704",
+      "family": "lost_response",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": true,
+        "replies": true,
+        "summary": true
+      },
+      "perturbations": [
+        "lose_note_response@dup_large"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "faults",
+        "summary_world"
+      ],
+      "signature": "4438d7621b8c7150"
+    },
+    {
+      "id": "G04-16",
+      "set": "g04",
+      "seed": 2384260014,
+      "incident": "INC-BILL-2704",
+      "family": "lost_response",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": true,
+        "replies": true,
+        "summary": true
+      },
+      "perturbations": [
+        "lose_reply_response@dup_mid"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "faults",
+        "summary_world"
+      ],
+      "signature": "27b73537232016e4"
+    },
+    {
+      "id": "G04-17",
+      "set": "g04",
+      "seed": 1428201845,
+      "incident": "INC-BILL-2704",
+      "family": "combination",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": true,
+        "replies": true,
+        "summary": true
+      },
+      "perturbations": [
+        "phantom_charge@dup_large",
+        "teammate_priority:high@usd_balance",
+        "lose_refund_response@dup_mid"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "faults",
+        "summary_world"
+      ],
+      "signature": "0a65f9024238ae1d"
+    },
+    {
+      "id": "G04-18",
+      "set": "g04",
+      "seed": 2210103759,
+      "incident": "INC-BILL-2704",
+      "family": "combination",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": true,
+        "replies": true,
+        "summary": true
+      },
+      "perturbations": [
+        "late_charge@usd_balance",
+        "public_comment@triple"
+      ],
+      "scope": [
+        "below_threshold",
+        "control_other_currency",
+        "triple",
+        "usd_balance",
+        "window_start"
+      ],
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "1deaccbab9c052e9"
+    },
+    {
+      "id": "G05-1",
+      "set": "g05",
+      "seed": 1573663258,
+      "incident": "INC-BILL-2705",
+      "family": "baseline",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": true,
+        "replies": false,
+        "summary": true
+      },
+      "perturbations": [],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "summary_world"
+      ],
+      "signature": "956060b817f7be73"
+    },
+    {
+      "id": "G05-2",
+      "set": "g05",
+      "seed": 770635740,
+      "incident": "INC-BILL-2705",
+      "family": "scoped",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": true,
+        "replies": false,
+        "summary": true
+      },
+      "perturbations": [],
+      "scope": [
+        "control_failed_retry",
+        "dup_small",
+        "refunded_original",
+        "usd_balance"
+      ],
+      "capabilities": [
+        "setup",
+        "summary_world"
+      ],
+      "signature": "14c4721d56fdd869"
+    },
+    {
+      "id": "G05-3",
+      "set": "g05",
+      "seed": 938716973,
+      "incident": "INC-BILL-2705",
+      "family": "relevant_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": true,
+        "replies": false,
+        "summary": true
+      },
+      "perturbations": [
+        "phantom_charge@at_threshold"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "079a72cd9d1f48c0"
+    },
+    {
+      "id": "G05-4",
+      "set": "g05",
+      "seed": 4019232011,
+      "incident": "INC-BILL-2705",
+      "family": "relevant_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": true,
+        "replies": false,
+        "summary": true
+      },
+      "perturbations": [
+        "phantom_charge@triple"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "aa35924fc741be0f"
+    },
+    {
+      "id": "G05-5",
+      "set": "g05",
+      "seed": 1533242470,
+      "incident": "INC-BILL-2705",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": true,
+        "replies": false,
+        "summary": true
+      },
+      "perturbations": [
+        "late_charge@dup_mid"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "db3600c4162e4db8"
+    },
+    {
+      "id": "G05-6",
+      "set": "g05",
+      "seed": 800123016,
+      "incident": "INC-BILL-2705",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": true,
+        "replies": false,
+        "summary": true
+      },
+      "perturbations": [
+        "early_charge@dup_mid"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "be07a220df5226ae"
+    },
+    {
+      "id": "G05-7",
+      "set": "g05",
+      "seed": 2154388808,
+      "incident": "INC-BILL-2705",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": true,
+        "replies": false,
+        "summary": true
+      },
+      "perturbations": [
+        "stranger_charge"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "2c10975e54bde343"
+    },
+    {
+      "id": "G05-8",
+      "set": "g05",
+      "seed": 58041204,
+      "incident": "INC-BILL-2705",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": true,
+        "replies": false,
+        "summary": true
+      },
+      "perturbations": [
+        "public_comment@triple"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "2fd3f387dacc9989"
+    },
+    {
+      "id": "G05-9",
+      "set": "g05",
+      "seed": 3113496545,
+      "incident": "INC-BILL-2705",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": true,
+        "replies": false,
+        "summary": true
+      },
+      "perturbations": [
+        "teammate_tag@dup_small"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "a04064aee00e3879"
+    },
+    {
+      "id": "G05-10",
+      "set": "g05",
+      "seed": 3980237506,
+      "incident": "INC-BILL-2705",
+      "family": "teammate_edit",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": true,
+        "replies": false,
+        "summary": true
+      },
+      "perturbations": [
+        "teammate_priority:urgent@at_threshold"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "2889c185c1825d1c"
+    },
+    {
+      "id": "G05-11",
+      "set": "g05",
+      "seed": 4147981651,
+      "incident": "INC-BILL-2705",
+      "family": "teammate_edit",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": true,
+        "replies": false,
+        "summary": true
+      },
+      "perturbations": [
+        "teammate_priority:low@credited_before"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "e99a37c82ba16894"
+    },
+    {
+      "id": "G05-12",
+      "set": "g05",
+      "seed": 3879443596,
+      "incident": "INC-BILL-2705",
+      "family": "existing_remedy",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": true,
+        "replies": false,
+        "summary": true
+      },
+      "perturbations": [
+        "teammate_refund_original@dup_mid"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "94879941be0122c2"
+    },
+    {
+      "id": "G05-13",
+      "set": "g05",
+      "seed": 759298403,
+      "incident": "INC-BILL-2705",
+      "family": "incomplete_read",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": true,
+        "replies": false,
+        "summary": true
+      },
+      "perturbations": [
+        "fail_charge_list_read@window_start"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "faults",
+        "summary_world"
+      ],
+      "signature": "17cb4572b97ba93d"
+    },
+    {
+      "id": "G05-14",
+      "set": "g05",
+      "seed": 1438509867,
+      "incident": "INC-BILL-2705",
+      "family": "lost_response",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": true,
+        "replies": false,
+        "summary": true
+      },
+      "perturbations": [
+        "throttle_first_refund",
+        "lose_refund_response@triple"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "faults",
+        "summary_world"
+      ],
+      "signature": "23fa0f2e3308ae98"
+    },
+    {
+      "id": "G05-15",
+      "set": "g05",
+      "seed": 2660132975,
+      "incident": "INC-BILL-2705",
+      "family": "lost_response",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": true,
+        "replies": false,
+        "summary": true
+      },
+      "perturbations": [
+        "lose_note_response@triple"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "faults",
+        "summary_world"
+      ],
+      "signature": "3a03c04ea93e26f2"
+    },
+    {
+      "id": "G05-16",
+      "set": "g05",
+      "seed": 1533402878,
+      "incident": "INC-BILL-2705",
+      "family": "lost_response",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": true,
+        "replies": false,
+        "summary": true
+      },
+      "perturbations": [
+        "lose_credit_response@window_end"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "faults",
+        "summary_world"
+      ],
+      "signature": "e963ce264867000a"
+    },
+    {
+      "id": "G05-17",
+      "set": "g05",
+      "seed": 3707819311,
+      "incident": "INC-BILL-2705",
+      "family": "combination",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": true,
+        "replies": false,
+        "summary": true
+      },
+      "perturbations": [
+        "phantom_charge@dup_small",
+        "teammate_priority:high@window_start",
+        "lose_refund_response@dup_mid"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "faults",
+        "summary_world"
+      ],
+      "signature": "ff2e220c5669b382"
+    },
+    {
+      "id": "G05-18",
+      "set": "g05",
+      "seed": 2895919066,
+      "incident": "INC-BILL-2705",
+      "family": "combination",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": true,
+        "replies": false,
+        "summary": true
+      },
+      "perturbations": [
+        "late_charge@below_threshold",
+        "public_comment@dup_large"
+      ],
+      "scope": [
+        "below_threshold",
+        "control_other_currency",
+        "dup_large",
+        "dup_mid",
+        "dup_small"
+      ],
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "0b5498994a1e58d6"
+    },
+    {
+      "id": "G06-1",
+      "set": "g06",
+      "seed": 1209262799,
+      "incident": "INC-BILL-2706",
+      "family": "baseline",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": true,
+        "replies": true,
+        "summary": false
+      },
+      "perturbations": [],
+      "scope": "all",
+      "capabilities": [
+        "setup"
+      ],
+      "signature": "861209c1357d8bc3"
+    },
+    {
+      "id": "G06-2",
+      "set": "g06",
+      "seed": 2570769216,
+      "incident": "INC-BILL-2706",
+      "family": "scoped",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": true,
+        "replies": true,
+        "summary": false
+      },
+      "perturbations": [],
+      "scope": [
+        "control_outside_window",
+        "dup_small",
+        "ownership",
+        "straddle"
+      ],
+      "capabilities": [
+        "setup"
+      ],
+      "signature": "aede6d23771b0517"
+    },
+    {
+      "id": "G06-3",
+      "set": "g06",
+      "seed": 812408745,
+      "incident": "INC-BILL-2706",
+      "family": "relevant_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": true,
+        "replies": true,
+        "summary": false
+      },
+      "perturbations": [
+        "phantom_charge@usd_balance"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "760020020e7ab021"
+    },
+    {
+      "id": "G06-4",
+      "set": "g06",
+      "seed": 1782474480,
+      "incident": "INC-BILL-2706",
+      "family": "relevant_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": true,
+        "replies": true,
+        "summary": false
+      },
+      "perturbations": [
+        "phantom_charge@triple"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "f5377fa9d2e5b30a"
+    },
+    {
+      "id": "G06-5",
+      "set": "g06",
+      "seed": 574625281,
+      "incident": "INC-BILL-2706",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": true,
+        "replies": true,
+        "summary": false
+      },
+      "perturbations": [
+        "late_charge@below_threshold"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "111a2efb82e0fb7e"
+    },
+    {
+      "id": "G06-6",
+      "set": "g06",
+      "seed": 43747472,
+      "incident": "INC-BILL-2706",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": true,
+        "replies": true,
+        "summary": false
+      },
+      "perturbations": [
+        "early_charge@dup_large"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "cd86876fcb1e463f"
+    },
+    {
+      "id": "G06-7",
+      "set": "g06",
+      "seed": 1203152687,
+      "incident": "INC-BILL-2706",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": true,
+        "replies": true,
+        "summary": false
+      },
+      "perturbations": [
+        "stranger_charge"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "9b079a3516a01cc5"
+    },
+    {
+      "id": "G06-8",
+      "set": "g06",
+      "seed": 3983778120,
+      "incident": "INC-BILL-2706",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": true,
+        "replies": true,
+        "summary": false
+      },
+      "perturbations": [
+        "public_comment@triple"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "e621949c7066cb20"
+    },
+    {
+      "id": "G06-9",
+      "set": "g06",
+      "seed": 2285535904,
+      "incident": "INC-BILL-2706",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": true,
+        "replies": true,
+        "summary": false
+      },
+      "perturbations": [
+        "teammate_tag@dup_small"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "77618df0cd09beee"
+    },
+    {
+      "id": "G06-10",
+      "set": "g06",
+      "seed": 439727978,
+      "incident": "INC-BILL-2706",
+      "family": "teammate_edit",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": true,
+        "replies": true,
+        "summary": false
+      },
+      "perturbations": [
+        "teammate_priority:urgent@window_start"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "a4b4487afa976a2d"
+    },
+    {
+      "id": "G06-11",
+      "set": "g06",
+      "seed": 1609604214,
+      "incident": "INC-BILL-2706",
+      "family": "teammate_edit",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": true,
+        "replies": true,
+        "summary": false
+      },
+      "perturbations": [
+        "teammate_priority:low@refunded_retry"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "b34c4caebc5cf87b"
+    },
+    {
+      "id": "G06-12",
+      "set": "g06",
+      "seed": 3801296504,
+      "incident": "INC-BILL-2706",
+      "family": "existing_remedy",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": true,
+        "replies": true,
+        "summary": false
+      },
+      "perturbations": [
+        "teammate_refund_original@usd_balance"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "88ce3a2d8a75c1a2"
+    },
+    {
+      "id": "G06-13",
+      "set": "g06",
+      "seed": 1901307833,
+      "incident": "INC-BILL-2706",
+      "family": "incomplete_read",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": true,
+        "replies": true,
+        "summary": false
+      },
+      "perturbations": [
+        "fail_charge_list_read@window_start"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "faults"
+      ],
+      "signature": "0dae70607b74147a"
+    },
+    {
+      "id": "G06-14",
+      "set": "g06",
+      "seed": 2246034859,
+      "incident": "INC-BILL-2706",
+      "family": "lost_response",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": true,
+        "replies": true,
+        "summary": false
+      },
+      "perturbations": [
+        "throttle_first_refund",
+        "lose_refund_response@window_start"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "faults"
+      ],
+      "signature": "10281fae351f345a"
+    },
+    {
+      "id": "G06-15",
+      "set": "g06",
+      "seed": 1603172850,
+      "incident": "INC-BILL-2706",
+      "family": "lost_response",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": true,
+        "replies": true,
+        "summary": false
+      },
+      "perturbations": [
+        "lose_note_response@triple"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "faults"
+      ],
+      "signature": "650305d7f2aafec2"
+    },
+    {
+      "id": "G06-16",
+      "set": "g06",
+      "seed": 2954771057,
+      "incident": "INC-BILL-2706",
+      "family": "lost_response",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": true,
+        "replies": true,
+        "summary": false
+      },
+      "perturbations": [
+        "lose_reply_response@at_threshold"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "faults"
+      ],
+      "signature": "d703693e6ca799e2"
+    },
+    {
+      "id": "G06-17",
+      "set": "g06",
+      "seed": 3531705073,
+      "incident": "INC-BILL-2706",
+      "family": "combination",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": true,
+        "replies": true,
+        "summary": false
+      },
+      "perturbations": [
+        "phantom_charge@below_threshold",
+        "teammate_priority:high@triple",
+        "lose_refund_response@dup_mid"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "faults"
+      ],
+      "signature": "4ade32803edf20ac"
+    },
+    {
+      "id": "G06-18",
+      "set": "g06",
+      "seed": 1135075525,
+      "incident": "INC-BILL-2706",
+      "family": "combination",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": true,
+        "replies": true,
+        "summary": false
+      },
+      "perturbations": [
+        "late_charge@dup_large",
+        "public_comment@triple"
+      ],
+      "scope": [
+        "at_threshold",
+        "control_failed_retry",
+        "dup_large",
+        "triple",
+        "window_end"
+      ],
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "c1cd23b4816b76c7"
+    },
+    {
+      "id": "G07-1",
+      "set": "g07",
+      "seed": 2351767673,
+      "incident": "INC-BILL-2707",
+      "family": "baseline",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": false,
+        "replies": true,
+        "summary": false
+      },
+      "perturbations": [],
+      "scope": "all",
+      "capabilities": [
+        "setup"
+      ],
+      "signature": "ac00d0edc7c65cd7"
+    },
+    {
+      "id": "G07-2",
+      "set": "g07",
+      "seed": 955068906,
+      "incident": "INC-BILL-2707",
+      "family": "scoped",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": false,
+        "replies": true,
+        "summary": false
+      },
+      "perturbations": [],
+      "scope": [
+        "at_threshold",
+        "control_failed_retry",
+        "straddle",
+        "window_end"
+      ],
+      "capabilities": [
+        "setup"
+      ],
+      "signature": "cb8a7cc1dbedb902"
+    },
+    {
+      "id": "G07-3",
+      "set": "g07",
+      "seed": 2503215801,
+      "incident": "INC-BILL-2707",
+      "family": "relevant_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": false,
+        "replies": true,
+        "summary": false
+      },
+      "perturbations": [
+        "phantom_charge@dup_mid"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "dff9e8ee5cb6cceb"
+    },
+    {
+      "id": "G07-4",
+      "set": "g07",
+      "seed": 2133731239,
+      "incident": "INC-BILL-2707",
+      "family": "relevant_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": false,
+        "replies": true,
+        "summary": false
+      },
+      "perturbations": [
+        "phantom_charge@triple"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "0d9f72d58c6d6608"
+    },
+    {
+      "id": "G07-5",
+      "set": "g07",
+      "seed": 1532259010,
+      "incident": "INC-BILL-2707",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": false,
+        "replies": true,
+        "summary": false
+      },
+      "perturbations": [
+        "late_charge@dup_large"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "244cffca2e7e3032"
+    },
+    {
+      "id": "G07-6",
+      "set": "g07",
+      "seed": 959142678,
+      "incident": "INC-BILL-2707",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": false,
+        "replies": true,
+        "summary": false
+      },
+      "perturbations": [
+        "early_charge@dup_large"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "8931691da9dbf718"
+    },
+    {
+      "id": "G07-7",
+      "set": "g07",
+      "seed": 4233523316,
+      "incident": "INC-BILL-2707",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": false,
+        "replies": true,
+        "summary": false
+      },
+      "perturbations": [
+        "stranger_charge"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "6d9efcbe220eac6b"
+    },
+    {
+      "id": "G07-8",
+      "set": "g07",
+      "seed": 806622531,
+      "incident": "INC-BILL-2707",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": false,
+        "replies": true,
+        "summary": false
+      },
+      "perturbations": [
+        "public_comment@window_start"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "e96ca8da9757f90f"
+    },
+    {
+      "id": "G07-9",
+      "set": "g07",
+      "seed": 9073707,
+      "incident": "INC-BILL-2707",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": false,
+        "replies": true,
+        "summary": false
+      },
+      "perturbations": [
+        "teammate_tag@at_threshold"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "4394226b13fd7574"
+    },
+    {
+      "id": "G07-10",
+      "set": "g07",
+      "seed": 3427427285,
+      "incident": "INC-BILL-2707",
+      "family": "teammate_edit",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": false,
+        "replies": true,
+        "summary": false
+      },
+      "perturbations": [
+        "teammate_priority:urgent@below_threshold"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "a83c585cc4b38897"
+    },
+    {
+      "id": "G07-11",
+      "set": "g07",
+      "seed": 633986293,
+      "incident": "INC-BILL-2707",
+      "family": "teammate_edit",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": false,
+        "replies": true,
+        "summary": false
+      },
+      "perturbations": [
+        "teammate_priority:low@refunded_original"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "dafec07f65b8e2e6"
+    },
+    {
+      "id": "G07-12",
+      "set": "g07",
+      "seed": 3628738329,
+      "incident": "INC-BILL-2707",
+      "family": "existing_remedy",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": false,
+        "replies": true,
+        "summary": false
+      },
+      "perturbations": [
+        "teammate_refund_original@usd_balance"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "c7aecbee1fed3c4d"
+    },
+    {
+      "id": "G07-13",
+      "set": "g07",
+      "seed": 3783757359,
+      "incident": "INC-BILL-2707",
+      "family": "incomplete_read",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": false,
+        "replies": true,
+        "summary": false
+      },
+      "perturbations": [
+        "fail_charge_list_read@dup_small"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "faults"
+      ],
+      "signature": "57cf81b25e01e32b"
+    },
+    {
+      "id": "G07-14",
+      "set": "g07",
+      "seed": 665181521,
+      "incident": "INC-BILL-2707",
+      "family": "lost_response",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": false,
+        "replies": true,
+        "summary": false
+      },
+      "perturbations": [
+        "throttle_first_refund",
+        "lose_refund_response@triple"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "faults"
+      ],
+      "signature": "bd90e43dba8023c2"
+    },
+    {
+      "id": "G07-15",
+      "set": "g07",
+      "seed": 462779852,
+      "incident": "INC-BILL-2707",
+      "family": "lost_response",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": false,
+        "replies": true,
+        "summary": false
+      },
+      "perturbations": [
+        "lose_note_response@dup_large"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "faults"
+      ],
+      "signature": "778f890c795ec0d7"
+    },
+    {
+      "id": "G07-16",
+      "set": "g07",
+      "seed": 4198922920,
+      "incident": "INC-BILL-2707",
+      "family": "lost_response",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": false,
+        "replies": true,
+        "summary": false
+      },
+      "perturbations": [
+        "lose_reply_response@below_threshold"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "faults"
+      ],
+      "signature": "5f9c9e07fffa9e14"
+    },
+    {
+      "id": "G07-17",
+      "set": "g07",
+      "seed": 3363568756,
+      "incident": "INC-BILL-2707",
+      "family": "combination",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": false,
+        "replies": true,
+        "summary": false
+      },
+      "perturbations": [
+        "phantom_charge@at_threshold",
+        "teammate_priority:high@dup_small",
+        "lose_refund_response@below_threshold"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "faults"
+      ],
+      "signature": "dc6f1c92f0455501"
+    },
+    {
+      "id": "G07-18",
+      "set": "g07",
+      "seed": 2337626448,
+      "incident": "INC-BILL-2707",
+      "family": "combination",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 2
+      },
+      "ops": {
+        "credits": false,
+        "replies": true,
+        "summary": false
+      },
+      "perturbations": [
+        "late_charge@usd_balance",
+        "public_comment@window_start"
+      ],
+      "scope": [
+        "credited_before",
+        "dup_mid",
+        "refunded_retry",
+        "usd_balance",
+        "window_start"
+      ],
+      "capabilities": [
+        "setup",
+        "drift"
+      ],
+      "signature": "c014fa237d6d168e"
+    },
+    {
+      "id": "G08-1",
+      "set": "g08",
+      "seed": 4102600029,
+      "incident": "INC-BILL-2708",
+      "family": "baseline",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": false,
+        "replies": false,
+        "summary": true
+      },
+      "perturbations": [],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "summary_world"
+      ],
+      "signature": "e7bac2a6c7413763"
+    },
+    {
+      "id": "G08-2",
+      "set": "g08",
+      "seed": 1719547429,
+      "incident": "INC-BILL-2708",
+      "family": "scoped",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": false,
+        "replies": false,
+        "summary": true
+      },
+      "perturbations": [],
+      "scope": [
+        "control_distinct",
+        "dup_large",
+        "refunded_original",
+        "window_end"
+      ],
+      "capabilities": [
+        "setup",
+        "summary_world"
+      ],
+      "signature": "ce83ecbf4b6ee97e"
+    },
+    {
+      "id": "G08-3",
+      "set": "g08",
+      "seed": 606051731,
+      "incident": "INC-BILL-2708",
+      "family": "relevant_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": false,
+        "replies": false,
+        "summary": true
+      },
+      "perturbations": [
+        "phantom_charge@below_threshold"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "b4b0f357dd63aa77"
+    },
+    {
+      "id": "G08-4",
+      "set": "g08",
+      "seed": 1149925938,
+      "incident": "INC-BILL-2708",
+      "family": "relevant_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": false,
+        "replies": false,
+        "summary": true
+      },
+      "perturbations": [
+        "phantom_charge@triple"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "096276a7f4834739"
+    },
+    {
+      "id": "G08-5",
+      "set": "g08",
+      "seed": 4062951420,
+      "incident": "INC-BILL-2708",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": false,
+        "replies": false,
+        "summary": true
+      },
+      "perturbations": [
+        "late_charge@dup_mid"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "898a081996d0044b"
+    },
+    {
+      "id": "G08-6",
+      "set": "g08",
+      "seed": 1547461645,
+      "incident": "INC-BILL-2708",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": false,
+        "replies": false,
+        "summary": true
+      },
+      "perturbations": [
+        "early_charge@usd_balance"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "71e34681eda766c7"
+    },
+    {
+      "id": "G08-7",
+      "set": "g08",
+      "seed": 1142995769,
+      "incident": "INC-BILL-2708",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": false,
+        "replies": false,
+        "summary": true
+      },
+      "perturbations": [
+        "stranger_charge"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "f74bfec5d0d80db4"
+    },
+    {
+      "id": "G08-8",
+      "set": "g08",
+      "seed": 2396402462,
+      "incident": "INC-BILL-2708",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": false,
+        "replies": false,
+        "summary": true
+      },
+      "perturbations": [
+        "public_comment@window_start"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "64bff21cf6540bfc"
+    },
+    {
+      "id": "G08-9",
+      "set": "g08",
+      "seed": 1862107853,
+      "incident": "INC-BILL-2708",
+      "family": "benign_drift",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": false,
+        "replies": false,
+        "summary": true
+      },
+      "perturbations": [
+        "teammate_tag@below_threshold"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "790668722c67e287"
+    },
+    {
+      "id": "G08-10",
+      "set": "g08",
+      "seed": 422944750,
+      "incident": "INC-BILL-2708",
+      "family": "teammate_edit",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": false,
+        "replies": false,
+        "summary": true
+      },
+      "perturbations": [
+        "teammate_priority:urgent@window_end"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "9d1c863c5a3d2e79"
+    },
+    {
+      "id": "G08-11",
+      "set": "g08",
+      "seed": 2313244507,
+      "incident": "INC-BILL-2708",
+      "family": "teammate_edit",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": false,
+        "replies": false,
+        "summary": true
+      },
+      "perturbations": [
+        "teammate_priority:low@refunded_original"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "f6df3cf34ead4006"
+    },
+    {
+      "id": "G08-12",
+      "set": "g08",
+      "seed": 847888288,
+      "incident": "INC-BILL-2708",
+      "family": "existing_remedy",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": false,
+        "replies": false,
+        "summary": true
+      },
+      "perturbations": [
+        "teammate_refund_original@window_end"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "f6f02b434f5f4ea0"
+    },
+    {
+      "id": "G08-13",
+      "set": "g08",
+      "seed": 1120748039,
+      "incident": "INC-BILL-2708",
+      "family": "incomplete_read",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": false,
+        "replies": false,
+        "summary": true
+      },
+      "perturbations": [
+        "fail_charge_list_read@usd_balance"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "faults",
+        "summary_world"
+      ],
+      "signature": "c765cbae3bf465fa"
+    },
+    {
+      "id": "G08-14",
+      "set": "g08",
+      "seed": 3507094150,
+      "incident": "INC-BILL-2708",
+      "family": "lost_response",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": false,
+        "replies": false,
+        "summary": true
+      },
+      "perturbations": [
+        "throttle_first_refund",
+        "lose_refund_response@triple"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "faults",
+        "summary_world"
+      ],
+      "signature": "28fbfcb7bd2d1b8f"
+    },
+    {
+      "id": "G08-15",
+      "set": "g08",
+      "seed": 1731080512,
+      "incident": "INC-BILL-2708",
+      "family": "lost_response",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": false,
+        "replies": false,
+        "summary": true
+      },
+      "perturbations": [
+        "lose_note_response@window_start"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "faults",
+        "summary_world"
+      ],
+      "signature": "1e6b5143f235812f"
+    },
+    {
+      "id": "G08-16",
+      "set": "g08",
+      "seed": 1358799145,
+      "incident": "INC-BILL-2708",
+      "family": "lost_response",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": false,
+        "replies": false,
+        "summary": true
+      },
+      "perturbations": [
+        "lose_refund_response@below_threshold"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "faults",
+        "summary_world"
+      ],
+      "signature": "d6a60e283ea59772"
+    },
+    {
+      "id": "G08-17",
+      "set": "g08",
+      "seed": 493416877,
+      "incident": "INC-BILL-2708",
+      "family": "combination",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": false,
+        "replies": false,
+        "summary": true
+      },
+      "perturbations": [
+        "phantom_charge@usd_balance",
+        "teammate_priority:high@window_end",
+        "lose_refund_response@dup_mid"
+      ],
+      "scope": "all",
+      "capabilities": [
+        "setup",
+        "drift",
+        "faults",
+        "summary_world"
+      ],
+      "signature": "a60739fdef7e9975"
+    },
+    {
+      "id": "G08-18",
+      "set": "g08",
+      "seed": 3208663413,
+      "incident": "INC-BILL-2708",
+      "family": "combination",
+      "policy": {
+        "id": "billing-remedy",
+        "version": 3
+      },
+      "ops": {
+        "credits": false,
+        "replies": false,
+        "summary": true
+      },
+      "perturbations": [
+        "late_charge@at_threshold",
+        "public_comment@dup_mid"
+      ],
+      "scope": [
+        "at_threshold",
+        "control_failed_retry",
+        "control_other_currency",
+        "dup_mid",
+        "refunded_retry"
+      ],
+      "capabilities": [
+        "setup",
+        "drift",
+        "summary_world"
+      ],
+      "signature": "d0861ed4fa0552ea"
+    }
+  ]
+}

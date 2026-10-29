@@ -2,33 +2,38 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { goldFile, loadGold } from "../src/gold";
 import type { End } from "../src/schema";
-import { inputFiles, jsonDigest, loadSets, scopeOf } from "../src/sets";
+import { inputFiles, jsonDigest, loadSets, scopeOf, splitRoot } from "../src/sets";
 
 /**
  * T4.14: the gold is complete, pinned to the inputs it was written against, and consistent with
  * the policy text. The consistency rules below restate the policy independently of the gold; they
- * catch authoring slips, they don't generate the gold.
+ * catch authoring slips, they don't generate the gold. T1.40: the catalog's derived gold is held to
+ * the same rules.
  */
 
-const sets = loadSets();
-const MANIFEST = new URL("../manifest.json", import.meta.url);
+const sets = [...loadSets(), ...loadSets("catalog")];
 
 describe.each(sets)("gold for $id", (set) => {
-  const gold = loadGold(set.id);
+  const gold = loadGold(set.id, set.split);
   const { policy, tasks } = set;
   const cases = new Map(set.records.cases.map((c) => [c.key, c]));
 
   it("was written against the current inputs", () => {
-    const files = inputFiles(set.id);
+    expect([gold.split, gold.evidence]).toEqual(
+      set.split === "catalog" ? ["catalog", "derived"] : ["held-out", "authored"],
+    );
+    const files = inputFiles(set.id, set.split);
     expect(gold.inputs, "an input changed after the gold was written; re-author it").toEqual({
       incident: jsonDigest(files.incident),
       tasks: jsonDigest(files.tasks),
       policy: jsonDigest(files.policy),
     });
-    const manifest = JSON.parse(readFileSync(MANIFEST, "utf8"));
+    const manifest = JSON.parse(
+      readFileSync(new URL("manifest.json", splitRoot(set.split)), "utf8"),
+    );
     const entry = manifest.sets.find((s: { id: string }) => s.id === set.id);
     expect(entry?.gold, "the gold changed; bump its version and the manifest").toBe(
-      jsonDigest(goldFile(set.id)),
+      jsonDigest(goldFile(set.id, set.split)),
     );
     expect(entry?.version).toBe(gold.version);
   });

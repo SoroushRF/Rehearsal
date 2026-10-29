@@ -10,11 +10,21 @@ import { Incident, Tasks } from "./schema";
  */
 
 const ROOT = new URL("../", import.meta.url);
-const SETS = new URL("sets/", ROOT);
-const POLICIES = new URL("../../scenarios/billing/", ROOT);
+export const POLICIES = new URL("../../scenarios/billing/", ROOT);
+
+/** Hand-authored held-out sets, or the generated scenario catalog (T1.40). Same shapes. */
+export type Split = "held-out" | "catalog";
+
+/** Where a split keeps its sets, gold and manifest. */
+export function splitRoot(split: Split): URL {
+  return split === "held-out" ? ROOT : new URL("catalog/", ROOT);
+}
+
+const setsDir = (split: Split) => new URL("sets/", splitRoot(split));
 
 export interface HeldOutSet {
   id: string;
+  split: Split;
   incident: Incident;
   tasks: Tasks;
   policy: BillingPolicy;
@@ -31,30 +41,35 @@ export function jsonDigest(url: URL): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
-export function setIds(): string[] {
-  return readdirSync(SETS, { withFileTypes: true })
+export function setIds(split: Split = "held-out"): string[] {
+  return readdirSync(setsDir(split), { withFileTypes: true })
     .filter((d) => d.isDirectory())
     .map((d) => d.name)
     .sort();
 }
 
-export function inputFiles(id: string): { incident: URL; tasks: URL; policy: URL } {
-  const tasks = Tasks.parse(JSON.parse(readFileSync(new URL(`${id}/tasks.json`, SETS), "utf8")));
+export function inputFiles(
+  id: string,
+  split: Split = "held-out",
+): { incident: URL; tasks: URL; policy: URL } {
+  const sets = setsDir(split);
+  const tasks = Tasks.parse(JSON.parse(readFileSync(new URL(`${id}/tasks.json`, sets), "utf8")));
   return {
-    incident: new URL(`${id}/incident.json`, SETS),
-    tasks: new URL(`${id}/tasks.json`, SETS),
+    incident: new URL(`${id}/incident.json`, sets),
+    tasks: new URL(`${id}/tasks.json`, sets),
     policy: new URL(`policy.v${tasks.policy.version}.json`, POLICIES),
   };
 }
 
-export function loadSet(id: string): HeldOutSet {
-  const files = inputFiles(id);
+export function loadSet(id: string, split: Split = "held-out"): HeldOutSet {
+  const files = inputFiles(id, split);
   const incident = Incident.parse(JSON.parse(readFileSync(files.incident, "utf8")));
   const tasks = Tasks.parse(JSON.parse(readFileSync(files.tasks, "utf8")));
   if (tasks.set !== id) throw new Error(`${id}/tasks.json names set ${tasks.set}`);
   const policy = JSON.parse(readFileSync(files.policy, "utf8")) as BillingPolicy;
   return {
     id,
+    split,
     incident,
     tasks,
     policy,
@@ -63,8 +78,8 @@ export function loadSet(id: string): HeldOutSet {
   };
 }
 
-export function loadSets(): HeldOutSet[] {
-  return setIds().map(loadSet);
+export function loadSets(split: Split = "held-out"): HeldOutSet[] {
+  return setIds(split).map((id) => loadSet(id, split));
 }
 
 /** The cases a task asks about. */

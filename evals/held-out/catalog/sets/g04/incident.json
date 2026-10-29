@@ -1,0 +1,214 @@
+{
+  "incident": "INC-BILL-2704",
+  "summary": "An April billing migration replayed payment attempts.",
+  "window": {
+    "createdGte": "2027-04-04T00:00:00.000Z",
+    "createdLt": "2027-04-18T00:00:00.000Z"
+  },
+  "ids": {
+    "prefix": "INC2704",
+    "ticketBase": 9604001
+  },
+  "cases": [
+    {
+      "key": "a01",
+      "kind": "duplicate",
+      "customerId": "cus_ILNuKapKeOKZImnX",
+      "name": "Ember Brewing",
+      "email": "ap@ember-brewing.example",
+      "requesterId": 3004000,
+      "amountMinor": 3467,
+      "currency": "cad",
+      "chargedAt": "2027-04-08T14:00:00.000Z"
+    },
+    {
+      "key": "a02",
+      "kind": "duplicate",
+      "customerId": "cus_HZqYPQOgSRgOyPld",
+      "name": "Willow Dental",
+      "email": "ops@willow-dental.example",
+      "requesterId": 3004001,
+      "amountMinor": 6398,
+      "currency": "cad",
+      "chargedAt": "2027-04-10T11:00:00.000Z"
+    },
+    {
+      "key": "a03",
+      "kind": "duplicate",
+      "customerId": "cus_FQmVOsqaFBYGWFub",
+      "name": "Indigo Nursery",
+      "email": "finance@indigo-nursery.example",
+      "requesterId": 3004002,
+      "amountMinor": 9997,
+      "currency": "cad",
+      "chargedAt": "2027-04-08T16:00:00.000Z"
+    },
+    {
+      "key": "a04",
+      "kind": "duplicate",
+      "customerId": "cus_ZRqHVXlypifOPvlj",
+      "name": "Onyx Outfitters",
+      "email": "ops@onyx-outfitters.example",
+      "requesterId": 3004003,
+      "amountMinor": 10000,
+      "currency": "cad",
+      "chargedAt": "2027-04-15T17:00:00.000Z"
+    },
+    {
+      "key": "a05",
+      "kind": "duplicate",
+      "customerId": "cus_pJLRpqAzPTVZvzeB",
+      "name": "Onyx Ledger",
+      "email": "finance@onyx-ledger.example",
+      "requesterId": 3004004,
+      "amountMinor": 11708,
+      "currency": "cad",
+      "chargedAt": "2027-04-05T11:00:00.000Z"
+    },
+    {
+      "key": "a06",
+      "kind": "duplicate",
+      "customerId": "cus_JedaJydwvmXsTMAA",
+      "name": "Driftwood Ledger",
+      "email": "admin@driftwood-ledger.example",
+      "requesterId": 3004005,
+      "amountMinor": 2795,
+      "currency": "cad",
+      "chargedAt": "2027-04-09T17:00:00.000Z",
+      "billingCurrency": "usd"
+    },
+    {
+      "key": "a07",
+      "kind": "duplicate",
+      "customerId": "cus_SpePCRkABlYdMMJa",
+      "name": "Pinecrest Woodworks",
+      "email": "billing@pinecrest-woodworks.example",
+      "requesterId": 3004006,
+      "amountMinor": 5559,
+      "currency": "cad",
+      "chargedAt": "2027-04-08T07:00:00.000Z",
+      "ticketExternalId": "cus_ioYrBBizDksTuFmL"
+    },
+    {
+      "key": "a08",
+      "kind": "duplicate",
+      "customerId": "cus_HSwoJpbyfgwZJFtE",
+      "name": "Willow Optics",
+      "email": "accounts@willow-optics.example",
+      "requesterId": 3004007,
+      "amountMinor": 5930,
+      "currency": "cad",
+      "chargedAt": "2027-04-04T00:00:00.000Z"
+    },
+    {
+      "key": "a09",
+      "kind": "duplicate",
+      "customerId": "cus_TTKtUUyutofkubed",
+      "name": "Maple Ledger",
+      "email": "finance@maple-ledger.example",
+      "requesterId": 3004008,
+      "amountMinor": 4970,
+      "currency": "cad",
+      "chargedAt": "2027-04-17T23:58:00.000Z"
+    },
+    {
+      "key": "a10",
+      "kind": "duplicate",
+      "customerId": "cus_oCvUEyGRhiJRjqJx",
+      "name": "Alder Print Co",
+      "email": "ops@alder-print-co.example",
+      "requesterId": 3004009,
+      "amountMinor": 9047,
+      "currency": "cad",
+      "chargedAt": "2027-04-17T23:59:00.000Z"
+    },
+    {
+      "key": "a11",
+      "kind": "triple",
+      "customerId": "cus_QHFGrepwKcOabqnP",
+      "name": "Quartz Cartography",
+      "email": "ap@quartz-cartography.example",
+      "requesterId": 3004010,
+      "amountMinor": 9089,
+      "currency": "cad",
+      "chargedAt": "2027-04-11T16:00:00.000Z"
+    },
+    {
+      "key": "a12",
+      "kind": "duplicate",
+      "customerId": "cus_ueLQsbNtSfNMIlmn",
+      "name": "Cobalt Studio",
+      "email": "billing@cobalt-studio.example",
+      "requesterId": 3004011,
+      "amountMinor": 8551,
+      "currency": "cad",
+      "chargedAt": "2027-04-13T11:00:00.000Z"
+    },
+    {
+      "key": "a13",
+      "kind": "duplicate",
+      "customerId": "cus_GQyKfaNxmakdOjCN",
+      "name": "Quartz Studio",
+      "email": "billing@quartz-studio.example",
+      "requesterId": 3004012,
+      "amountMinor": 8268,
+      "currency": "cad",
+      "chargedAt": "2027-04-15T07:00:00.000Z"
+    },
+    {
+      "key": "a14",
+      "kind": "duplicate",
+      "customerId": "cus_vbwmJhQKyYzBNYLr",
+      "name": "Jade Hydroponics",
+      "email": "finance@jade-hydroponics.example",
+      "requesterId": 3004013,
+      "amountMinor": 3925,
+      "currency": "cad",
+      "chargedAt": "2027-04-08T11:00:00.000Z"
+    },
+    {
+      "key": "n01",
+      "kind": "control_distinct",
+      "customerId": "cus_ErrZOXujciSqkOSz",
+      "name": "Alder Forge",
+      "email": "admin@alder-forge.example",
+      "requesterId": 3004014,
+      "amountMinor": 1600,
+      "currency": "cad",
+      "chargedAt": "2027-04-16T15:00:00.000Z"
+    },
+    {
+      "key": "n02",
+      "kind": "control_other_currency",
+      "customerId": "cus_mWIuLtsMaPkIIAAJ",
+      "name": "Vantage Outfitters",
+      "email": "admin@vantage-outfitters.example",
+      "requesterId": 3004015,
+      "amountMinor": 7944,
+      "currency": "usd",
+      "chargedAt": "2027-04-06T11:00:00.000Z"
+    },
+    {
+      "key": "n03",
+      "kind": "control_outside_window",
+      "customerId": "cus_ZqfcGPtDsXENeZbS",
+      "name": "Zephyr Optics",
+      "email": "finance@zephyr-optics.example",
+      "requesterId": 3004016,
+      "amountMinor": 6716,
+      "currency": "cad",
+      "chargedAt": "2027-03-30T00:00:00.000Z"
+    },
+    {
+      "key": "n04",
+      "kind": "control_failed_retry",
+      "customerId": "cus_hGAnztWhhzyiJVyh",
+      "name": "Alder Robotics",
+      "email": "payables@alder-robotics.example",
+      "requesterId": 3004017,
+      "amountMinor": 5430,
+      "currency": "cad",
+      "chargedAt": "2027-04-14T08:00:00.000Z"
+    }
+  ]
+}
