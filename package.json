@@ -38,7 +38,8 @@
     "stripe:sandbox": "tsx scripts/stripe-sandbox/main.ts",
     "eval:scorecard": "tsx --env-file-if-exists=.env evals/scorecard/src/main.ts",
     "eval:scorecard:concurrency": "tsx evals/scorecard/src/concurrency.ts",
-    "eval:catalog": "tsx evals/held-out/src/catalog-cli.ts"
+    "eval:catalog": "tsx evals/held-out/src/catalog-cli.ts",
+    "eval:held-out": "tsx --env-file-if-exists=.env evals/held-out/src/run/main.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",

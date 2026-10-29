@@ -278,6 +278,10 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+const COHORT_AMOUNTS: ReadonlyMap<string, number> = new Map(
+  records.stripe.charges.map((ch) => [String(ch.id), Number(ch.amount)]),
+);
+
 /** One case's raw reads, for `judgeCase`. */
 export interface CaseReads {
   refunds: { id: string; charge: string; amount: number; currency: string; ours: boolean }[];
@@ -292,8 +296,12 @@ export interface CaseReads {
  * is incorrect. A credit of another amount or currency is incorrect. Each private note and public
  * reply of ours must be the approved template's text for an effect this case actually has.
  */
-export function judgeCase(c: SeededCase, reads: CaseReads): CaseOutcome {
-  const amounts = new Map(records.stripe.charges.map((ch) => [String(ch.id), Number(ch.amount)]));
+export function judgeCase(
+  c: SeededCase,
+  reads: CaseReads,
+  /** Charge ID → amount; the dev cohort's by default (the held-out runner passes its set's). */
+  amounts: ReadonlyMap<string, number> = COHORT_AMOUNTS,
+): CaseOutcome {
   const duplicate = c.chargeIds[1] ?? "";
   const duplicateAmount = amounts.get(duplicate) ?? 0;
   let incorrect = 0;
@@ -427,7 +435,10 @@ export function countOutside(effects: OurEffects, known: typeof KNOWN = KNOWN): 
 }
 
 /** Every refund in the tenant, every credit on a customer outside the cohort, and every comment on a ticket outside it. */
-export async function readOurEffects(worlds: Worlds): Promise<OurEffects> {
+export async function readOurEffects(
+  worlds: Worlds,
+  known: typeof KNOWN = KNOWN,
+): Promise<OurEffects> {
   const ours = (metadata: unknown) =>
     typeof (metadata as { rehearsal_op?: unknown } | null)?.rehearsal_op === "string";
   const stripeAll = async <T extends { id: string }>(path: string): Promise<T[]> => {
@@ -452,7 +463,7 @@ export async function readOurEffects(worlds: Worlds): Promise<OurEffects> {
   ).map((r) => ({ charge: String(r.charge), ours: ours(r.metadata) }));
   const credits: OurEffects["credits"] = [];
   for (const customer of await stripeAll<{ id: string }>("/v1/customers")) {
-    if (KNOWN.customers.has(customer.id)) continue;
+    if (known.customers.has(customer.id)) continue;
     const txs = await stripeAll<{ id: string; metadata?: unknown }>(
       `/v1/customers/${customer.id}/balance_transactions`,
     );
@@ -467,7 +478,7 @@ export async function readOurEffects(worlds: Worlds): Promise<OurEffects> {
       next,
     );
     for (const t of body.tickets) {
-      if (KNOWN.tickets.has(String(t.id))) continue;
+      if (known.tickets.has(String(t.id))) continue;
       for (const c of await getComments(worlds.zendesk, t.id)) {
         comments.push({ ticket: String(t.id), ours: MARKER.test(c.body) });
       }
