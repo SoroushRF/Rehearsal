@@ -181,10 +181,17 @@ function withFaults(port: ProviderPort, faults: readonly Fault[]): ProviderPort 
 
 const phantomId = (key: CaseKey) => `ch_INC0927${key}phantom`;
 const LATE_ID = (key: CaseKey) => `ch_INC0927${key}late`;
+const OTHER_INVOICE_ID = (key: CaseKey) => `ch_INC0927${key}otherinv`;
 const STRANGER_ID = "ch_INC0927stranger";
 
 /** A copy of the case's second charge with a new ID and date (the scripts/inject/phantom shape). */
-function chargeCopy(key: CaseKey, id: string, createdIso: string, customer?: string) {
+function chargeCopy(
+  key: CaseKey,
+  id: string,
+  createdIso: string,
+  customer?: string,
+  invoice?: string,
+) {
   const c = cohortCase(key);
   const template = records.stripe.charges.find((ch) => ch.id === c.chargeIds[1]);
   if (!template) throw new Error(`cohort has no charge ${c.chargeIds[1]}`);
@@ -192,6 +199,7 @@ function chargeCopy(key: CaseKey, id: string, createdIso: string, customer?: str
     ...template,
     id,
     ...(customer && { customer }),
+    ...(invoice && { invoice, description: `Invoice ${invoice}` }),
     created: Date.parse(createdIso) / 1000,
     payment_intent: `pi_${id.slice(3)}`,
     balance_transaction: `txn_${id.slice(3)}`,
@@ -210,6 +218,17 @@ export async function applyDrift(worlds: Worlds, drift: readonly Drift[]): Promi
         break;
       case "late_charge":
         charges.push(chargeCopy(d.caseKey, LATE_ID(d.caseKey), "2026-10-10T09:00:00.000Z"));
+        break;
+      case "other_invoice_charge":
+        charges.push(
+          chargeCopy(
+            d.caseKey,
+            OTHER_INVOICE_ID(d.caseKey),
+            "2026-09-26T09:00:00.000Z",
+            undefined,
+            `in_INC0927${d.caseKey}other`,
+          ),
+        );
         break;
       case "stranger_charge":
         charges.push(
@@ -271,7 +290,7 @@ export async function readOutcomes(worlds: Worlds): Promise<Record<CaseKey, Case
     let refunds = 0;
     let incorrect = 0;
     const duplicateAmount = amounts.get(c.chargeIds[1] ?? "");
-    for (const id of [...c.chargeIds, phantomId(c.key), LATE_ID(c.key)]) {
+    for (const id of [...c.chargeIds, phantomId(c.key), LATE_ID(c.key), OTHER_INVOICE_ID(c.key)]) {
       const list = await getJson<{ data: { amount: number }[]; has_more: boolean }>(
         "stripe",
         worlds.stripe,

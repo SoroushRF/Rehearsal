@@ -58,10 +58,18 @@ function runOf(
 }
 
 describe("task catalog", () => {
-  it("has twenty-eight tasks with unique IDs, half of them benign controls", () => {
-    expect(TASKS).toHaveLength(28);
-    expect(new Set(TASKS.map((t) => t.id)).size).toBe(28);
-    expect(TASKS.filter((t) => t.kind === "benign")).toHaveLength(14);
+  it("has twenty-nine tasks with unique IDs, fifteen of them benign controls", () => {
+    expect(TASKS).toHaveLength(29);
+    expect(new Set(TASKS.map((t) => t.id)).size).toBe(29);
+    expect(TASKS.filter((t) => t.kind === "benign")).toHaveLength(15);
+  });
+
+  it("expects c01's refund to go through when another of its invoices is charged (T1.34)", () => {
+    expect(byId("B11")).toMatchObject({
+      kind: "benign",
+      drift: [{ kind: "other_invoice_charge", caseKey: "c01" }],
+    });
+    expect(byId("B11").gold.c01).toMatchObject({ refunds: 1, notes: 1, priority: "high" });
   });
 
   it("scores every cohort case in every task and only names cohort cases", () => {
