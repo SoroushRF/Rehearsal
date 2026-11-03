@@ -10,6 +10,7 @@ import {
 } from "@rehearsal/core";
 import type { Db, Provisioning, RehearsalRunContext, RehearsalSweepContext } from "@rehearsal/db";
 import {
+  primeTokens,
   REHEARSAL_CHALLENGE_ROUTE,
   REHEARSAL_PROVISION_ROUTE,
   REHEARSAL_TEARDOWN_ROUTE,
@@ -192,6 +193,9 @@ export function runContext(
     versions: config.versions,
     evidence: config.evidence,
     provision: (_manifest, id) => operator.provision(id),
+    // #323: the operator mints for the rehearsal containers it knows, and the token source refuses
+    // a token for any other URL. Minting both now fails a misrouted worker by name, not per step.
+    checkWorlds: () => primeTokens(configs),
     teardown: (id) => operator.teardown(id),
     challenge: (input) => operator.challenge(input),
     guard: createReadGuard({ ...tenant, clock: config.clock }),
