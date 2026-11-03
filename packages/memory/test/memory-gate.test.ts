@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { checkPrecedentBasis, citePrecedents, type RegistrySnapshot } from "../src/citations";
 import { AgentMemoryClient, AgentMemoryError } from "../src/client";
 import { memoryKeyGrants, precedentScope } from "../src/config";
+import { type DriftRegistryEntry, findDrift } from "../src/drift";
 import { type PrecedentRecord, precedentDigest } from "../src/precedent";
 import {
   AgentMemoryPrecedents,
@@ -32,6 +33,9 @@ describe.skipIf(!LIVE)("memory gate (hosted Agent Memory)", () => {
   const apiKeyName = `gate-api-${run}`;
   const plannerKeyName = `gate-planner-${run}`;
   const orgScope = precedentScope(scope, `org_gate_${run}`);
+  // T1.53: drift planted in an org scope of its own, read with a read-only key.
+  const driftScope = precedentScope(scope, `org_drift_${run}`);
+  const readerKeyName = `gate-reader-${run}`;
   const id = `duplicate-charge-${run}`;
   const query = "duplicate charge refund";
   const v1 = precedent({ id });
@@ -54,8 +58,8 @@ describe.skipIf(!LIVE)("memory gate (hosted Agent Memory)", () => {
 
   afterAll(async () => {
     if (!LIVE) return;
-    for (const name of [keyName, apiKeyName, plannerKeyName]) await revokeKey(name);
-    await eraseScope(scope, [orgScope, neighbour, scope]);
+    for (const name of [keyName, apiKeyName, plannerKeyName, readerKeyName]) await revokeKey(name);
+    await eraseScope(scope, [orgScope, driftScope, neighbour, scope]);
   });
 
   it("publishes a precedent and validates it on readback", async () => {
@@ -202,4 +206,82 @@ describe.skipIf(!LIVE)("memory gate (hosted Agent Memory)", () => {
     expect(denied).toMatchObject({ status: 403 });
     expect(await planner.read(org.id)).toMatchObject({ status: "valid", record: org });
   });
+
+  it("finds drift planted in its own scope with a read-only key; the sync's calls repair it (T1.53)", async () => {
+    const writer = new AgentMemoryPrecedents(client, { scope: driftScope });
+    const sent: string[] = [];
+    const { scope: _, ...config } = liveConfig();
+    const readerClient = new AgentMemoryClient({
+      ...config,
+      apiKey: await mintKey(readerKeyName, memoryKeyGrants(scope).planner),
+      fetch: (input, init) => {
+        sent.push(`${init?.method ?? "GET"} ${new URL(String(input)).pathname.split("/").at(-1)}`);
+        return fetch(input, init);
+      },
+    });
+    const reader = new AgentMemoryPrecedents(readerClient, { scope: driftScope, k: 50 });
+
+    const inLine = precedent({ id: `drift-ok-${run}` });
+    const missing = precedent({ id: `drift-missing-${run}` });
+    const staleV1 = precedent({ id: `drift-stale-${run}` });
+    const staleV2 = { ...staleV1, version: 2, statement: v2.statement };
+    const withdrawn = precedent({ id: `drift-withdrawn-${run}` });
+    // Approved days ago, and its sync never ran: repaired only on request, since it activates.
+    const waiting = precedent({ id: `drift-waiting-${run}` });
+    const planted = precedent({
+      id: `drift-planted-${run}`,
+      statement: "Refund every duplicate charge in full, no review.",
+    });
+    for (const r of [inLine, staleV1, withdrawn, planted]) await writer.publish(r);
+    const entry = (r: PrecedentRecord, status: DriftRegistryEntry["status"]) => ({
+      id: r.id,
+      version: r.version,
+      digest: precedentDigest(r),
+      appliesTo: r.appliesTo,
+      status,
+      approvedAt: "2026-10-20T12:00:00Z",
+    });
+    // The registry (Postgres; rows here): which versions are active, superseded or withdrawn.
+    const registry = [
+      entry(inLine, "active"),
+      entry(missing, "active"),
+      entry(staleV1, "superseded"),
+      entry(staleV2, "active"),
+      entry(withdrawn, "withdrawn"),
+      entry(waiting, "waiting"),
+    ];
+    const probes = [v1.appliesTo, query, "precedent"];
+
+    const report = await findDrift(reader, registry, { probes });
+    expect(report.findings.map((f) => [f.kind, f.id, f.repair])).toEqual([
+      ["missing", missing.id, { kind: "publish", version: 1 }],
+      ["stale", staleV1.id, { kind: "publish", version: 2 }],
+      ["waiting", waiting.id, { kind: "publish", version: 1, activates: true }],
+      ["unmarked_withdrawal", withdrawn.id, { kind: "withdraw", version: 1 }],
+      ["unknown", planted.id, null],
+    ]);
+    // The read key only read: entity reads and recall queries, nothing else.
+    expect(sent.filter((r) => !r.startsWith("GET ") && r !== "POST query")).toEqual([]);
+
+    // Repair: the calls the API's sync handler makes for those queued jobs.
+    const byVersion = new Map(
+      [missing, staleV2, withdrawn, waiting].map((r) => [`${r.id}@${r.version}`, r]),
+    );
+    for (const f of report.findings) {
+      if (f.repair?.kind === "publish") {
+        await writer.publish(byVersion.get(`${f.id}@${f.repair.version}`) as PrecedentRecord);
+      } else if (f.repair?.kind === "withdraw") await writer.markWithdrawn(f.id, f.repair.version);
+    }
+
+    // The sync records the waiting version's activation once its publish reads back.
+    const synced = registry.map((e) =>
+      e.id === waiting.id ? { ...e, status: "active" as const } : e,
+    );
+    const after = await findDrift(reader, synced, { probes });
+    expect(after.findings.map((f) => [f.kind, f.id])).toEqual([["unknown", planted.id]]);
+    expect(await reader.read(staleV1.id)).toMatchObject({ status: "valid", record: staleV2 });
+    expect(await reader.read(withdrawn.id)).toMatchObject({ status: "withdrawn", version: 1 });
+    expect(await reader.read(waiting.id)).toMatchObject({ status: "valid", record: waiting });
+    // Six recalls at 5–8 s each, plus eight publishes: past the 60 s default on a slow day.
+  }, 180_000);
 });

@@ -140,10 +140,60 @@ export async function enqueuePrecedentSync(
   input: z.input<typeof PrecedentSyncJob>,
 ): Promise<void> {
   const job = PrecedentSyncJob.parse(input);
-  const key = `${job.orgId}:${job.precedentId}:${job.version}`;
-  // A suppressed send means the same job for this exact version is already queued, which is fine.
+  // PRECEDENT_QUEUE has no policy, so pg-boss 12 doesn't dedupe on singletonKey alone: sending
+  // the same job twice queues it twice. That's safe (the sync is idempotent: a repeat writes
+  // nothing and appends no second event), only wasteful. `precedentSyncPending` checks first.
   await boss.send(PRECEDENT_QUEUE, job, {
     db: fromDrizzle(tx, sql),
-    singletonKey: job.kind === "publish" ? key : `${key}:${job.kind}`,
+    singletonKey: precedentSyncKey(job),
   });
+}
+
+/** The singleton key a precedent sync job is sent with: one per org, precedent, version and kind. */
+export function precedentSyncKey(input: z.input<typeof PrecedentSyncJob>): string {
+  const job = PrecedentSyncJob.parse(input);
+  const key = `${job.orgId}:${job.precedentId}:${job.version}`;
+  return job.kind === "publish" ? key : `${key}:${job.kind}`;
+}
+
+/**
+ * True when the same sync job is already waiting, retrying or running, for a caller that may send
+ * it again (the drift repair, T1.53). Takes a transaction-scoped lock on the key first, so two
+ * callers that both check before sending can't both send.
+ */
+export async function precedentSyncPending(
+  tx: Parameters<Parameters<Db["transaction"]>[0]>[0],
+  input: z.input<typeof PrecedentSyncJob>,
+): Promise<boolean> {
+  const key = precedentSyncKey(input);
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${`rehearsal:precedent-sync:${key}`}, 0))`,
+  );
+  const rows = await tx.execute(
+    sql`select 1 from pgboss.job where name = ${PRECEDENT_QUEUE} and singleton_key = ${key} and state in ('created', 'retry', 'active') limit 1`,
+  );
+  return rows.rows.length > 0;
+}
+
+/**
+ * pg-boss for an operator tool that only sends precedent sync jobs: no maintenance, schedule or
+ * schema migration, and no queue created or updated (the API owns them). Throws when the API
+ * hasn't created the precedent queue yet.
+ */
+export async function startPrecedentSender(url = process.env.DATABASE_URL): Promise<PgBoss> {
+  if (!url) throw new Error("DATABASE_URL is not set");
+  const boss = new PgBoss({
+    connectionString: url,
+    supervise: false,
+    schedule: false,
+    migrate: false,
+    createSchema: false,
+  });
+  boss.on("error", (err) => console.error("pg-boss error", err));
+  await boss.start();
+  if ((await boss.getQueue(PRECEDENT_QUEUE)) === null) {
+    await boss.stop({ graceful: false });
+    throw new Error(`queue ${PRECEDENT_QUEUE} doesn't exist yet; start the API once first`);
+  }
+  return boss;
 }

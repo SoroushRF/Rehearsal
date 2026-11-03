@@ -1,21 +1,30 @@
 import { memoryConfigFromEnv, memoryKeyGrants } from "@rehearsal/memory";
 
 /**
- * Mints and revokes the two Agent Memory keys Rehearsal runs with (#365), using the operator's
- * admin key (SURREAL_AGENT_MEMORY_URL, _CONTEXT and _ADMIN_KEY in .env). Neither process ever
- * holds the admin key.
+ * Mints and revokes the Agent Memory keys Rehearsal runs with (#365), using the operator's admin
+ * key (SURREAL_AGENT_MEMORY_URL, _CONTEXT and _ADMIN_KEY in .env). No process but this one and
+ * the memory gate ever holds the admin key.
  *
- *   pnpm memory:keys mint <label>     rehearsal-api-<label> and rehearsal-planner-<label>
+ *   pnpm memory:keys mint <label>            rehearsal-api-<label> and rehearsal-planner-<label>
  *   pnpm memory:keys revoke <label>
+ *   pnpm memory:keys mint-reader <label>     rehearsal-reader-<label>: read-only, for operator
+ *   pnpm memory:keys revoke-reader <label>   checks such as `pnpm memory:drift` (T1.53)
  *
  * The API's key reads and writes below the precedent scope and may register an org's scope; the
- * planner's only reads (`memoryKeyGrants`, the same grants the memory gate checks). `mint` prints
- * each key once, as the line to put in that process's env file; the service doesn't show it again.
+ * planner's and the reader's only read (`memoryKeyGrants`, the same grants the memory gate
+ * checks). A mint prints each key once, as the line for that process's env file; the service
+ * doesn't show it again.
  */
 
-const [command, label] = process.argv.slice(2);
-if ((command !== "mint" && command !== "revoke") || !label || !/^[a-z0-9-]+$/.test(label)) {
-  console.error("usage: pnpm memory:keys mint|revoke <label>   (label: lowercase, digits, dashes)");
+// Usage first, so a mistyped command says so before anything reads the admin key.
+const COMMAND_NAMES = ["mint", "revoke", "mint-reader", "revoke-reader"] as const;
+type Command = (typeof COMMAND_NAMES)[number];
+const isCommand = (c: string): c is Command => (COMMAND_NAMES as readonly string[]).includes(c);
+const [command = "", label = ""] = process.argv.slice(2);
+if (!isCommand(command) || !/^[a-z0-9-]+$/.test(label)) {
+  console.error(
+    `usage: pnpm memory:keys ${COMMAND_NAMES.join("|")} <label>   (label: lowercase, digits, dashes)`,
+  );
   process.exit(2);
 }
 
@@ -40,34 +49,60 @@ async function detail(res: Response): Promise<string> {
   return (await res.text()).slice(0, 300);
 }
 
-const names = { api: `rehearsal-api-${label}`, planner: `rehearsal-planner-${label}` };
+/** Mints one key with exactly `grants` and returns it. */
+async function mintKey(name: string, grants: unknown): Promise<string> {
+  const res = await admin("POST", "/keys", { name, grants });
+  if (res.status !== 201)
+    throw new Error(`POST /keys ${name} → ${res.status} ${await detail(res)}`);
+  return ((await res.json()) as { key: string }).key;
+}
 
-if (command === "revoke") {
-  for (const name of Object.values(names)) {
+async function revokeKeys(names: string[]): Promise<void> {
+  for (const name of names) {
     const res = await admin("DELETE", `/keys/${encodeURIComponent(name)}`);
     console.log(
       `${name}: ${res.status === 204 ? "revoked" : `${res.status} ${await detail(res)}`}`,
     );
   }
-} else {
-  // The org scopes are registered below this one as orgs first publish; it must exist first.
-  const scope = await admin("POST", "/scopes", { path: config.scope });
-  if (!scope.ok) throw new Error(`POST /scopes → ${scope.status} ${await detail(scope)}`);
-
-  const grants = memoryKeyGrants(config.scope);
-  const minted: Record<keyof typeof names, string> = { api: "", planner: "" };
-  for (const role of ["api", "planner"] as const) {
-    const res = await admin("POST", "/keys", { name: names[role], grants: grants[role] });
-    if (res.status !== 201) {
-      throw new Error(`POST /keys ${names[role]} → ${res.status} ${await detail(res)}`);
-    }
-    minted[role] = ((await res.json()) as { key: string }).key;
-  }
-  console.log(`Minted below ${config.scope}. Each key is shown once:\n`);
-  console.log(
-    `# API (.env, or the rehearsal-api service)\nSURREAL_AGENT_MEMORY_WRITE_KEY=${minted.api}\n`,
-  );
-  console.log(
-    `# Planner worker (.env.planner, or the rehearsal-planner service)\nSURREAL_AGENT_MEMORY_READ_KEY=${minted.planner}`,
-  );
 }
+
+const names = (label: string) => ({
+  api: `rehearsal-api-${label}`,
+  planner: `rehearsal-planner-${label}`,
+  reader: `rehearsal-reader-${label}`,
+});
+
+const COMMANDS: Record<Command, (label: string, scope: string) => Promise<void>> = {
+  async mint(label, scope) {
+    // The org scopes are registered below this one as orgs first publish; it must exist first.
+    const res = await admin("POST", "/scopes", { path: scope });
+    if (!res.ok) throw new Error(`POST /scopes → ${res.status} ${await detail(res)}`);
+    const grants = memoryKeyGrants(scope);
+    const api = await mintKey(names(label).api, grants.api);
+    const planner = await mintKey(names(label).planner, grants.planner);
+    console.log(`Minted below ${scope}. Each key is shown once:\n`);
+    console.log(
+      `# API (.env, or the rehearsal-api service)\nSURREAL_AGENT_MEMORY_WRITE_KEY=${api}\n`,
+    );
+    console.log(
+      `# Planner worker (.env.planner, or the rehearsal-planner service)\nSURREAL_AGENT_MEMORY_READ_KEY=${planner}`,
+    );
+  },
+  async revoke(label) {
+    await revokeKeys([names(label).api, names(label).planner]);
+  },
+  async "mint-reader"(label, scope) {
+    // The planner's grants (read only), on a key of the operator's own: never the planner's key.
+    const name = names(label).reader;
+    const key = await mintKey(name, memoryKeyGrants(scope).planner);
+    console.log(`Minted ${name}, read-only below ${scope}. Shown once:\n`);
+    console.log(
+      `# Operator checks (pnpm memory:drift), in .env.drift; never .env, .env.planner or a deployed service\nSURREAL_AGENT_MEMORY_READ_KEY=${key}`,
+    );
+  },
+  async "revoke-reader"(label) {
+    await revokeKeys([names(label).reader]);
+  },
+};
+
+await COMMANDS[command](label, config.scope);
