@@ -302,15 +302,24 @@ export interface RevokeOldTiming {
   idleMs?: number;
 }
 
+/** Printed with every revoke-old check: what `lastUsedAt` can and can't show (gate, 2026-11-03). */
+export const LAST_USED_CAVEAT =
+  "note: the hosted service's lastUsedAt can stay empty for a key in use, or stop moving after its first use (gate, 2026-11-03), so this check can refuse but a pass doesn't prove nothing runs on the old keys: confirm the deploy replaced every instance first";
+
 /**
  * Whether revoking `old` could cut off a deployed service, from what `GET /keys` says about use.
  * Each kept key must have been used: until then nothing shows a service runs on it. No old key
  * may have been used after the kept key of the same role was last used: then something still runs
- * on the old one. And no old key may have been used in the last `idleMs` (15 min): the hosted
- * service does not move `lastUsedAt` on every request (gate, 2026-11-03), so a recent use is
- * enough to say something may still run on it. An old key used after the new pair was minted is
- * expected (the services run on it until their deploy finishes), so the check asks for the old
- * keys to have gone quiet, not for them never to have been used since.
+ * on the old one. And no old key may have been used in the last `idleMs` (15 min). An old key
+ * used after the new pair was minted is expected (the services run on it until their deploy
+ * finishes), so the check asks for the old keys to have gone quiet, not for them never to have
+ * been used since.
+ *
+ * It can only refuse on evidence, never prove safety: on the hosted service `lastUsedAt` stayed
+ * empty for a pair used for a write and two reads, and for another pair it was set on first use
+ * and didn't move after a write, a denied write and a recall (gate, 2026-11-03). So a kept key
+ * can read "never used" while it works (`--force` after checking the services), and an old key
+ * in use can read as idle.
  */
 export function revokeOldCheck(
   kept: Generation,
@@ -391,6 +400,7 @@ export async function revokeOld(
   log(`Check before revoking, from GET /keys (keeping generation ${kept.generation}):`);
   for (const line of check.lines) log(`  ${line}`);
   for (const p of check.problems) log(`  problem: ${p}`);
+  log(`  ${LAST_USED_CAVEAT}`);
   if (check.problems.length > 0 && !options.force) {
     throw new KeyCommandUnsafe(
       `refused, nothing revoked: finish the deploy, let both services use the new pair, and wait until the old keys have gone 15 min unused (pnpm memory:keys status ${label}); or pass --force to revoke anyway`,
@@ -399,7 +409,7 @@ export async function revokeOld(
   log(
     check.problems.length > 0
       ? "  --force: revoking anyway"
-      : "  ok: both kept keys are in use, and no old key was used after them or in the last 15 min",
+      : "  ok as far as GET /keys shows: both kept keys used, no old key used after them or in the last 15 min",
   );
   const names = old.flatMap((g) => keysOf(g).map((k) => k.name));
   const revoked = await revokeKeys(admin, names, log);

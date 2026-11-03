@@ -4,6 +4,7 @@ import {
   ambiguousGenerations,
   generations,
   KeyCommandRefused,
+  LAST_USED_CAVEAT,
   lastUsed,
   mintKey,
   mintPair,
@@ -121,9 +122,11 @@ The older generation (${older}) still works. Next, in this order:
      SURREAL_AGENT_MEMORY_READ_KEY on rehearsal-planner to the values above. Paste each straight
      into that one service's field: never into chat, a ticket, a shared group or a repo file.
   2. Deploy both services.
-  3. Use both new keys: open a completed run's promote panel (the API's key) and plan for an
-     org with active precedents (the planner's). Then pnpm memory:keys status ${label} must
-     show both new keys used, and no old key used after them.
+  3. Check the deploy replaced every instance of both services. Use both new keys: open a
+     completed run's promote panel (the API's key) and plan for an org with active precedents
+     (the planner's). Then pnpm memory:keys status ${label} should show both new keys used
+     and no old key used after them or in the last 15 min. lastUsedAt can lag or stay empty on
+     the hosted service, so the deploy check is what proves the old keys are free.
   4. pnpm memory:keys rotate ${label} --revoke-old`);
   },
   async status(label) {
@@ -151,6 +154,7 @@ The older generation (${older}) still works. Next, in this order:
     }
     const { problems } = revokeOldCheck(plan.kept, plan.old);
     for (const p of problems) console.log(`--revoke-old would refuse: ${p}`);
+    console.log(LAST_USED_CAVEAT);
     if (ambiguous.length === 0 && problems.length === 0) {
       console.log(
         `--revoke-old would keep generation ${plan.kept.generation} and revoke ${plan.old.map((g) => g.generation).join(", ")}`,

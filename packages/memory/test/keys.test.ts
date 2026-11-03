@@ -7,6 +7,7 @@ import {
   KeyCommandRefused,
   KeyCommandUnsafe,
   keyNames,
+  LAST_USED_CAVEAT,
   mintPair,
   parseKeyName,
   refuseExisting,
@@ -203,6 +204,7 @@ describe("pnpm memory:keys rotate against the fake (T1.55)", () => {
     expect(w.lines).toContain(
       `  problem: ${second.names.planner} has never been used: no service shows it runs on the new key yet`,
     );
+    expect(w.lines).toContain(`  ${LAST_USED_CAVEAT}`);
     // The check is printed before anything is revoked, and nothing was.
     expect(w.lines.some((l) => l.startsWith(`  kept ${second.names.api}: created`))).toBe(true);
     expect(w.fake.requests.some((r) => r.method === "DELETE")).toBe(false);
@@ -233,7 +235,7 @@ describe("pnpm memory:keys rotate against the fake (T1.55)", () => {
     expect(done.revoked.sort()).toEqual(Object.values(keyNames("prod")).sort());
     expect(done.failed).toEqual([]);
     expect(w.lines).toContain(
-      "  ok: both kept keys are in use, and no old key was used after them or in the last 15 min",
+      "  ok as far as GET /keys shows: both kept keys used, no old key used after them or in the last 15 min",
     );
   });
 
