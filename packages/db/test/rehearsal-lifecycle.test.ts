@@ -31,6 +31,8 @@ import {
   transitionRehearsal,
 } from "../src";
 
+import { isolatedTestDatabase } from "./isolated-db";
+
 const POLICIES = [policy, policyV3] as unknown as BillingPolicy[];
 const START = "2026-10-01T12:00:00.000Z";
 const LEASE = 10 * 60_000;
@@ -42,21 +44,26 @@ const at = (ms: number) => new Date(Date.parse(START) + ms);
 describe.skipIf(!process.env.DB_TESTS)(
   "rehearsal restart, cancellation and cleanup (T3.16)",
   () => {
-    const url =
-      process.env.DATABASE_URL ?? "postgres://rehearsal:rehearsal@localhost:5432/rehearsal";
-    const db = createDb(url);
+    const database = isolatedTestDatabase();
+    const { db, url } = database;
     // Workers run on their own pool: a "dead" one never gives its connection (and the container
-    // set lock on it) back, which a crashed process does only by dying. Its close isn't awaited.
+    // set lock on it) back until cleanup, as a crashed process would release it on exit.
     const workerDb = createDb(url);
     let boss: PgBoss;
+    const endCrashes: (() => void)[] = [];
+    const crashedRuns: Promise<unknown>[] = [];
     beforeAll(async () => {
+      await database.create();
       await migrateDb(db);
       boss = await startQueue(url);
     });
     afterAll(async () => {
       await boss?.stop({ graceful: false });
-      await db.$client.end();
-      void workerDb.$client.end().catch(() => {});
+      const stopped = Promise.allSettled(crashedRuns);
+      for (const end of endCrashes) end();
+      await stopped;
+      await workerDb.$client.end();
+      await database.drop();
     });
 
     /** A stored plan in a fresh org, a queued rehearsal of it, and its job payload. */
@@ -100,7 +107,10 @@ describe.skipIf(!process.env.DB_TESTS)(
             const next = await beforeSend(vendor);
             const result = await inner.dispatch(request, ctx);
             // The worker dies with the request committed: no response, no receipt, ever.
-            if (next === "die") await new Promise(() => {});
+            if (next === "die") {
+              await new Promise<void>((resolve) => endCrashes.push(resolve));
+              throw new Error("simulated worker terminated during test cleanup");
+            }
             return result;
           },
         };
@@ -168,9 +178,13 @@ describe.skipIf(!process.env.DB_TESTS)(
           ),
         );
 
-    async function untilDispatched(orgId: string, id: string) {
+    async function untilDispatched(orgId: string, id: string, world: FakeWorld) {
       for (let i = 0; i < 200; i++) {
-        if ((await attempts(orgId, id)).some((a) => a.state === "dispatched")) return;
+        if (
+          (await attempts(orgId, id)).some((a) => a.state === "dispatched") &&
+          world.effects.length > 0
+        )
+          return;
         await new Promise((r) => setTimeout(r, 25));
       }
       throw new Error("no attempt was dispatched");
@@ -188,8 +202,8 @@ describe.skipIf(!process.env.DB_TESTS)(
       const world = worldFromManifest(r.manifest.observations);
       let sends = 0;
       const w = worker(r.id, world, async () => (++sends === 1 ? "die" : "send"));
-      void runRehearsalJob(r.data, w.ctx); // never settles: the worker is gone
-      await untilDispatched(r.orgId, r.id);
+      crashedRuns.push(runRehearsalJob(r.data, w.ctx)); // suspended until cleanup: the worker is gone
+      await untilDispatched(r.orgId, r.id, world);
       expect(world.effects).toHaveLength(1);
 
       // Within the lease nothing happens: it may still be working.
@@ -231,11 +245,13 @@ describe.skipIf(!process.env.DB_TESTS)(
       const r = await requested();
       const world = worldFromManifest(r.manifest.observations);
       let sends = 0;
-      void runRehearsalJob(
-        r.data,
-        worker(r.id, world, async () => (++sends === 1 ? "die" : "send")).ctx,
+      crashedRuns.push(
+        runRehearsalJob(
+          r.data,
+          worker(r.id, world, async () => (++sends === 1 ? "die" : "send")).ctx,
+        ),
       );
-      await untilDispatched(r.orgId, r.id);
+      await untilDispatched(r.orgId, r.id, world);
 
       // No readers (the operator can't mint the tenant's tokens now): nothing is guessed.
       const first = sweeper(r.orgId, null, at(LEASE + 1));

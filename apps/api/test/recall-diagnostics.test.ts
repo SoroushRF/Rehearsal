@@ -1,10 +1,11 @@
 import type { PrecedentBasis, PrecedentRecallDiagnostics } from "@rehearsal/contracts";
 import { excludeActions, planHash } from "@rehearsal/core";
-import { createDb, migrateDb, type PgBoss, PLAN_QUEUE, schema, startQueue } from "@rehearsal/db";
+import { migrateDb, type PgBoss, PLAN_QUEUE, schema, startQueue } from "@rehearsal/db";
 import { PLANNER_JOB_ROUTES, type PlanJob } from "@rehearsal/providers";
 import { billingManifest, INCIDENT } from "@rehearsal/testkit";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { isolatedTestDatabase } from "../../../packages/db/test/isolated-db";
 import { buildApp } from "../src/app";
 import { storePlan } from "../src/plans";
 import { recallDiagnosticsProblem } from "../src/rehearse";
@@ -149,17 +150,19 @@ describe("recallDiagnosticsProblem (T1.54)", () => {
 
 // Needs a real Postgres: `pnpm infra:up` then `DB_TESTS=1 pnpm --filter @rehearsal/api test`.
 describe.skipIf(!process.env.DB_TESTS)("recall diagnostics beside the plan (T1.54)", () => {
-  const url = process.env.DATABASE_URL ?? "postgres://rehearsal:rehearsal@localhost:5432/rehearsal";
-  const db = createDb(url);
+  const database = isolatedTestDatabase();
+  const { db, url } = database;
   let boss: PgBoss;
   const worker = { authorization: `Bearer ${SECRET}` };
 
   beforeAll(async () => {
+    await database.create();
     await migrateDb(db);
     boss = await startQueue(url);
   });
   afterAll(async () => {
     await boss?.stop({ graceful: false });
+    await database.drop();
   });
   afterEach(() => {
     failing.record = false;
@@ -197,14 +200,13 @@ describe.skipIf(!process.env.DB_TESTS)("recall diagnostics beside the plan (T1.5
       headers: bearer(me),
     });
     const { rehearsalId, planId } = queued.json();
-    for (let i = 0; i < 50; i++) {
-      const res = await app.inject({
-        method: "POST",
-        url: PLANNER_JOB_ROUTES.next,
-        headers: worker,
-      });
-      if (res.json().id === rehearsalId) break;
-    }
+    const claimed = await app.inject({
+      method: "POST",
+      url: PLANNER_JOB_ROUTES.next,
+      headers: worker,
+    });
+    expect(claimed.statusCode).toBe(200);
+    expect(claimed.json().id).toBe(rehearsalId);
     const manifest = { ...billingManifest(planId), orgId: me.orgId, precedentBasis: basis };
     const done = await app.inject({
       method: "POST",
@@ -230,14 +232,13 @@ describe.skipIf(!process.env.DB_TESTS)("recall diagnostics beside the plan (T1.5
   async function completeAgain(p: Awaited<ReturnType<typeof planned>>, stats?: object) {
     const original = await boss.getJobById<PlanJob>(PLAN_QUEUE, p.rehearsalId);
     const id = await boss.send(PLAN_QUEUE, original?.data as object);
-    for (let i = 0; i < 50; i++) {
-      const res = await p.app.inject({
-        method: "POST",
-        url: PLANNER_JOB_ROUTES.next,
-        headers: worker,
-      });
-      if (res.json().id === id) break;
-    }
+    const claimed = await p.app.inject({
+      method: "POST",
+      url: PLANNER_JOB_ROUTES.next,
+      headers: worker,
+    });
+    expect(claimed.statusCode).toBe(200);
+    expect(claimed.json().id).toBe(id);
     return p.app.inject({
       method: "POST",
       url: PLANNER_JOB_ROUTES.complete.replace(":id", String(id)),
