@@ -71,7 +71,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T1.50** Precedent gate through the app: promote, sync, cite by fact ID, withdraw, refuse [#366](https://github.com/SoroushRF/Rehearsal/issues/366) | ✅ done |  | T1.51 |
 | **T1.51** Retire a withdrawn precedent's copy in Agent Memory [#367](https://github.com/SoroushRF/Rehearsal/issues/367) | ✅ done |  |  |
 | **T1.52** README: Agent Memory in the architecture diagram, plus citation and promote screenshots [#390](https://github.com/SoroushRF/Rehearsal/issues/390) | ✅ done |  |  |
-| **T1.53** Memory drift check: compare Agent Memory with the precedent registry and repair through the sync queue [#395](https://github.com/SoroushRF/Rehearsal/issues/395) | 🟨 ready | — |  |
+| **T1.53** Memory drift check: compare Agent Memory with the precedent registry and repair through the sync queue [#395](https://github.com/SoroushRF/Rehearsal/issues/395) | 🔨 in progress | — |  |
 | **T1.54** Record why each precedent was recalled, and show it on the citation card [#396](https://github.com/SoroushRF/Rehearsal/issues/396) | 🟨 ready | — |  |
 | **T1.55** Agent Memory key rotation and per-org erasure [#398](https://github.com/SoroushRF/Rehearsal/issues/398) | 🟨 ready | — |  |
 
@@ -111,7 +111,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T2.28** Missing rehearsal results are labelled Never ran after receipt-storage failure [#296](https://github.com/SoroushRF/Rehearsal/issues/296) | 👀 in review [PR #363](https://github.com/SoroushRF/Rehearsal/pull/363) | — |  |
 | **T2.30** Agent Memory on the Render deployment: API write key, planner read key [#389](https://github.com/SoroushRF/Rehearsal/issues/389) | ✅ done |  |  |
 | **T2.31** Trace a cited precedent back to its approved version, promoter and source run [#388](https://github.com/SoroushRF/Rehearsal/issues/388) | ✅ done |  |  |
-| **T2.32** Similar active precedents on the promote panel (advisory, never blocking) [#397](https://github.com/SoroushRF/Rehearsal/issues/397) | 🟨 ready | — |  |
+| **T2.32** Similar active precedents on the promote panel (advisory, never blocking) [#397](https://github.com/SoroushRF/Rehearsal/issues/397) | 🔨 in progress | — |  |
 
 ## T3 Apply
 
@@ -229,7 +229,7 @@ flowchart LR
     T1_50["T1.50 Precedent gate through the app: promote, s"]:::done
     T1_51["T1.51 Retire a withdrawn precedent's copy in Age"]:::done
     T1_52["T1.52 README: Agent Memory in the architecture d"]:::done
-    T1_53["T1.53 Memory drift check: compare Agent Memory w"]:::ready
+    T1_53["T1.53 Memory drift check: compare Agent Memory w"]:::progress
     T1_54["T1.54 Record why each precedent was recalled, an"]:::ready
     T1_55["T1.55 Agent Memory key rotation and per-org eras"]:::ready
   end
@@ -261,7 +261,7 @@ flowchart LR
     T2_28["T2.28 Missing rehearsal results are labelled Nev"]:::review
     T2_30["T2.30 Agent Memory on the Render deployment: API"]:::done
     T2_31["T2.31 Trace a cited precedent back to its approv"]:::done
-    T2_32["T2.32 Similar active precedents on the promote p"]:::ready
+    T2_32["T2.32 Similar active precedents on the promote p"]:::progress
   end
   subgraph T3[T3 Apply]
     T3_1["T3.1 Drizzle migrations, Postgres journal, pg-bo"]:::done
