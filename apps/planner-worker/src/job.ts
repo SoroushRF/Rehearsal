@@ -96,7 +96,7 @@ export async function handlePlanJob(
     }
     try {
       // With nothing active, recallBasis records the epochs without recalling.
-      recalled = await recallBasis(deps.precedents?.(job.orgId) ?? NO_RECALL, registry);
+      recalled = await recallBasis(deps.precedents?.(job.orgId) ?? NO_RECALL, registry, { log });
     } catch (err) {
       // An outage blocks a plan that depends on memory rather than planning without it (§7).
       return fail("precedent_recall_failed", (err as Error).message.slice(0, 2000));

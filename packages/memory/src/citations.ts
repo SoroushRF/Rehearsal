@@ -35,11 +35,13 @@ export function citePrecedents(recall: PrecedentRecall): PrecedentCitation[] {
  *
  * `diagnostics` (T1.54) records, per area, the query recall was sent, what it found and what was
  * dropped at which stage, for the reviewer. It explains the basis and never changes it, and is
- * stored beside the plan, not in the manifest. Null only if it can't be fitted to the contract.
+ * stored beside the plan, not in the manifest. Null only if it can't be fitted to the contract;
+ * `log` hears about that and about anything cut to fit.
  */
 export async function recallBasis(
   recaller: { recall(caseKey: string): Promise<PrecedentRecall> },
   registry: RegistrySnapshot,
+  options: { log?: (line: string) => void } = {},
 ): Promise<{
   basis: PrecedentBasis;
   precedents: RecalledPrecedent[];
@@ -109,7 +111,10 @@ export async function recallBasis(
     basis: PrecedentBasis.parse({ citations: entries.map((e) => e.citation), epochs }),
     precedents: entries.map((e) => e.precedent),
     dropped: dropped.filter((d) => !kept.has(d.id)),
-    diagnostics: capDiagnostics(registry.active.size > 0, recalls),
+    diagnostics: capDiagnostics(registry.active.size > 0, recalls, {
+      cited: new Set(entries.map((e) => `${e.citation.id}@${e.citation.version}`)),
+      ...(options.log && { log: options.log }),
+    }),
   };
 }
 
@@ -123,14 +128,29 @@ const strings = (xs: readonly string[], max: number) =>
     .map((x) => clip(x));
 
 /**
+ * Most a plan's diagnostics may take serialized, well under the API's 1 MB body limit, so an
+ * explain-only field can never make the completion fail.
+ */
+export const RECALL_DIAGNOSTICS_MAX_BYTES = 256 * 1024;
+
+/**
  * Fits what recall returned to the contract's caps, so an oversized answer can't grow what is
  * stored with a plan. An entry it can't represent (an ID that isn't a precedent slug, an empty
- * string) is left out rather than failing the plan: diagnostics only explain.
+ * string) is left out rather than failing the plan: diagnostics only explain. Past
+ * `maxBytes` it drops every hit's hit IDs, then trailing hits that weren't cited, then trailing
+ * areas, and logs what it cut.
  */
 export function capDiagnostics(
   recalled: boolean,
   areas: readonly PrecedentRecallArea[],
+  options: {
+    /** `id@version` of each cited precedent, whose hits are the last to go. */
+    cited?: ReadonlySet<string>;
+    maxBytes?: number;
+    log?: (line: string) => void;
+  } = {},
 ): PrecedentRecallDiagnostics | null {
+  const log = options.log ?? (() => {});
   const parsed = PrecedentRecallDiagnostics.safeParse({
     recalled,
     areas: areas.slice(0, L.areas).map((a) => ({
@@ -156,5 +176,53 @@ export function capDiagnostics(
         })),
     })),
   });
-  return parsed.success ? parsed.data : null;
+  if (!parsed.success) {
+    log(`recall diagnostics left out: ${parsed.error.message.slice(0, 300)}`);
+    return null;
+  }
+  return fitBudget(
+    parsed.data,
+    options.cited ?? new Set(),
+    options.maxBytes ?? RECALL_DIAGNOSTICS_MAX_BYTES,
+    log,
+  );
+}
+
+const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value), "utf8");
+
+function fitBudget(
+  d: PrecedentRecallDiagnostics,
+  cited: ReadonlySet<string>,
+  maxBytes: number,
+  log: (line: string) => void,
+): PrecedentRecallDiagnostics {
+  let total = bytes(d);
+  if (total <= maxBytes) return d;
+  const cut: string[] = [];
+  const areas = d.areas.map((a) => ({ ...a, hits: a.hits.map((h) => ({ ...h, hitIds: [] })) }));
+  total = bytes({ ...d, areas });
+  cut.push("every hit ID");
+  // Then trailing hits, from the last area back, keeping the ones the plan cites. Sizes are
+  // subtracted as they go (the element and its comma), so this stays linear.
+  let hits = 0;
+  for (let i = areas.length - 1; i >= 0 && total > maxBytes; i--) {
+    const area = areas[i];
+    if (!area) continue;
+    for (let j = area.hits.length - 1; j >= 0 && total > maxBytes; j--) {
+      const h = area.hits[j];
+      if (!h || cited.has(`${h.id}@${h.version}`)) continue;
+      total -= bytes(h) + (area.hits.length > 1 ? 1 : 0);
+      area.hits.splice(j, 1);
+      hits++;
+    }
+  }
+  if (hits > 0) cut.push(`${hits} trailing hit${hits === 1 ? "" : "s"}`);
+  let dropped = 0;
+  while (areas.length > 0 && bytes({ ...d, areas }) > maxBytes) {
+    areas.pop();
+    dropped++;
+  }
+  if (dropped > 0) cut.push(`${dropped} trailing area${dropped === 1 ? "" : "s"}`);
+  log(`recall diagnostics over ${maxBytes} bytes: cut ${cut.join(", ")}`);
+  return { recalled: d.recalled, areas };
 }

@@ -178,16 +178,22 @@ export function registerPlanRoutes(app: FastifyInstance, deps: PlanDeps) {
       return reply.code(500).send({ error: "stored_plan_invalid" });
     }
     // T1.54: why each precedent was or wasn't recalled, as stored when it was planned. Read from
-    // Postgres only; this route never asks Agent Memory. Absent for a plan made before T1.54.
+    // Postgres only; this route never asks Agent Memory. Absent for a plan made before T1.54, and
+    // a failure to read it never keeps the plan itself from being served.
     const basis = loaded.plan.manifest.precedentBasis;
-    const recallDiagnostics = basis
-      ? await loadRecallDiagnostics(deps.db, {
+    let recallDiagnostics: Awaited<ReturnType<typeof loadRecallDiagnostics>> = null;
+    if (basis) {
+      try {
+        recallDiagnostics = await loadRecallDiagnostics(deps.db, {
           orgId: loaded.plan.manifest.orgId,
           planId: loaded.plan.planId,
           revision: loaded.plan.revision,
           basis,
-        })
-      : null;
+        });
+      } catch (err) {
+        req.log.warn({ err, planId: req.params.id }, "recall diagnostics could not be read");
+      }
+    }
     return {
       ...loaded.plan,
       latestRevision: loaded.latestRevision,

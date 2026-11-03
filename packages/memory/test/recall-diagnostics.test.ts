@@ -1,6 +1,11 @@
 import { PrecedentRecallDiagnostics, RECALL_DIAGNOSTICS_LIMITS } from "@rehearsal/contracts";
 import { describe, expect, it } from "vitest";
-import { capDiagnostics, type RegistrySnapshot, recallBasis } from "../src/citations";
+import {
+  capDiagnostics,
+  RECALL_DIAGNOSTICS_MAX_BYTES,
+  type RegistrySnapshot,
+  recallBasis,
+} from "../src/citations";
 import { type PrecedentRecord, precedentDigest } from "../src/precedent";
 import { precedent, setup } from "./fixtures";
 
@@ -108,7 +113,9 @@ describe("recall diagnostics", () => {
       ],
       dropped: [{ id: "p-0", reason: "r".repeat(L.reason + 10), stage: "registry" as const }],
     });
-    const capped = capDiagnostics(true, many(L.areas + 3, (i) => `area.${i}`).map(area));
+    const capped = capDiagnostics(true, many(L.areas + 3, (i) => `area.${i}`).map(area), {
+      maxBytes: Number.POSITIVE_INFINITY,
+    });
     expect(PrecedentRecallDiagnostics.safeParse(capped).success).toBe(true);
     expect(capped?.areas).toHaveLength(L.areas);
     const [first] = capped?.areas ?? [];
@@ -120,5 +127,87 @@ describe("recall diagnostics", () => {
     expect(first?.hits[0]?.hitIds).toHaveLength(L.hitIds);
     expect(first?.hits[0]?.hitIds[0]).toBe("h0");
     expect(first?.dropped[0]?.reason).toHaveLength(L.reason);
+  });
+
+  describe("byte budget", () => {
+    const L = RECALL_DIAGNOSTICS_LIMITS;
+    const many = <T>(n: number, f: (i: number) => T): T[] =>
+      Array.from({ length: n }, (_, i) => f(i));
+    const bytes = (v: unknown) => Buffer.byteLength(JSON.stringify(v), "utf8");
+    // Every count at its cap: several megabytes, far over the budget.
+    const full = many(L.areas, (a) => ({
+      area: `area.${a}`,
+      query: `area.${a}`,
+      traceId: `t${a}`,
+      hits: many(L.perArea, (i) => `p-${a}-${i}`).map((id) => ({
+        id,
+        version: 1,
+        factIds: many(L.factIds, (i) => `fact_${i}`.padEnd(40, "x")),
+        hitIds: many(L.hitIds, (i) => `hit_${i}`.padEnd(40, "x")),
+      })),
+      dropped: [],
+    }));
+
+    it("fits an oversized answer under 256 KB: hit IDs first, then trailing hits, keeping cited ones", () => {
+      expect(bytes({ recalled: true, areas: full })).toBeGreaterThan(
+        4 * RECALL_DIAGNOSTICS_MAX_BYTES,
+      );
+      const lines: string[] = [];
+      const cited = new Set(["p-63-63@1", "p-0-0@1"]);
+      const capped = capDiagnostics(true, full, { cited, log: (l) => lines.push(l) });
+
+      expect(PrecedentRecallDiagnostics.safeParse(capped).success).toBe(true);
+      expect(bytes(capped)).toBeLessThanOrEqual(RECALL_DIAGNOSTICS_MAX_BYTES);
+      // Every area is still there, and no hit keeps its hit IDs.
+      expect(capped?.areas).toHaveLength(L.areas);
+      expect(capped?.areas.flatMap((a) => a.hits).every((h) => h.hitIds.length === 0)).toBe(true);
+      // Hits go from the end, except the cited one in the last area.
+      const ids = capped?.areas.flatMap((a) => a.hits.map((h) => h.id)) ?? [];
+      expect(ids[0]).toBe("p-0-0");
+      expect(capped?.areas.at(-1)?.hits.map((h) => h.id)).toEqual(["p-63-63"]);
+      const kept = ids.filter((id) => id !== "p-63-63");
+      expect(kept).toEqual(full.flatMap((a) => a.hits.map((h) => h.id)).slice(0, kept.length));
+      // Facts are kept whole on the hits that stay.
+      expect(capped?.areas[0]?.hits[0]?.factIds).toHaveLength(L.factIds);
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toMatch(
+        /^recall diagnostics over 262144 bytes: cut every hit ID, \d+ trailing hits$/,
+      );
+    });
+
+    it("drops trailing areas when what is cited alone doesn't fit", () => {
+      const everything = new Set(full.flatMap((a) => a.hits.map((h) => `${h.id}@1`)));
+      const lines: string[] = [];
+      const capped = capDiagnostics(true, full, {
+        cited: everything,
+        maxBytes: 200_000,
+        log: (l) => lines.push(l),
+      });
+      expect(bytes(capped)).toBeLessThanOrEqual(200_000);
+      const n = capped?.areas.length ?? 0;
+      expect(n).toBeGreaterThan(0);
+      expect(n).toBeLessThan(L.areas);
+      expect(capped?.areas.map((a) => a.area)).toEqual(full.slice(0, n).map((a) => a.area));
+      expect(capped?.areas[0]?.hits).toHaveLength(L.perArea);
+      expect(lines).toEqual([
+        `recall diagnostics over 200000 bytes: cut every hit ID, ${L.areas - n} trailing areas`,
+      ]);
+    });
+
+    it("changes nothing and logs nothing under the budget", () => {
+      const lines: string[] = [];
+      const small = full.slice(0, 1).map((a) => ({ ...a, hits: a.hits.slice(0, 2) }));
+      const capped = capDiagnostics(true, small, { log: (l) => lines.push(l) });
+      expect(capped).toEqual({ recalled: true, areas: small });
+      expect(lines).toEqual([]);
+    });
+
+    it("logs when what recall returned can't be fitted to the contract at all", () => {
+      const lines: string[] = [];
+      const bad = [{ ...full[0], hits: [{ id: "p-1", version: 1.5, factIds: [], hitIds: [] }] }];
+      expect(capDiagnostics(true, bad as never, { log: (l) => lines.push(l) })).toBeNull();
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toMatch(/^recall diagnostics left out: /);
+    });
   });
 });

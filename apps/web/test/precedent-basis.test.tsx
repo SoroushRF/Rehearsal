@@ -1,9 +1,14 @@
 import type { PrecedentBasis } from "@rehearsal/contracts";
 import { billingManifest } from "@rehearsal/testkit";
+import { isValidElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { type RecallDiagnostics, StoredPlan } from "../src/api";
-import { citationSource, PrecedentBasisCard } from "../src/components/PrecedentBasisCard";
+import {
+  citationSource,
+  PrecedentBasisCard,
+  RecallDetail,
+} from "../src/components/PrecedentBasisCard";
 import { type Precedent, PrecedentListResponse } from "../src/components/PrecedentPanel";
 import { explainPrecedentHold, PrecedentCheck, type PrecedentHold } from "../src/precedent-holds";
 
@@ -236,6 +241,37 @@ describe("precedent basis card (T2.17)", () => {
       const text = words(shown({ ...recall, diagnostics: { recalled: false, areas: [] } }));
       expect(text).toContain("so Agent Memory wasn't asked");
       expect(text).not.toContain("recall asked");
+    });
+
+    it("shows repeated entries as sent, without clashing React keys", () => {
+      const [area] = recall.diagnostics.areas;
+      const hit = area?.hits[0];
+      const drop = area?.dropped[0];
+      if (!area || !hit || !drop) throw new Error("fixture has an area, a hit and a drop");
+      const repeated = {
+        ...area,
+        hits: [{ ...hit, factIds: ["fact_1", "fact_1"] }, hit],
+        dropped: [drop, drop],
+      };
+      const r = { ...recall, diagnostics: { recalled: true, areas: [repeated, repeated] } };
+      // Server rendering doesn't warn about keys, so walk the element tree: every list of
+      // siblings must have distinct keys.
+      const clashes: string[] = [];
+      const walk = (node: unknown): void => {
+        if (Array.isArray(node)) {
+          const keys = node.flatMap((n) => (isValidElement(n) && n.key !== null ? [n.key] : []));
+          if (new Set(keys).size !== keys.length) clashes.push(keys.join(", "));
+          node.forEach(walk);
+        } else if (isValidElement(node)) {
+          walk((node.props as { children?: unknown }).children);
+        }
+      };
+      walk(RecallDetail({ recall: r, basis }));
+      expect(clashes).toEqual([]);
+      const html = renderToStaticMarkup(<RecallDetail recall={r} basis={basis} />);
+      expect(html.match(/data-testid="recall-area"/g)).toHaveLength(2);
+      expect(html.match(/data-testid="recall-hit"/g)).toHaveLength(4);
+      expect(html.match(/data-testid="recall-drop"/g)).toHaveLength(4);
     });
 
     it("adds nothing for a plan made before diagnostics were recorded", () => {

@@ -70,6 +70,20 @@ const DROPPED_BY: Record<PrecedentRecallDrop["stage"], string> = {
 };
 
 /**
+ * Keys that stay unique when the server repeats an entry: each is the entry key plus how many times
+ * it has come before, so what was sent is shown as is, repeats included.
+ */
+function keyed<T>(items: readonly T[], keyOf: (item: T) => string): [string, T][] {
+  const seen = new Map<string, number>();
+  return items.map((item) => {
+    const k = keyOf(item);
+    const n = seen.get(k) ?? 0;
+    seen.set(k, n + 1);
+    return [`${k}#${n}`, item];
+  });
+}
+
+/**
  * T1.54: why each precedent was or wasn't recalled, as the planner recorded it beside the plan.
  * Per area: the query recall was sent, its trace, what it found with the stored facts, and what was
  * dropped and at which stage. Collapsed by default; it explains the citations and decides nothing.
@@ -99,8 +113,8 @@ export function RecallDetail({
           <p className="text-xs text-subtle">No recall was recorded.</p>
         ) : (
           <ul className="space-y-3">
-            {diagnostics.areas.map((a) => (
-              <li key={a.area} data-testid="recall-area" data-area={a.area}>
+            {keyed(diagnostics.areas, (a) => a.area).map(([key, a]) => (
+              <li key={key} data-testid="recall-area" data-area={a.area}>
                 <p className="text-xs text-subtle">
                   <span className="font-medium text-ink">{a.area}</span>: recall asked{" "}
                   <code className="font-mono">&ldquo;{a.query}&rdquo;</code> · trace{" "}
@@ -111,11 +125,11 @@ export function RecallDetail({
                 )}
                 {a.hits.length > 0 && (
                   <ul aria-label={`Found for ${a.area}`} className="mt-1 space-y-1">
-                    {a.hits.map((h) => {
+                    {keyed(a.hits, (h) => `${h.id}@${h.version}`).map(([key, h]) => {
                       const isCited = cited(h.id, h.version);
                       return (
                         <li
-                          key={`${h.id}@${h.version}`}
+                          key={key}
                           data-testid="recall-hit"
                           data-cited={isCited ? "true" : "false"}
                           className="text-xs text-subtle"
@@ -129,8 +143,8 @@ export function RecallDetail({
                             <>
                               {" "}
                               from facts{" "}
-                              {h.factIds.map((f, i) => (
-                                <span key={f}>
+                              {keyed(h.factIds, (f) => f).map(([key, f], i) => (
+                                <span key={key}>
                                   {i > 0 && " "}
                                   <code className="rounded bg-sunken px-1.5 py-0.5 font-mono">
                                     {f}
@@ -146,9 +160,9 @@ export function RecallDetail({
                 )}
                 {a.dropped.length > 0 && (
                   <ul aria-label={`Dropped for ${a.area}`} className="mt-1 space-y-1">
-                    {a.dropped.map((d) => (
+                    {keyed(a.dropped, (d) => `${d.stage}:${d.id}`).map(([key, d]) => (
                       <li
-                        key={`${d.stage}:${d.id}`}
+                        key={key}
                         data-testid="recall-drop"
                         data-stage={d.stage}
                         className="text-xs text-warn"
