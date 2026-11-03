@@ -73,7 +73,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T1.52** README: Agent Memory in the architecture diagram, plus citation and promote screenshots [#390](https://github.com/SoroushRF/Rehearsal/issues/390) | ✅ done |  |  |
 | **T1.53** Memory drift check: compare Agent Memory with the precedent registry and repair through the sync queue [#395](https://github.com/SoroushRF/Rehearsal/issues/395) | ✅ done |  |  |
 | **T1.54** Record why each precedent was recalled, and show it on the citation card [#396](https://github.com/SoroushRF/Rehearsal/issues/396) | ✅ done |  |  |
-| **T1.55** Agent Memory key rotation and per-org erasure [#398](https://github.com/SoroushRF/Rehearsal/issues/398) | 👀 in review [PR #404](https://github.com/SoroushRF/Rehearsal/pull/404) | — |  |
+| **T1.55** Agent Memory key rotation and per-org erasure [#398](https://github.com/SoroushRF/Rehearsal/issues/398) | 🟨 ready | — |  |
 
 ## T2 Review & Approve
 
@@ -231,7 +231,7 @@ flowchart LR
     T1_52["T1.52 README: Agent Memory in the architecture d"]:::done
     T1_53["T1.53 Memory drift check: compare Agent Memory w"]:::done
     T1_54["T1.54 Record why each precedent was recalled, an"]:::done
-    T1_55["T1.55 Agent Memory key rotation and per-org eras"]:::review
+    T1_55["T1.55 Agent Memory key rotation and per-org eras"]:::ready
   end
   subgraph T2[T2 Review & Approve]
     T2_1["T2.1 Plan diff view from fixture bundles"]:::done
