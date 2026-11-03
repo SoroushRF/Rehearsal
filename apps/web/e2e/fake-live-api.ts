@@ -141,6 +141,30 @@ export function fakeApi({
     ],
     epochs: { "billing.duplicate_charge": 3 },
   };
+  // What the planner recorded about its recall (T1.54), served beside the plan.
+  const recallDiagnostics = {
+    revision: 1,
+    recordedAt: "2026-10-22T12:00:00.000Z",
+    diagnostics: {
+      recalled: true,
+      areas: [
+        {
+          area: "billing.duplicate_charge",
+          query: "billing.duplicate_charge",
+          traceId: "trace_abc",
+          hits: [
+            {
+              id: "duplicate-charge-refund",
+              version: 2,
+              factIds: ["fact_1", "fact_2"],
+              hitIds: ["hit_1"],
+            },
+          ],
+          dropped: [{ id: "late-fee-waiver", reason: "withdrawn at v1", stage: "recall" }],
+        },
+      ],
+    },
+  };
   let current = {
     revision: 1,
     ...V1,
@@ -191,6 +215,7 @@ export function fakeApi({
         ...summary,
         manifest: current.manifest,
         latestRevision: current.revision,
+        ...(citesPrecedent && { recallDiagnostics }),
       });
     if (path === "/api/plans/plan_happy/revisions") {
       const gone = new Set(["refund_001", "note_001"]);

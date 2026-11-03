@@ -1,4 +1,9 @@
-import { PlanManifest, Sha256Hex, StoredIncident } from "@rehearsal/contracts";
+import {
+  PlanManifest,
+  type PrecedentRecallDiagnostics,
+  Sha256Hex,
+  StoredIncident,
+} from "@rehearsal/contracts";
 import { z } from "zod";
 
 /**
@@ -109,6 +114,11 @@ export interface CompletePlanJob {
     toolCalls: number;
     usage: Record<string, number>;
     modelAttempts?: z.infer<typeof PlanModelAttempts>;
+    /**
+     * Why each precedent was or wasn't recalled (T1.54). Stored beside the plan, never in the
+     * manifest. In `stats` because that object isn't strict, so an older API drops it unread.
+     */
+    recallDiagnostics?: PrecedentRecallDiagnostics;
   };
 }
 

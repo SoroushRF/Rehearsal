@@ -174,7 +174,13 @@ export async function handlePlanJob(
   const { planHash } = await deps.jobs.complete(claimed.id, {
     manifest: result.manifest,
     summary: result.summary.slice(0, 4000),
-    stats: { turns: result.turns, toolCalls: result.toolCalls, usage: result.usage, modelAttempts },
+    stats: {
+      turns: result.turns,
+      toolCalls: result.toolCalls,
+      usage: result.usage,
+      modelAttempts,
+      ...(recalled?.diagnostics && { recallDiagnostics: recalled.diagnostics }),
+    },
   });
   log(
     `[${run}] stored ${job.planId} r${result.manifest.revision} ${planHash}: ${result.manifest.actions.length} steps, ` +

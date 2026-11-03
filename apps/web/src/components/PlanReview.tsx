@@ -1,5 +1,6 @@
 import type { PlanManifest } from "@rehearsal/contracts";
 import { type ReactNode, useCallback, useState } from "react";
+import type { RecallDiagnostics } from "../api";
 import { formatMoney, roleLabel, sumMoney } from "../format";
 import { droppedBy, groupByCase, requiredRoles } from "../plan";
 import type { PrecedentCheck } from "../precedent-holds";
@@ -23,6 +24,7 @@ export function PlanReview({
   actions,
   precedents = null,
   registry = null,
+  recall = null,
 }: {
   manifest: PlanManifest;
   planHash: string;
@@ -34,6 +36,8 @@ export function PlanReview({
   precedents?: PrecedentCheck | null;
   /** The organization's approved precedent versions, to trace citations to; null when not loaded. */
   registry?: readonly Precedent[] | null;
+  /** Why each precedent was or wasn't recalled (T1.54); null for examples and older plans. */
+  recall?: RecallDiagnostics | null;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const dropped = review ? droppedBy(manifest.actions, review.unchecked) : new Set<string>();
@@ -149,6 +153,7 @@ export function PlanReview({
             basis={manifest.precedentBasis}
             check={precedents}
             registry={registry}
+            recall={recall}
           />
         )}
 

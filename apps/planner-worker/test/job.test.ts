@@ -1,6 +1,6 @@
 import type Anthropic from "@anthropic-ai/sdk";
-import type { PlanManifest } from "@rehearsal/contracts";
-import { type BillingPolicyV1, fingerprint } from "@rehearsal/core";
+import { PlanManifest } from "@rehearsal/contracts";
+import { type BillingPolicyV1, fingerprint, planHash } from "@rehearsal/core";
 import { precedentDigest } from "@rehearsal/memory";
 import {
   BACKLOG_PROMPT_VERSION,
@@ -601,6 +601,52 @@ describe("plan job with precedents", () => {
       ],
       epochs: { [AREA]: 3 },
     });
+  });
+
+  it("sends why each precedent was recalled beside the manifest, never in it (T1.54)", async () => {
+    const { jobs, completed } = fakeJobs();
+    const job = withRegistry([{ id: record.id, version: 2, digest }]);
+    await handlePlanJob(job, {
+      ...deps(model(refundOneDuplicate()), jobs),
+      precedents: memory([]),
+    });
+    const body = completed[0]?.[1];
+    expect(body?.stats?.recallDiagnostics).toEqual({
+      recalled: true,
+      areas: [
+        {
+          area: AREA,
+          query: AREA,
+          traceId: "trace_1",
+          hits: [{ id: record.id, version: 2, factIds: ["f1", "f2"], hitIds: ["h1"] }],
+          dropped: [],
+        },
+      ],
+    });
+    // The manifest carries no diagnostics, so the hash is what it would be without them.
+    const manifest = body?.manifest as PlanManifest;
+    expect(JSON.stringify(manifest)).not.toContain("recallDiagnostics");
+    expect(JSON.stringify(manifest)).not.toContain("hitIds");
+    expect(planHash(manifest)).toBe(planHash(PlanManifest.parse(structuredClone(manifest))));
+
+    // Different diagnostics (recall also ruled one out) leave the cited basis exactly as it was.
+    const ruledOut = fakeJobs();
+    await handlePlanJob(job, {
+      ...deps(model(refundOneDuplicate()), ruledOut.jobs),
+      precedents: () => ({
+        recall: async () => ({
+          ...(await memory([])(JOB.data.orgId).recall()),
+          rejected: [{ id: "gone-rule", reason: "withdrawn at v1" }],
+        }),
+      }),
+    });
+    const other = ruledOut.completed[0]?.[1];
+    expect(other?.stats?.recallDiagnostics?.areas[0]?.dropped).toEqual([
+      { id: "gone-rule", reason: "withdrawn at v1", stage: "recall" },
+    ]);
+    expect((other?.manifest as PlanManifest | undefined)?.precedentBasis).toEqual(
+      manifest.precedentBasis,
+    );
   });
 
   it("doesn't cite or show a precedent the registry no longer lists as active", async () => {

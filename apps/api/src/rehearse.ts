@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { PlanManifest, StoredIncident } from "@rehearsal/contracts";
+import { PlanManifest, PrecedentRecallDiagnostics, StoredIncident } from "@rehearsal/contracts";
 import { planHash, validateGraph } from "@rehearsal/core";
 import {
   type Db,
@@ -8,6 +8,7 @@ import {
   type PgBoss,
   PLAN_QUEUE,
   type RegistrySnapshot,
+  recordRecallDiagnostics,
 } from "@rehearsal/db";
 import { checkPrecedentBasis } from "@rehearsal/memory";
 import {
@@ -79,6 +80,8 @@ const Complete = z.strictObject({
       usage: z.record(z.string(), z.int().nonnegative()),
       // Optional diagnostics must never reject a valid completion after planner/API version drift.
       modelAttempts: PlanModelAttempts.optional().catch(undefined),
+      // T1.54: stored beside the plan, not in the job output; malformed ones are dropped.
+      recallDiagnostics: PrecedentRecallDiagnostics.optional().catch(undefined),
     })
     .optional(),
 });
@@ -249,11 +252,13 @@ export function registerRehearseRoutes(app: FastifyInstance, deps: RehearseDeps)
       }
       stored = { planHash: existing.plan.planHash };
     }
+    const { recallDiagnostics, ...stats } = body.data.stats ?? {};
+    await keepRecallDiagnostics(deps, m, stored.planHash, recallDiagnostics, req.log);
     await deps.boss.complete(PLAN_QUEUE, found.job.id, {
       planHash: stored.planHash,
       revision: m.revision,
       summary: body.data.summary,
-      ...body.data.stats,
+      ...stats,
     });
     return reply
       .code(201)
@@ -295,6 +300,38 @@ export function checkJobBasis(m: PlanManifest, job: PlanJob): string | null {
   }
   const check = checkPrecedentBasis(m.precedentBasis, registryOfJob(job.precedents));
   return check.ok ? null : `plan's precedent basis doesn't hold: ${JSON.stringify(check.holds)}`;
+}
+
+/**
+ * T1.54: keeps the planner's account of its recall beside the stored revision. It explains the
+ * basis and decides nothing, so it's kept only for a plan that has a basis and only for areas that
+ * basis consulted; anything else, or a failure to store it, is logged and the plan stands.
+ */
+async function keepRecallDiagnostics(
+  deps: RehearseDeps,
+  m: PlanManifest,
+  planHash: string,
+  diagnostics: PrecedentRecallDiagnostics | undefined,
+  log: { warn(obj: object, msg: string): void },
+) {
+  if (!diagnostics || !m.precedentBasis) return;
+  const basis = m.precedentBasis;
+  if (!diagnostics.areas.every((a) => a.area in basis.epochs)) {
+    log.warn({ planId: m.planId }, "recall diagnostics name areas the basis didn't consult");
+    return;
+  }
+  try {
+    await recordRecallDiagnostics(deps.db, {
+      orgId: m.orgId,
+      planId: m.planId,
+      revision: m.revision,
+      planHash,
+      basis,
+      diagnostics,
+    });
+  } catch (err) {
+    log.warn({ err, planId: m.planId }, "recall diagnostics could not be stored");
+  }
 }
 
 async function loadJob(deps: RehearseDeps, id: string) {

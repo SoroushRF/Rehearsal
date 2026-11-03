@@ -20,6 +20,12 @@ One `concept` entity named `precedent:<id>`, in one scope (default `rehearsal/pr
 
 T2.17 added the Postgres registry (`precedent_events`, derived into a `RegistrySnapshot`), the `precedent-sync` queue that publishes an approved version and only then activates it, the finance-only promotion route and a promote panel ([decision 0012](decisions/0012-precedent-promotion.md)). Each organization gets its own memory scope. Since then plans carry a `PrecedentBasis` with the citations (T1.29), approval refuses a changed precedent (T2.17), executor admission re-checks it against the registry (#258), and a withdrawal retires the copy in memory (T1.51). The sync ran once against the hosted service in a throwaway scope (#238), and the [app gate](#precedent-gate-through-the-app-t150) now runs the whole chain against the hosted service: promote, sync, the planner's recall and citation by fact ID, withdraw, refuse (#366, 5/5 on 3 runs on 2026-11-02). That is a test on the hosted service with a scripted model and testkit planning reads, not an acceptance run of a deployed app.
 
+## Recall diagnostics (T1.54)
+
+While it builds the basis, `recallBasis` also records why each precedent was or wasn't recalled (`PrecedentRecallDiagnostics`): per area, the query sent (the area key), the trace ID, the hits with their fact and hit IDs, and each precedent dropped with its reason and stage. `recall` means Agent Memory's copy was absent, invalid, withdrawn or not effective; `registry` means recall found it but it isn't the active version and digest. With nothing active it records `recalled: false` and asks nothing. It is capped to `RECALL_DIAGNOSTICS_LIMITS`.
+
+The worker sends it in the completion's `stats`, and the API stores it in `plan_recall_diagnostics` beside the revision (append-only, one row per planned revision), never in the manifest, so the plan hash doesn't change. `GET /api/plans/:id` serves it from Postgres, never from Agent Memory, and only while the revision's basis is the one it explains (a reviewer's revision keeps its parent's). The citation card shows it under "Why these precedents", collapsed. It explains the citations and decides nothing: approval and admission still check the registry alone. Evidence: `fixture` (fake Agent Memory, Postgres 17); not run against the hosted service.
+
 ## Keys
 
 Each process holds one key, with only the grants its job needs (#365, decision 0012 §6):

@@ -1,4 +1,5 @@
-import type { PrecedentBasis, PrecedentCitation } from "@rehearsal/contracts";
+import type { PrecedentBasis, PrecedentCitation, PrecedentRecallDrop } from "@rehearsal/contracts";
+import type { RecallDiagnostics } from "../api";
 import { shortHash } from "../format";
 import { explainPrecedentHold, type PrecedentCheck, type PrecedentHold } from "../precedent-holds";
 import type { Precedent } from "./PrecedentPanel";
@@ -63,24 +64,135 @@ function SourceLine({ c, source }: { c: PrecedentCitation; source: CitationSourc
   }
 }
 
+const DROPPED_BY: Record<PrecedentRecallDrop["stage"], string> = {
+  recall: "Agent Memory's copy",
+  registry: "the registry",
+};
+
+/**
+ * T1.54: why each precedent was or wasn't recalled, as the planner recorded it beside the plan.
+ * Per area: the query recall was sent, its trace, what it found with the stored facts, and what was
+ * dropped and at which stage. Collapsed by default; it explains the citations and decides nothing.
+ */
+export function RecallDetail({
+  recall,
+  basis,
+}: {
+  recall: RecallDiagnostics;
+  basis: PrecedentBasis;
+}) {
+  const { diagnostics } = recall;
+  const cited = (id: string, version: number) =>
+    basis.citations.some((c) => c.id === id && c.version === version);
+  return (
+    <details data-testid="recall-diagnostics" className="group mt-3 rounded-lg border border-line">
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 px-3 py-2 text-sm font-medium text-muted hover:text-ink">
+        <Icon name="chevron" className="h-4 w-4 transition-transform group-open:rotate-90" />
+        Why these precedents
+      </summary>
+      <div className="border-t border-line px-3 py-2.5 text-sm">
+        {!diagnostics.recalled ? (
+          <p className="text-xs text-subtle">
+            Nothing was active in the registry when this was planned, so Agent Memory wasn't asked.
+          </p>
+        ) : diagnostics.areas.length === 0 ? (
+          <p className="text-xs text-subtle">No recall was recorded.</p>
+        ) : (
+          <ul className="space-y-3">
+            {diagnostics.areas.map((a) => (
+              <li key={a.area} data-testid="recall-area" data-area={a.area}>
+                <p className="text-xs text-subtle">
+                  <span className="font-medium text-ink">{a.area}</span>: recall asked{" "}
+                  <code className="font-mono">&ldquo;{a.query}&rdquo;</code> · trace{" "}
+                  <code className="font-mono">{a.traceId ?? "none recorded"}</code>
+                </p>
+                {a.hits.length === 0 && a.dropped.length === 0 && (
+                  <p className="mt-1 text-xs text-subtle">Recall found nothing here.</p>
+                )}
+                {a.hits.length > 0 && (
+                  <ul aria-label={`Found for ${a.area}`} className="mt-1 space-y-1">
+                    {a.hits.map((h) => {
+                      const isCited = cited(h.id, h.version);
+                      return (
+                        <li
+                          key={`${h.id}@${h.version}`}
+                          data-testid="recall-hit"
+                          data-cited={isCited ? "true" : "false"}
+                          className="text-xs text-subtle"
+                        >
+                          Found{" "}
+                          <code className="font-mono text-ink">
+                            {h.id} v{h.version}
+                          </code>
+                          {isCited ? ", cited" : ", not cited"}
+                          {h.factIds.length > 0 && (
+                            <>
+                              {" "}
+                              from facts{" "}
+                              {h.factIds.map((f, i) => (
+                                <span key={f}>
+                                  {i > 0 && " "}
+                                  <code className="rounded bg-sunken px-1.5 py-0.5 font-mono">
+                                    {f}
+                                  </code>
+                                </span>
+                              ))}
+                            </>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+                {a.dropped.length > 0 && (
+                  <ul aria-label={`Dropped for ${a.area}`} className="mt-1 space-y-1">
+                    {a.dropped.map((d) => (
+                      <li
+                        key={`${d.stage}:${d.id}`}
+                        data-testid="recall-drop"
+                        data-stage={d.stage}
+                        className="text-xs text-warn"
+                      >
+                        Dropped <code className="font-mono">{d.id}</code> by {DROPPED_BY[d.stage]}:{" "}
+                        {d.reason}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="mt-2 text-xs text-subtle">
+          Recorded when revision {recall.revision} was planned. This explains the citations; it
+          doesn't decide what is cited or approved.
+        </p>
+      </div>
+    </details>
+  );
+}
+
 /**
  * The precedents a plan rests on, as the planner recalled them: which version, where it applies,
  * and the trace that found it. With the registry's verdict beside it, so a reviewer sees that a
  * cited precedent was replaced or withdrawn before they approve, not after. Without a verdict
  * (an example plan, or the check hasn't loaded) it says so instead of implying the citations hold.
  * Each citation traces through its facts to the approved version, who promoted it and the run it
- * came from (T2.31).
+ * came from (T2.31), and `recall` says why each precedent was or wasn't recalled (T1.54).
  */
 export function PrecedentBasisCard({
   basis,
   check,
   registry = null,
+  recall = null,
 }: {
   basis: PrecedentBasis;
   /** The registry's answer for this exact plan; null when it wasn't asked. */
   check: PrecedentCheck | null;
   /** Every version this organization approved (`GET /api/precedents`); null when not loaded. */
   registry?: readonly Precedent[] | null;
+  /** What the planner recorded about its recall; null for examples and plans made before T1.54. */
+  recall?: RecallDiagnostics | null;
 }) {
   const holds: PrecedentHold[] = check && !check.ok ? check.holds : [];
   const holdsFor = (id: string) => holds.filter((h) => "id" in h && h.id === id);
@@ -157,6 +269,8 @@ export function PrecedentBasisCard({
           })}
         </ul>
       )}
+
+      {recall && <RecallDetail recall={recall} basis={basis} />}
 
       {areaHolds.map((h) => (
         <p key={explainPrecedentHold(h)} className="mt-2 text-sm text-warn">
