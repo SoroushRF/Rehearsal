@@ -25,6 +25,7 @@ function chargeObs(n: string, customerId: string, chargeId: string): Observation
     amount: 4210,
     amount_refunded: 0,
     currency: "cad",
+    invoice: `in_${n}`,
     status: "succeeded",
   };
   return {
@@ -58,6 +59,7 @@ function query(n: string, customerId: string, chargeId: string): QueryObservatio
     amount: 4210,
     amount_refunded: 0,
     currency: "cad",
+    invoice: `in_${n}`,
     status: "succeeded",
   };
   return {
@@ -204,6 +206,8 @@ describe("challenge catalog (T4.11)", () => {
     expect(phantom.charge.id).toMatch(/^ch_rhp[0-9a-f]{14}$/);
     expect(control.charge.id).not.toBe(phantom.charge.id);
     expect(phantom.charge.id).not.toBe("ch_plan_001");
+    // A duplicate of the refunded invoice: T4.28 admits a new charge on another one.
+    expect(phantom.charge.invoice).toBe("in_001");
 
     expect(scenario.steps.map((s) => [s.actionId, s.outcome, s.holdKind])).toEqual([
       ["refund_001", "held", "query_membership_changed"],
@@ -363,6 +367,10 @@ describe("challenge catalog (T4.11)", () => {
     expect(record.amount_refunded).toBe(0);
     expect(record.created).toBe(charge.charge.created);
     expect(record.livemode).toBe(false);
+    expect(record.invoice).toBe("in_001");
+    expect(
+      injectChargeRecord({ invoice: "in_template" }, { ...charge.charge, invoice: undefined }),
+    ).toMatchObject({ invoice: null });
   });
 
   it("refuses a challenge aimed at another tenant or a shared endpoint", () => {

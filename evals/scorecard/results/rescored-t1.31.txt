@@ -1,0 +1,21 @@
+Rescored on 2026-10-29 with the T1.31 scorer (evals/scorecard/src/rescore.ts), from the committed .txt results.
+Only planner failures could be rescored: these runs never read effects outside the answer key, so that check isn't applied to them.
+A planner failure is neither a success nor a hold. Its OMIT/HOLD codes are dropped, and the 'planned' rate leaves it out of the denominator.
+
+latest.txt
+  no planner failures: scores unchanged
+model-gemini-4-argon.txt
+  planner failures: T9 (timeout: This operation was aborted)
+  Direct (no review)  success 2/20 → 2/20 (2/19 planned), wrongful holds 16 → 0, omitted 0 → 0
+  Per-call approval   success 13/20 → 13/20 (13/19 planned), wrongful holds 16 → 0, omitted 0 → 0
+  Rehearsal           success 17/20 → 17/20 (17/19 planned), wrongful holds 26 → 2, omitted 0 → 0
+model-gemini-4-argon-full-ops.txt
+  planner failures: F1 (timeout: This operation was aborted); F3 (planner_error: Resource exhausted. Please try again later. Please refer to https://cloud.google.com/vertex-ai/generative-ai/docs/error-code-429 for more details.); F4 (planner_error: fetch failed); F5 (planner_error: fetch failed)
+  Direct (no review)  success 1/8 → 0/8 (0/4 planned), wrongful holds 3 → 0, omitted 52 → 0
+  Per-call approval   success 4/8 → 3/8 (3/4 planned), wrongful holds 3 → 0, omitted 52 → 0
+  Rehearsal           success 5/8 → 4/8 (4/4 planned), wrongful holds 27 → 0, omitted 56 → 0
+model-gemini-4-argon-full-ops-retry.txt
+  planner failures: F5 (planner_error: Resource exhausted. Please try again later. Please refer to https://cloud.google.com/vertex-ai/generative-ai/docs/error-code-429 for more details.)
+  Direct (no review)  success 0/4 → 0/4 (0/3 planned), wrongful holds 1 → 0, omitted 24 → 0
+  Per-call approval   success 3/4 → 3/4 (3/3 planned), wrongful holds 1 → 0, omitted 24 → 0
+  Rehearsal           success 3/4 → 3/4 (3/3 planned), wrongful holds 1 → 0, omitted 24 → 0

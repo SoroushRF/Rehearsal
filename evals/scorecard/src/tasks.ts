@@ -50,6 +50,11 @@ export type Drift =
   | { kind: "phantom_charge"; caseKey: CaseKey }
   /** A new charge for the customer dated after the window. The query predicate doesn't match it. */
   | { kind: "late_charge"; caseKey: CaseKey }
+  /**
+   * T1.34: a new in-window charge for the customer on another invoice. It matches the approved
+   * query, but the pair's invoice and its duplicate are unchanged.
+   */
+  | { kind: "other_invoice_charge"; caseKey: CaseKey }
   /** The customer adds a public comment. Comments aren't part of the ticket's evidence. */
   | { kind: "public_comment"; caseKey: CaseKey }
   /** A charge for a customer outside the cohort. */
@@ -252,6 +257,14 @@ export const TASKS: readonly ScorecardTask[] = [
     scope: ALL,
     drift: [{ kind: "phantom_charge", caseKey: "k01" }],
     why: "k01 isn't in the plan, so a new charge there changes nothing the reviewer approved.",
+  }),
+  task({
+    id: "B11",
+    kind: "benign",
+    title: "All duplicates; c01 is charged for another invoice in the window",
+    scope: ALL,
+    drift: [{ kind: "other_invoice_charge", caseKey: "c01" }],
+    why: "The new charge is in the window but on another invoice, so c01's duplicate pair is still exactly as approved. Holding c01 is a wrongful hold; T4.28 guards a refund on its own invoice.",
   }),
   task({
     id: "T1",

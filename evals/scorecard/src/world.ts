@@ -1,5 +1,5 @@
 import { OPERATION_MARKER_PREFIX } from "@rehearsal/contracts";
-import { type ProviderPort, renderReply } from "@rehearsal/core";
+import { type ProviderPort, renderNote, renderReply } from "@rehearsal/core";
 import {
   eraAdmin,
   slackProviderWriter,
@@ -181,10 +181,17 @@ function withFaults(port: ProviderPort, faults: readonly Fault[]): ProviderPort 
 
 const phantomId = (key: CaseKey) => `ch_INC0927${key}phantom`;
 const LATE_ID = (key: CaseKey) => `ch_INC0927${key}late`;
+const OTHER_INVOICE_ID = (key: CaseKey) => `ch_INC0927${key}otherinv`;
 const STRANGER_ID = "ch_INC0927stranger";
 
 /** A copy of the case's second charge with a new ID and date (the scripts/inject/phantom shape). */
-function chargeCopy(key: CaseKey, id: string, createdIso: string, customer?: string) {
+function chargeCopy(
+  key: CaseKey,
+  id: string,
+  createdIso: string,
+  customer?: string,
+  invoice?: string,
+) {
   const c = cohortCase(key);
   const template = records.stripe.charges.find((ch) => ch.id === c.chargeIds[1]);
   if (!template) throw new Error(`cohort has no charge ${c.chargeIds[1]}`);
@@ -192,6 +199,7 @@ function chargeCopy(key: CaseKey, id: string, createdIso: string, customer?: str
     ...template,
     id,
     ...(customer && { customer }),
+    ...(invoice && { invoice, description: `Invoice ${invoice}` }),
     created: Date.parse(createdIso) / 1000,
     payment_intent: `pi_${id.slice(3)}`,
     balance_transaction: `txn_${id.slice(3)}`,
@@ -210,6 +218,17 @@ export async function applyDrift(worlds: Worlds, drift: readonly Drift[]): Promi
         break;
       case "late_charge":
         charges.push(chargeCopy(d.caseKey, LATE_ID(d.caseKey), "2026-10-10T09:00:00.000Z"));
+        break;
+      case "other_invoice_charge":
+        charges.push(
+          chargeCopy(
+            d.caseKey,
+            OTHER_INVOICE_ID(d.caseKey),
+            "2026-09-26T09:00:00.000Z",
+            undefined,
+            `in_INC0927${d.caseKey}other`,
+          ),
+        );
         break;
       case "stranger_charge":
         charges.push(
@@ -259,62 +278,206 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/** One case's raw reads, for `judgeCase`. */
+export interface CaseReads {
+  refunds: { id: string; charge: string; amount: number; currency: string; ours: boolean }[];
+  credits: { amount: number; currency: string }[];
+  priority: Priority | null;
+  comments: { public: boolean; body: string }[];
+}
+
+/**
+ * One case's end state from its raw reads (T1.32: exact effects). Refunds are judged per charge:
+ * one of ours on any charge but the case's duplicate, of another amount, or in another currency
+ * is incorrect. A credit of another amount or currency is incorrect. Each private note and public
+ * reply of ours must be the approved template's text for an effect this case actually has.
+ */
+export function judgeCase(c: SeededCase, reads: CaseReads): CaseOutcome {
+  const amounts = new Map(records.stripe.charges.map((ch) => [String(ch.id), Number(ch.amount)]));
+  const duplicate = c.chargeIds[1] ?? "";
+  const duplicateAmount = amounts.get(duplicate) ?? 0;
+  let incorrect = 0;
+  for (const r of reads.refunds) {
+    const charged = amounts.get(r.charge) ?? duplicateAmount;
+    const wrong =
+      r.amount !== charged ||
+      r.currency !== c.currency ||
+      (r.ours && c.kind === "duplicate" && r.charge !== duplicate);
+    if (wrong) incorrect++;
+  }
+  const credits = reads.credits.filter((t) => t.amount < 0);
+  incorrect += credits.filter(
+    (t) => t.amount !== -duplicateAmount || t.currency !== c.currency,
+  ).length;
+
+  const strip = (body: string) => body.replace(MARKER, "");
+  const oursOnCase = reads.refunds.filter((r) => r.ours);
+  // A note names a refund of ours on this case, or states this case's credit.
+  const notes = new Set([
+    ...oursOnCase.map((r) =>
+      strip(
+        renderNote(
+          { id: "refund-confirmed", version: 1 },
+          { refundId: r.id, amountMinor: r.amount },
+          "op",
+        ),
+      ),
+    ),
+    ...(credits.length > 0
+      ? [
+          strip(
+            renderNote(
+              { id: "credit-applied", version: 1 },
+              { amountMinor: duplicateAmount },
+              "op",
+            ),
+          ),
+        ]
+      : []),
+  ]);
+  const privateNotes = reads.comments.filter((x) => !x.public);
+  incorrect += privateNotes.filter((x) => MARKER.test(x.body) && !notes.has(strip(x.body))).length;
+
+  const replies = reads.comments.filter((x) => x.public && MARKER.test(x.body));
+  // A case settled by a credit is told about the credit (T1.39), one settled by a refund about that.
+  const template =
+    reads.refunds.length === 0 && credits.length > 0
+      ? { id: "credit-applied", version: 1 }
+      : { id: "refund-issued", version: 1 };
+  const reply = renderReply(template, { customerName: c.name, amountMinor: duplicateAmount || 1 });
+  incorrect += replies.filter((x) => strip(x.body) !== reply).length;
+  return {
+    refunds: reads.refunds.length,
+    credits: credits.length,
+    priority: reads.priority,
+    notes: privateNotes.length,
+    replies: replies.length,
+    incorrect,
+  };
+}
+
 /**
  * Every cohort case's end state: refunds on its charges (injected ones too), credits on its
  * balance, priority, new notes, and our public replies (those carrying an operation marker).
- * A refund or credit for another amount, or a reply that isn't the approved text, is incorrect.
  */
 export async function readOutcomes(worlds: Worlds): Promise<Record<CaseKey, CaseOutcome>> {
-  const amounts = new Map(records.stripe.charges.map((ch) => [String(ch.id), Number(ch.amount)]));
   const out: Record<CaseKey, CaseOutcome> = {};
   for (const c of records.cases) {
-    let refunds = 0;
-    let incorrect = 0;
-    const duplicateAmount = amounts.get(c.chargeIds[1] ?? "");
-    for (const id of [...c.chargeIds, phantomId(c.key), LATE_ID(c.key)]) {
-      const list = await getJson<{ data: { amount: number }[]; has_more: boolean }>(
-        "stripe",
-        worlds.stripe,
-        `/v1/refunds?charge=${id}&limit=100`,
-      );
+    const refunds: CaseReads["refunds"] = [];
+    for (const id of [...c.chargeIds, phantomId(c.key), LATE_ID(c.key), OTHER_INVOICE_ID(c.key)]) {
+      const list = await getJson<{
+        data: { id: string; amount: number; currency: string; metadata?: unknown }[];
+        has_more: boolean;
+      }>("stripe", worlds.stripe, `/v1/refunds?charge=${id}&limit=100`);
       if (list.has_more) throw new Error(`more than 100 refunds on ${id}`);
-      refunds += list.data.length;
-      const charged = amounts.get(id) ?? duplicateAmount;
-      incorrect += list.data.filter((r) => r.amount !== charged).length;
+      for (const r of list.data) {
+        const ours =
+          typeof (r.metadata as { rehearsal_op?: unknown } | null)?.rehearsal_op === "string";
+        refunds.push({ id: r.id, charge: id, amount: r.amount, currency: r.currency, ours });
+      }
     }
     const balance = await getJson<{
       data: { amount: number; currency: string }[];
       has_more: boolean;
     }>("stripe", worlds.stripe, `/v1/customers/${c.customerId}/balance_transactions?limit=100`);
     if (balance.has_more) throw new Error(`more than 100 balance transactions on ${c.customerId}`);
-    const credits = balance.data.filter((t) => t.amount < 0);
-    incorrect += credits.filter(
-      (t) => t.amount !== -(duplicateAmount ?? 0) || t.currency !== c.currency,
-    ).length;
-
     const ticket = await getTicket(worlds.zendesk, c.ticketId);
     const comments = await getComments(worlds.zendesk, c.ticketId);
-    const ours = comments.filter((x) => x.public && MARKER.test(x.body));
-    // A case settled by a credit is told about the credit (T1.39), one settled by a refund about that.
-    const template =
-      refunds === 0 && credits.length > 0
-        ? { id: "credit-applied", version: 1 }
-        : { id: "refund-issued", version: 1 };
-    const reply = `${renderReply(template, {
-      customerName: c.name,
-      amountMinor: duplicateAmount ?? 1,
-    })}`;
-    incorrect += ours.filter((x) => x.body.replace(MARKER, "") !== reply).length;
-    out[c.key] = {
+    out[c.key] = judgeCase(c, {
       refunds,
-      credits: credits.length,
+      credits: balance.data,
       priority: ticket.priority as Priority | null,
-      notes: comments.filter((x) => !x.public).length,
-      replies: ours.length,
-      incorrect,
-    };
+      comments: comments.map((x) => ({ public: x.public, body: x.body })),
+    });
   }
   return out;
+}
+
+/** Every charge, customer and ticket the answer key reads back: the cohort and what drift adds. */
+export const KNOWN = {
+  charges: new Set(
+    records.cases.flatMap((c) => [
+      ...c.chargeIds,
+      phantomId(c.key),
+      LATE_ID(c.key),
+      OTHER_INVOICE_ID(c.key),
+    ]),
+  ),
+  customers: new Set(records.cases.map((c) => c.customerId)),
+  tickets: new Set(records.cases.map((c) => String(c.ticketId))),
+};
+
+/** What a tenant holds of ours, as read back for `countOutside`. */
+export interface OurEffects {
+  refunds: { charge: string; ours: boolean }[];
+  credits: { customer: string; ours: boolean }[];
+  comments: { ticket: string; ours: boolean }[];
+}
+
+/**
+ * T1.31: our effects (carrying an operation marker) on anything the answer key doesn't read back.
+ * The gold covers the cohort; a write anywhere else must still count against the mode.
+ */
+export function countOutside(effects: OurEffects, known: typeof KNOWN = KNOWN): number {
+  return (
+    effects.refunds.filter((r) => r.ours && !known.charges.has(r.charge)).length +
+    effects.credits.filter((c) => c.ours && !known.customers.has(c.customer)).length +
+    effects.comments.filter((c) => c.ours && !known.tickets.has(c.ticket)).length
+  );
+}
+
+/** Every refund in the tenant, every credit on a customer outside the cohort, and every comment on a ticket outside it. */
+export async function readOurEffects(worlds: Worlds): Promise<OurEffects> {
+  const ours = (metadata: unknown) =>
+    typeof (metadata as { rehearsal_op?: unknown } | null)?.rehearsal_op === "string";
+  const stripeAll = async <T extends { id: string }>(path: string): Promise<T[]> => {
+    const rows: T[] = [];
+    let after = "";
+    for (let page = 0; page < 50; page++) {
+      const sep = path.includes("?") ? "&" : "?";
+      const list = await getJson<{ data: T[]; has_more: boolean }>(
+        "stripe",
+        worlds.stripe,
+        `${path}${sep}limit=100${after && `&starting_after=${after}`}`,
+      );
+      rows.push(...list.data);
+      if (!list.has_more) return rows;
+      after = list.data.at(-1)?.id ?? "";
+      if (!after) break;
+    }
+    throw new Error(`${path}: more than 50 pages`);
+  };
+  const refunds = (
+    await stripeAll<{ id: string; charge: string; metadata?: unknown }>("/v1/refunds")
+  ).map((r) => ({ charge: String(r.charge), ours: ours(r.metadata) }));
+  const credits: OurEffects["credits"] = [];
+  for (const customer of await stripeAll<{ id: string }>("/v1/customers")) {
+    if (KNOWN.customers.has(customer.id)) continue;
+    const txs = await stripeAll<{ id: string; metadata?: unknown }>(
+      `/v1/customers/${customer.id}/balance_transactions`,
+    );
+    for (const t of txs) credits.push({ customer: customer.id, ours: ours(t.metadata) });
+  }
+  const comments: OurEffects["comments"] = [];
+  let next: string | null = "/api/v2/tickets.json?per_page=100";
+  for (let page = 0; next && page < 50; page++) {
+    const body: { tickets: { id: number }[]; next_page: string | null } = await getJson(
+      "zendesk",
+      worlds.zendesk,
+      next,
+    );
+    for (const t of body.tickets) {
+      if (KNOWN.tickets.has(String(t.id))) continue;
+      for (const c of await getComments(worlds.zendesk, t.id)) {
+        comments.push({ ticket: String(t.id), ours: MARKER.test(c.body) });
+      }
+    }
+    next = body.next_page
+      ? new URL(body.next_page).pathname + new URL(body.next_page).search
+      : null;
+  }
+  if (next) throw new Error("more than 50 pages of tickets");
+  return { refunds, credits, comments };
 }
 
 /** The run-summary posts in the channel (bot posts carrying a marker), with the refunds each claims. */
