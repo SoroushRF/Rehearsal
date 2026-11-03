@@ -1,11 +1,12 @@
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import type { Observation, PlanManifest, QueryObservation } from "@rehearsal/contracts";
+import type { Action, Observation, PlanManifest, QueryObservation } from "@rehearsal/contracts";
 import { fingerprint } from "@rehearsal/core";
 import {
   eraAdmin,
   STRIPE_CHARGE_PROJECTION,
+  STRIPE_CUSTOMER_PROJECTION,
   stripeChargeProjection,
   stripeReader,
   type WorldConfig,
@@ -130,6 +131,62 @@ function offlineEvidence(): Evidence {
   );
 }
 
+/** The offline plan with a public reply on the case's ticket after its refund (T1.44). */
+function withReply(): Evidence {
+  const e = offlineEvidence();
+  const refund = e.actions.find((a) => a.kind === "stripe.refund.create");
+  const ticket = e.observations.find((o) => o.entity.kind === "ticket");
+  if (!refund || !ticket) throw new Error("incomplete evidence");
+  e.actions.push({
+    id: "reply_001",
+    kind: "zendesk.ticket.appendPublicReply",
+    caseId: refund.caseId,
+    obligationId: refund.obligationId,
+    dependsOn: [refund.id],
+    requiredRole: "support_lead",
+    evidence: [ticket.id],
+    queryEvidence: [],
+    compensation: "irreversible",
+    protection: "no_atomic_guard",
+    rationale: "Tell the customer.",
+    args: {
+      ticketId: ticket.entity.id,
+      public: true,
+      template: { id: "refund-issued", version: 1 },
+      values: { customerName: CASE.name, amountMinor: CASE.amountMinor },
+      body: "Your refund is on its way.",
+    },
+  } as Action);
+  return e;
+}
+
+/** The offline plan with its refund replaced by a balance credit on the observed customer (T1.45). */
+function withCredit(currency: string | null = "cad"): Evidence {
+  const e = offlineEvidence();
+  const projection = { id: CASE.customerId, currency };
+  e.observations.push({
+    id: "obs_customer",
+    world: "planning",
+    entity: { vendor: "stripe", kind: "customer", id: CASE.customerId },
+    projectionVersion: STRIPE_CUSTOMER_PROJECTION,
+    projection,
+    fingerprint: fingerprint(projection),
+    capturedAt: "2026-10-24T00:00:00.000Z",
+  });
+  e.actions = e.actions.map((a) =>
+    a.kind !== "stripe.refund.create"
+      ? a
+      : ({
+          ...a,
+          id: "credit_001",
+          kind: "stripe.customer.balanceCredit",
+          evidence: [...a.evidence, "obs_customer"],
+          args: { customerId: CASE.customerId, chargeId: a.args.chargeId, amount: a.args.amount },
+        } as Action),
+  );
+  return e;
+}
+
 const ENV = {
   ERA_ADMIN_TOKEN: "operational-admin",
   REHEARSAL_ERA_ADMIN_TOKEN: "rehearsal-admin",
@@ -162,6 +219,48 @@ describe("snapshot support", () => {
     for (const field of ["amount", "created", "subject", "requester_id", "payment_intent"]) {
       expect(seed.notFromEvidence.some((f) => f.endsWith(`.${field}`))).toBe(false);
     }
+  });
+
+  it("rebuilds the ticket an approved public reply writes (T1.44)", () => {
+    const support = supportSnapshot(withReply());
+    if (!support.ok) throw new Error(support.refusals.join("; "));
+    expect(support.seed.zendesk.tickets.map((t) => String(t.id))).toEqual([String(CASE.ticketId)]);
+    // A reply to a ticket the plan never read is still refused before any world is touched.
+    const unobserved = withReply();
+    for (const a of unobserved.actions)
+      if (a.kind === "zendesk.ticket.appendPublicReply") a.evidence = [];
+    expect(supportSnapshot(unobserved)).toEqual({
+      ok: false,
+      refusals: [`reply_001 writes zendesk ticket ${CASE.ticketId} unobserved`],
+    });
+  });
+
+  it("checks a credited customer against the baseline instead of inventing one (T1.45)", () => {
+    const support = supportSnapshot(withCredit());
+    if (!support.ok) throw new Error(support.refusals.join("; "));
+    expect(support.seed.customers).toEqual([CASE.customerId]);
+    expect(support.seed.stripe.charges.map((c) => c.id).sort()).toEqual(CASE.chargeIds);
+    expect(support.seed.notFromEvidence).toContain("stripe.customer.*");
+    expect(supportSnapshot(withCredit(null)).ok).toBe(true);
+
+    const refusals = (change: (e: Evidence) => void) => {
+      const e = withCredit();
+      change(e);
+      const s = supportSnapshot(e);
+      return s.ok ? [] : s.refusals;
+    };
+    expect(
+      refusals((e) => {
+        for (const a of e.actions) {
+          if (a.kind === "stripe.customer.balanceCredit") a.evidence = a.evidence.slice(0, 1);
+        }
+      }),
+    ).toEqual([`credit_001 writes stripe customer ${CASE.customerId} unobserved`]);
+    expect(
+      refusals((e) => {
+        (e.observations.at(-1)?.projection as { currency: string }).currency = "CAD!";
+      }),
+    ).toEqual(["obs_customer: currency"]);
   });
 
   it("refuses an old projection that leaves out fields the simulator needs", () => {
@@ -343,6 +442,77 @@ describe("snapshot support", () => {
       for (const { server } of [stripe, zendesk]) {
         await new Promise<void>((r) => server.close(() => r()));
       }
+    }
+  });
+
+  it("refuses a credit whose customer the reset baseline lacks, and reads the currency back", async () => {
+    const injected: string[] = [];
+    let customers: Record<string, unknown> = {};
+    const server = createServer((req, res) => {
+      let body = "";
+      req.on("data", (chunk) => {
+        body += chunk;
+      });
+      req.on("end", () => {
+        const url = req.url ?? "";
+        const reply = (status: number, json: unknown) => {
+          res.writeHead(status, { "content-type": "application/json" });
+          res.end(JSON.stringify(json));
+        };
+        if (url.endsWith("/inject")) {
+          for (const rows of Object.values(JSON.parse(body) as Record<string, { id: unknown }[]>))
+            for (const r of rows) injected.push(String(r.id));
+          return reply(200, {});
+        }
+        if (url.endsWith("/reset")) return reply(200, {});
+        if (req.method === "POST") return reply(200, { access_token: "jwt", expires_in: 3600 });
+        const id = decodeURIComponent(url.split("/").pop() ?? "");
+        if (url.startsWith("/v1/customers/")) {
+          return id in customers ? reply(200, customers[id]) : reply(404, {});
+        }
+        return injected.includes(id) ? reply(200, { id }) : reply(404, {});
+      });
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const env = { ...ENV, ERA_STRIPE_REHEARSAL_URL: url, ERA_ZENDESK_REHEARSAL_URL: url };
+    const credit = withCredit();
+    const stripeOnly = {
+      ...credit,
+      actions: credit.actions.filter((a) => a.kind === "stripe.customer.balanceCredit"),
+      observations: credit.observations.filter((o) => o.entity.vendor === "stripe"),
+    };
+    try {
+      expect(await provisionSnapshot(stripeOnly, "abcd1234", env)).toEqual({
+        ok: false,
+        refusals: [`${CASE.customerId}: the rehearsal baseline has no such customer`],
+      });
+      expect(injected).toEqual([]);
+
+      customers = {
+        [CASE.customerId]: { id: CASE.customerId, object: "customer", currency: "cad" },
+      };
+      const provisioned = await provisionSnapshot(stripeOnly, "abcd1234", env);
+      expect(provisioned.ok).toBe(true);
+      // The customer is the baseline's: only the charges went in.
+      expect(injected.sort()).toEqual(CASE.chargeIds);
+      const world = { baseUrl: url, tenant: "rh-abcd1234", tenantToken: "jwt" };
+      const customerOnly = {
+        ...stripeOnly,
+        observations: stripeOnly.observations.filter((o) => o.entity.kind === "customer"),
+        queryObservations: [],
+      };
+      expect(await verifySnapshot(customerOnly, { stripe: world })).toEqual({
+        ok: true,
+        mismatches: [],
+      });
+      customers = { [CASE.customerId]: { id: CASE.customerId, currency: "usd" } };
+      expect(await verifySnapshot(customerOnly, { stripe: world })).toEqual({
+        ok: false,
+        mismatches: ["obs_customer: currency differ"],
+      });
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
     }
   });
 
