@@ -190,12 +190,25 @@ function definitions(tools: Record<string, { description: string; input: z.ZodTy
 export function planningToolDefinitions(opts: { credits?: boolean } = {}) {
   return definitions(
     Object.fromEntries(
-      Object.entries(PLANNING_TOOLS).filter(
-        ([name]) => opts.credits || name !== "propose_balance_credit",
-      ),
+      Object.entries(PLANNING_TOOLS)
+        .filter(([name]) => opts.credits || name !== "propose_balance_credit")
+        .map(([name, t]) => [
+          name,
+          opts.credits && name in CREDIT_DESCRIPTIONS
+            ? { ...t, description: CREDIT_DESCRIPTIONS[name as keyof typeof CREDIT_DESCRIPTIONS] }
+            : t,
+        ]),
     ),
   );
 }
+
+/** With credits on (T1.39), a note and a reply can follow a credit too, from their own template. */
+const CREDIT_DESCRIPTIONS = {
+  propose_refund_note:
+    "Propose a private note on the ticket confirming a proposed refund or balance credit (pass its step ID as refundStepId). The note is rendered from the approved refund-confirmed or credit-applied template after that step succeeds; you don't write its text.",
+  propose_customer_reply:
+    "Propose a public reply on the customer's ticket telling them a proposed refund or balance credit went out (pass its step ID as refundStepId). The customer reads it. The text is the approved refund-issued or credit-applied template filled with their name from the incident report and the amount; you don't write it, and the reviewer approves the exact text. It's sent only after that step succeeds.",
+} as const;
 
 export function backlogToolDefinitions() {
   return definitions(BACKLOG_TOOLS);
@@ -208,13 +221,76 @@ export const CREDIT_TOOL_SCHEMA_HASH = fingerprint(planningToolDefinitions({ cre
 /** The backlog session's tools. */
 export const BACKLOG_TOOL_SCHEMA_HASH = fingerprint(backlogToolDefinitions());
 
-export type ToolResult = { ok: true; result: unknown } | { ok: false; error: string };
+/**
+ * T1.39: why a tool call didn't add a step, as a code the model and the scorecard can count. Only
+ * a refusal of the credit itself (`REFUND_INSTEAD`) means "refund this duplicate instead"; every
+ * other code says something about the duplicate that a refund can't get around either.
+ */
+export const REFUSAL_REASONS = [
+  "unknown_tool",
+  "invalid_input",
+  "read_failed",
+  "already_applied",
+  "already_proposed",
+  "after_summary",
+  "not_duplicate",
+  "incomplete_read",
+  "outside_window",
+  "policy_currency",
+  "already_refunded",
+  "already_remedied",
+  "ambiguous_invoice",
+  "not_original",
+  "credits_off",
+  "no_credit_policy",
+  "credit_limit",
+  "customer_currency",
+  "remedy_required",
+  "unexpected_ticket",
+  "no_change",
+  "replies_off",
+  "render_failed",
+  "not_a_remedy",
+  "missing_evidence",
+  "no_summary_channel",
+  "nothing_to_summarize",
+  "ticket_not_waiting",
+  "reply_last",
+  "not_customer_ticket",
+] as const;
+export type RefusalReason = (typeof REFUSAL_REASONS)[number];
+
+/**
+ * Credit refusals after which refunding the same duplicate is right: the credit is off, too large,
+ * or can't go on a balance kept in another currency, but the duplicate is still owed. Its refund
+ * goes back to the card in the charge's own currency.
+ */
+export const REFUND_INSTEAD: ReadonlySet<RefusalReason> = new Set([
+  "credits_off",
+  "no_credit_policy",
+  "credit_limit",
+  "customer_currency",
+]);
+
+export type ToolResult =
+  | { ok: true; result: unknown }
+  | { ok: false; error: string; reason: RefusalReason };
 
 /** A refusal the model should see and can recover from (as opposed to a bug). */
-class Refusal extends Error {}
+class Refusal extends Error {
+  constructor(
+    readonly reason: RefusalReason,
+    message: string,
+  ) {
+    super(message);
+  }
+}
 
 const NOTE_TEMPLATE = { id: "refund-confirmed", version: 1 } as const;
 const REPLY_TEMPLATE = { id: "refund-issued", version: 1 } as const;
+/** T1.39: a credit's follow-ups say what happened: the money went on the balance, not the card. */
+const CREDIT_NOTE_TEMPLATE = { id: "credit-applied", version: 1 } as const;
+const CREDIT_REPLY_TEMPLATE = { id: "credit-applied", version: 1 } as const;
 const SUMMARY_TEMPLATE = { id: "run-summary", version: 1 } as const;
 const BACKLOG_NOTE_TEMPLATE = { id: "backlog-followup", version: 1 } as const;
 const BACKLOG_REPLY_TEMPLATE = { id: "backlog-followup", version: 1 } as const;
@@ -243,18 +319,20 @@ export class PlanningSession {
     const backlog = this.mode === "backlog";
     const tools: Record<string, { input: z.ZodType }> = backlog ? BACKLOG_TOOLS : PLANNING_TOOLS;
     const tool = Object.hasOwn(tools, name) ? tools[name] : undefined;
-    if (!tool) return { ok: false, error: `unknown tool ${name}` };
+    if (!tool) return { ok: false, error: `unknown tool ${name}`, reason: "unknown_tool" };
     const parsed = tool.input.safeParse(input);
-    if (!parsed.success) return { ok: false, error: z.prettifyError(parsed.error) };
+    if (!parsed.success) {
+      return { ok: false, error: z.prettifyError(parsed.error), reason: "invalid_input" };
+    }
     try {
       const result = backlog
         ? await this.#runBacklog(name as BacklogToolName, parsed.data)
         : await this.#run(name as PlanningToolName, parsed.data);
       return { ok: true, result };
     } catch (e) {
-      if (e instanceof Refusal) return { ok: false, error: e.message };
+      if (e instanceof Refusal) return { ok: false, error: e.message, reason: e.reason };
       // A failed read is reported, never papered over; the evidence simply isn't recorded.
-      return { ok: false, error: `read failed: ${(e as Error).message}` };
+      return { ok: false, error: `read failed: ${(e as Error).message}`, reason: "read_failed" };
     }
   }
 
@@ -473,14 +551,18 @@ export class PlanningSession {
   #add(action: Action): Action {
     if (this.#adopted.has(action.id)) {
       throw new Refusal(
+        "already_applied",
         `${action.id} was already applied by an earlier revision; it stays as it is`,
       );
     }
     if (this.#actions.some((a) => a.id === action.id)) {
-      throw new Refusal(`${action.id} is already proposed`);
+      throw new Refusal("already_proposed", `${action.id} is already proposed`);
     }
     if (this.#actions.some((a) => a.kind === "slack.message.postSummary")) {
-      throw new Refusal("the run summary is already proposed; it has to be the last step");
+      throw new Refusal(
+        "after_summary",
+        "the run summary is already proposed; it has to be the last step",
+      );
     }
     // Contracts v1 is the gate: an action that doesn't parse never enters the plan.
     const parsed = Action.parse(action);
@@ -494,41 +576,55 @@ export class PlanningSession {
    * this obligation or charge proposed already.
    */
   async #duplicatePair(chargeId: string, duplicateOf: string) {
-    if (chargeId === duplicateOf) throw new Refusal("a charge can't duplicate itself");
+    if (chargeId === duplicateOf)
+      throw new Refusal("not_duplicate", "a charge can't duplicate itself");
     const target = await this.#observe({ vendor: "stripe", kind: "charge", id: chargeId });
     const original = await this.#observe({ vendor: "stripe", kind: "charge", id: duplicateOf });
     const t = target.projection;
     const o = original.projection;
     const customer = String(t.customer);
     if (o.customer !== t.customer) {
-      throw new Refusal(`${chargeId} and ${duplicateOf} belong to different customers`);
+      throw new Refusal(
+        "not_duplicate",
+        `${chargeId} and ${duplicateOf} belong to different customers`,
+      );
     }
     const population = await this.#customerCharges(customer);
     if (!population.complete) {
-      throw new Refusal(`couldn't read every charge of ${customer}; try again`);
+      throw new Refusal("incomplete_read", `couldn't read every charge of ${customer}; try again`);
     }
     for (const id of [chargeId, duplicateOf]) {
       if (!population.matchingIds.includes(id)) {
-        throw new Refusal(`${id} is not a charge of ${customer} inside the incident window`);
+        throw new Refusal(
+          "outside_window",
+          `${id} is not a charge of ${customer} inside the incident window`,
+        );
       }
     }
     if (t.amount !== o.amount || t.currency !== o.currency) {
-      throw new Refusal(`not a duplicate: ${t.amount} ${t.currency} vs ${o.amount} ${o.currency}`);
+      throw new Refusal(
+        "not_duplicate",
+        `not a duplicate: ${t.amount} ${t.currency} vs ${o.amount} ${o.currency}`,
+      );
     }
     const { policy } = this.#opts;
     if (t.currency !== policy.currency) {
       throw new Refusal(
+        "policy_currency",
         `policy ${policy.id}@${policy.version} refunds only ${policy.currency}; ${chargeId} is ${t.currency}. Leave it for a human.`,
       );
     }
     if (t.status !== "succeeded" || o.status !== "succeeded") {
-      throw new Refusal("both charges must have succeeded");
+      throw new Refusal("not_duplicate", "both charges must have succeeded");
     }
     if (t.amount_refunded !== 0 || o.amount_refunded !== 0) {
-      throw new Refusal("one of these charges is already (partly) refunded");
+      throw new Refusal("already_refunded", "one of these charges is already (partly) refunded");
     }
     if (typeof t.invoice !== "string" || !t.invoice || t.invoice !== o.invoice) {
-      throw new Refusal("not a duplicate: both charges must identify the same invoice");
+      throw new Refusal(
+        "not_duplicate",
+        "not a duplicate: both charges must identify the same invoice",
+      );
     }
     const amountMinor = Number(t.amount);
     // One obligation per duplicate pair, whichever charge of it gets refunded.
@@ -540,6 +636,7 @@ export class PlanningSession {
     );
     if (prior) {
       throw new Refusal(
+        "already_remedied",
         this.#adopted.has(prior.id)
           ? `already remedied by ${prior.id}, which an earlier revision applied; it stays as it is`
           : `already remedied by ${prior.id}`,
@@ -549,11 +646,14 @@ export class PlanningSession {
     // must never turn three payments into three refunds.
     const group = duplicateInvoiceGroup(population, t.invoice);
     if (!group || group[0]?.currency !== t.currency || group[0]?.amount !== t.amount) {
-      throw new Refusal("invoice group is ambiguous or already refunded; leave it for a human");
+      throw new Refusal(
+        "ambiguous_invoice",
+        "invoice group is ambiguous or already refunded; leave it for a human",
+      );
     }
     const anchor = group[0];
     if (anchor?.id !== duplicateOf || anchor.id === chargeId) {
-      throw new Refusal("keep the invoice's earliest paid charge as the original");
+      throw new Refusal("not_original", "keep the invoice's earliest paid charge as the original");
     }
     const requiredRole: Role =
       amountMinor >= policy.financeThresholdMinor ? "finance_lead" : "support_lead";
@@ -586,16 +686,19 @@ export class PlanningSession {
 
   async #proposeCredit(chargeId: string, duplicateOf: string, rationale: string) {
     const { policy } = this.#opts;
-    if (!this.#opts.credits) throw new Refusal("balance credits are off; propose a refund");
+    if (!this.#opts.credits)
+      throw new Refusal("credits_off", "balance credits are off; propose a refund");
     if (!("creditMaxMinor" in policy)) {
       throw new Refusal(
-        `policy ${policy.id}@${policy.version} has no invoice credit; use a refund`,
+        "no_credit_policy",
+        `policy ${policy.id}@${policy.version} has no invoice credit; refund ${chargeId} instead`,
       );
     }
     const { target, original, population, customer, amountMinor, obligationId, requiredRole } =
       await this.#duplicatePair(chargeId, duplicateOf);
     if (amountMinor >= policy.creditMaxMinor) {
       throw new Refusal(
+        "credit_limit",
         `a credit must be below ${policy.creditMaxMinor} ${policy.currency}; refund ${chargeId} instead`,
       );
     }
@@ -604,6 +707,7 @@ export class PlanningSession {
     const currency = account.projection.currency;
     if (currency !== null && currency !== policy.currency) {
       throw new Refusal(
+        "customer_currency",
         `customer ${customer} is billed in ${String(currency)}, so a ${policy.currency} credit can't go on their balance; refund ${chargeId} instead`,
       );
     }
@@ -641,13 +745,15 @@ export class PlanningSession {
         a.caseId === caseId &&
         (a.kind === "stripe.refund.create" || a.kind === "stripe.customer.balanceCredit"),
     );
-    if (!refund) throw new Refusal(`propose a refund or credit for ${customerId} first`);
+    if (!refund)
+      throw new Refusal("remedy_required", `propose a refund or credit for ${customerId} first`);
     const ticket = await this.#ticketForCustomer(ticketId, customerId);
     const current = ZendeskPriority.nullable().safeParse(ticket.projection.priority ?? null);
     if (!current.success) {
-      throw new Refusal(`ticket ${ticketId} has an unexpected priority`);
+      throw new Refusal("unexpected_ticket", `ticket ${ticketId} has an unexpected priority`);
     }
-    if (current.data === priority) throw new Refusal(`ticket ${ticketId} is already ${priority}`);
+    if (current.data === priority)
+      throw new Refusal("no_change", `ticket ${ticketId} is already ${priority}`);
     const status = ZendeskStatus.safeParse(ticket.projection.status);
     const action = this.#add({
       id: `patch_${ticketId}`,
@@ -671,91 +777,116 @@ export class PlanningSession {
   }
 
   async #proposeNote(refundStepId: string, ticketId: string) {
-    const { refund, customer } = this.#refundOf(refundStepId);
+    const { remedy, customer } = this.#remedyOf(refundStepId);
     const ticket = await this.#ticketForCustomer(ticketId, customer);
+    const amountMinor = remedy.args.amount.amountMinor;
+    const credit = remedy.kind === "stripe.customer.balanceCredit";
     const action = this.#add({
       id: `note_${refundStepId}`,
       kind: "zendesk.ticket.appendPrivateNote",
-      caseId: refund.caseId,
-      obligationId: refund.obligationId,
-      // The note claims the refund happened, so it runs only after that refund is confirmed.
-      dependsOn: [refund.id],
+      caseId: remedy.caseId,
+      obligationId: remedy.obligationId,
+      // The note claims the remedy happened, so it runs only after that step is confirmed.
+      dependsOn: [remedy.id],
       requiredRole: "support_lead",
       evidence: [ticket.id],
       queryEvidence: [],
       compensation: "irreversible",
       protection: "no_atomic_guard",
-      rationale: `Record refund ${refund.id} on ticket ${ticketId}.`,
+      rationale: `Record ${credit ? "credit" : "refund"} ${remedy.id} on ticket ${ticketId}.`,
       args: {
         ticketId,
         public: false,
-        template: NOTE_TEMPLATE,
-        bindings: {
-          refundId: { $ref: "result", stepId: refund.id, path: "refund.id" },
-          amountMinor: refund.args.amount.amountMinor,
-        },
+        // A credit's balance transaction yields no bindable ID; its note states the amount only.
+        ...(credit
+          ? { template: CREDIT_NOTE_TEMPLATE, bindings: { amountMinor } }
+          : {
+              template: NOTE_TEMPLATE,
+              bindings: {
+                refundId: { $ref: "result", stepId: remedy.id, path: "refund.id" },
+                amountMinor,
+              },
+            }),
       },
     });
     return summary(action);
   }
 
   async #proposeReply(refundStepId: string, ticketId: string) {
-    const { refund, customer } = this.#refundOf(refundStepId);
+    const { remedy, customer } = this.#remedyOf(refundStepId);
     const name = this.#opts.customerNames?.[customer];
     if (name === undefined) {
-      throw new Refusal(`customer replies aren't enabled for ${customer}; leave the reply out`);
+      throw new Refusal(
+        "replies_off",
+        `customer replies aren't enabled for ${customer}; leave the reply out`,
+      );
     }
     const ticket = await this.#ticketForCustomer(ticketId, customer);
-    const values = { customerName: name, amountMinor: refund.args.amount.amountMinor };
+    const credit = remedy.kind === "stripe.customer.balanceCredit";
+    const template = credit ? CREDIT_REPLY_TEMPLATE : REPLY_TEMPLATE;
+    const values = { customerName: name, amountMinor: remedy.args.amount.amountMinor };
     let body: string;
     try {
-      body = renderReply(REPLY_TEMPLATE, values);
+      body = renderReply(template, values);
     } catch (err) {
-      throw new Refusal(`can't render the reply for ${customer}: ${(err as Error).message}`);
+      throw new Refusal(
+        "render_failed",
+        `can't render the reply for ${customer}: ${(err as Error).message}`,
+      );
     }
     const action = this.#add({
       id: `reply_${refundStepId}`,
       kind: "zendesk.ticket.appendPublicReply",
-      caseId: refund.caseId,
-      obligationId: refund.obligationId,
-      // The reply tells the customer the refund went out, so it waits for that refund's receipt.
-      dependsOn: [refund.id],
+      caseId: remedy.caseId,
+      obligationId: remedy.obligationId,
+      // The reply tells the customer the remedy went out, so it waits for that step's receipt.
+      dependsOn: [remedy.id],
       requiredRole: "support_lead",
       evidence: [ticket.id],
       queryEvidence: [],
       compensation: "irreversible",
       protection: "no_atomic_guard",
-      rationale: `Tell the customer on ticket ${ticketId} that refund ${refund.id} went out.`,
-      args: { ticketId, public: true, template: REPLY_TEMPLATE, values, body },
+      rationale: `Tell the customer on ticket ${ticketId} that ${credit ? "credit" : "refund"} ${remedy.id} went out.`,
+      args: { ticketId, public: true, template, values, body },
     });
     return { ...summary(action), body };
   }
 
-  /** A proposed refund and its customer, from the charge evidence the refund cites. */
-  #refundOf(refundStepId: string) {
-    const refund = this.#actions.find((a) => a.id === refundStepId);
-    if (refund?.kind !== "stripe.refund.create") {
-      throw new Refusal(`${refundStepId} is not a proposed refund`);
+  /** A proposed refund or credit and its customer, from the evidence the step cites. */
+  #remedyOf(stepId: string) {
+    const remedy = this.#actions.find((a) => a.id === stepId);
+    if (remedy?.kind === "stripe.customer.balanceCredit") {
+      return { remedy, customer: remedy.args.customerId };
+    }
+    if (remedy?.kind !== "stripe.refund.create") {
+      throw new Refusal("not_a_remedy", `${stepId} is not a proposed refund or credit`);
     }
     const charge = this.observations.find(
       (o) =>
-        refund.evidence.includes(o.id) &&
+        remedy.evidence.includes(o.id) &&
         o.entity.vendor === "stripe" &&
-        o.entity.id === refund.args.chargeId,
+        o.entity.id === remedy.args.chargeId,
     );
     if (typeof charge?.projection.customer !== "string") {
-      throw new Refusal("refund customer evidence is missing");
+      throw new Refusal("missing_evidence", "refund customer evidence is missing");
     }
-    return { refund, customer: charge.projection.customer };
+    return { remedy, customer: charge.projection.customer };
   }
 
   #proposeSummary() {
     const target = this.#opts.runSummary;
-    if (!target) throw new Refusal("no run summary channel is configured; skip the summary");
+    if (!target)
+      throw new Refusal(
+        "no_summary_channel",
+        "no run summary channel is configured; skip the summary",
+      );
     const steps = this.#actions.map((a) => a.id);
     const refunds = this.#actions.filter((a) => a.kind === "stripe.refund.create").map((a) => a.id);
     if (refunds.length === 0)
-      throw new Refusal("no refund is proposed, so there is nothing to sum up");
+      throw new Refusal(
+        "nothing_to_summarize",
+        "no refund is proposed, so there is nothing to sum up",
+      );
     const action = this.#add({
       id: this.#opts.summaryId ?? SUMMARY_ID,
       kind: "slack.message.postSummary",
@@ -794,10 +925,16 @@ export class PlanningSession {
     const ticket = await this.#ticketForCustomer(ticketId, customerId);
     const status = ticket.projection.status;
     if (status !== "new") {
-      throw new Refusal(`ticket ${ticketId} is ${String(status)}, not waiting for a first reply`);
+      throw new Refusal(
+        "ticket_not_waiting",
+        `ticket ${ticketId} is ${String(status)}, not waiting for a first reply`,
+      );
     }
     if (this.#actions.some((a) => a.id === `reply_${ticketId}`)) {
-      throw new Refusal(`the reply on ticket ${ticketId} is already proposed; it has to come last`);
+      throw new Refusal(
+        "reply_last",
+        `the reply on ticket ${ticketId} is already proposed; it has to come last`,
+      );
     }
     return ticket;
   }
@@ -817,9 +954,13 @@ export class PlanningSession {
   ) {
     const ticket = await this.#waitingTicket(ticketId, customerId);
     const current = ZendeskPriority.nullable().safeParse(ticket.projection.priority ?? null);
-    if (!current.success) throw new Refusal(`ticket ${ticketId} has an unexpected priority`);
+    if (!current.success)
+      throw new Refusal("unexpected_ticket", `ticket ${ticketId} has an unexpected priority`);
     if (current.data !== null && PRIORITY_RANK[priority] <= PRIORITY_RANK[current.data]) {
-      throw new Refusal(`ticket ${ticketId} is already ${current.data}; only raise a priority`);
+      throw new Refusal(
+        "no_change",
+        `ticket ${ticketId} is already ${current.data}; only raise a priority`,
+      );
     }
     const action = this.#add({
       id: `patch_${ticketId}`,
@@ -861,7 +1002,10 @@ export class PlanningSession {
   async #backlogReply(customerId: string, ticketId: string) {
     const name = this.#opts.customerNames?.[customerId];
     if (name === undefined) {
-      throw new Refusal(`customer replies aren't enabled for ${customerId}; leave the reply out`);
+      throw new Refusal(
+        "replies_off",
+        `customer replies aren't enabled for ${customerId}; leave the reply out`,
+      );
     }
     const ticket = await this.#waitingTicket(ticketId, customerId);
     const values = { customerName: name };
@@ -869,7 +1013,10 @@ export class PlanningSession {
     try {
       body = renderReply(BACKLOG_REPLY_TEMPLATE, values);
     } catch (err) {
-      throw new Refusal(`can't render the reply for ${customerId}: ${(err as Error).message}`);
+      throw new Refusal(
+        "render_failed",
+        `can't render the reply for ${customerId}: ${(err as Error).message}`,
+      );
     }
     const action = this.#add({
       id: `reply_${ticketId}`,
@@ -890,13 +1037,20 @@ export class PlanningSession {
 
   #backlogSummary() {
     const target = this.#opts.runSummary;
-    if (!target) throw new Refusal("no run summary channel is configured; skip the summary");
+    if (!target)
+      throw new Refusal(
+        "no_summary_channel",
+        "no run summary channel is configured; skip the summary",
+      );
     const steps = this.#actions.map((a) => a.id);
     const notes = this.#actions
       .filter((a) => a.kind === "zendesk.ticket.appendPrivateNote")
       .map((a) => a.id);
     if (notes.length === 0) {
-      throw new Refusal("no ticket is followed up, so there is nothing to sum up");
+      throw new Refusal(
+        "nothing_to_summarize",
+        "no ticket is followed up, so there is nothing to sum up",
+      );
     }
     const action = this.#add({
       id: this.#opts.summaryId ?? SUMMARY_ID,
@@ -930,7 +1084,10 @@ export class PlanningSession {
   async #ticketForCustomer(ticketId: string, customerId: string): Promise<Observation> {
     const ticket = await this.#observe({ vendor: "zendesk", kind: "ticket", id: ticketId });
     if (ticket.projection.external_id !== customerId) {
-      throw new Refusal(`ticket ${ticketId} is not verified as belonging to ${customerId}`);
+      throw new Refusal(
+        "not_customer_ticket",
+        `ticket ${ticketId} is not verified as belonging to ${customerId}`,
+      );
     }
     return ticket;
   }

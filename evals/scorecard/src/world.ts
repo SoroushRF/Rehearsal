@@ -295,10 +295,15 @@ export async function readOutcomes(worlds: Worlds): Promise<Record<CaseKey, Case
     const ticket = await getTicket(worlds.zendesk, c.ticketId);
     const comments = await getComments(worlds.zendesk, c.ticketId);
     const ours = comments.filter((x) => x.public && MARKER.test(x.body));
-    const reply = `${renderReply(
-      { id: "refund-issued", version: 1 },
-      { customerName: c.name, amountMinor: duplicateAmount ?? 1 },
-    )}`;
+    // A case settled by a credit is told about the credit (T1.39), one settled by a refund about that.
+    const template =
+      refunds === 0 && credits.length > 0
+        ? { id: "credit-applied", version: 1 }
+        : { id: "refund-issued", version: 1 };
+    const reply = `${renderReply(template, {
+      customerName: c.name,
+      amountMinor: duplicateAmount ?? 1,
+    })}`;
     incorrect += ours.filter((x) => x.body.replace(MARKER, "") !== reply).length;
     out[c.key] = {
       refunds,
