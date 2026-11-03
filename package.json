@@ -17,6 +17,7 @@
     "test:memory": "vitest run --project memory",
     "memory:keys": "tsx --env-file-if-exists=.env scripts/memory/keys.ts",
     "memory:drift": "tsx --env-file-if-exists=.env.drift scripts/memory/drift.ts",
+    "memory:erase-org": "tsx --env-file-if-exists=.env scripts/memory/erase-org.ts",
     "test:precedent-gate": "vitest run --project api test/precedent-gate.test.ts",
     "lint": "biome check .",
     "format": "biome format --write .",
