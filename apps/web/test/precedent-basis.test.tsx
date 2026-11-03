@@ -114,7 +114,7 @@ describe("precedent basis card (T2.17)", () => {
     );
   });
 
-  describe("tracing a citation to its source (T2.29)", () => {
+  describe("tracing a citation to its source (T2.31)", () => {
     const [cited] = basis.citations;
     if (!cited) throw new Error("fixture has a citation");
     const traced = (registry: Precedent[] | null) =>

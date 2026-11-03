@@ -39,9 +39,18 @@ all services. Postgres rejects external connections.
    address, then fill the certificate fields and deploy. Certificates last 90 days.
 5. For Slack summaries set the planner's `RUN_SUMMARY_CHANNEL` to a channel present in
    the seeded Slack world. Without a value summaries stay disabled. Public replies and
-   balance credits are enabled. Agent Memory is optional: configure its three settings
-   on API (write key) and planner (read-only key) separately to enable it. Without them,
-   the application reports that precedent synchronization is unavailable.
+   balance credits are enabled.
+6. Agent Memory is optional. The Blueprint asks for `SURREAL_AGENT_MEMORY_URL` and
+   `SURREAL_AGENT_MEMORY_CONTEXT` on the API and the planner, plus
+   `SURREAL_AGENT_MEMORY_WRITE_KEY` on the API only and `SURREAL_AGENT_MEMORY_READ_KEY`
+   on the planner only. The executor and rehearsal worker get no memory setting, and
+   refuse every memory key at startup. Mint the pair locally with
+   `pnpm memory:keys mint <label>` (the API's write key and the planner's read key)
+   and paste each straight into its one service's field;
+   never commit it or put it in a shared environment group. Leave all three of a
+   service's fields empty to run without memory: the application then reports that
+   precedent synchronization is unavailable. Setting only some of them stops it at
+   startup.
 
 The launcher constructs private HTTP URLs from Blueprint host references and writes
 only that service's PEM/Google files to a private temporary directory. IAM uses mTLS

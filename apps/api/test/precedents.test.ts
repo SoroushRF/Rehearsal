@@ -298,7 +298,7 @@ describe.skipIf(!process.env.DB_TESTS)("promoting a precedent (real Postgres)", 
     ]);
   });
 
-  it("lists each version's digest and source run, so a citation can be traced to it (T2.29)", async () => {
+  it("lists each version's digest and source run, so a citation can be traced to it (T2.31)", async () => {
     const { orgId, runId } = await seedRun();
     await promote(finance(orgId), runId);
     const { entries } = await loadRegistry(db, orgId);

@@ -69,7 +69,7 @@ function SourceLine({ c, source }: { c: PrecedentCitation; source: CitationSourc
  * cited precedent was replaced or withdrawn before they approve, not after. Without a verdict
  * (an example plan, or the check hasn't loaded) it says so instead of implying the citations hold.
  * Each citation traces through its facts to the approved version, who promoted it and the run it
- * came from (T2.29).
+ * came from (T2.31).
  */
 export function PrecedentBasisCard({
   basis,

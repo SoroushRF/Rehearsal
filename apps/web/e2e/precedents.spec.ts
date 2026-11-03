@@ -113,7 +113,7 @@ test("a plan citing a precedent shows its trace, and can be approved while it ho
   await expect(card).toContainText("duplicate-charge-refund v2");
   await expect(card).toContainText("trace_abc");
   await expect(card).toContainText("All still in force");
-  // The cited facts trace to the approved version, its promoter and its source run (T2.29).
+  // The cited facts trace to the approved version, its promoter and its source run (T2.31).
   await expect(card.getByTestId("citation-source")).toHaveAttribute("data-source", "matched");
   await expect(card).toContainText("promoted by user_finance on 2026-10-25 from run run_0");
   await expect(page.getByTestId("precedent-hold")).toHaveCount(0);
