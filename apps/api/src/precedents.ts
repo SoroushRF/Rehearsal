@@ -216,7 +216,7 @@ export function registerPrecedentRoutes(app: FastifyInstance, deps: PrecedentDep
 
   /**
    * Every version this organization has approved, with where it stands. The digest lets a cited
-   * precedent be traced to the exact version finance approved (T2.29).
+   * precedent be traced to the exact version finance approved (T2.31).
    */
   app.get("/api/precedents", async (req, reply) => {
     const gate = await authorizeCollection(deps.iam, bearerToken(req), "GET /api/precedents");
