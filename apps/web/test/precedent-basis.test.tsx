@@ -1,7 +1,14 @@
 import type { PrecedentBasis } from "@rehearsal/contracts";
+import { billingManifest } from "@rehearsal/testkit";
+import { isValidElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { citationSource, PrecedentBasisCard } from "../src/components/PrecedentBasisCard";
+import { type RecallDiagnostics, StoredPlan } from "../src/api";
+import {
+  citationSource,
+  PrecedentBasisCard,
+  RecallDetail,
+} from "../src/components/PrecedentBasisCard";
 import { type Precedent, PrecedentListResponse } from "../src/components/PrecedentPanel";
 import { explainPrecedentHold, PrecedentCheck, type PrecedentHold } from "../src/precedent-holds";
 
@@ -35,7 +42,11 @@ const approved: Precedent = {
   sourceRunId: "run_source",
 };
 
-const words = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+const words = (html: string) =>
+  html
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .replaceAll("&#x27;", "'");
 const render = (check: Parameters<typeof PrecedentBasisCard>[0]["check"]) =>
   renderToStaticMarkup(<PrecedentBasisCard basis={basis} check={check} />);
 
@@ -165,6 +176,129 @@ describe("precedent basis card (T2.17)", () => {
         digest: approved.digest,
         sourceRunId: "run_source",
       });
+    });
+  });
+
+  describe("why these precedents (T1.54)", () => {
+    const recall: RecallDiagnostics = {
+      revision: 1,
+      recordedAt: "2026-11-01T12:00:00.000Z",
+      diagnostics: {
+        recalled: true,
+        areas: [
+          {
+            area: "billing.duplicate_charge",
+            query: "billing.duplicate_charge",
+            traceId: "trace_abc",
+            hits: [
+              {
+                id: "duplicate-charge-refund",
+                version: 2,
+                factIds: ["fact_1", "fact_2"],
+                hitIds: ["h1"],
+              },
+              { id: "old-rule", version: 1, factIds: ["fact_9"], hitIds: ["h2"] },
+            ],
+            dropped: [
+              { id: "old-rule", reason: "registry has version 3", stage: "registry" },
+              { id: "gone-rule", reason: "withdrawn at v1", stage: "recall" },
+            ],
+          },
+          {
+            area: "billing.refund_window",
+            query: "billing.refund_window",
+            traceId: null,
+            hits: [],
+            dropped: [],
+          },
+        ],
+      },
+    };
+    const shown = (r: RecallDiagnostics | null) =>
+      renderToStaticMarkup(<PrecedentBasisCard basis={basis} check={{ ok: true }} recall={r} />);
+
+    it("shows, collapsed, each area's query and trace, what was found and what was dropped and why", () => {
+      const html = shown(recall);
+      expect(html).toContain('data-testid="recall-diagnostics"');
+      expect(html).not.toMatch(/<details[^>]*open/);
+      const text = words(html);
+      expect(text).toContain("Why these precedents");
+      expect(text).toContain(
+        "billing.duplicate_charge : recall asked “billing.duplicate_charge” · trace trace_abc",
+      );
+      expect(text).toContain("Found duplicate-charge-refund v2 , cited from facts fact_1 fact_2");
+      expect(text).toContain("Found old-rule v1 , not cited from facts fact_9");
+      expect(text).toContain("Dropped old-rule by the registry: registry has version 3");
+      expect(text).toContain("Dropped gone-rule by Agent Memory's copy: withdrawn at v1");
+      expect(text).toContain("trace none recorded");
+      expect(text).toContain("Recall found nothing here.");
+      expect(text).toContain("Recorded when revision 1 was planned");
+      expect(html.match(/data-cited="true"/g)).toHaveLength(1);
+      expect(html).toContain('data-stage="recall"');
+    });
+
+    it("says recall wasn't asked when nothing was active", () => {
+      const text = words(shown({ ...recall, diagnostics: { recalled: false, areas: [] } }));
+      expect(text).toContain("so Agent Memory wasn't asked");
+      expect(text).not.toContain("recall asked");
+    });
+
+    it("shows repeated entries as sent, without clashing React keys", () => {
+      const [area] = recall.diagnostics.areas;
+      const hit = area?.hits[0];
+      const drop = area?.dropped[0];
+      if (!area || !hit || !drop) throw new Error("fixture has an area, a hit and a drop");
+      const repeated = {
+        ...area,
+        hits: [{ ...hit, factIds: ["fact_1", "fact_1"] }, hit],
+        dropped: [drop, drop],
+      };
+      const r = { ...recall, diagnostics: { recalled: true, areas: [repeated, repeated] } };
+      // Server rendering doesn't warn about keys, so walk the element tree: every list of
+      // siblings must have distinct keys.
+      const clashes: string[] = [];
+      const walk = (node: unknown): void => {
+        if (Array.isArray(node)) {
+          const keys = node.flatMap((n) => (isValidElement(n) && n.key !== null ? [n.key] : []));
+          if (new Set(keys).size !== keys.length) clashes.push(keys.join(", "));
+          node.forEach(walk);
+        } else if (isValidElement(node)) {
+          walk((node.props as { children?: unknown }).children);
+        }
+      };
+      walk(RecallDetail({ recall: r, basis }));
+      expect(clashes).toEqual([]);
+      const html = renderToStaticMarkup(<RecallDetail recall={r} basis={basis} />);
+      expect(html.match(/data-testid="recall-area"/g)).toHaveLength(2);
+      expect(html.match(/data-testid="recall-hit"/g)).toHaveLength(4);
+      expect(html.match(/data-testid="recall-drop"/g)).toHaveLength(4);
+    });
+
+    it("adds nothing for a plan made before diagnostics were recorded", () => {
+      const html = shown(null);
+      expect(html).not.toContain("recall-diagnostics");
+      expect(html).toBe(
+        renderToStaticMarkup(<PrecedentBasisCard basis={basis} check={{ ok: true }} />),
+      );
+    });
+
+    it("reads a plan with no diagnostics, or malformed ones, without breaking it", () => {
+      const plan = {
+        planId: "plan_1",
+        revision: 1,
+        planHash: "a".repeat(64),
+        manifest: billingManifest("plan_1"),
+        createdAt: "2026-11-01T12:00:00.000Z",
+        latestRevision: 1,
+      };
+      expect(StoredPlan.parse(plan).recallDiagnostics).toBeUndefined();
+      expect(StoredPlan.parse({ ...plan, recallDiagnostics: recall }).recallDiagnostics).toEqual(
+        recall,
+      );
+      const odd = { ...recall, diagnostics: { recalled: "yes" } };
+      expect(
+        StoredPlan.parse({ ...plan, recallDiagnostics: odd }).recallDiagnostics,
+      ).toBeUndefined();
     });
   });
 });

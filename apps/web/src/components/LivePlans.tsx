@@ -424,6 +424,7 @@ function LivePlan({
         review={{ unchecked, onToggle: toggle }}
         precedents={approvals.data?.precedents ?? null}
         registry={registry.data?.precedents ?? null}
+        recall={plan.data.recallDiagnostics ?? null}
         actions={
           <ApprovalPanel
             apiFetch={apiFetch}

@@ -71,6 +71,13 @@
       "when": 1792981736235,
       "tag": "0009_incidents",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793734294119,
+      "tag": "0010_plan_recall_diagnostics",
+      "breakpoints": true
     }
   ]
 }

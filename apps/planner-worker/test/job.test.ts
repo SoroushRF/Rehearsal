@@ -1,6 +1,6 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type { PlanManifest } from "@rehearsal/contracts";
-import { type BillingPolicyV1, fingerprint } from "@rehearsal/core";
+import { type BillingPolicyV1, fingerprint, planHash } from "@rehearsal/core";
 import { precedentDigest } from "@rehearsal/memory";
 import {
   BACKLOG_PROMPT_VERSION,
@@ -20,7 +20,7 @@ import {
   zendeskTicketProjection,
 } from "@rehearsal/providers";
 import { INCIDENT, incidentRecords, problemRecords } from "@rehearsal/testkit";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import policy from "../../../scenarios/billing/policy.v1.json" with { type: "json" };
 import { handlePlanJob, type PlanJobContext } from "../src/job";
 
@@ -602,6 +602,67 @@ describe("plan job with precedents", () => {
       epochs: { [AREA]: 3 },
     });
   });
+
+  it("sends why each precedent was recalled beside the manifest, never in it (T1.54)", async () => {
+    // Observations are stamped with the clock; freeze it so two runs can produce the same plan.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-01T12:00:00.000Z"));
+    try {
+      await sameManifestWhateverTheDiagnostics();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  async function sameManifestWhateverTheDiagnostics() {
+    const { jobs, completed } = fakeJobs();
+    const job = withRegistry([{ id: record.id, version: 2, digest }]);
+    await handlePlanJob(job, {
+      ...deps(model(refundOneDuplicate()), jobs),
+      precedents: memory([]),
+    });
+    const body = completed[0]?.[1];
+    expect(body?.stats?.recallDiagnostics).toEqual({
+      recalled: true,
+      areas: [
+        {
+          area: AREA,
+          query: AREA,
+          traceId: "trace_1",
+          hits: [{ id: record.id, version: 2, factIds: ["f1", "f2"], hitIds: ["h1"] }],
+          dropped: [],
+        },
+      ],
+    });
+    const manifest = body?.manifest as PlanManifest;
+    expect(JSON.stringify(manifest)).not.toContain("recallDiagnostics");
+    expect(JSON.stringify(manifest)).not.toContain("hitIds");
+
+    // The same recall with a different account of it (recall also ruled one out, and found
+    // the precedent through other hits) produces the same manifest, so the same hash.
+    const ruledOut = fakeJobs();
+    await handlePlanJob(job, {
+      ...deps(model(refundOneDuplicate()), ruledOut.jobs),
+      precedents: () => ({
+        recall: async () => {
+          const same = await memory([])(JOB.data.orgId).recall();
+          return {
+            ...same,
+            precedents: same.precedents.map((p) => ({ ...p, hitIds: ["h7", "h8"] })),
+            rejected: [{ id: "gone-rule", reason: "withdrawn at v1" }],
+          };
+        },
+      }),
+    });
+    const other = ruledOut.completed[0]?.[1];
+    expect(other?.stats?.recallDiagnostics?.areas[0]).toMatchObject({
+      hits: [{ id: record.id, hitIds: ["h7", "h8"] }],
+      dropped: [{ id: "gone-rule", reason: "withdrawn at v1", stage: "recall" }],
+    });
+    expect(other?.stats?.recallDiagnostics).not.toEqual(body?.stats?.recallDiagnostics);
+    expect(other?.manifest).toEqual(manifest);
+    expect(planHash(other?.manifest as PlanManifest)).toBe(planHash(manifest));
+  }
 
   it("doesn't cite or show a precedent the registry no longer lists as active", async () => {
     const { jobs, completed } = fakeJobs();

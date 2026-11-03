@@ -10,6 +10,7 @@ export * from "./journal";
 export * from "./org-world-lock";
 export * from "./precedents";
 export * from "./queue";
+export * from "./recall-diagnostics";
 export * from "./rehearsal-lifecycle";
 export * from "./rehearsal-runner";
 export * from "./rehearsal-sets";

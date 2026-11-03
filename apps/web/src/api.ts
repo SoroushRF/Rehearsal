@@ -1,4 +1,10 @@
-import { ApprovalGrant, PlanManifest, Role, Sha256Hex } from "@rehearsal/contracts";
+import {
+  ApprovalGrant,
+  PlanManifest,
+  PrecedentRecallDiagnostics,
+  Role,
+  Sha256Hex,
+} from "@rehearsal/contracts";
 import { z } from "zod";
 
 /** `fetch` that carries the reviewer's identity (see `useApiFetch`). Injected so tests can stub it. */
@@ -13,6 +19,14 @@ export const PlanSummary = z.object({
 });
 export type PlanSummary = z.infer<typeof PlanSummary>;
 
+/** T1.54: why each precedent was or wasn't recalled, as recorded when `revision` was planned. */
+export const RecallDiagnostics = z.object({
+  revision: z.int(),
+  recordedAt: z.string(),
+  diagnostics: PrecedentRecallDiagnostics,
+});
+export type RecallDiagnostics = z.infer<typeof RecallDiagnostics>;
+
 export const StoredPlan = z.object({
   planId: z.string(),
   revision: z.int(),
@@ -20,6 +34,8 @@ export const StoredPlan = z.object({
   manifest: PlanManifest,
   createdAt: z.string(),
   latestRevision: z.int(),
+  /** Absent for a plan made before T1.54, or from an older server; never breaks the plan. */
+  recallDiagnostics: RecallDiagnostics.optional().catch(undefined),
 });
 export type StoredPlan = z.infer<typeof StoredPlan>;
 

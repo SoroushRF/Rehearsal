@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { PlanManifest, StoredIncident } from "@rehearsal/contracts";
+import {
+  PlanManifest,
+  type PrecedentBasis,
+  PrecedentRecallDiagnostics,
+  StoredIncident,
+} from "@rehearsal/contracts";
 import { planHash, validateGraph } from "@rehearsal/core";
 import {
   type Db,
@@ -8,6 +13,7 @@ import {
   type PgBoss,
   PLAN_QUEUE,
   type RegistrySnapshot,
+  recordRecallDiagnostics,
 } from "@rehearsal/db";
 import { checkPrecedentBasis } from "@rehearsal/memory";
 import {
@@ -79,6 +85,8 @@ const Complete = z.strictObject({
       usage: z.record(z.string(), z.int().nonnegative()),
       // Optional diagnostics must never reject a valid completion after planner/API version drift.
       modelAttempts: PlanModelAttempts.optional().catch(undefined),
+      // T1.54: stored beside the plan, not in the job output; malformed ones are dropped.
+      recallDiagnostics: PrecedentRecallDiagnostics.optional().catch(undefined),
     })
     .optional(),
 });
@@ -249,11 +257,13 @@ export function registerRehearseRoutes(app: FastifyInstance, deps: RehearseDeps)
       }
       stored = { planHash: existing.plan.planHash };
     }
+    const { recallDiagnostics, ...stats } = body.data.stats ?? {};
+    await keepRecallDiagnostics(deps, m, job, stored.planHash, recallDiagnostics, req.log);
     await deps.boss.complete(PLAN_QUEUE, found.job.id, {
       planHash: stored.planHash,
       revision: m.revision,
       summary: body.data.summary,
-      ...body.data.stats,
+      ...stats,
     });
     return reply
       .code(201)
@@ -295,6 +305,84 @@ export function checkJobBasis(m: PlanManifest, job: PlanJob): string | null {
   }
   const check = checkPrecedentBasis(m.precedentBasis, registryOfJob(job.precedents));
   return check.ok ? null : `plan's precedent basis doesn't hold: ${JSON.stringify(check.holds)}`;
+}
+
+/**
+ * T1.54: whether the worker's account of its recall agrees with what the API knows: recall was
+ * asked exactly when the job's registry had something active, then once for every area the
+ * basis consulted, and every cited version is among the hits of the area it applies to, or of
+ * the area whose trace found it. Null when it agrees; otherwise why not.
+ */
+export function recallDiagnosticsProblem(
+  diagnostics: PrecedentRecallDiagnostics,
+  basis: PrecedentBasis,
+  job: PlanJob,
+): string | null {
+  const offered = (job.precedents?.active.length ?? 0) > 0;
+  if (diagnostics.recalled !== offered) {
+    return offered
+      ? "says recall wasn't asked, but the job had active precedents"
+      : "says recall was asked, but the job had nothing active";
+  }
+  const areas = diagnostics.areas.map((a) => a.area);
+  if (new Set(areas).size !== areas.length) return "names an area twice";
+  const expected = offered ? Object.keys(basis.epochs).sort() : [];
+  if ([...areas].sort().join("\n") !== expected.join("\n")) {
+    return "areas differ from the ones the basis consulted";
+  }
+  for (const a of diagnostics.areas) {
+    const hits = a.hits.map((h) => h.id);
+    if (new Set(hits).size !== hits.length) return `lists a hit twice in ${a.area}`;
+  }
+  const found = (
+    area: PrecedentRecallDiagnostics["areas"][number] | undefined,
+    id: string,
+    version: number,
+  ) => area?.hits.some((h) => h.id === id && h.version === version) ?? false;
+  for (const c of basis.citations) {
+    const own = diagnostics.areas.find((a) => a.area === c.appliesTo);
+    const tracing =
+      c.traceId === null ? undefined : diagnostics.areas.find((a) => a.traceId === c.traceId);
+    if (!found(own, c.id, c.version) && !found(tracing, c.id, c.version)) {
+      return `cited ${c.id} v${c.version} is not among the hits`;
+    }
+  }
+  return null;
+}
+
+/**
+ * T1.54: keeps the planner's account of its recall beside the stored revision. It explains the
+ * basis and decides nothing, so it's kept only for a plan with a basis and only when it agrees
+ * with the job (`recallDiagnosticsProblem`); anything else, or a failure to store it, is logged
+ * and the plan stands.
+ */
+async function keepRecallDiagnostics(
+  deps: RehearseDeps,
+  m: PlanManifest,
+  job: PlanJob,
+  planHash: string,
+  diagnostics: PrecedentRecallDiagnostics | undefined,
+  log: { warn(obj: object, msg: string): void },
+) {
+  if (!diagnostics || !m.precedentBasis) return;
+  const basis = m.precedentBasis;
+  const problem = recallDiagnosticsProblem(diagnostics, basis, job);
+  if (problem) {
+    log.warn({ planId: m.planId, problem }, "recall diagnostics not stored");
+    return;
+  }
+  try {
+    await recordRecallDiagnostics(deps.db, {
+      orgId: m.orgId,
+      planId: m.planId,
+      revision: m.revision,
+      planHash,
+      basis,
+      diagnostics,
+    });
+  } catch (err) {
+    log.warn({ err, planId: m.planId }, "recall diagnostics could not be stored");
+  }
 }
 
 async function loadJob(deps: RehearseDeps, id: string) {

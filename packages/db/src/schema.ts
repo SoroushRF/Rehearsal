@@ -321,3 +321,24 @@ export const incidents = pgTable(
     check("incidents_window", sql`${t.windowGte} < ${t.windowLt}`),
   ],
 );
+
+/**
+ * T1.54: why each precedent was or wasn't recalled when a revision was planned, as the planner
+ * reported it (`PrecedentRecallDiagnostics`). Beside the plan, never in its manifest, so it can't
+ * change the plan hash; nothing approves, holds or executes from it. Append-only, one row per
+ * planned revision; `basis_digest` is the fingerprint of the basis it explains, so a later revision
+ * is shown it only while its basis is still exactly that one.
+ */
+export const planRecallDiagnostics = pgTable(
+  "plan_recall_diagnostics",
+  {
+    orgId: text("org_id").notNull(),
+    planId: text("plan_id").notNull(),
+    revision: integer("revision").notNull(),
+    planHash: text("plan_hash").notNull(),
+    basisDigest: text("basis_digest").notNull(),
+    diagnostics: jsonb("diagnostics").notNull(),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.orgId, t.planId, t.revision] })],
+);

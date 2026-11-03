@@ -188,6 +188,35 @@ test("a plan citing a precedent shows its trace, and can be approved while it ho
   await expect(page.getByRole("button", { name: "Approve revision 1" })).toBeEnabled();
 });
 
+test("a plan citing a precedent says why it was recalled, collapsed until asked (T1.54)", async ({
+  page,
+}) => {
+  const api = fakeApi({ citesPrecedent: "holds" });
+  await page.route("**/api/**", api.handle);
+  await page.goto("/e2e/live.html");
+
+  const why = page.getByTestId("recall-diagnostics");
+  await expect(why).toBeVisible();
+  await expect(why.getByTestId("recall-area")).toBeHidden();
+  await why.getByText("Why these precedents").click();
+  const area = why.getByTestId("recall-area");
+  await expect(area).toHaveAttribute("data-area", "billing.duplicate_charge");
+  await expect(area).toContainText("recall asked “billing.duplicate_charge”");
+  await expect(area).toContainText("trace trace_abc");
+  const hit = area.getByTestId("recall-hit");
+  await expect(hit).toHaveAttribute("data-cited", "true");
+  await expect(hit).toContainText("duplicate-charge-refund v2");
+  await expect(hit).toContainText("fact_1");
+  await expect(area.getByTestId("recall-drop")).toContainText(
+    "Dropped late-fee-waiver by Agent Memory's copy: withdrawn at v1",
+  );
+  expect(await violations(page)).toEqual([]);
+  // Nothing about it is sent back: the browser only reads it.
+  expect(api.requests.every((r) => r.method === "GET" || !r.path.startsWith("/api/plans"))).toBe(
+    true,
+  );
+});
+
 test("a plan whose cited precedent was replaced says why and can't be approved", async ({
   page,
 }) => {
