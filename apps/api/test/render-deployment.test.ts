@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { MEMORY_KEY_ENV, memoryConfigFromEnv } from "@rehearsal/memory";
 import { describe, expect, it } from "vitest";
 // Deployment files are executable Node modules used by Render itself.
 // @ts-expect-error deployment module is plain JavaScript
@@ -12,7 +13,12 @@ import { rehearsalWorkerConfigViolations } from "../../rehearsal-worker/src/work
 type Service = {
   name: string;
   type: string;
-  envVars: { key: string; value?: string; fromService?: { name: string; envVarKey?: string } }[];
+  envVars: {
+    key: string;
+    value?: string;
+    sync?: boolean;
+    fromService?: { name: string; envVarKey?: string };
+  }[];
 };
 const services = blueprint.services as Service[];
 function environment(name: string) {
@@ -74,5 +80,50 @@ describe("Render deployment", () => {
         writeSecret,
       ),
     ).toThrow("dedicated service account");
+  });
+  describe("Agent Memory (#365)", () => {
+    const memoryVars = (name: string) =>
+      (services.find((s) => s.name === name)?.envVars ?? []).filter((e) =>
+        e.key.startsWith("SURREAL_AGENT_MEMORY"),
+      );
+    const settings = ["SURREAL_AGENT_MEMORY_URL", "SURREAL_AGENT_MEMORY_CONTEXT"];
+
+    it("gives the API the write key and the planner the read key, and nobody else anything", () => {
+      const keys = Object.fromEntries(
+        services.map((s) => [s.name, memoryVars(s.name).map((e) => e.key)]),
+      );
+      expect(keys["rehearsal-api"]).toEqual([...settings, "SURREAL_AGENT_MEMORY_WRITE_KEY"]);
+      expect(keys["rehearsal-planner"]).toEqual([...settings, "SURREAL_AGENT_MEMORY_READ_KEY"]);
+      for (const [name, held] of Object.entries(keys)) {
+        if (name !== "rehearsal-api" && name !== "rehearsal-planner") expect(held).toEqual([]);
+      }
+    });
+
+    it("declares every memory setting as a secret Render asks for, never a value in the file", () => {
+      for (const entry of [...memoryVars("rehearsal-api"), ...memoryVars("rehearsal-planner")]) {
+        expect(entry).toEqual({ key: entry.key, sync: false });
+      }
+      expect(MEMORY_KEY_ENV.some((key) => blueprintText.includes(`"${key}": `))).toBe(false);
+    });
+
+    it("configures each process for exactly its own access once the dashboard values are set", () => {
+      const api = deploymentEnv("api", environment("rehearsal-api"), writeSecret);
+      const planner = deploymentEnv("planner", environment("rehearsal-planner"), writeSecret);
+      expect(memoryConfigFromEnv("write", api)).toMatchObject({ apiKey: "test-secret" });
+      expect(memoryConfigFromEnv("read", planner)).toMatchObject({ apiKey: "test-secret" });
+      const others = (env: Record<string, string>, own: string) =>
+        MEMORY_KEY_ENV.filter((key) => key !== own && key in env);
+      expect(others(api, "SURREAL_AGENT_MEMORY_WRITE_KEY")).toEqual([]);
+      expect(others(planner, "SURREAL_AGENT_MEMORY_READ_KEY")).toEqual([]);
+    });
+
+    it("keeps the planner's refusal of the write key, should one be added by hand", () => {
+      const planner = deploymentEnv(
+        "planner",
+        { ...environment("rehearsal-planner"), SURREAL_AGENT_MEMORY_WRITE_KEY: "leaked" },
+        writeSecret,
+      );
+      expect(plannerCredentialViolations(planner)).toContain("SURREAL_AGENT_MEMORY_WRITE_KEY");
+    });
   });
 });

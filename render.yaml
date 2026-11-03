@@ -149,6 +149,18 @@
         {
           "key": "VITE_CLERK_PUBLISHABLE_KEY",
           "sync": false
+        },
+        {
+          "key": "SURREAL_AGENT_MEMORY_URL",
+          "sync": false
+        },
+        {
+          "key": "SURREAL_AGENT_MEMORY_CONTEXT",
+          "sync": false
+        },
+        {
+          "key": "SURREAL_AGENT_MEMORY_WRITE_KEY",
+          "sync": false
         }
       ],
       "healthCheckPath": "/api/health",
@@ -290,6 +302,18 @@
         },
         {
           "key": "RUN_SUMMARY_CHANNEL",
+          "sync": false
+        },
+        {
+          "key": "SURREAL_AGENT_MEMORY_URL",
+          "sync": false
+        },
+        {
+          "key": "SURREAL_AGENT_MEMORY_CONTEXT",
+          "sync": false
+        },
+        {
+          "key": "SURREAL_AGENT_MEMORY_READ_KEY",
           "sync": false
         }
       ]

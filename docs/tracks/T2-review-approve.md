@@ -68,6 +68,12 @@ See [beyond.md](../beyond.md) for scope, parallel work, external gates and the r
 | T2.27 | Accessibility scans wait for the plan's entrance fade | M5 | Scans measure settled colors without turning off the contrast rule or adding retries. **Done (fixture):** `violations()` waits until no finite animation runs; a regression slows animations tenfold and fails on the old scan | [#295](https://github.com/SoroushRF/Rehearsal/issues/295) | |
 | T2.28 | Steps with no recorded result aren't called "Never ran" | M5 | Neutral wording where a receipt is missing; contract docs and a regression for a committed effect whose receipt didn't settle | [#296](https://github.com/SoroushRF/Rehearsal/issues/296) | |
 
+### Agent Memory follow-ups (Nov 2026)
+
+| ID | Task | Milestone | Done when | Issue | Blocked by |
+|---|---|---|---|---|---|
+| T2.30 | Agent Memory on the Render deployment: API write key, planner read key | M5 | The Blueprint declares `SURREAL_AGENT_MEMORY_URL` and `_CONTEXT` on the API and planner, `_WRITE_KEY` on the API only and `_READ_KEY` on the planner only, all `sync: false`; the executor and rehearsal worker get none; `render.yaml` matches and the deployment test checks it. **Done (fixture):** `agentMemory()` in `infra/render/blueprint.mjs`, `render.yaml` regenerated, four new checks in `apps/api/test/render-deployment.test.ts`, setup step 6 in `docs/deployment.md`. Not yet: keys minted and set in Render, and a deployed run with memory on | [#389](https://github.com/SoroushRF/Rehearsal/issues/389) | T1.49 |
+
 ## Decisions
 
 _(add dated entries)_
