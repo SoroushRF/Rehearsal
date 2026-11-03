@@ -60,7 +60,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T1.37** Repair an incomplete or stale plan into a new revision [#283](https://github.com/SoroushRF/Rehearsal/issues/283) | ✅ done |  |  |
 | **T1.38** Planner recovery from timeouts, rate limits and network errors [#284](https://github.com/SoroushRF/Rehearsal/issues/284) | ✅ done |  |  |
 | **T1.39** Prompt branches for credit and refund, with typed refusal reasons [#285](https://github.com/SoroushRF/Rehearsal/issues/285) | ✅ done |  | T1.45 |
-| **T1.40** Expand the benchmark to 100–200 reproducible scenarios and repeat runs [#292](https://github.com/SoroushRF/Rehearsal/issues/292) | 🔨 in progress | T1.35 (T1, ready) |  |
+| **T1.40** Expand the benchmark to 100–200 reproducible scenarios and repeat runs [#292](https://github.com/SoroushRF/Rehearsal/issues/292) | 🟥 blocked | T1.35 (T1, ready) |  |
 | **T1.46** T1.46: Preserve model-attempt history across whole-job planner retries [#361](https://github.com/SoroushRF/Rehearsal/issues/361) | 🟨 ready | — |  |
 | **T1.41** Demo blocker: target the org tenant when injecting the phantom [#348](https://github.com/SoroushRF/Rehearsal/issues/348) | ✅ done |  |  |
 | **T1.42** Serialize org resets with planning/apply admission [#349](https://github.com/SoroushRF/Rehearsal/issues/349) | ✅ done |  |  |
@@ -211,7 +211,7 @@ flowchart LR
     T1_37["T1.37 Repair an incomplete or stale plan into a "]:::done
     T1_38["T1.38 Planner recovery from timeouts, rate limit"]:::done
     T1_39["T1.39 Prompt branches for credit and refund, wit"]:::done
-    T1_40["T1.40 Expand the benchmark to 100–200 reproducib"]:::progress
+    T1_40["T1.40 Expand the benchmark to 100–200 reproducib"]:::blocked
     T1_46["T1.46 T1.46: Preserve model-attempt history acro"]:::ready
     T1_41["T1.41 Demo blocker: target the org tenant when i"]:::done
     T1_42["T1.42 Serialize org resets with planning/apply a"]:::done
