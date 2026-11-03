@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { violations } from "./axe";
 import { fakeApi } from "./fake-live-api";
 
@@ -52,6 +52,74 @@ test("a finance lead promotes a precedent from a completed run and sees it waiti
     "neither disputed",
   ]);
 });
+
+/** Open the promote panel on a completed run and fill the draft. */
+async function draftPrecedent(page: Page, api: ReturnType<typeof fakeApi>) {
+  await page.route("**/api/**", api.handle);
+  await page.goto("/e2e/live.html");
+  await page.getByRole("button", { name: "Approve revision 1" }).click();
+  await page.getByRole("button", { name: "Approve revision 1" }).click();
+  await page.getByRole("button", { name: "Apply to production" }).click();
+  const panel = page.getByTestId("precedent-panel");
+  await panel.getByText("Precedents: promote what this run decided").click();
+  await panel.getByLabel("Name (a short slug)").fill("late-duplicate-refund");
+  await panel
+    .getByLabel("What was decided")
+    .fill("A duplicate charge under 20.00 CAD is credited, not refunded.");
+  return panel;
+}
+
+test("the promote panel shows similar active precedents, and promotion still works", async ({
+  page,
+}) => {
+  const api = fakeApi({ completedRun: true, activePrecedent: true, similar: "hit" });
+  const panel = await draftPrecedent(page, api);
+
+  const hint = panel.getByTestId("similar-precedents");
+  await expect(hint).toHaveAttribute("data-state", "ok");
+  const item = hint.getByTestId("similar-precedent");
+  await expect(item).toHaveCount(1);
+  await expect(item).toContainText("duplicate-charge-refund v1");
+  await expect(item).toContainText("A duplicate charge within 30 days is refunded in full.");
+  await expect(hint).toContainText("Promoting doesn't change or withdraw these");
+  expect(await violations(page)).toEqual([]);
+
+  // Advisory: the button is live, the request carries only the draft, and the promotion goes out
+  // exactly as it does without the hint.
+  const promote = panel.getByRole("button", { name: "Promote to precedent" });
+  await expect(promote).toBeEnabled();
+  const ask = api.requests.find((r) => r.path === "/api/runs/run_1/precedents/similar");
+  expect(Object.keys((ask as { body: object }).body).sort()).toEqual([
+    "appliesTo",
+    "id",
+    "statement",
+  ]);
+  await promote.click();
+  await expect(page.getByTestId("promoted")).toContainText("late-duplicate-refund v1 approved");
+  const post = api.requests.find((r) => r.path === "/api/runs/run_1/precedents");
+  expect(Object.keys((post as { body: object }).body)).not.toContain("similar");
+});
+
+for (const similar of ["off", "unavailable", "error"] as const) {
+  test(`with the hint ${similar === "off" ? "off because memory is off" : similar === "unavailable" ? "unavailable because recall failed" : "failing outright"}, the panel says so and promotion works as before`, async ({
+    page,
+  }) => {
+    const api = fakeApi({ completedRun: true, similar });
+    const panel = await draftPrecedent(page, api);
+
+    const hint = panel.getByTestId("similar-precedents");
+    await expect(hint).toHaveAttribute("data-state", similar === "error" ? "failed" : similar);
+    await expect(hint).toContainText(
+      similar === "off" ? "Agent Memory is off" : "Couldn't check for similar precedents",
+    );
+    await expect(hint.getByTestId("similar-precedent")).toHaveCount(0);
+    expect(await violations(page)).toEqual([]);
+
+    await panel.getByRole("button", { name: "Promote to precedent" }).click();
+    await expect(page.getByTestId("promoted")).toContainText("late-duplicate-refund v1 approved");
+    await expect(panel.getByTestId("precedent")).toHaveAttribute("data-status", "waiting");
+  });
+}
 
 test("a run that hasn't completed offers no form", async ({ page }) => {
   const api = fakeApi();

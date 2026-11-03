@@ -26,7 +26,7 @@ Each process holds one key, with only the grants its job needs (#365, decision 0
 
 | Variable | Held by | Grants below the precedent scope (`memoryKeyGrants`) |
 |---|---|---|
-| `SURREAL_AGENT_MEMORY_WRITE_KEY` | API (the sync) | `memory:read`, `memory:write`, `scope:create` |
+| `SURREAL_AGENT_MEMORY_WRITE_KEY` | API (the sync, and the promote panel's hint) | `memory:read`, `memory:write`, `scope:create` |
 | `SURREAL_AGENT_MEMORY_READ_KEY` | planner worker (recall) | `memory:read` |
 | `SURREAL_AGENT_MEMORY_ADMIN_KEY` | operator tools and the memory gate only | the key Studio issues |
 
@@ -79,6 +79,23 @@ Hosted, it mints its own API and planner keys from `memoryKeyGrants`, works unde
 | Fake Agent Memory, Postgres 17 (2026-11-03, Linux, Node 24) | **PASS** 5/5 |
 | Hosted Agent Memory, Postgres 17 (2026-11-02, Windows 11 amd64, Node 24.11.1, about 20 s each) | **PASS** 5/5 on 3 consecutive runs |
 | Hosted, with the withdrawal marker (T1.51; 2026-11-03, same machine, about 30 s each) | **PASS** 5/5 on 3 consecutive runs |
+
+## Similar precedents on the promote panel (T2.32)
+
+Before finance promotes, the panel can show the active precedents in the same area that recall finds similar to the draft (#397). It is a hint and nothing else.
+
+- `POST /api/runs/:id/precedents/similar` takes `{ appliesTo, statement, id? }` (Zod, strict) and needs `rehearsal:promote:precedent` in the run's org, like promotion itself. A run in another org is a 404, and a run that hasn't completed is a 409.
+- It recalls in the org's scope with the **API's own key** (the write key's `memory:read` grant), never the planner's. The planner is still the only process whose recall feeds a plan.
+- The registry decides what is shown. A hit appears only if Postgres lists that exact version and digest as active, in the same area. The statement shown is read from Postgres, not from recall, so a withdrawn precedent whose copy memory still holds, or a copy that is a version behind, is dropped.
+- It always answers `200` with a status: `ok`, `off` (Agent Memory isn't configured) or `unavailable` (recall failed or took over 10 s). The panel says which, and says nothing blocks. Recall is skipped when the registry has nothing active in the area.
+- Nothing is stored, queued or approved, the promote route never calls it, and the promote button doesn't wait for it, so promotion works the same with memory off or failing. The plan hash isn't involved.
+- A failed recall is logged with the org, the error kind and the HTTP status only.
+
+| Evidence | Level |
+|---|---|
+| API tests on real Postgres against the fake Agent Memory: similar, none, a withdrawn copy, a copy a version behind, another org, memory off, outage and timeout; web unit tests; the precedents e2e spec | `fixture` |
+
+It hasn't run against the hosted service; nothing about it needs the memory gate.
 
 ## Surprises
 

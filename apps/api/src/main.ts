@@ -16,6 +16,7 @@ import { buildApp } from "./app";
 import type { ApplyDeps } from "./apply";
 import { iamClientFromEnv } from "./iam";
 import { ensureOrgSeeded, resetIdleOrgWorlds, workerHasWork } from "./org-worlds";
+import { similarRecallerFromEnv } from "./precedent-similar";
 import { publisherFromEnv, startPrecedentWorker } from "./precedent-sync";
 import { eraProblemInjector } from "./problems";
 import { rehearsalTenantActive } from "./rehearsal-operator";
@@ -79,6 +80,8 @@ const precedents = apply && {
   boss: apply.boss,
   iam,
   syncEnabled: publisherFor !== null,
+  // T2.32: the promote panel's advisory hint recalls with the same key; it never decides anything.
+  similar: similarRecallerFromEnv(),
 };
 if (apply && publisherFor) await startPrecedentWorker(apply.boss, { db: apply.db, publisherFor });
 else if (apply) {

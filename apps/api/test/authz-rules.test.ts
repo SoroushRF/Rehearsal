@@ -180,6 +180,10 @@ describe("rehearsal-authz@1", () => {
     expect(rbac("POST /api/runs/:id/precedents")).toEqual({
       anyOf: ["rehearsal:promote:precedent"],
     });
+    // T2.32: the advisory hint is shown only to someone who could promote.
+    expect(rbac("POST /api/runs/:id/precedents/similar")).toEqual({
+      anyOf: ["rehearsal:promote:precedent"],
+    });
     expect(rbac("POST /api/precedents/:id/withdraw")).toEqual({
       anyOf: ["rehearsal:withdraw:precedent"],
     });

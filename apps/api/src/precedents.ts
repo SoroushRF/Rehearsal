@@ -9,7 +9,13 @@ import {
   recordPrecedentEvent,
   schema,
 } from "@rehearsal/db";
-import { PrecedentId, PrecedentRecord, precedentDigest } from "@rehearsal/memory";
+import {
+  AgentMemoryError,
+  PrecedentId,
+  type PrecedentRecall,
+  PrecedentRecord,
+  precedentDigest,
+} from "@rehearsal/memory";
 import { and, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -22,6 +28,7 @@ import {
   requirePerson,
 } from "./iam";
 import type { Outcome } from "./plans";
+import type { SimilarRecallerFor } from "./precedent-similar";
 
 const { runs } = schema;
 
@@ -31,10 +38,18 @@ export interface PrecedentDeps {
   iam?: IamClient;
   /** Whether Agent Memory is configured. Without it a promotion waits; the list says so. */
   syncEnabled: boolean;
+  /**
+   * Recall for the promote panel's similar-precedents hint (T2.32), with the API's own key. Absent
+   * or null: Agent Memory isn't configured and the hint says so. Never used to decide anything.
+   */
+  similar?: SimilarRecallerFor | null;
   now?: () => Date;
 }
 
 const NonBlank = z.string().refine((s) => s.trim().length > 0, "must not be blank");
+const AppliesTo = z
+  .string()
+  .regex(/^[a-z0-9_]+(?:\.[a-z0-9_]+)*$/, "appliesTo must be dotted lowercase");
 
 /**
  * What a finance lead specifies. Everything else (author, role, version, approval time) is set
@@ -42,9 +57,7 @@ const NonBlank = z.string().refine((s) => s.trim().length > 0, "must not be blan
  */
 export const PromoteRequest = z.strictObject({
   id: PrecedentId,
-  appliesTo: z
-    .string()
-    .regex(/^[a-z0-9_]+(?:\.[a-z0-9_]+)*$/, "appliesTo must be dotted lowercase"),
+  appliesTo: AppliesTo,
   statement: NonBlank,
   conditions: z.array(NonBlank),
   exceptions: z.array(NonBlank),
@@ -57,6 +70,32 @@ export const PromoteRequest = z.strictObject({
  * withdrawing a newer version nobody looked at.
  */
 export const WithdrawRequest = z.strictObject({ version: z.int().positive() });
+
+/**
+ * What the promote panel asks before finance promotes (T2.32): the area and the draft statement,
+ * and the draft's ID when it has one, so an earlier version of the same precedent can be marked.
+ */
+export const SimilarRequest = z.strictObject({
+  appliesTo: AppliesTo,
+  statement: NonBlank.pipe(z.string().max(2000)),
+  id: PrecedentId.optional(),
+});
+
+/** One active registry version recall found similar. Every field comes from Postgres. */
+export interface SimilarPrecedent {
+  id: string;
+  version: number;
+  appliesTo: string;
+  statement: string;
+  digest: string;
+  /** An earlier version of the precedent being promoted. */
+  sameId: boolean;
+}
+export interface SimilarResponse {
+  /** `off`: Agent Memory isn't configured. `unavailable`: recall failed or timed out. */
+  status: "ok" | "off" | "unavailable";
+  similar: SimilarPrecedent[];
+}
 
 /**
  * This organization's stored copy of the precedent. The id is reused across organizations, so a
@@ -164,6 +203,87 @@ export function registerPrecedentRoutes(app: FastifyInstance, deps: PrecedentDep
       ];
     });
     return reply.code(out[0]).send(out[1]);
+  });
+
+  /**
+   * Similar active precedents for the promote panel (T2.32): advisory, never blocking. Recall in
+   * the org's scope finds candidates; a candidate is shown only if the registry lists that exact
+   * version and digest as active in the same area, and its statement is read from the registry,
+   * not from recall. Nothing is stored and nothing else reads the answer: promotion doesn't wait
+   * for it, call it, or change because of it. Memory being off or failing is a 200 that says so.
+   */
+  app.post<{ Params: { id: string } }>("/api/runs/:id/precedents/similar", async (req, reply) => {
+    const token = bearerToken(req);
+    if (!token) return reply.code(401).send({ error: "unauthenticated" });
+    const body = SimilarRequest.safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: "invalid_request" });
+
+    const [run] = await deps.db.select().from(runs).where(eq(runs.id, req.params.id));
+    if (!run) {
+      const person = await requirePerson(deps.iam, token);
+      if (!person.ok) return refuse(reply, person, "run_not_found");
+      return reply.code(404).send({ error: "run_not_found" });
+    }
+    const gate = await authorize(deps.iam, token, "POST /api/runs/:id/precedents/similar", {
+      orgId: run.orgId,
+    });
+    if (!gate.ok) return refuse(reply, gate, "run_not_found");
+    if (run.state !== "completed") {
+      return reply.code(409).send({ error: "run_not_completed", state: run.state });
+    }
+
+    const answer = (out: SimilarResponse) => reply.code(200).send(out);
+    if (!deps.similar) return answer({ status: "off", similar: [] });
+
+    const { appliesTo, statement, id } = body.data;
+    const { snapshot, entries } = await loadRegistry(deps.db, run.orgId);
+    const inArea = new Map(
+      entries
+        .filter((e) => e.status === "active" && e.appliesTo === appliesTo)
+        .map((e) => [e.id, e]),
+    );
+    // Nothing active in the area: nothing could qualify, so don't spend a recall finding that out.
+    if (inArea.size === 0) return answer({ status: "ok", similar: [] });
+
+    let recalled: PrecedentRecall;
+    try {
+      recalled = await deps.similar(run.orgId).recall(`${appliesTo} ${statement.trim()}`);
+    } catch (err) {
+      // No key material: the client never puts the key in an error, and only the kind is logged.
+      req.log.warn(
+        {
+          orgId: run.orgId,
+          error: err instanceof Error ? err.name : "unknown",
+          ...(err instanceof AgentMemoryError ? { status: err.status } : {}),
+        },
+        "similar-precedent recall failed",
+      );
+      return answer({ status: "unavailable", similar: [] });
+    }
+
+    const shown = new Set<string>();
+    const similar = recalled.precedents.flatMap((p): SimilarPrecedent[] => {
+      // The registry decides: the exact active version and digest, in this area, once each.
+      const active = snapshot.active.get(p.id);
+      const entry = inArea.get(p.id);
+      if (!active || !entry || shown.has(p.id)) return [];
+      if (active.version !== p.version || active.digest !== p.digest) return [];
+      if (entry.version !== active.version || entry.digest !== active.digest) return [];
+      const record = PrecedentRecord.safeParse(entry.record);
+      if (!record.success) return [];
+      shown.add(p.id);
+      return [
+        {
+          id: entry.id,
+          version: entry.version,
+          appliesTo: entry.appliesTo,
+          statement: record.data.statement,
+          digest: entry.digest,
+          sameId: entry.id === id,
+        },
+      ];
+    });
+    return answer({ status: "ok", similar });
   });
 
   /**
