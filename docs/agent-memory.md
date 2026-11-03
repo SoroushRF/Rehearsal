@@ -37,9 +37,57 @@ Each process holds one key, with only the grants its job needs (#365, decision 0
 | `SURREAL_AGENT_MEMORY_ADMIN_KEY` | operator tools and the memory gate only | the key Studio issues |
 | `SURREAL_AGENT_MEMORY_READ_KEY`, in `.env.drift` | the [drift check](#drift-check-t153) (operator) | `memory:read`, on a key of its own |
 
-The planner worker refuses to start with the write or admin key, and the executor and the rehearsal worker refuse every memory key. A planner that could write memory could plant the precedent it then cites. The old shared `SURREAL_AGENT_MEMORY_KEY` is refused everywhere with a message naming its replacements. `pnpm memory:keys mint <label>` mints both keys with the admin key and prints each once; `pnpm memory:keys revoke <label>` revokes them. `pnpm memory:keys mint-reader <label>` mints `rehearsal-reader-<label>`, an operator's read-only key with the planner's grants, for the drift check. It is never the planner's own key and goes only in `.env.drift`. `pnpm memory:keys revoke-reader <label>` revokes it.
+The planner worker refuses to start with the write or admin key, and the executor and the rehearsal worker refuse every memory key. A planner that could write memory could plant the precedent it then cites. The old shared `SURREAL_AGENT_MEMORY_KEY` is refused everywhere with a message naming its replacements. `pnpm memory:keys mint <label>` mints both keys with the admin key and prints each once; `pnpm memory:keys revoke <label>` revokes them (every generation, since [rotation](#rotating-the-keys-t155)). `pnpm memory:keys mint-reader <label>` mints `rehearsal-reader-<label>`, an operator's read-only key with the planner's grants, for the drift check. It is never the planner's own key and goes only in `.env.drift`. `pnpm memory:keys revoke-reader <label>` revokes it.
 
 The variable names are what the startup checks look at; the grants are what the service enforces. The memory gate mints both keys with the same grants and checks that the planner's recalls but is refused a write.
+
+### Rotating the keys (T1.55)
+
+```bash
+pnpm memory:keys rotate <label>                # mint the next pair; the old pair keeps working
+pnpm memory:keys rotate <label> --revoke-old   # once the new pair is deployed: revoke the old one
+```
+
+Generations are told apart by name. Generation 1 is what `mint` makes (`rehearsal-api-<label>`, `rehearsal-planner-<label>`); each `rotate` mints the next, `rehearsal-api-<label>-g<N>` and `rehearsal-planner-<label>-g<N>`, with the same grants (`memoryKeyGrants`). So a label may not end in `-g<digits>`. `rotate` prints each new key once, as the line for its env file, then the deploy steps; that is the only time a key is printed. It refuses a label with no keys yet (use `mint`). If the second mint fails, it revokes the first, so a generation is never half there.
+
+`--revoke-old` lists the live keys (`GET /keys`, which returns names and timestamps, never the key) and revokes every generation older than the newest complete pair. It never revokes that pair, and refuses when nothing older exists. An incomplete newer generation is left alone and reported. Before it finishes it prints when each kept key was last used, as the service reports it: a key never used is expected until the API syncs or the planner recalls, but if a service is still on the old key it now gets 401. `revoke <label>` revokes every generation of the label. The deploy runbook is in [deployment.md](deployment.md#rotating-the-agent-memory-keys-t155). Never paste a key into chat or a ticket: it goes straight from the terminal into its one service's field.
+
+## Erasing an org's memory (T1.55)
+
+```bash
+pnpm memory:erase-org <org>               # dry run, then type the org ID to erase
+pnpm memory:erase-org <org> --yes <org>   # for scripts: the same ID twice, or it exits 2
+```
+
+An operator command, under `scripts/` only, with the admin key and `DATABASE_URL` (both in `.env`). App code never erases memory. In order:
+
+1. **Dry run.** `/scopes/forget` ignores `dryRun` (see [Surprises](#surprises)), so the command runs its own, with reads only (`GET /scopes`, recall queries, entity and history reads). It prints the org's scope and whether it is registered, then each entity it can read there with its live and history attribute counts. Memory has no entity listing, so it reads every precedent the registry knows for the org, plus whatever recall finds through the scope's lens for each of the org's areas and for `precedent`, at the cap of 50 hits. A copy the registry never approved is found that way.
+2. **Typed confirmation.** The operator types the org ID exactly. Anything else, or a closed stdin, aborts with exit 1, and nothing is erased or recorded. `--yes <org>` must name the same org, or the command exits 2 before reading anything.
+3. **`erased` in Postgres, first.** An append-only row in `memory_erasure_events` (migration `0011_memory_erasures`). From this row on, the org is refused (below). The row is written while holding the org's memory lock exclusively. Every sync holds that lock shared while it writes, so a sync already running finishes first and is erased with the scope, and a later one sees the row and writes nothing.
+4. **Forget and tombstone.** `POST /scopes/forget` on the org's scope, then `DELETE /scopes?path=…`. A tombstoned scope can't be written again, even if something registers it once more (probed). A crash before this step leaves the org refused but its memory still held; running the command again finishes it.
+5. **`forgotten`** in Postgres, with the count the service reported, then a read of the same entities to show nothing is live.
+
+Exit codes: 0 erased, 1 aborted, 2 bad usage or a mismatched `--yes`, 3 an error. Running it again on an erased org appends another pair of rows; rows are never edited.
+
+`memory_erasure_events` is a table of its own rather than a new kind in `precedent_events`: erasure is about an org, not a precedent version, and the registry's derivation would otherwise have to skip a kind it doesn't know.
+
+**From the `erased` row on, each of these refuses the org:**
+
+| Path | What it does instead |
+|---|---|
+| The API's precedent sync (`precedent-sync` jobs, publish and withdraw) | Writes nothing, logs, and completes as `org_erased`, so it isn't retried. |
+| The planner's recall | The API's plan job (`planJobRegistry`) carries no registry for the org, as in core mode: the planner recalls nothing and the plan has no precedent basis (no recall diagnostics are stored, since nothing was asked). Planning works as before. |
+| The similar-precedents hint (T2.32) | Answers `200 { status: "off" }` without recalling. |
+| The drift check | Refuses the org before reading memory, so it can't queue a publish into it: exit 3 when the org is named, a line and no error under `--all`. |
+| Promoting a new precedent | Refused, `409 memory_erased`; the panel says why. The sync would never publish the new version, so it would wait forever. A version already waiting when the org was erased stays waiting. Withdrawing still works: it only changes Postgres. |
+
+**What erasure doesn't do.** It doesn't touch `precedent_events`: the registry keeps every approved version and its status, and stays the authority. It doesn't touch execution or admission. A plan that already cites an erased org's precedents still checks against Postgres at approval and admission, as any plan does: it holds if a precedent changes in the registry, not because memory was erased. New plans have no basis, so nothing holds them for precedent reasons. Erasure is permanent for that org ID: there is no command to undo it, and the tombstoned scope can't be written again.
+
+| Evidence | Result |
+|---|---|
+| Rotation against the fake (`packages/memory/test/keys.test.ts`): names and generations, same grants, both pairs work after rotate, `--revoke-old` revokes only older generations, then the old keys get 401; refusals; cleanup of a half-minted pair; usage | **PASS**, fixture |
+| Erasure on real Postgres with the fake, through the command itself and its function (`apps/api/test/memory-erase.test.ts`, 2026-11-03, Windows 11, Node 24.11.1): the dry run lists and changes nothing; a wrong or missing confirmation aborts; the typed ID erases and tombstones only that scope and records `erased` then `forgotten`; the registry is unchanged; `erased` is written before forget is sent, and a failed forget leaves the org refused until a rerun finishes; the event waits for a sync holding the org's lock; then the sync, the plan job, the hint, promotion and drift refuse the org, and an existing plan's basis still checks against Postgres | **PASS**, fixture |
+| The memory gate's rotation and erasure checks ([below](#memory-gate)) | **PASS** on 3 of 3 runs, hosted (2026-11-03) |
 
 ## Memory gate
 
@@ -49,7 +97,7 @@ MEMORY_GATE=1 pnpm test:memory   # PowerShell: $env:MEMORY_GATE=1; pnpm test:mem
 
 Without `MEMORY_GATE=1` the gate is skipped and only the offline tests run (a fake that copies the semantics below). Each gate run uses its own scope under `rehearsal/test/`, mints and revokes its own narrowed keys with the admin key (`SURREAL_AGENT_MEMORY_ADMIN_KEY`), and erases the scope afterwards.
 
-**PASS**, 7/7 on 3 consecutive runs (2026-11-02, Windows 11 amd64, Node 24.11.1, about 50 s each, most of it recall). The first six checks also passed 6/6 on 3 consecutive runs on 2026-10-24, before the key check existed. With the drift check added (2026-11-03): 8/8 on 4 of 5 runs. The fifth run's 7/8 was the drift check hitting a 60 s test timeout (see below the table).
+**PASS**, 7/7 on 3 consecutive runs (2026-11-02, Windows 11 amd64, Node 24.11.1, about 50 s each, most of it recall). The first six checks also passed 6/6 on 3 consecutive runs on 2026-10-24, before the key check existed. With the drift check added (2026-11-03): 8/8 on 4 of 5 runs. The fifth run's 7/8 was the drift check hitting a 60 s test timeout (see below the table). With rotation and erasure added (T1.55, 2026-11-03, same machine, 150–195 s each): 10/10 on 2 of 3 runs. In the first run both new checks passed, and the older replan check (a plan held once v2 is approved) failed: one `/query` hit the client's 30 s timeout. That was the service being slow, not an assertion; the whole run took 195 s against about 155 s for the next two.
 
 | Check | Result |
 |---|---|
@@ -58,9 +106,11 @@ Without `MEMORY_GATE=1` the gate is skipped and only the offline tests run (a fa
 | Trace inspection: `GET /traces/{id}` names the query and the retrieved facts | **PASS** |
 | Replace v1 with v2: readback is v2, history lists v2 then v1 (superseded); v1 again and v2 with other content are refused | **PASS** |
 | Wrong scope: a key narrowed to a neighbouring scope gets 403 writing ours and sees nothing reading it; its forged copy of the same precedent doesn't change ours; once revoked it gets 401 | **PASS** |
-| A plan citing v1 is held once v2 is approved (`superseded` plus `epoch_changed`); a replan on v2 passes | **PASS** |
+| A plan citing v1 is held once v2 is approved (`superseded` plus `epoch_changed`); a replan on v2 passes | **PASS**; on 2026-11-03 one of three runs lost a recall to the client's 30 s timeout |
 | The API's key (#365) registers an org's scope and publishes; the planner's recalls it with a trace and is refused a write | **PASS** |
-| Drift (T1.53): plant a missing, a stale, an unmarked-withdrawal, a waiting and an unknown copy in an org scope of the gate's own; a read-only key finds exactly those five, sending only reads and recall queries, and marks the waiting version's repair as one that activates it; the sync's own calls repair the first four; the check then finds only the unknown copy, which is left alone | **PASS** on 2 of 2 runs at 180 s; one earlier run timed out at 60 s |
+| Drift (T1.53): plant a missing, a stale, an unmarked-withdrawal, a waiting and an unknown copy in an org scope of the gate's own; a read-only key finds exactly those five, sending only reads and recall queries, and marks the waiting version's repair as one that activates it; the sync's own calls repair the first four; the check then finds only the unknown copy, which is left alone | **PASS** on 2 of 2 runs at 180 s; one earlier run timed out at 60 s. Also passed on the 3 T1.55 runs (55–63 s) |
+| Rotation (T1.55), in labels of the gate's own: generation 1 publishes and reads; `--revoke-old` refuses with one generation; after `rotate` both generations work and the new planner key is still refused a write; `--revoke-old` revokes generation 1 only, which then gets 401, and generation 2 still works | **PASS** on 3 of 3 runs (about 10 s) |
+| Erasure (T1.55), in an org scope of the gate's own: the dry run lists the one entity (3 live, 3 in history), records nothing and leaves it readable; erase records `erased` then `forgotten`; readback is absent, recall finds nothing, and a publish into the tombstoned scope is refused (400) | **PASS** on 3 of 3 runs (37–39 s) |
 
 All the drift check's hosted runs were on 2026-11-03 (Windows 11 amd64, Node 24.11.1, about 110 s for the whole gate):
 
@@ -166,8 +216,11 @@ Found probing the hosted service on 2026-10-24 (context `rehearsal-precedents`, 
 1. **`Idempotency-Key` is ignored on `/facts`.** The docs promise a stored replay and `409` for a different body. In practice the same key with a different body was written. Retries are still safe, because writing the value an attribute already holds stores nothing new; publish doesn't send the header.
 2. **Attributes are per scope.** The same entity and key written in another scope doesn't supersede ours: both stay live, and a key that reads both sees both on `GET /entities/...`. Anyone who can write a neighbouring scope can add a `statement` to our precedent's entity. That is why readback filters to exactly our scope.
 3. **A `/` in an entity name 404s** on `GET /entities/{type}/{name}`, even percent-encoded. The write succeeds, so the entity is unreadable. Names use `precedent:<id>`.
-4. **`/scopes/forget` ignores `dryRun: true`** and erases permanently. Only the test cleanup calls it.
+4. **`/scopes/forget` ignores `dryRun: true`** and erases permanently. Only the test cleanup and `pnpm memory:erase-org` call it; the command lists with reads only first, for that reason.
 5. **Scopes:** registering an existing scope returns `201` again, and missing parents are created. Paths are lowercase. `DELETE /scopes` takes `?path=` in the query string, not a body. Writing to a tombstoned scope is `400 unknown scope node`.
 6. **Wrong-scope reads are empty, not refused.** A narrowed key reading outside its grant gets `404` for the entity and no hits from `/query`; only writes are refused (`403 … outside the caller's write region`).
 7. **`valid_until` only applies to relations.** On an attribute write it is refused (`422`, "only valid on relation entries"); spelled `validUntil`, or put at the top of the request, it is silently ignored (probed 2026-11-02). Superseding is the only way to retire an attribute: write the same key again, and the old fact gets `supersededBy` and a `validUntil`, leaves recall and stays in `/history`. Withdrawal uses that (T1.51).
 8. **Recall is slow** (5–8 s per `/query` on the free plan), and the service was badly degraded once for about five minutes: authenticated calls took 25–45 s while `/health` stayed fast.
+9. **`GET /keys` lists names only** (with `createdAt` and `lastUsedAt`), never a key's value or grants, and a revoked key disappears from it rather than being marked. So rotation tells generations apart by name (`-g<N>`), and a key can be shown only once, when it is minted (probed 2026-11-03).
+10. **`/scopes/forget` on a scope nobody registered** returns `200 {"forgotten":0}`, not `404`. Its count isn't attributes either: one entity with one fact counted 3. The erase command records the count as the service reported it and checks the result by reading again (probed 2026-11-03).
+11. **A tombstone is permanent.** After `DELETE /scopes`, registering the same path again returns `201`, but writes there are still `400 unknown scope node`. `GET /scopes` lists tombstoned paths with a `tombstonedAt`, which is how the erase command's listing tells them apart (probed 2026-11-03).

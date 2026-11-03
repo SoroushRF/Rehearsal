@@ -50,7 +50,8 @@ all services. Postgres rejects external connections.
    never commit it or put it in a shared environment group. Leave all three of a
    service's fields empty to run without memory: the application then reports that
    precedent synchronization is unavailable. Setting only some of them stops it at
-   startup.
+   startup. To replace the pair later, follow
+   [Rotating the Agent Memory keys](#rotating-the-agent-memory-keys-t155).
 
 The launcher constructs private HTTP URLs from Blueprint host references and writes
 only that service's PEM/Google files to a private temporary directory. IAM uses mTLS
@@ -80,6 +81,37 @@ and approved plans in Postgres even if worlds are reseeded.
 
 The fallback remains a Linux VM running Compose if Render cannot run the private stack.
 A public saved replay is fixture evidence until replaced by an export of an actual run.
+
+## Rotating the Agent Memory keys (T1.55)
+
+Run these locally, in the repository root, with the operator's `SURREAL_AGENT_MEMORY_ADMIN_KEY`
+in `.env`. `<label>` is the one the current pair was minted with. The old pair keeps working
+until step 5, so nothing stops while the services are redeployed. Never paste a key into chat,
+a ticket or a shared document: each goes from the terminal straight into its one service's field.
+
+1. **Rotate.** `pnpm memory:keys rotate <label>` mints the next generation
+   (`rehearsal-api-<label>-g<N>` and `rehearsal-planner-<label>-g<N>`) with the same grants and
+   prints each key once.
+2. **Set the new values in Render.** On `rehearsal-api`, replace
+   `SURREAL_AGENT_MEMORY_WRITE_KEY` with the new write key. On `rehearsal-planner`, replace
+   `SURREAL_AGENT_MEMORY_READ_KEY` with the new read key. Nothing else changes: the URL and
+   context stay, and the executor and rehearsal worker still get no memory setting.
+3. **Deploy both** services.
+4. **Check that the app reports precedents on.** The planner's ready log ends with
+   `precedents on`. The API logs no "Agent Memory not configured" warning, and
+   `GET /api/precedents` answers `syncEnabled: true`. If either reports off, the old pair is
+   still live: fix the field and redeploy before going on.
+5. **Revoke the old pair.** `pnpm memory:keys rotate <label> --revoke-old` revokes every
+   generation older than the newest pair, never the newest, and refuses if there is nothing
+   older. It prints when each kept key was last used; a service still on an old key now gets
+   401, so check step 4 again afterwards.
+
+If a key leaked, do the same steps without waiting between them. To erase one organization's
+Agent Memory instead, see `pnpm memory:erase-org` in
+[agent-memory.md](agent-memory.md#erasing-an-orgs-memory-t155). It is an operator command with
+the admin key and the deployment's `DATABASE_URL`, and no service setting changes. Render's
+Postgres rejects external connections, so against Render it has to run from the private
+network; that hasn't been tried.
 
 ## Next coordinated release
 
