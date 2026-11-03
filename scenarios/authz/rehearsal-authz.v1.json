@@ -199,6 +199,11 @@
       "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
     },
     {
+      "action": "POST /api/runs/:id/precedents/similar",
+      "rbac": { "anyOf": ["rehearsal:promote:precedent"] },
+      "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
+    },
+    {
       "action": "POST /api/precedents/:id/withdraw",
       "rbac": { "anyOf": ["rehearsal:withdraw:precedent"] },
       "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]

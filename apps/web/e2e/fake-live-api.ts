@@ -72,6 +72,7 @@ export function fakeApi({
   completedRun = false,
   activePrecedent = false,
   citesPrecedent = false,
+  similar = "off",
   me,
 }: {
   dual?: boolean;
@@ -81,6 +82,11 @@ export function fakeApi({
   activePrecedent?: boolean;
   /** The plan cites a precedent; `held` says the registry has moved on since it was planned. */
   citesPrecedent?: false | "holds" | "held";
+  /**
+   * What the promote panel's similar-precedents hint gets back (T2.32): the active precedents,
+   * `off` (Agent Memory isn't configured), `unavailable` (recall failed) or a 500 `error`.
+   */
+  similar?: "hit" | "off" | "unavailable" | "error";
   /** When set, `GET /api/me` returns this Clerk role and permission list. */
   me?: { clerkRole: string | null; permissions: readonly string[] };
 } = {}) {
@@ -317,6 +323,21 @@ export function fakeApi({
       if (p?.status !== "active") return json(route, 409, { error: "not_active" });
       p.status = "withdrawn";
       return json(route, 200, { precedent: { id: p.id, version: p.version, status: "withdrawn" } });
+    }
+    if (path === "/api/runs/run_1/precedents/similar") {
+      if (similar === "error") return json(route, 500, { error: "internal" });
+      const hits = similar === "hit" ? precedents.filter((p) => p.status === "active") : [];
+      return json(route, 200, {
+        status: similar === "hit" ? "ok" : similar,
+        similar: hits.map((p) => ({
+          id: p.id,
+          version: p.version,
+          appliesTo: p.appliesTo,
+          statement: p.statement,
+          digest: p.digest,
+          sameId: false,
+        })),
+      });
     }
     if (path === "/api/runs/run_1/precedents") {
       const b = body as Record<string, unknown>;
