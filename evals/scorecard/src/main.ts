@@ -153,6 +153,7 @@ try {
             ? applyCompetent(intents, ports, ctxOf(op), {
                 taskId: task.id,
                 policy: policyFor(task),
+                window: INCIDENT.window,
               })
             : applyCalls(intents, ports, ctxOf(op), {
                 taskId: task.id,
