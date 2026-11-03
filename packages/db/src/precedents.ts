@@ -104,6 +104,20 @@ export async function lockPrecedent(tx: Tx, orgId: string, precedentId: string):
   );
 }
 
+/**
+ * Serializes Agent Memory writes for one precedent (T1.51): a sync's publish and a withdrawal's
+ * marker. Separate from `lockPrecedent`, so a withdrawal request never waits on Agent Memory.
+ */
+export async function lockPrecedentMemory(
+  tx: Tx,
+  orgId: string,
+  precedentId: string,
+): Promise<void> {
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${`rehearsal:precedent-memory:${orgId}:${precedentId}`}, 0))`,
+  );
+}
+
 export async function loadRegistry(db: Exec, orgId: string): Promise<RegistryView> {
   const rows = await db
     .select()
