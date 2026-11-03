@@ -6,7 +6,6 @@ import type { PlanManifest, Receipt } from "@rehearsal/contracts";
 import { planHash } from "@rehearsal/core";
 import {
   approvePrecedent,
-  createDb,
   type Db,
   loadRegistry,
   lockOrgMemoryShared,
@@ -31,6 +30,7 @@ import { PLANNER_JOB_ROUTES, PlanJob } from "@rehearsal/providers";
 import { billingManifest, INCIDENT } from "@rehearsal/testkit";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { isolatedTestDatabase } from "../../../packages/db/test/isolated-db";
 import { FakeAgentMemory } from "../../../packages/memory/test/fake-agent-memory";
 import { runDrift } from "../../../scripts/memory/drift-run";
 import {
@@ -41,7 +41,7 @@ import {
 } from "../../../scripts/memory/erase-run";
 import { adminFor } from "../../../scripts/memory/keys-run";
 import { buildApp } from "../src/app";
-import { storePlan } from "../src/plans";
+import { loadPlan, storePlan } from "../src/plans";
 import { precedentCheck } from "../src/precedent-check";
 import { similarRecallerFromEnv } from "../src/precedent-similar";
 import { publisherFromEnv, syncPrecedent } from "../src/precedent-sync";
@@ -115,8 +115,8 @@ describe("pnpm memory:erase-org usage", () => {
 
 // Needs a real Postgres: `DB_TESTS=1 DATABASE_URL=… pnpm --filter @rehearsal/api test`.
 describe.skipIf(!process.env.DB_TESTS)("erasing an org's Agent Memory (real Postgres)", () => {
-  const url = process.env.DATABASE_URL ?? "postgres://rehearsal:rehearsal@localhost:5432/rehearsal";
-  const db = createDb(url);
+  const database = isolatedTestDatabase();
+  const { db, url } = database;
   const fake = new FakeAgentMemory();
   // The fake's default key is its admin; the sync and the hint use it as their write key here.
   const env = {
@@ -135,8 +135,10 @@ describe.skipIf(!process.env.DB_TESTS)("erasing an org's Agent Memory (real Post
   let fakeUrl = "";
 
   beforeAll(async () => {
+    await database.create();
     await migrateDb(db);
     boss = await startQueue(url);
+    await boss.updateQueue("plan", { retryDelay: 0 });
     server = createServer(async (req, res) => {
       const chunks: Buffer[] = [];
       for await (const chunk of req) chunks.push(chunk as Buffer);
@@ -155,6 +157,7 @@ describe.skipIf(!process.env.DB_TESTS)("erasing an org's Agent Memory (real Post
   afterAll(async () => {
     await boss?.stop({ graceful: false });
     await new Promise((resolve) => server?.close(resolve));
+    await database.drop();
   });
 
   const cliEnv = () => ({
@@ -582,45 +585,6 @@ describe.skipIf(!process.env.DB_TESTS)("erasing an org's Agent Memory (real Post
   }
 
   describe("a plan job queued before the erasure (T1.55 review)", () => {
-    /** The plan queue in memory, as pg-boss runs it for `plan` (one retry), so no other test's jobs are touched. */
-    function planQueue() {
-      const jobs: {
-        id: string;
-        state: string;
-        data: unknown;
-        output?: unknown;
-        retries: number;
-      }[] = [];
-      const find = (id: string) => jobs.find((j) => j.id === id);
-      const boss = {
-        send: async (_: string, data: unknown) => {
-          const id = crypto.randomUUID();
-          jobs.push({ id, state: "created", data, retries: 0 });
-          return id;
-        },
-        fetch: async () => {
-          const j = jobs.find((x) => x.state === "created" || x.state === "retry");
-          if (!j) return [];
-          j.state = "active";
-          return [{ id: j.id, data: j.data }];
-        },
-        getJobById: async (_: string, id: string) => find(id) ?? null,
-        fail: async (_: string, id: string, output: unknown) => {
-          const j = find(id);
-          if (!j) throw new Error("no such job");
-          j.output = output;
-          j.state = j.retries < 1 ? "retry" : "failed";
-          j.retries++;
-        },
-        complete: async (_: string, id: string, output: unknown) => {
-          const j = find(id);
-          if (!j) throw new Error("no such job");
-          j.output = output;
-          j.state = "completed";
-        },
-      } as unknown as PgBoss;
-      return { boss, jobs };
-    }
     const worker = { authorization: "Bearer planner-secret" };
     const basis = {
       citations: [
@@ -639,7 +603,7 @@ describe.skipIf(!process.env.DB_TESTS)("erasing an org's Agent Memory (real Post
     it("is handed out and checked with memory off once the org is erased; one taken before fails and replans", async () => {
       const orgId = await orgWithMemory();
       const me = support(orgId, "user_1");
-      const queue = planQueue();
+      const queue = { boss };
       const app = buildApp({
         webRoot: null,
         rehearse: {
@@ -678,7 +642,9 @@ describe.skipIf(!process.env.DB_TESTS)("erasing an org's Agent Memory (real Post
       // Both queued with the registry; the first is taken with it, before the erasure.
       const taken = await rehearse();
       const waiting = await rehearse();
-      expect(queue.jobs.every((j) => PlanJob.parse(j.data).precedents)).toBe(true);
+      for (const id of [taken.rehearsalId, waiting.rehearsalId]) {
+        expect(PlanJob.parse((await boss.getJobById("plan", id))?.data).precedents).toBeDefined();
+      }
       const first = await next();
       expect(first.id).toBe(taken.rehearsalId);
       expect(first.data.precedents).toBeDefined();
@@ -688,7 +654,10 @@ describe.skipIf(!process.env.DB_TESTS)("erasing an org's Agent Memory (real Post
       // Completed with the basis it recalled before: failed as org_erased, so the queue retries.
       const late = await complete(taken.rehearsalId, taken.planId, true);
       expect(late.statusCode).toBe(422);
-      expect(queue.jobs[0]).toMatchObject({ state: "retry", output: { reason: "org_erased" } });
+      expect(await boss.getJobById("plan", taken.rehearsalId)).toMatchObject({
+        state: "retry",
+        output: { reason: "org_erased" },
+      });
 
       // From now on both are handed out without memory, and succeed without a basis.
       const planOf = new Map([
@@ -715,6 +684,96 @@ describe.skipIf(!process.env.DB_TESTS)("erasing an org's Agent Memory (real Post
       const job = await next();
       expect(job.id).toBe(again.rehearsalId);
       expect((await complete(job.id, again.planId, true)).statusCode).toBe(422);
+      await boss.cancel("plan", again.rehearsalId);
+      await app.close();
+    });
+
+    it("recovers the same job after its normal retry is spent, without granting another recovery", async () => {
+      const orgId = await orgWithMemory();
+      const me = support(orgId, "user_1");
+      const app = buildApp({
+        webRoot: null,
+        rehearse: {
+          db,
+          boss,
+          iam: fakeIam([me]),
+          plannerSecret: "planner-secret",
+          precedentRegistry: (o) => planJobRegistry(db, o),
+        },
+      });
+      const queued = await app.inject({
+        method: "POST",
+        url: `/api/incidents/${INCIDENT.incident}/rehearse`,
+        headers: bearer(me),
+      });
+      const { rehearsalId, planId } = queued.json();
+      const next = () =>
+        app.inject({ method: "POST", url: PLANNER_JOB_ROUTES.next, headers: worker });
+      expect((await next()).json().id).toBe(rehearsalId);
+      await boss.fail("plan", rehearsalId, { reason: "planner_error" });
+      expect((await next()).json().id).toBe(rehearsalId);
+      expect(await boss.getJobById("plan", rehearsalId)).toMatchObject({
+        retryCount: 1,
+        retryLimit: 1,
+      });
+      await eraseOrg(await eraseRun(orgId));
+      const complete = (withBasis: boolean) =>
+        app.inject({
+          method: "POST",
+          url: PLANNER_JOB_ROUTES.complete.replace(":id", rehearsalId),
+          headers: worker,
+          payload: {
+            manifest: {
+              ...billingManifest(planId),
+              orgId,
+              ...(withBasis && { precedentBasis: basis }),
+            },
+            summary: "8 refunds.",
+          },
+        });
+      expect((await complete(true)).statusCode).toBe(422);
+      expect((await loadPlan(db, orgId, planId, 1)).kind).toBe("not_found");
+      expect(await boss.getJobById("plan", rehearsalId)).toMatchObject({
+        state: "retry",
+        retryLimit: 2,
+      });
+      const recovered = await next();
+      expect(recovered.json().id).toBe(rehearsalId);
+      expect(PlanJob.parse(recovered.json().data).precedents).toBeUndefined();
+      expect((await complete(false)).statusCode).toBe(201);
+      expect(await boss.getJobById("plan", rehearsalId)).toMatchObject({
+        state: "completed",
+        retryCount: 2,
+      });
+
+      // A worker ignoring its memory-free payload must fail normally, not replenish retries.
+      const bad = await boss.send(
+        "plan",
+        {
+          orgId,
+          planId: `plan_${crypto.randomUUID()}`,
+          incidentId: INCIDENT.incident,
+          requestedBy: me.userId,
+        },
+        { retryLimit: 0 },
+      );
+      expect((await next()).json().id).toBe(bad);
+      const storedJob = await boss.getJobById("plan", bad as string);
+      const data = PlanJob.parse(storedJob?.data);
+      const rejected = await app.inject({
+        method: "POST",
+        url: PLANNER_JOB_ROUTES.complete.replace(":id", bad as string),
+        headers: worker,
+        payload: {
+          manifest: { ...billingManifest(data.planId), orgId, precedentBasis: basis },
+          summary: "bad",
+        },
+      });
+      expect(rejected.statusCode).toBe(422);
+      expect(await boss.getJobById("plan", bad as string)).toMatchObject({
+        state: "failed",
+        retryLimit: 0,
+      });
       await app.close();
     });
 
@@ -774,7 +833,7 @@ describe.skipIf(!process.env.DB_TESTS)("erasing an org's Agent Memory (real Post
       ]) {
         await journal.recordReceipt(r);
       }
-      const queue = planQueue();
+      const queue = { boss };
       const repair = async () => {
         const app = buildApp({
           webRoot: null,
@@ -797,11 +856,15 @@ describe.skipIf(!process.env.DB_TESTS)("erasing an org's Agent Memory (real Post
         return res;
       };
       // Before the erasure the repair job carries the registry; after it, not.
-      expect((await repair()).statusCode).toBe(202);
-      expect(PlanJob.parse(queue.jobs[0]?.data).precedents).toBeDefined();
+      const before = await repair();
+      expect(before.statusCode).toBe(202);
+      expect(
+        PlanJob.parse((await boss.getJobById("plan", before.json().rehearsalId))?.data).precedents,
+      ).toBeDefined();
       expect((await eraseOrg(await eraseRun(orgId))).outcome).toBe("erased");
-      expect((await repair()).statusCode).toBe(202);
-      const job = PlanJob.parse(queue.jobs[1]?.data);
+      const after = await repair();
+      expect(after.statusCode).toBe(202);
+      const job = PlanJob.parse((await boss.getJobById("plan", after.json().rehearsalId))?.data);
       expect(job.repair).toMatchObject({ basePlanHash: hash, runId });
       expect(job.precedents).toBeUndefined();
     });

@@ -46,6 +46,38 @@ export const PLAN_QUEUE_OPTIONS = {
   expireInSeconds: 900,
 } as const;
 
+/**
+ * An erasure invalidates an in-flight memory basis even on the last ordinary attempt. Strip the
+ * snapshot and grant exactly the retry needed for recovery, atomically with failure. Removing
+ * `precedents` makes this a one-time transition; later model failures keep their normal limit.
+ * The attempt fence prevents a late worker from changing a newer claim. The job id stays stable.
+ */
+export async function retryPlanWithoutMemory(
+  db: Db,
+  boss: PgBoss,
+  attempt: { id: string; retryCount: number },
+): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const changed = await tx.execute(sql`
+      update pgboss.job
+      set data = data - 'precedents', retry_limit = greatest(retry_limit, retry_count + 1)
+      where name = ${PLAN_QUEUE} and id = ${attempt.id}::uuid and state = 'active'
+        and retry_count = ${attempt.retryCount} and data ? 'precedents'
+      returning id`);
+    if (changed.rows.length === 0) return false;
+    await boss.fail(
+      PLAN_QUEUE,
+      attempt,
+      {
+        reason: "org_erased",
+        message: "replanning without the erased org's memory",
+      },
+      { db: fromDrizzle(tx, sql) },
+    );
+    return true;
+  });
+}
+
 export const PRECEDENT_QUEUE = "precedent-sync";
 
 /**
