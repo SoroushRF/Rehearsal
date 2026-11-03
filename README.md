@@ -51,10 +51,15 @@ An incident the tools cannot handle comes back as an empty plan with a reason. T
 browser
   │
   ▼
-API  ──── Postgres (plans, grants, journal, receipts)
+API  ──── Postgres (plans, grants, journal, receipts, precedent_events)
+  │          precedent_events is the authority on which precedent is in force
   │
+  ├── sync (write key) ──▶ SurrealDB Agent Memory: a recall index, never the authority
+  │                                      │
   ├── planner worker ── planning world only, model key
-  ├── executor worker ─ operational world only, no model
+  │     └── recall (read key) ◀──────────┘
+  ├── executor worker ─ operational world only, no model, no memory key
+  │     └── checks every cited precedent against precedent_events
   └── IAM ───────────── Clerk session in, permission decision out
 ```
 
@@ -68,7 +73,7 @@ API  ──── Postgres (plans, grants, journal, receipts)
 
 **Identity.** Clerk signs the person in and stores their organization and one role: owner, finance lead, support lead, or member. Clerk is not where permissions live. The API and the executor ask a separate IAM service over mutual TLS. IAM verifies the Clerk session and maps the role through a versioned rule file onto permissions such as `rehearsal:approve:finance_step` and `rehearsal:apply:plan`. The grant records the permissions that were true at approval time. If IAM is down, the action is refused.
 
-**Precedents.** A promoted decision is published to SurrealDB Agent Memory, in a scope that belongs to one organization, and becomes active only after the API has read it back. Postgres keeps the event log. At apply time the executor does not ask memory whether a step is allowed. It checks the citation against the approved registry.
+**Precedents.** A promoted decision is published to SurrealDB Agent Memory, in a scope that belongs to one organization, and becomes active only after the API has read it back. Memory is how the planner finds a precedent. It never decides one. The Postgres `precedent_events` log decides which version is in force, and a withdrawn precedent's copy is overwritten so recall stops offering it. Each process holds one key. The API syncs with a write key. The planner recalls with a read-only key, so it can't plant the precedents it cites. The executor and the rehearsal worker hold none and refuse one at startup. At apply time the executor does not ask memory whether a step is allowed. It checks the citation against the approved registry.
 
 Contracts between the API, the workers, and the web app are Zod types. The web app is Vite, React, and Tailwind. Tests run on Vitest, including real Postgres and pinned Era images.
 
@@ -82,6 +87,7 @@ Contracts between the API, the workers, and the web app are Zod types. The web a
 | `packages/core` | Hash, dependency graph, policy, guards, executor |
 | `packages/contracts` | Zod wire types |
 | `packages/db` | Drizzle schema and the journal. Postgres 17 |
+| `packages/memory` | Precedents on SurrealDB Agent Memory, and the citation check |
 | `scenarios/` | Billing policy, incident presets, IAM rules |
 | `evals/scorecard` | Direct writes vs per-call approval vs Rehearsal |
 
