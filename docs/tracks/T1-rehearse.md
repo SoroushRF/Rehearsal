@@ -112,6 +112,8 @@ See [beyond.md](../beyond.md) for scope, parallel work, external gates and the r
 
 ## Handoff log
 
+- **2026-11-03 (Soroush, sync from the private repository):** Work done in the private copy from late October to November 2 is back here (#368–#370, #355, #371–#384, #386). Demo-only work stayed private. Open work, in priority order, is in [`docs/handoff-2026-11-03.md`](../handoff-2026-11-03.md). First up: rerun the competent baseline on the held-out sets, then the pending Era runs.
+
 - **2026-10-28 (Codex, #355 review):** Reproduced the review's SDK error and token-headroom regressions, then covered actual Anthropic 529/connection/timeout errors, 408/409/5xx, all 40 turns plus four retries, provider retry headers and deadline cancellation. Optional invalid/oversized diagnostics are discarded rather than rejecting a valid completion/failure report. API-first rollout and worker-first rollback are documented in `deployment.md`. Cross-job diagnostic retention remains a non-blocking follow-up in T1.46 / #361. Evidence is fixture; no new live model/Era run. PR remains open; no merge, deployment or reviewer request.
 
 - **2026-10-28 (Codex, #284):** `fix/284-planner-recovery` adds bounded model-request retries and job request history. Minimal T2 API changes accept and expose the optional diagnostic history; no schema migration, approval, admission or credential-boundary changes. SDK retries are disabled so the loop owns the request budget. Evidence is fixture, including timeout/429/network/exhaustion/late-response and no-replayed-tools regressions. The owner requested self-review with no reviewer requests and open PRs only; no merge or deployment is authorized.
