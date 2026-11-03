@@ -6,7 +6,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 
 ## Top blockers
 
-109 of 129 tasks done. These open tasks hold up the most other work:
+110 of 129 tasks done. These open tasks hold up the most other work:
 
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
@@ -72,7 +72,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T1.51** Retire a withdrawn precedent's copy in Agent Memory [#367](https://github.com/SoroushRF/Rehearsal/issues/367) | ✅ done |  |  |
 | **T1.52** README: Agent Memory in the architecture diagram, plus citation and promote screenshots [#390](https://github.com/SoroushRF/Rehearsal/issues/390) | ✅ done |  |  |
 | **T1.53** Memory drift check: compare Agent Memory with the precedent registry and repair through the sync queue [#395](https://github.com/SoroushRF/Rehearsal/issues/395) | 👀 in review [PR #403](https://github.com/SoroushRF/Rehearsal/pull/403) | — |  |
-| **T1.54** Record why each precedent was recalled, and show it on the citation card [#396](https://github.com/SoroushRF/Rehearsal/issues/396) | 👀 in review [PR #402](https://github.com/SoroushRF/Rehearsal/pull/402) | — |  |
+| **T1.54** Record why each precedent was recalled, and show it on the citation card [#396](https://github.com/SoroushRF/Rehearsal/issues/396) | ✅ done |  |  |
 | **T1.55** Agent Memory key rotation and per-org erasure [#398](https://github.com/SoroushRF/Rehearsal/issues/398) | 🟨 ready | — |  |
 
 ## T2 Review & Approve
@@ -230,7 +230,7 @@ flowchart LR
     T1_51["T1.51 Retire a withdrawn precedent's copy in Age"]:::done
     T1_52["T1.52 README: Agent Memory in the architecture d"]:::done
     T1_53["T1.53 Memory drift check: compare Agent Memory w"]:::review
-    T1_54["T1.54 Record why each precedent was recalled, an"]:::review
+    T1_54["T1.54 Record why each precedent was recalled, an"]:::done
     T1_55["T1.55 Agent Memory key rotation and per-org eras"]:::ready
   end
   subgraph T2[T2 Review & Approve]
