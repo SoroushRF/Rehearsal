@@ -23,7 +23,7 @@ export type PublisherFor = (orgId: string) => PrecedentPublisher;
 
 /** Publishers built from the environment, or null when Agent Memory isn't configured (core mode). */
 export function publisherFromEnv(env: Record<string, string | undefined> = process.env) {
-  const config = memoryConfigFromEnv(env);
+  const config = memoryConfigFromEnv("write", env);
   if (config === null) return null;
   const { scope, ...client } = config;
   const memory = new AgentMemoryClient(client);

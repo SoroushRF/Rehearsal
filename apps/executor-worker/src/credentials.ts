@@ -19,6 +19,13 @@ export const EXECUTOR_FORBIDDEN = [
   "PLANNER_WORKER_SECRET",
   // Execution rehearsal (decision 0013): its admin token, worker secret and worlds.
   ...REHEARSAL_CREDENTIALS,
+  // Agent Memory: admission checks citations against the Postgres registry, never against recall,
+  // so the executor holds no memory key at all (#365). The names are MEMORY_KEY_ENV's in
+  // @rehearsal/memory, which this worker doesn't depend on; a test in apps/api keeps them equal.
+  "SURREAL_AGENT_MEMORY_READ_KEY",
+  "SURREAL_AGENT_MEMORY_WRITE_KEY",
+  "SURREAL_AGENT_MEMORY_ADMIN_KEY",
+  "SURREAL_AGENT_MEMORY_KEY",
 ] as const;
 
 export function executorCredentialViolations(env: NodeJS.ProcessEnv = process.env): string[] {

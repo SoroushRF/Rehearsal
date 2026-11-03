@@ -104,7 +104,7 @@ const client = gemini
 const jobs = plannerJobsClient(apiUrl, secret);
 // Precedent recall (#235), with a read-only Agent Memory key (decision 0012). Without one, an org
 // with active precedents can't be planned for; orgs without any plan as before.
-const memory = memoryConfigFromEnv();
+const memory = memoryConfigFromEnv("read");
 const recallers = new Map<string, AgentMemoryPrecedents>();
 const precedents =
   memory &&
