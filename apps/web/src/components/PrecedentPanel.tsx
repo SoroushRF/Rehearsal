@@ -14,6 +14,8 @@ export const Precedent = z.object({
   version: z.int(),
   appliesTo: z.string(),
   status: Status,
+  /** Of the approved record; a citation with the same digest cites exactly this version. */
+  digest: z.string(),
   statement: z.string(),
   conditions: z.array(z.string()),
   exceptions: z.array(z.string()),
@@ -21,6 +23,8 @@ export const Precedent = z.object({
   effectiveUntil: z.string().nullable(),
   author: z.string(),
   approvedAt: z.string(),
+  /** The completed run it was promoted from. */
+  sourceRunId: z.string().nullable(),
 });
 export type Precedent = z.infer<typeof Precedent>;
 
