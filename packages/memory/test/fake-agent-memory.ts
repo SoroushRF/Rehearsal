@@ -3,6 +3,12 @@
  * attributes supersede per (entity, key, scope); rewriting the value an attribute holds stores
  * nothing; reads see only the key's read region; writes outside its write region are 403; an
  * unregistered scope is 400; a "/" in an entity name is 404. Recall is word overlap, not vectors.
+ *
+ * Operator routes as probed on 2026-11-03 (T1.55), for the admin key only: `POST /keys` mints a
+ * named key with grants, `GET /keys` lists the live ones by name (a revoked key is gone),
+ * `DELETE /keys/{name}` revokes; `POST /scopes/forget` erases everything under a path (a scope
+ * never registered forgets 0) and ignores `dryRun`; `DELETE /scopes?path=` tombstones a scope,
+ * which stays unwritable even if registered again.
  */
 
 interface Attr {
@@ -22,6 +28,15 @@ export interface KeyGrant {
   /** Path prefixes (subtrees) the key may read / write. "" is everything. */
   read: string[];
   write: string[];
+  /** May mint, list and revoke keys, and forget or tombstone scopes. */
+  admin?: boolean;
+}
+
+/** A minted key as `GET /keys` lists it (never the key itself). */
+interface NamedKey {
+  key: string;
+  createdAt: string;
+  lastUsedAt: string | null;
 }
 
 const strip = (p: string) => p.replace(/\/+$/, "");
@@ -29,8 +44,13 @@ const within = (path: string, region: string) =>
   region === "" || path === region || path.startsWith(`${region}/`);
 
 export class FakeAgentMemory {
-  readonly keys = new Map<string, KeyGrant>([["sp-test-key", { read: [""], write: [""] }]]);
+  readonly keys = new Map<string, KeyGrant>([
+    ["sp-test-key", { read: [""], write: [""], admin: true }],
+  ]);
+  /** Keys minted through `POST /keys`, by name. */
+  readonly named = new Map<string, NamedKey>();
   readonly scopes = new Set<string>();
+  readonly tombstoned = new Set<string>();
   readonly attrs: Attr[] = [];
   readonly traces = new Map<string, { queryText: string; retrievedIds: string[] }>();
   readonly requests: { method: string; path: string; body: unknown; auth: string | null }[] = [];
@@ -49,8 +69,22 @@ export class FakeAgentMemory {
     if (this.outage !== null) return json(this.outage, { message: "unavailable" });
     const grant = this.keys.get(auth?.replace(/^Bearer /, "") ?? "");
     if (grant === undefined) return json(401, { message: "invalid api key" });
+    const token = auth?.replace(/^Bearer /, "") ?? "";
+    for (const k of this.named.values()) if (k.key === token) k.lastUsedAt = this.#now();
 
     const route = url.pathname.replace(/^\/api\/v1\/ctx/, "");
+    const named = route.match(/^\/keys(?:\/([^/]+))?$/);
+    if (named || route.startsWith("/scopes/forget") || (method !== "POST" && route === "/scopes")) {
+      if (!grant.admin) return json(403, { message: "admin only" });
+      if (method === "POST" && route === "/keys") return this.#mintKey(body);
+      if (method === "GET" && route === "/keys") return this.#listKeys();
+      if (method === "DELETE" && named?.[1]) return this.#revokeKey(decodeURIComponent(named[1]));
+      if (method === "POST" && route === "/scopes/forget") return this.#forget(body.path);
+      if (method === "DELETE" && route === "/scopes") {
+        return this.#tombstone(url.searchParams.get("path") ?? "");
+      }
+      if (method === "GET" && route === "/scopes") return this.#listScopes();
+    }
     if (method === "POST" && route === "/scopes") return this.#registerScope(body.path);
     if (method === "POST" && route === "/facts") return this.#write(grant, body);
     if (method === "POST" && route === "/query") return this.#query(grant, body);
@@ -84,6 +118,70 @@ export class FakeAgentMemory {
     return this.#put(strip(scope), { type: "concept", name }, key, value, category);
   }
 
+  #now(): string {
+    return new Date(this.#tick).toISOString();
+  }
+
+  /** Grants as `memoryKeyGrants` spells them: `memory:read` / `memory:write` lists of `<path>/*`. */
+  #mintKey(body: { name?: unknown; grants?: Record<string, string[]> }) {
+    if (typeof body.name !== "string" || body.name === "") return json(422, "name required");
+    if (this.named.has(body.name)) return json(409, { message: "a key with that name exists" });
+    const region = (paths: string[] | undefined) =>
+      (paths ?? []).map((p) => strip(p.replace(/\/?\*$/, "")).replace(/^\//, ""));
+    const key = `sp-minted-${++this.#seq}`;
+    this.keys.set(key, {
+      read: region(body.grants?.["memory:read"]),
+      write: region(body.grants?.["memory:write"]),
+    });
+    this.named.set(body.name, { key, createdAt: this.#now(), lastUsedAt: null });
+    return json(201, { name: body.name, key });
+  }
+
+  #listKeys() {
+    const keys = [...this.named].map(([name, k], i) => ({
+      id: `k${i}`,
+      name,
+      createdAt: k.createdAt,
+      ...(k.lastUsedAt === null ? {} : { lastUsedAt: k.lastUsedAt }),
+    }));
+    return json(200, { keys, page: { hasMore: false } });
+  }
+
+  #revokeKey(name: string) {
+    const k = this.named.get(name);
+    if (k === undefined) return json(404, { message: "no such key" });
+    this.named.delete(name);
+    this.keys.delete(k.key);
+    return new Response(null, { status: 204 });
+  }
+
+  /** Erases every attribute under `path`, superseded ones included. `dryRun` is ignored. */
+  #forget(path: string) {
+    const region = strip(path ?? "");
+    let forgotten = 0;
+    for (let i = this.attrs.length - 1; i >= 0; i--) {
+      if (within(strip(this.attrs[i]?.scope[0]?.[0] ?? ""), region)) {
+        this.attrs.splice(i, 1);
+        forgotten++;
+      }
+    }
+    return json(200, { forgotten });
+  }
+
+  #tombstone(path: string) {
+    this.tombstoned.add(strip(path));
+    return new Response(null, { status: 204 });
+  }
+
+  #listScopes() {
+    const scopes = [...this.scopes].map((p) => ({
+      path: `${p}/`,
+      createdAt: this.#now(),
+      tombstonedAt: this.tombstoned.has(p) ? this.#now() : null,
+    }));
+    return json(200, { scopes });
+  }
+
   #registerScope(path: string) {
     if (!/^[a-z0-9_-]+(\/[a-z0-9_-]+)*\/?$/.test(path)) return json(422, "invalid scope path");
     const parts = strip(path).split("/");
@@ -94,7 +192,7 @@ export class FakeAgentMemory {
   #write(grant: KeyGrant, body: { infer: string; scopes: string[][]; triples: unknown[] }) {
     const scope = strip(body.scopes?.[0]?.[0] ?? "");
     if (body.infer !== "triples") return json(422, { message: "fake only does triples" });
-    if (!this.scopes.has(scope)) {
+    if (!this.scopes.has(scope) || this.tombstoned.has(scope)) {
       return json(400, { message: "unknown scope node — register it first" });
     }
     if (!grant.write.some((r) => within(scope, r))) {
