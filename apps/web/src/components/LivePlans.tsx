@@ -29,7 +29,7 @@ import { ExecutionRehearsalPanel } from "./ExecutionRehearsalPanel";
 import { IncidentForm } from "./IncidentForm";
 import { MembersPanel } from "./MembersPanel";
 import { PlanReview } from "./PlanReview";
-import { PrecedentPanel } from "./PrecedentPanel";
+import { PrecedentListResponse, PrecedentPanel } from "./PrecedentPanel";
 import { INCIDENT_ID, type Rehearsal, RehearseBar } from "./Rehearse";
 import { RunTimeline } from "./RunTimeline";
 import { Alert, Button, Card, Chip, Skeleton, Spinner } from "./ui";
@@ -357,6 +357,12 @@ function LivePlan({
     queryKey: key("plan", planId),
     queryFn: () => call(apiFetch, StoredPlan, planPath(planId)),
   });
+  // The approved versions a citation traces to; shared with the promote panel's list.
+  const registry = useQuery({
+    queryKey: key("precedents"),
+    queryFn: () => call(apiFetch, PrecedentListResponse, "/api/precedents"),
+    enabled: (plan.data?.manifest.precedentBasis?.citations.length ?? 0) > 0,
+  });
   const [unchecked, setUnchecked] = useState<ReadonlySet<string>>(new Set());
   const [lastRevision, setLastRevision] = useState<NewRevision | null>(null);
   const [shownRun, setShownRun] = useState<string | null>(initialRun);
@@ -417,6 +423,7 @@ function LivePlan({
         evidence={manifest.versions.planner.model === "fixture" ? "fixture" : null}
         review={{ unchecked, onToggle: toggle }}
         precedents={approvals.data?.precedents ?? null}
+        registry={registry.data?.precedents ?? null}
         actions={
           <ApprovalPanel
             apiFetch={apiFetch}

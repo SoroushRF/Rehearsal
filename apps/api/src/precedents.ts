@@ -214,7 +214,10 @@ export function registerPrecedentRoutes(app: FastifyInstance, deps: PrecedentDep
     return reply.code(out[0]).send(out[1]);
   });
 
-  /** Every version this organization has approved, with where it stands. */
+  /**
+   * Every version this organization has approved, with where it stands. The digest lets a cited
+   * precedent be traced to the exact version finance approved (T2.29).
+   */
   app.get("/api/precedents", async (req, reply) => {
     const gate = await authorizeCollection(deps.iam, bearerToken(req), "GET /api/precedents");
     if (!gate.ok) return refuse(reply, gate, "precedent_not_found");
@@ -229,6 +232,7 @@ export function registerPrecedentRoutes(app: FastifyInstance, deps: PrecedentDep
           version: e.version,
           appliesTo: e.appliesTo,
           status: e.status,
+          digest: e.digest,
           statement: r.statement,
           conditions: r.conditions,
           exceptions: r.exceptions,
