@@ -79,6 +79,12 @@ See [beyond.md](../beyond.md) for scope, parallel work, external gates and the r
 | T1.42 | Serialize reset with planning/apply admission | M5 | Postgres lock covers idle check through reset, seed and job commit; separate-connection concurrency and failure recovery tests pass | [#349](https://github.com/SoroushRF/Rehearsal/issues/349) | — |
 | T1.43 | Reserve built-in incident IDs | M5 | Allocation skips the built-in ID; a legacy collision uses the org's stored report; regression tests pass | [#350](https://github.com/SoroushRF/Rehearsal/issues/350) | — |
 
+## Agent Memory follow-ups (Nov 2026)
+
+| ID | Task | Milestone | Done when | Issue | Blocked by |
+|---|---|---|---|---|---|
+| T1.49 | Separate Agent Memory keys: read-only planner, write-only API, refused elsewhere | M5 | Each process reads only its own key, and the planner, executor and rehearsal worker refuse the ones they mustn't hold at startup; one definition of the keys' grants feeds `pnpm memory:keys` and the memory gate. **Done (fixture):** `SURREAL_AGENT_MEMORY_WRITE_KEY` (API), `_READ_KEY` (planner), `_ADMIN_KEY` (operator tools and the gate); the old shared key is refused; `memoryKeyGrants` and `pnpm memory:keys mint/revoke`; the gate check that the planner's key recalls but can't write is **not run yet** against the hosted service ([agent-memory.md](../agent-memory.md#keys)) | [#365](https://github.com/SoroushRF/Rehearsal/issues/365) | — |
+
 ## Decisions
 
 - **2026-10-22:** The planner worker has no database. It takes `plan` jobs and hands back manifests through `/internal/planner/jobs/*` with its own secret; the API checks each manifest against its job before storing revision 1. See [0006](../decisions/0006-planner-jobs-through-api.md).

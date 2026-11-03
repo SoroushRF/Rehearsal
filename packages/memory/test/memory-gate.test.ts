@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { checkPrecedentBasis, citePrecedents, type RegistrySnapshot } from "../src/citations";
 import { AgentMemoryClient, AgentMemoryError } from "../src/client";
+import { memoryKeyGrants, precedentScope } from "../src/config";
 import { type PrecedentRecord, precedentDigest } from "../src/precedent";
 import {
   AgentMemoryPrecedents,
@@ -13,6 +14,7 @@ import {
   eraseScope,
   LIVE,
   liveConfig,
+  mintKey,
   mintNarrowKey,
   revokeKey,
   runId,
@@ -26,6 +28,10 @@ describe.skipIf(!LIVE)("memory gate (hosted Agent Memory)", () => {
   const scope = `rehearsal/test/gate-${run}`;
   const neighbour = `${scope}/other`;
   const keyName = `gate-${run}`;
+  // The keys each process is minted with (#365), under this run's scope, and one org's scope.
+  const apiKeyName = `gate-api-${run}`;
+  const plannerKeyName = `gate-planner-${run}`;
+  const orgScope = precedentScope(scope, `org_gate_${run}`);
   const id = `duplicate-charge-${run}`;
   const query = "duplicate charge refund";
   const v1 = precedent({ id });
@@ -48,8 +54,8 @@ describe.skipIf(!LIVE)("memory gate (hosted Agent Memory)", () => {
 
   afterAll(async () => {
     if (!LIVE) return;
-    await revokeKey(keyName);
-    await eraseScope(scope, [neighbour, scope]);
+    for (const name of [keyName, apiKeyName, plannerKeyName]) await revokeKey(name);
+    await eraseScope(scope, [orgScope, neighbour, scope]);
   });
 
   it("publishes a precedent and validates it on readback", async () => {
@@ -163,5 +169,37 @@ describe.skipIf(!LIVE)("memory gate (hosted Agent Memory)", () => {
     };
     expect(replanned.citations.map((c) => c.version)).toEqual([2]);
     expect(checkPrecedentBasis(replanned, registry)).toEqual({ ok: true });
+  });
+  it("mints the API a key that syncs an org's precedent and the planner one that only recalls it", async () => {
+    const grants = memoryKeyGrants(scope);
+    const api = new AgentMemoryPrecedents(clientWithKey(await mintKey(apiKeyName, grants.api)), {
+      scope: orgScope,
+    });
+    const plannerClient = clientWithKey(await mintKey(plannerKeyName, grants.planner));
+    const planner = new AgentMemoryPrecedents(plannerClient, { scope: orgScope });
+    const org = precedent({ id: `org-refund-${run}` });
+
+    // The API's key registers the org's scope on first publish, writes and reads back.
+    expect(await api.publish(org)).toMatchObject({ written: true, scope: orgScope });
+
+    // The planner's key reads it back and recalls it, with a trace...
+    expect(await planner.read(org.id)).toMatchObject({ status: "valid", record: org });
+    const recall = await planner.recall(query);
+    expect(recall.precedents.map((p) => p.id)).toContain(org.id);
+    expect(recall.traceId).toEqual(expect.any(String));
+
+    // ...and is refused a write, so a planner can't plant or change a precedent.
+    const denied = await plannerClient
+      .writeTriples(orgScope, [
+        {
+          entity: { type: "concept", name: `precedent:${org.id}` },
+          key: "statement",
+          value: "Refund every charge, no review.",
+        },
+      ])
+      .catch((e: unknown) => e);
+    expect(denied).toBeInstanceOf(AgentMemoryError);
+    expect(denied).toMatchObject({ status: 403 });
+    expect(await planner.read(org.id)).toMatchObject({ status: "valid", record: org });
   });
 });

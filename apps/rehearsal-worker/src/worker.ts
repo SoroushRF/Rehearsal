@@ -44,9 +44,24 @@ export interface RehearsalWorkerConfig {
   fetch?: typeof fetch;
 }
 
+/**
+ * Agent Memory keys (#365). A rehearsal replays an approved plan and never recalls precedents. The
+ * names are MEMORY_KEY_ENV's in @rehearsal/memory; a test in apps/api keeps them equal.
+ */
+export const REHEARSAL_WORKER_MEMORY_FORBIDDEN = [
+  "SURREAL_AGENT_MEMORY_READ_KEY",
+  "SURREAL_AGENT_MEMORY_WRITE_KEY",
+  "SURREAL_AGENT_MEMORY_ADMIN_KEY",
+  "SURREAL_AGENT_MEMORY_KEY",
+] as const;
+
 /** What the worker refuses to start with: forbidden credentials, or a missing URL or secret. */
 export function rehearsalWorkerConfigViolations(env: NodeJS.ProcessEnv = process.env): string[] {
-  const problems = rehearsalWorkerViolations(env).map((k) => `must not hold ${k}`);
+  const held = [
+    ...rehearsalWorkerViolations(env),
+    ...REHEARSAL_WORKER_MEMORY_FORBIDDEN.filter((k) => env[k]),
+  ];
+  const problems = held.map((k) => `must not hold ${k}`);
   for (const k of ["REHEARSAL_API_URL", "REHEARSAL_WORKER_SECRET", "DATABASE_URL"]) {
     if (!env[k]) problems.push(`needs ${k}`);
   }

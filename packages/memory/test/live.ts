@@ -15,8 +15,13 @@ const ENV = new URL("../../../.env", import.meta.url);
 if (LIVE && existsSync(ENV)) process.loadEnvFile(ENV);
 
 export function liveConfig() {
-  const config = memoryConfigFromEnv();
-  if (config === null) throw new Error("MEMORY_GATE=1 needs SURREAL_AGENT_MEMORY_* in .env");
+  // The gate mints and revokes its own keys and erases its scope, so it runs with the admin key.
+  const config = memoryConfigFromEnv("admin");
+  if (config === null) {
+    throw new Error(
+      "MEMORY_GATE=1 needs SURREAL_AGENT_MEMORY_URL, _CONTEXT and _ADMIN_KEY in .env",
+    );
+  }
   return config;
 }
 
@@ -37,15 +42,20 @@ async function admin(method: string, path: string, body?: unknown): Promise<Resp
 }
 
 /** A key for the same principal, narrowed to memory reads and writes under `subtree`. */
-export async function mintNarrowKey(name: string, subtree: string): Promise<string> {
-  const res = await admin("POST", "/keys", {
-    name,
-    grants: {
-      "memory:read": [`${subtree}/*`],
-      "memory:write": [`${subtree}/*`],
-      "scope:create": ["/*"],
-    },
+export function mintNarrowKey(name: string, subtree: string): Promise<string> {
+  return mintKey(name, {
+    "memory:read": [`${subtree}/*`],
+    "memory:write": [`${subtree}/*`],
+    "scope:create": ["/*"],
   });
+}
+
+/** A key for the same principal with exactly `grants` (see `memoryKeyGrants`). */
+export async function mintKey(
+  name: string,
+  grants: Readonly<Record<string, readonly string[]>>,
+): Promise<string> {
+  const res = await admin("POST", "/keys", { name, grants });
   if (res.status !== 201) throw new Error(`POST /keys → ${res.status} ${await res.text()}`);
   return ((await res.json()) as { key: string }).key;
 }
