@@ -17,7 +17,7 @@ One `concept` entity named `precedent:<id>`, in one scope (default `rehearsal/pr
 - **Recall** queries `/query` through the scope's lens and takes the hits only as candidates. Every precedent it returns comes from readback, effective today, with the fact IDs it was read from, the hit IDs and the trace ID. An outage fails recall instead of returning nothing.
 - **Citation check** (`checkPrecedentBasis`) decides from a registry snapshot alone. It holds a plan when a cited precedent was superseded, withdrawn, not yet active or changed, or when the epoch of any area the plan consulted moved. The epoch covers precedents that recall never surfaced.
 
-T2.17 added the Postgres registry (`precedent_events`, derived into a `RegistrySnapshot`), the `precedent-sync` queue that publishes an approved version and only then activates it, the finance-only promotion route and a promote panel ([decision 0012](decisions/0012-precedent-promotion.md)). Each organization gets its own memory scope. Since then plans carry a `PrecedentBasis` with the citations (T1.29), approval refuses a changed precedent (T2.17) and executor admission re-checks it against the registry (#258). The sync ran once against the hosted service in a throwaway scope (#238); **the planner's recall has not run against the hosted service inside the app yet** (#366), so a plan citing a precedent is `fixture` evidence.
+T2.17 added the Postgres registry (`precedent_events`, derived into a `RegistrySnapshot`), the `precedent-sync` queue that publishes an approved version and only then activates it, the finance-only promotion route and a promote panel ([decision 0012](decisions/0012-precedent-promotion.md)). Each organization gets its own memory scope. Since then plans carry a `PrecedentBasis` with the citations (T1.29), approval refuses a changed precedent (T2.17) and executor admission re-checks it against the registry (#258). The sync ran once against the hosted service in a throwaway scope (#238), and the [app gate](#precedent-gate-through-the-app-t150) now runs the whole chain against the hosted service: promote, sync, the planner's recall and citation by fact ID, withdraw, refuse (#366, 5/5 on 3 runs on 2026-11-02). That is a test on the hosted service with a scripted model and testkit planning reads, not an acceptance run of a deployed app.
 
 ## Keys
 
@@ -41,7 +41,7 @@ MEMORY_GATE=1 pnpm test:memory   # PowerShell: $env:MEMORY_GATE=1; pnpm test:mem
 
 Without `MEMORY_GATE=1` the gate is skipped and only the offline tests run (a fake that copies the semantics below). Each gate run uses its own scope under `rehearsal/test/`, mints and revokes its own narrowed keys with the admin key (`SURREAL_AGENT_MEMORY_ADMIN_KEY`), and erases the scope afterwards.
 
-**PASS**, 6/6 on 3 consecutive runs (2026-10-24, Windows 11 amd64, Node 24.11.1, about 35 s each, most of it recall).
+**PASS**, 7/7 on 3 consecutive runs (2026-11-02, Windows 11 amd64, Node 24.11.1, about 50 s each, most of it recall). The first six checks also passed 6/6 on 3 consecutive runs on 2026-10-24, before the key check existed.
 
 | Check | Result |
 |---|---|
@@ -51,7 +51,32 @@ Without `MEMORY_GATE=1` the gate is skipped and only the offline tests run (a fa
 | Replace v1 with v2: readback is v2, history lists v2 then v1 (superseded); v1 again and v2 with other content are refused | **PASS** |
 | Wrong scope: a key narrowed to a neighbouring scope gets 403 writing ours and sees nothing reading it; its forged copy of the same precedent doesn't change ours; once revoked it gets 401 | **PASS** |
 | A plan citing v1 is held once v2 is approved (`superseded` plus `epoch_changed`); a replan on v2 passes | **PASS** |
-| The API's key (#365) registers an org's scope and publishes; the planner's recalls it with a trace and is refused a write | **not run yet** (added after the runs above) |
+| The API's key (#365) registers an org's scope and publishes; the planner's recalls it with a trace and is refused a write | **PASS** |
+
+## Precedent gate through the app (T1.50)
+
+The memory gate tests the library. This one tests the chain through the app (#366), on real Postgres and pg-boss in a database of its own (`rehearsal_precedent_gate`):
+
+1. A finance lead promotes a precedent from a completed run (`POST /api/runs/:id/precedents`); it's **waiting**.
+2. The API's sync handler, built from the API's env (write key), publishes and reads it back; it's **active**.
+3. The planner's read key is refused a write.
+4. A rehearsal (`POST /api/incidents/:id/rehearse`) queues a plan job carrying the org's registry. The planner worker's own job client claims it over HTTP, `recallersFromEnv` recalls in the org's scope with the read key, and the stored plan cites the precedent by version, digest, the three fact IDs and the trace ID. The approval check holds.
+5. Finance withdraws it; `POST /api/plans/:id/approvals` answers `409 precedent_changed` (`withdrawn`, `epoch_changed`).
+6. With a second precedent active in the area, a replan recalls again. Agent Memory still returns the withdrawn copy, the planner drops it as not active in the registry, and the plan cites only the other one.
+
+The stand-ins are IAM (the real rule file), the model (a fixed script) and the planning world's reads (testkit records).
+
+```bash
+DB_TESTS=1 pnpm test:precedent-gate                 # fake Agent Memory; CI runs this
+DB_TESTS=1 MEMORY_GATE=1 pnpm test:precedent-gate   # hosted, needs SURREAL_AGENT_MEMORY_ADMIN_KEY
+```
+
+Hosted, it mints its own API and planner keys from `memoryKeyGrants`, works under `rehearsal/test/app-gate-<run>`, then revokes the keys and erases the scope. The hosted runs show the API's `scope:create` grant below the base scope is enough to register an org's scope on first sync.
+
+| Run | Result |
+|---|---|
+| Fake Agent Memory, Postgres 17 (2026-11-03, Linux, Node 24) | **PASS** 5/5 |
+| Hosted Agent Memory, Postgres 17 (2026-11-02, Windows 11 amd64, Node 24.11.1, about 20 s each) | **PASS** 5/5 on 3 consecutive runs |
 
 ## Surprises
 

@@ -1,12 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenAI } from "@google/genai";
 import type { BillingPolicyV1, BillingPolicyV2 } from "@rehearsal/core";
-import {
-  AgentMemoryClient,
-  AgentMemoryPrecedents,
-  memoryConfigFromEnv,
-  precedentScope,
-} from "@rehearsal/memory";
 import { DEFAULT_PLANNER_MODEL, PROMPT_VERSION } from "@rehearsal/planner";
 import {
   plannerJobsClient,
@@ -22,6 +16,7 @@ import policyV2 from "../../../scenarios/billing/policy.v2.json" with { type: "j
 import { plannerCredentialViolations } from "./credentials";
 import { geminiMessagesClient } from "./gemini";
 import { handlePlanJob } from "./job";
+import { recallersFromEnv } from "./precedents";
 
 /**
  * Planner worker: holds the model key and planning-world capability ONLY. No operational-world
@@ -102,23 +97,8 @@ const client = gemini
     )
   : new Anthropic().messages;
 const jobs = plannerJobsClient(apiUrl, secret);
-// Precedent recall (#235), with a read-only Agent Memory key (decision 0012). Without one, an org
-// with active precedents can't be planned for; orgs without any plan as before.
-const memory = memoryConfigFromEnv("read");
-const recallers = new Map<string, AgentMemoryPrecedents>();
-const precedents =
-  memory &&
-  ((orgId: string) => {
-    let recaller = recallers.get(orgId);
-    if (!recaller) {
-      const { scope, ...client } = memory;
-      recaller = new AgentMemoryPrecedents(new AgentMemoryClient(client), {
-        scope: precedentScope(scope, orgId),
-      });
-      recallers.set(orgId, recaller);
-    }
-    return recaller;
-  });
+// Precedent recall (#235), per org with the read-only Agent Memory key (decision 0012, #365).
+const precedents = recallersFromEnv();
 const ctx = {
   jobs,
   client,
@@ -150,7 +130,7 @@ for (const signal of ["SIGTERM", "SIGINT"] as const) {
 }
 
 console.log(
-  `planner-worker ready: ${model}, prompt ${PROMPT_VERSION}, planning ${worlds.stripe.baseUrl} + ${worlds.zendesk.baseUrl}, precedents ${memory ? "on" : "off"}`,
+  `planner-worker ready: ${model}, prompt ${PROMPT_VERSION}, planning ${worlds.stripe.baseUrl} + ${worlds.zendesk.baseUrl}, precedents ${precedents ? "on" : "off"}`,
 );
 while (!stopping) {
   try {
