@@ -1,7 +1,8 @@
 import type { PrecedentBasis } from "@rehearsal/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { PrecedentBasisCard } from "../src/components/PrecedentBasisCard";
+import { citationSource, PrecedentBasisCard } from "../src/components/PrecedentBasisCard";
+import { type Precedent, PrecedentListResponse } from "../src/components/PrecedentPanel";
 import { explainPrecedentHold, PrecedentCheck, type PrecedentHold } from "../src/precedent-holds";
 
 const basis: PrecedentBasis = {
@@ -16,6 +17,22 @@ const basis: PrecedentBasis = {
     },
   ],
   epochs: { "billing.duplicate_charge": 3 },
+};
+
+const approved: Precedent = {
+  id: "duplicate-charge-refund",
+  version: 2,
+  appliesTo: "billing.duplicate_charge",
+  status: "active",
+  digest: "d".repeat(64),
+  statement: "A duplicate charge within 30 days is refunded in full.",
+  conditions: [],
+  exceptions: [],
+  effectiveFrom: "2026-10-01",
+  effectiveUntil: null,
+  author: "user_finance",
+  approvedAt: "2026-10-25T12:00:00.000Z",
+  sourceRunId: "run_source",
 };
 
 const words = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
@@ -95,5 +112,59 @@ describe("precedent basis card (T2.17)", () => {
     expect(PrecedentCheck.safeParse({ ok: false, holds: [{ reason: "mystery" }] }).success).toBe(
       false,
     );
+  });
+
+  describe("tracing a citation to its source (T2.31)", () => {
+    const [cited] = basis.citations;
+    if (!cited) throw new Error("fixture has a citation");
+    const traced = (registry: Precedent[] | null) =>
+      renderToStaticMarkup(
+        <PrecedentBasisCard basis={basis} check={{ ok: true }} registry={registry} />,
+      );
+
+    it("links the cited facts to the approved version, its promoter and its source run", () => {
+      const html = traced([approved]);
+      expect(html).toContain('data-source="matched"');
+      const text = words(html);
+      expect(text).toContain("These facts are approved v2");
+      expect(text).toContain("promoted by user_finance on 2026-10-25 from run run_source");
+    });
+
+    it("matches on version, not just id", () => {
+      expect(citationSource(cited, [{ ...approved, version: 1 }]).kind).toBe("missing");
+      expect(citationSource(cited, [{ ...approved, version: 1 }, approved]).kind).toBe("matched");
+    });
+
+    it("says so when the cited facts aren't the version finance approved", () => {
+      const html = traced([{ ...approved, digest: "e".repeat(64) }]);
+      expect(html).toContain('data-source="differs"');
+      expect(words(html)).toContain("match approved duplicate-charge-refund v2");
+    });
+
+    it("says so when the organization never approved the cited version", () => {
+      const html = traced([]);
+      expect(html).toContain('data-source="missing"');
+      expect(words(html)).toContain("never approved duplicate-charge-refund v2");
+    });
+
+    it("doesn't claim a source it didn't look up", () => {
+      const html = traced(null);
+      expect(html).toContain('data-source="not_loaded"');
+      expect(words(html)).not.toContain("promoted by");
+    });
+
+    it("reads a source run that wasn't recorded", () => {
+      expect(words(traced([{ ...approved, sourceRunId: null }]))).toContain(
+        "from run none recorded",
+      );
+    });
+
+    it("reads the list the API sends, digest and source run included", () => {
+      const parsed = PrecedentListResponse.parse({ precedents: [approved], syncEnabled: true });
+      expect(parsed.precedents[0]).toMatchObject({
+        digest: approved.digest,
+        sourceRunId: "run_source",
+      });
+    });
   });
 });

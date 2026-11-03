@@ -262,6 +262,8 @@ describe.skipIf(!process.env.DB_TESTS)("promoting a precedent (real Postgres)", 
       version: number;
       status: string;
       author: string;
+      digest: string;
+      sourceRunId: string | null;
     }[];
 
   /** A publisher that stores what it is given, as Agent Memory would after readback. */
@@ -294,6 +296,15 @@ describe.skipIf(!process.env.DB_TESTS)("promoting a precedent (real Postgres)", 
     expect(await list(finance(orgId))).toMatchObject([
       { id: "dup-refund", version: 1, status: "waiting", author: "user_fin" },
     ]);
+  });
+
+  it("lists each version's digest and source run, so a citation can be traced to it (T2.31)", async () => {
+    const { orgId, runId } = await seedRun();
+    await promote(finance(orgId), runId);
+    const { entries } = await loadRegistry(db, orgId);
+    const [listed] = await list(finance(orgId));
+    expect(listed?.digest).toMatch(/^[0-9a-f]{64}$/);
+    expect(listed).toMatchObject({ digest: entries[0]?.digest, sourceRunId: runId });
   });
 
   it("refuses a run that hasn't completed, another org's run and an unknown run", async () => {

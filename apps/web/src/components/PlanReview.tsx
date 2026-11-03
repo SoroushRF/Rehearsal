@@ -6,6 +6,7 @@ import type { PrecedentCheck } from "../precedent-holds";
 import { ActionRow } from "./ActionRow";
 import { EvidenceDrawer } from "./EvidenceDrawer";
 import { PrecedentBasisCard } from "./PrecedentBasisCard";
+import type { Precedent } from "./PrecedentPanel";
 import { Card, Chip, CopyButton, Stat } from "./ui";
 
 /**
@@ -21,6 +22,7 @@ export function PlanReview({
   review,
   actions,
   precedents = null,
+  registry = null,
 }: {
   manifest: PlanManifest;
   planHash: string;
@@ -30,6 +32,8 @@ export function PlanReview({
   actions?: ReactNode;
   /** The registry's verdict on the precedents the plan cites; null when not asked (examples). */
   precedents?: PrecedentCheck | null;
+  /** The organization's approved precedent versions, to trace citations to; null when not loaded. */
+  registry?: readonly Precedent[] | null;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const dropped = review ? droppedBy(manifest.actions, review.unchecked) : new Set<string>();
@@ -141,7 +145,11 @@ export function PlanReview({
         ))}
 
         {manifest.precedentBasis && (
-          <PrecedentBasisCard basis={manifest.precedentBasis} check={precedents} />
+          <PrecedentBasisCard
+            basis={manifest.precedentBasis}
+            check={precedents}
+            registry={registry}
+          />
         )}
 
         {manifest.excluded.length > 0 && (
