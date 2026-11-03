@@ -6,7 +6,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 
 ## Top blockers
 
-114 of 132 tasks done. These open tasks hold up the most other work:
+115 of 132 tasks done. These open tasks hold up the most other work:
 
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
@@ -76,7 +76,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T1.55** Agent Memory key rotation and per-org erasure [#398](https://github.com/SoroushRF/Rehearsal/issues/398) | ✅ done |  | T1.57 |
 | **T1.56** Stabilize shared-queue and clock-sensitive database tests [#405](https://github.com/SoroushRF/Rehearsal/issues/405) | ✅ done |  | T1.58 |
 | **T1.57** Preserve erasure recovery after the planner's normal retry is exhausted [#406](https://github.com/SoroushRF/Rehearsal/issues/406) | ✅ done |  | T1.58 |
-| **T1.58** Complete hosted Agent Memory verification and public Render release [#407](https://github.com/SoroushRF/Rehearsal/issues/407) | 🟨 ready | — |  |
+| **T1.58** Complete hosted Agent Memory verification and public Render release [#407](https://github.com/SoroushRF/Rehearsal/issues/407) | ✅ done |  |  |
 
 ## T2 Review & Approve
 
@@ -237,7 +237,7 @@ flowchart LR
     T1_55["T1.55 Agent Memory key rotation and per-org eras"]:::done
     T1_56["T1.56 Stabilize shared-queue and clock-sensitive"]:::done
     T1_57["T1.57 Preserve erasure recovery after the planne"]:::done
-    T1_58["T1.58 Complete hosted Agent Memory verification "]:::ready
+    T1_58["T1.58 Complete hosted Agent Memory verification "]:::done
   end
   subgraph T2[T2 Review & Approve]
     T2_1["T2.1 Plan diff view from fixture bundles"]:::done
