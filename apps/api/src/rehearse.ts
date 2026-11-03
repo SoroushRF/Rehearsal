@@ -16,6 +16,7 @@ import {
   PLAN_QUEUE,
   type RegistrySnapshot,
   recordRecallDiagnostics,
+  retryPlanWithoutMemory,
 } from "@rehearsal/db";
 import { checkPrecedentBasis } from "@rehearsal/memory";
 import {
@@ -230,12 +231,17 @@ export function registerRehearseRoutes(app: FastifyInstance, deps: RehearseDeps)
     // Read as `/next` would hand it out now: with memory off if the org was erased since queueing.
     const job = await withoutErasedMemory(deps.db, found.data);
     if (job !== found.data && m.precedentBasis) {
-      // Taken with memory before the erasure: the basis rests on a scope that is gone. Failed, so
-      // the queue's retry plans it again, and `/next` then hands it out without memory.
-      return refuse(
-        "the org's Agent Memory was erased after this job was taken; it is planned again without memory",
-        "org_erased",
-      );
+      // Preserve the polled job id and a bounded recovery attempt even when its normal retry
+      // was already spent. The stored payload loses its snapshot before it can be claimed again.
+      const retried = await retryPlanWithoutMemory(deps.db, deps.boss, {
+        id: found.job.id,
+        retryCount: found.job.retryCount,
+      });
+      if (!retried) return reply.code(409).send({ error: "job_not_active" });
+      return reply.code(422).send({
+        error: "rejected_plan",
+        detail: "the org's Agent Memory was erased; the job is planned again without memory",
+      });
     }
     if (m.orgId !== job.orgId || m.planId !== job.planId || m.incidentId !== job.incidentId) {
       return refuse("manifest is for another org, plan or incident than the job");
