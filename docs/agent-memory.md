@@ -85,17 +85,17 @@ Hosted, it mints its own API and planner keys from `memoryKeyGrants`, works unde
 Before finance promotes, the panel can show the active precedents in the same area that recall finds similar to the draft (#397). It is a hint and nothing else.
 
 - `POST /api/runs/:id/precedents/similar` takes `{ appliesTo, statement, id? }` (Zod, strict) and needs `rehearsal:promote:precedent` in the run's org, like promotion itself. A run in another org is a 404, and a run that hasn't completed is a 409.
-- It recalls in the org's scope with the **API's own key** (the write key's `memory:read` grant), never the planner's. The planner is still the only process whose recall feeds a plan.
-- The registry decides what is shown. A hit appears only if Postgres lists that exact version and digest as active, in the same area. The statement shown is read from Postgres, not from recall, so a withdrawn precedent whose copy memory still holds, or a copy that is a version behind, is dropped.
-- It always answers `200` with a status: `ok`, `off` (Agent Memory isn't configured) or `unavailable` (recall failed or took over 10 s). The panel says which, and says nothing blocks. Recall is skipped when the registry has nothing active in the area.
+- It recalls in the org's scope with the **API's own key** (the write key's `memory:read` grant), never the planner's, asking for the service's cap of 50 hits because the area filter runs after the cut. The planner is still the only process whose recall feeds a plan.
+- The registry decides what is shown, read again after recall returns so a withdrawal that lands mid-recall still counts. A hit appears only if Postgres lists that exact version and digest as active, in the same area. The statement shown is read from Postgres, not from recall, so a withdrawn precedent whose copy memory still holds, or a copy that is a version behind, is dropped.
+- It always answers `200` with a status: `ok`, `off` (Agent Memory isn't configured) or `unavailable` (recall failed or took over 10 s). The panel says which, and says nothing blocks (a 403 says a finance lead is needed instead). An empty answer reads "None found among the closest matches", not "none exist". Recall is skipped when the registry has nothing active in the area.
 - Nothing is stored, queued or approved, the promote route never calls it, and the promote button doesn't wait for it, so promotion works the same with memory off or failing. The plan hash isn't involved.
-- A failed recall is logged with the org, the error kind and the HTTP status only.
+- A failed recall is logged with the org, the error kind and the HTTP status only. The client takes no abort signal, so entity reads still in flight when the 10 s deadline passes run to their own timeout and are ignored.
 
 | Evidence | Level |
 |---|---|
-| API tests on real Postgres against the fake Agent Memory: similar, none, a withdrawn copy, a copy a version behind, another org, memory off, outage and timeout; web unit tests; the precedents e2e spec | `fixture` |
+| API tests on real Postgres against the fake Agent Memory: similar, none, a withdrawn copy, a copy a version behind, another org with the same id and area, more than ten better-ranked off-area copies, a withdrawal mid-recall, memory off, outage and timeout; web unit tests; the precedents e2e spec | `fixture` |
 
-It hasn't run against the hosted service; nothing about it needs the memory gate.
+**Not verified against the hosted service.** This is the first time `/query` is called with the API's write key (its `memory:read` grant); every hosted check so far queried with the read key. The memory gate would show whether the service accepts it.
 
 ## Surprises
 

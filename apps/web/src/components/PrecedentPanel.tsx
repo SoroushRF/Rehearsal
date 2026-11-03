@@ -196,7 +196,11 @@ function WithdrawControl({
 }
 
 /** What the hint has to show: still checking, an answer, or a request that failed. */
-export type SimilarState = { kind: "loading" } | { kind: "failed" } | SimilarResponse;
+export type SimilarState =
+  | { kind: "loading" }
+  | { kind: "failed" }
+  | { kind: "forbidden" }
+  | SimilarResponse;
 
 /**
  * Similar active precedents in the area being promoted to (T2.32). Advisory only: it shows what
@@ -207,23 +211,25 @@ export function SimilarPrecedents({
   state,
   appliesTo,
 }: {
-  state: SimilarState;
+  /** Null when there is nothing to ask yet; the live region stays so a later answer is announced. */
+  state: SimilarState | null;
   appliesTo: string;
 }) {
   const area = humanize(appliesTo.replaceAll(/[._]/g, " "));
   const note = (text: string) => <p className="text-xs text-subtle">{text}</p>;
-  let body: ReactNode;
-  if ("kind" in state) {
-    body =
-      state.kind === "loading"
-        ? note("Checking for similar active precedents…")
-        : note("Couldn't check for similar precedents just now. You can still promote.");
+  let body: ReactNode = null;
+  if (state === null) body = null;
+  else if ("kind" in state) {
+    if (state.kind === "loading") body = note("Checking for similar active precedents…");
+    else if (state.kind === "forbidden")
+      body = note("Only a finance lead can promote precedents, so similar ones aren't checked.");
+    else body = note("Couldn't check for similar precedents just now. You can still promote.");
   } else if (state.status === "off") {
     body = note("Agent Memory is off, so similar precedents can't be checked.");
   } else if (state.status === "unavailable") {
     body = note("Couldn't check for similar precedents just now. You can still promote.");
   } else if (state.similar.length === 0) {
-    body = note(`No similar active precedent in ${area}.`);
+    body = note(`None found among the closest matches in ${area}.`);
   } else {
     body = (
       <>
@@ -250,9 +256,9 @@ export function SimilarPrecedents({
   return (
     <div
       data-testid="similar-precedents"
-      data-state={"kind" in state ? state.kind : state.status}
+      data-state={state === null ? "idle" : "kind" in state ? state.kind : state.status}
       aria-live="polite"
-      className="rounded-lg border border-line px-3 py-2"
+      className={state === null ? undefined : "rounded-lg border border-line px-3 py-2"}
     >
       {body}
     </div>
@@ -307,18 +313,19 @@ export function PrecedentPanel({
 
   // T2.32: an advisory hint, asked once the draft stops changing. It is a separate query: it never
   // touches the promote button, its loading state or what the promotion sends.
-  const draftJson = useDebounced(
-    JSON.stringify({
-      appliesTo: form.appliesTo.trim(),
-      statement: form.statement.trim(),
-      id: form.id.trim(),
-    }),
-    700,
-  );
+  const liveJson = JSON.stringify({
+    appliesTo: form.appliesTo.trim(),
+    statement: form.statement.trim(),
+    id: form.id.trim(),
+  });
+  const draftJson = useDebounced(liveJson, 700);
   const draft = JSON.parse(draftJson) as { appliesTo: string; statement: string; id: string };
-  const askSimilar = completed && open && AREA.test(draft.appliesTo) && draft.statement !== "";
+  const live = JSON.parse(liveJson) as typeof draft;
+  const askable = (d: typeof draft) => AREA.test(d.appliesTo) && d.statement !== "";
+  const askSimilar = completed && open && askable(draft);
   const similar = useQuery({
-    queryKey: key("precedents-similar", runId, draft.appliesTo, draft.statement, draft.id),
+    // Under "precedents" so a promotion or a withdrawal invalidates the hint with the list.
+    queryKey: key("precedents", "similar", runId, draft.appliesTo, draft.statement, draft.id),
     queryFn: () =>
       call(apiFetch, SimilarResponse, `/api/runs/${encodeURIComponent(runId)}/precedents/similar`, {
         appliesTo: draft.appliesTo,
@@ -328,14 +335,22 @@ export function PrecedentPanel({
     enabled: askSimilar,
     retry: false,
     staleTime: 60_000,
+    // Each fetch is a hosted recall.
+    refetchOnWindowFocus: false,
   });
-  const similarState: SimilarState | null = !askSimilar
-    ? null
-    : similar.data
-      ? similar.data
-      : similar.isError
-        ? { kind: "failed" }
-        : { kind: "loading" };
+  // While the draft is still changing, the answer for an older draft isn't shown as current.
+  const similarState: SimilarState | null =
+    completed && open && askable(live) && liveJson !== draftJson
+      ? { kind: "loading" }
+      : !askSimilar
+        ? null
+        : similar.data
+          ? similar.data
+          : similar.isError
+            ? similar.error instanceof RefusedError && similar.error.status === 403
+              ? { kind: "forbidden" }
+              : { kind: "failed" }
+            : { kind: "loading" };
 
   const promote = useMutation({
     mutationFn: () =>
@@ -445,11 +460,9 @@ export function PrecedentPanel({
                 onChange={set("effectiveUntil")}
               />
             </label>
-            {similarState && (
-              <div className="sm:col-span-2">
-                <SimilarPrecedents state={similarState} appliesTo={draft.appliesTo} />
-              </div>
-            )}
+            <div className="sm:col-span-2">
+              <SimilarPrecedents state={similarState} appliesTo={live.appliesTo} />
+            </div>
             <div className="sm:col-span-2">
               <Button type="submit" variant="primary" loading={promote.isPending}>
                 Promote to precedent

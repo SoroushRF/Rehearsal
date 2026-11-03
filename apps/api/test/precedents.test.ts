@@ -8,7 +8,7 @@ import {
   schema,
   startQueue,
 } from "@rehearsal/db";
-import type { PrecedentRecord } from "@rehearsal/memory";
+import { AgentMemoryClient, AgentMemoryPrecedents, type PrecedentRecord } from "@rehearsal/memory";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { FakeAgentMemory } from "../../../packages/memory/test/fake-agent-memory";
@@ -751,11 +751,74 @@ describe.skipIf(!process.env.DB_TESTS)("promoting a precedent (real Postgres)", 
       expect(res.json()).toEqual({ status: "ok", similar: [] });
     });
 
-    it("never shows another organization's precedent", async () => {
+    it("never shows another organization's precedent, even with the same id and area", async () => {
       const mine = await seedRun();
       const theirs = await seedRun();
-      await activate(theirs.orgId, theirs.runId, {});
+      // Both organizations have an active precedent with the same id in the same area.
+      await activate(mine.orgId, mine.runId, {
+        statement: "Mine: a duplicate charge in the first week is refunded in full.",
+      });
+      await activate(theirs.orgId, theirs.runId, {
+        statement: "Theirs: a duplicate charge is never refunded.",
+      });
       const res = await ask(finance(mine.orgId), mine.runId, draft);
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.status).toBe("ok");
+      expect(body.similar).toHaveLength(1);
+      expect(body.similar[0].statement).toBe(
+        "Mine: a duplicate charge in the first week is refunded in full.",
+      );
+      expect(JSON.stringify(body)).not.toContain("Theirs");
+    });
+
+    it("still finds a same-area precedent that ranks below more than ten others elsewhere", async () => {
+      const { orgId, runId } = await seedRun();
+      // Twelve off-area copies that match the draft far better than the one in its area.
+      for (let i = 1; i <= 12; i++) {
+        await activate(orgId, runId, {
+          id: `late-fee-${i}`,
+          appliesTo: "billing.late_fee",
+          statement: draft.statement,
+        });
+      }
+      await activate(orgId, runId, { id: "dup-credit", statement: "Credit small amounts." });
+
+      // Ten hits wouldn't have reached it; the recaller asks for the service's cap.
+      const closest = await new AgentMemoryPrecedents(
+        new AgentMemoryClient({
+          url: env.SURREAL_AGENT_MEMORY_URL,
+          context: env.SURREAL_AGENT_MEMORY_CONTEXT,
+          apiKey: env.SURREAL_AGENT_MEMORY_WRITE_KEY,
+          fetch: fake.fetch,
+        }),
+        { scope: precedentScope("rehearsal/precedents", orgId) },
+      ).recall(`${draft.appliesTo} ${draft.statement}`);
+      expect(closest.precedents.map((p) => p.id)).not.toContain("dup-credit");
+
+      const res = await ask(finance(orgId), runId, draft);
+      expect(res.json().similar.map((p: { id: string }) => p.id)).toEqual(["dup-credit"]);
+    });
+
+    it("drops a precedent withdrawn while recall was in flight", async () => {
+      const { orgId, runId } = await seedRun();
+      await activate(orgId, runId, {});
+      const slow: SimilarRecallerFor = (org) => ({
+        recall: async (caseKey) => {
+          const found = await recallers(org).recall(caseKey);
+          // The registry changes after recall found it and before the route answers.
+          const out = await send(
+            deps(finance(orgId)),
+            "POST",
+            "/api/precedents/dup-refund/withdraw",
+            { version: 1 },
+            finance(orgId),
+          );
+          expect(out.statusCode).toBe(200);
+          return found;
+        },
+      });
+      const res = await ask(finance(orgId), runId, draft, { similar: slow });
       expect(res.json()).toEqual({ status: "ok", similar: [] });
     });
 

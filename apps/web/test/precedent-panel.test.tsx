@@ -11,7 +11,7 @@ const words = (html: string) =>
     .replace(/<[^>]+>/g, " ")
     .replaceAll("&#x27;", "'")
     .replace(/\s+/g, " ");
-const render = (state: SimilarState) =>
+const render = (state: SimilarState | null) =>
   renderToStaticMarkup(<SimilarPrecedents state={state} appliesTo="billing.duplicate_charge" />);
 
 const found: SimilarResponse = {
@@ -54,7 +54,7 @@ describe("similar active precedents on the promote panel (T2.32)", () => {
 
   it("says when nothing similar is active in the area", () => {
     const text = words(render({ status: "ok", similar: [] }));
-    expect(text).toContain("No similar active precedent in Billing duplicate charge.");
+    expect(text).toContain("None found among the closest matches in Billing duplicate charge.");
   });
 
   it("says memory is off, and that recall failed, without blocking anything", () => {
@@ -68,6 +68,19 @@ describe("similar active precedents on the promote panel (T2.32)", () => {
       );
     }
     expect(words(render({ kind: "loading" }))).toContain("Checking for similar active precedents…");
+  });
+
+  it("says a lead is needed when the API refuses the hint, not that promotion is open", () => {
+    const text = words(render({ kind: "forbidden" }));
+    expect(text).toContain("Only a finance lead can promote precedents");
+    expect(text).not.toContain("You can still promote");
+  });
+
+  it("keeps its live region when there is nothing to show, so a later answer is announced", () => {
+    const html = render(null);
+    expect(html).toContain('aria-live="polite"');
+    expect(html).toContain('data-state="idle"');
+    expect(words(html).trim()).toBe("");
   });
 
   it("parses only the shape the API answers with", () => {

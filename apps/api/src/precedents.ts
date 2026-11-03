@@ -236,14 +236,12 @@ export function registerPrecedentRoutes(app: FastifyInstance, deps: PrecedentDep
     if (!deps.similar) return answer({ status: "off", similar: [] });
 
     const { appliesTo, statement, id } = body.data;
-    const { snapshot, entries } = await loadRegistry(deps.db, run.orgId);
-    const inArea = new Map(
-      entries
-        .filter((e) => e.status === "active" && e.appliesTo === appliesTo)
-        .map((e) => [e.id, e]),
-    );
-    // Nothing active in the area: nothing could qualify, so don't spend a recall finding that out.
-    if (inArea.size === 0) return answer({ status: "ok", similar: [] });
+    // Read once to skip a recall nothing could match; read again after it (below), because a
+    // withdrawal can commit while a recall that takes seconds is in flight.
+    const before = await loadRegistry(deps.db, run.orgId);
+    if (!before.entries.some((e) => e.status === "active" && e.appliesTo === appliesTo)) {
+      return answer({ status: "ok", similar: [] });
+    }
 
     let recalled: PrecedentRecall;
     try {
@@ -261,6 +259,13 @@ export function registerPrecedentRoutes(app: FastifyInstance, deps: PrecedentDep
       return answer({ status: "unavailable", similar: [] });
     }
 
+    // The registry as it is now decides what is shown, not as it was before recall started.
+    const { snapshot, entries } = await loadRegistry(deps.db, run.orgId);
+    const inArea = new Map(
+      entries
+        .filter((e) => e.status === "active" && e.appliesTo === appliesTo)
+        .map((e) => [e.id, e]),
+    );
     const shown = new Set<string>();
     const similar = recalled.precedents.flatMap((p): SimilarPrecedent[] => {
       // The registry decides: the exact active version and digest, in this area, once each.
