@@ -6,7 +6,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 
 ## Top blockers
 
-94 of 104 tasks done. These open tasks hold up the most other work:
+95 of 105 tasks done. These open tasks hold up the most other work:
 
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
@@ -52,7 +52,8 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T1.41** Demo blocker: target the org tenant when injecting the phantom [#348](https://github.com/SoroushRF/Rehearsal/issues/348) | ✅ done |  |  |
 | **T1.42** Serialize org resets with planning/apply admission [#349](https://github.com/SoroushRF/Rehearsal/issues/349) | ✅ done |  |  |
 | **T1.43** Reserve built-in incident IDs when allocating filed incidents [#350](https://github.com/SoroushRF/Rehearsal/issues/350) | ✅ done |  |  |
-| **T1.49** Separate Agent Memory keys: read-only planner, write key for the API, refused elsewhere [#365](https://github.com/SoroushRF/Rehearsal/issues/365) | ✅ done |  |  |
+| **T1.49** Separate Agent Memory keys: read-only planner, write key for the API, refused elsewhere [#365](https://github.com/SoroushRF/Rehearsal/issues/365) | ✅ done |  | T1.50 |
+| **T1.50** Precedent gate through the app: promote, sync, cite by fact ID, withdraw, refuse [#366](https://github.com/SoroushRF/Rehearsal/issues/366) | ✅ done |  |  |
 
 ## T2 Review & Approve
 
@@ -186,6 +187,7 @@ flowchart LR
     T1_42["T1.42 Serialize org resets with planning/apply a"]:::done
     T1_43["T1.43 Reserve built-in incident IDs when allocat"]:::done
     T1_49["T1.49 Separate Agent Memory keys: read-only plan"]:::done
+    T1_50["T1.50 Precedent gate through the app: promote, s"]:::done
   end
   subgraph T2[T2 Review & Approve]
     T2_1["T2.1 Plan diff view from fixture bundles"]:::done
@@ -297,6 +299,7 @@ flowchart LR
   T3_8 --> T1_27
   T1_27 --> T1_28
   T4_13 --> T1_28
+  T1_49 --> T1_50
   T3_1 --> T2_2
   T2_2 --> T2_4
   T2_3 --> T2_4
