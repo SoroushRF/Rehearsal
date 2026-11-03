@@ -6,7 +6,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 
 ## Top blockers
 
-113 of 130 tasks done. These open tasks hold up the most other work:
+114 of 131 tasks done. These open tasks hold up the most other work:
 
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
@@ -73,8 +73,9 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T1.52** README: Agent Memory in the architecture diagram, plus citation and promote screenshots [#390](https://github.com/SoroushRF/Rehearsal/issues/390) | ✅ done |  |  |
 | **T1.53** Memory drift check: compare Agent Memory with the precedent registry and repair through the sync queue [#395](https://github.com/SoroushRF/Rehearsal/issues/395) | ✅ done |  |  |
 | **T1.54** Record why each precedent was recalled, and show it on the citation card [#396](https://github.com/SoroushRF/Rehearsal/issues/396) | ✅ done |  |  |
-| **T1.55** Agent Memory key rotation and per-org erasure [#398](https://github.com/SoroushRF/Rehearsal/issues/398) | ✅ done |  |  |
+| **T1.55** Agent Memory key rotation and per-org erasure [#398](https://github.com/SoroushRF/Rehearsal/issues/398) | ✅ done |  | T1.57 |
 | **T1.56** Stabilize shared-queue and clock-sensitive database tests [#405](https://github.com/SoroushRF/Rehearsal/issues/405) | ✅ done |  |  |
+| **T1.57** Preserve erasure recovery after the planner's normal retry is exhausted [#406](https://github.com/SoroushRF/Rehearsal/issues/406) | ✅ done |  |  |
 
 ## T2 Review & Approve
 
@@ -234,6 +235,7 @@ flowchart LR
     T1_54["T1.54 Record why each precedent was recalled, an"]:::done
     T1_55["T1.55 Agent Memory key rotation and per-org eras"]:::done
     T1_56["T1.56 Stabilize shared-queue and clock-sensitive"]:::done
+    T1_57["T1.57 Preserve erasure recovery after the planne"]:::done
   end
   subgraph T2[T2 Review & Approve]
     T2_1["T2.1 Plan diff view from fixture bundles"]:::done
@@ -362,6 +364,7 @@ flowchart LR
   T1_49 --> T1_50
   T1_50 --> T1_51
   T1_49 --> T1_52
+  T1_55 --> T1_57
   T3_1 --> T2_2
   T2_2 --> T2_4
   T2_3 --> T2_4
