@@ -6,12 +6,16 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 
 ## Top blockers
 
-97 of 108 tasks done. These open tasks hold up the most other work:
+101 of 122 tasks done. These open tasks hold up the most other work:
 
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
+| **T1.35** Run the held-out incident sets on Era [#280](https://github.com/SoroushRF/Rehearsal/issues/280) | @SoroushRF | 🟨 ready | 2 |
 | **T4.13** Integrated isolation and recovery acceptance gate [#175](https://github.com/SoroushRF/Rehearsal/issues/175) | @skhdemo | 🟨 ready | 2 |
 | **T1.28** Run and publish versioned benchmark comparisons [#176](https://github.com/SoroushRF/Rehearsal/issues/176) | @SoroushRF | 🟥 blocked | 1 |
+| **T1.31** Honest scorer: planner failures and writes outside the answer key [#276](https://github.com/SoroushRF/Rehearsal/issues/276) | @SoroushRF | 🟨 ready | 1 |
+| **T1.33** Run the scorecard with the worker's case concurrency [#278](https://github.com/SoroushRF/Rehearsal/issues/278) | @SoroushRF | 🟨 ready | 1 |
+| **T1.44** Rehearse stored plans containing public customer replies [#357](https://github.com/SoroushRF/Rehearsal/issues/357) | @SoroushRF | 🟨 ready | 1 |
 
 ## T1 Rehearse
 
@@ -43,17 +47,28 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T1.22** Seed disposable Era worlds from a supported incident snapshot [#166](https://github.com/SoroushRF/Rehearsal/issues/166) | ✅ done |  | T3.15 (T3) |
 | **T1.23** Scoped rehearsal credentials and world routing [#167](https://github.com/SoroushRF/Rehearsal/issues/167) | ✅ done |  | T3.15 (T3) |
 | **T1.24** Native Stripe sandbox setup and read conformance _(stretch)_ [#178](https://github.com/SoroushRF/Rehearsal/issues/178) | ✅ done |  | T3.17 (T3) |
-| **T1.25** Competent scripted benchmark baseline _(stretch)_ [#180](https://github.com/SoroushRF/Rehearsal/issues/180) | 🟨 ready | — |  |
+| **T1.25** Competent scripted benchmark baseline _(stretch)_ [#180](https://github.com/SoroushRF/Rehearsal/issues/180) | 🟨 ready | — | T1.36 |
 | **T1.26** Precedent reuse across different incidents _(stretch)_ [#181](https://github.com/SoroushRF/Rehearsal/issues/181) | 🟨 ready | — |  |
 | **T1.27** Extend the scorecard to the full operation set [#161](https://github.com/SoroushRF/Rehearsal/issues/161) | ✅ done |  | T1.25, T1.28 |
 | **T1.28** Run and publish versioned benchmark comparisons [#176](https://github.com/SoroushRF/Rehearsal/issues/176) | 🟥 blocked | T4.13 (T4, ready) | T2.7 (T2) |
 | **T1.29** Plans carry a PrecedentBasis; the review page shows recalled precedents with their trace _(stretch)_ [#235](https://github.com/SoroushRF/Rehearsal/issues/235) | ✅ done |  |  |
-| **T1.30** Flag a plan that leaves out an eligible customer [#274](https://github.com/SoroushRF/Rehearsal/issues/274) | ✅ done |  |  |
+| **T1.30** Flag a plan that leaves out an eligible customer [#274](https://github.com/SoroushRF/Rehearsal/issues/274) | ✅ done |  | T1.37 |
+| **T1.31** Honest scorer: planner failures and writes outside the answer key [#276](https://github.com/SoroushRF/Rehearsal/issues/276) | 🟨 ready | — | T1.36 |
+| **T1.32** Exact-effect readback in the scorecard [#277](https://github.com/SoroushRF/Rehearsal/issues/277) | 🟨 ready | — |  |
+| **T1.33** Run the scorecard with the worker's case concurrency [#278](https://github.com/SoroushRF/Rehearsal/issues/278) | 🟨 ready | — | T1.36 |
+| **T1.34** Scorecard task: same customer, new charge on a different invoice [#279](https://github.com/SoroushRF/Rehearsal/issues/279) | 🟨 ready | — | T4.28 (T4) |
+| **T1.35** Run the held-out incident sets on Era [#280](https://github.com/SoroushRF/Rehearsal/issues/280) | 🟨 ready | — | T1.36, T1.40 |
+| **T1.36** Demo Day benchmark report [#281](https://github.com/SoroushRF/Rehearsal/issues/281) | 🟥 blocked | T1.31 (T1, ready)<br>T1.33 (T1, ready)<br>T1.35 (T1, ready)<br>T1.25 (T1, ready) |  |
+| **T1.37** Repair an incomplete or stale plan into a new revision [#283](https://github.com/SoroushRF/Rehearsal/issues/283) | ✅ done |  |  |
 | **T1.38** Planner recovery from timeouts, rate limits and network errors [#284](https://github.com/SoroushRF/Rehearsal/issues/284) | ✅ done |  |  |
+| **T1.39** Prompt branches for credit and refund, with typed refusal reasons [#285](https://github.com/SoroushRF/Rehearsal/issues/285) | ✅ done |  | T1.45 |
+| **T1.40** Expand the benchmark to 100–200 reproducible scenarios and repeat runs [#292](https://github.com/SoroushRF/Rehearsal/issues/292) | 🔨 in progress | T1.35 (T1, ready) |  |
 | **T1.46** T1.46: Preserve model-attempt history across whole-job planner retries [#361](https://github.com/SoroushRF/Rehearsal/issues/361) | 🟨 ready | — |  |
 | **T1.41** Demo blocker: target the org tenant when injecting the phantom [#348](https://github.com/SoroushRF/Rehearsal/issues/348) | ✅ done |  |  |
 | **T1.42** Serialize org resets with planning/apply admission [#349](https://github.com/SoroushRF/Rehearsal/issues/349) | ✅ done |  |  |
 | **T1.43** Reserve built-in incident IDs when allocating filed incidents [#350](https://github.com/SoroushRF/Rehearsal/issues/350) | ✅ done |  |  |
+| **T1.44** Rehearse stored plans containing public customer replies [#357](https://github.com/SoroushRF/Rehearsal/issues/357) | 🟨 ready | — | T1.45 |
+| **T1.45** Rehearse balance-credit plans from faithful disposable snapshots [#358](https://github.com/SoroushRF/Rehearsal/issues/358) | 🟥 blocked | T1.44 (T1, ready) |  |
 | **T1.49** Separate Agent Memory keys: read-only planner, write key for the API, refused elsewhere [#365](https://github.com/SoroushRF/Rehearsal/issues/365) | ✅ done |  | T1.50 |
 | **T1.50** Precedent gate through the app: promote, sync, cite by fact ID, withdraw, refuse [#366](https://github.com/SoroushRF/Rehearsal/issues/366) | ✅ done |  | T1.51 |
 | **T1.51** Retire a withdrawn precedent's copy in Agent Memory [#367](https://github.com/SoroushRF/Rehearsal/issues/367) | ✅ done |  |  |
@@ -116,6 +131,8 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T3.16** Rehearsal worker: restart, cancellation, and cleanup [#170](https://github.com/SoroushRF/Rehearsal/issues/170) | ✅ done |  | T4.13 (T4) |
 | **T3.17** Native Stripe sandbox refund writer _(stretch)_ [#184](https://github.com/SoroushRF/Rehearsal/issues/184) | ✅ done |  | T3.18 |
 | **T3.18** Native Stripe executor recovery gate _(stretch)_ [#185](https://github.com/SoroushRF/Rehearsal/issues/185) | ✅ done |  |  |
+| **T3.19** Fewer guard re-reads without losing freshness [#286](https://github.com/SoroushRF/Rehearsal/issues/286) | 🟨 ready | — |  |
+| **T3.20** Latency tracking across the full path [#287](https://github.com/SoroushRF/Rehearsal/issues/287) | ✅ done |  |  |
 
 ## T4 Guard
 
@@ -148,6 +165,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T4.13** Integrated isolation and recovery acceptance gate [#175](https://github.com/SoroushRF/Rehearsal/issues/175) | 🟨 ready | — | T1.28 (T1) |
 | **T4.14** Held-out incident datasets and independent gold _(stretch)_ [#179](https://github.com/SoroushRF/Rehearsal/issues/179) | ✅ done |  | T1.25 (T1), T1.26 (T1) |
 | **T4.27** Note and reply guards check only the ticket fields they use [#273](https://github.com/SoroushRF/Rehearsal/issues/273) | ✅ done |  |  |
+| **T4.28** Guard a refund on its invoice, not on every charge of the customer [#282](https://github.com/SoroushRF/Rehearsal/issues/282) | ✅ done |  |  |
 
 ## Task graph
 
@@ -186,11 +204,22 @@ flowchart LR
     T1_27["T1.27 Extend the scorecard to the full operation"]:::done
     T1_28["T1.28 Run and publish versioned benchmark compar"]:::blocked
     T1_30["T1.30 Flag a plan that leaves out an eligible cu"]:::done
+    T1_31["T1.31 Honest scorer: planner failures and writes"]:::ready
+    T1_32["T1.32 Exact-effect readback in the scorecard"]:::ready
+    T1_33["T1.33 Run the scorecard with the worker's case c"]:::ready
+    T1_34["T1.34 Scorecard task: same customer, new charge "]:::ready
+    T1_35["T1.35 Run the held-out incident sets on Era"]:::ready
+    T1_36["T1.36 Demo Day benchmark report"]:::blocked
+    T1_37["T1.37 Repair an incomplete or stale plan into a "]:::done
     T1_38["T1.38 Planner recovery from timeouts, rate limit"]:::done
+    T1_39["T1.39 Prompt branches for credit and refund, wit"]:::done
+    T1_40["T1.40 Expand the benchmark to 100–200 reproducib"]:::progress
     T1_46["T1.46 T1.46: Preserve model-attempt history acro"]:::ready
     T1_41["T1.41 Demo blocker: target the org tenant when i"]:::done
     T1_42["T1.42 Serialize org resets with planning/apply a"]:::done
     T1_43["T1.43 Reserve built-in incident IDs when allocat"]:::done
+    T1_44["T1.44 Rehearse stored plans containing public cu"]:::ready
+    T1_45["T1.45 Rehearse balance-credit plans from faithfu"]:::blocked
     T1_49["T1.49 Separate Agent Memory keys: read-only plan"]:::done
     T1_50["T1.50 Precedent gate through the app: promote, s"]:::done
     T1_51["T1.51 Retire a withdrawn precedent's copy in Age"]:::done
@@ -238,6 +267,8 @@ flowchart LR
     T3_14["T3.14 Share deterministic execution mechanics wh"]:::done
     T3_15["T3.15 Execute a stored plan against disposable w"]:::done
     T3_16["T3.16 Rehearsal worker: restart, cancellation, a"]:::done
+    T3_19["T3.19 Fewer guard re-reads without losing freshn"]:::ready
+    T3_20["T3.20 Latency tracking across the full path"]:::done
   end
   subgraph T4[T4 Guard]
     T4_1["T4.1 Pure guards: observation compare, query-mem"]:::done
@@ -261,6 +292,7 @@ flowchart LR
     T4_12["T4.12 Independent verifier for observed rehearsa"]:::done
     T4_13["T4.13 Integrated isolation and recovery acceptan"]:::ready
     T4_27["T4.27 Note and reply guards check only the ticke"]:::done
+    T4_28["T4.28 Guard a refund on its invoice, not on ever"]:::done
   end
   T1_1 --> T1_2
   T1_9 --> T1_2
@@ -305,6 +337,14 @@ flowchart LR
   T3_8 --> T1_27
   T1_27 --> T1_28
   T4_13 --> T1_28
+  T1_31 --> T1_36
+  T1_33 --> T1_36
+  T1_35 --> T1_36
+  T1_25 --> T1_36
+  T1_30 --> T1_37
+  T1_35 --> T1_40
+  T1_44 --> T1_45
+  T1_39 --> T1_45
   T1_49 --> T1_50
   T1_50 --> T1_51
   T3_1 --> T2_2
@@ -394,4 +434,5 @@ flowchart LR
   T4_12 --> T4_13
   T1_8 --> T4_13
   T2_17 --> T4_13
+  T1_34 --> T4_28
 ```
