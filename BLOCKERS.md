@@ -6,7 +6,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 
 ## Top blockers
 
-105 of 122 tasks done. These open tasks hold up the most other work:
+106 of 123 tasks done. These open tasks hold up the most other work:
 
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
@@ -105,6 +105,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T2.26** History rehearsal retries bypass the pending-revision interlock [#294](https://github.com/SoroushRF/Rehearsal/issues/294) | ✅ done |  |  |
 | **T2.27** Accessibility scans race the plan entrance fade and report transient contrast failures [#295](https://github.com/SoroushRF/Rehearsal/issues/295) | ✅ done |  |  |
 | **T2.28** Missing rehearsal results are labelled Never ran after receipt-storage failure [#296](https://github.com/SoroushRF/Rehearsal/issues/296) | 👀 in review [PR #363](https://github.com/SoroushRF/Rehearsal/pull/363) | — |  |
+| **T2.29** Trace a cited precedent back to its approved version, promoter and source run [#388](https://github.com/SoroushRF/Rehearsal/issues/388) | ✅ done |  |  |
 
 ## T3 Apply
 
@@ -248,6 +249,7 @@ flowchart LR
     T2_26["T2.26 History rehearsal retries bypass the pendi"]:::done
     T2_27["T2.27 Accessibility scans race the plan entrance"]:::done
     T2_28["T2.28 Missing rehearsal results are labelled Nev"]:::review
+    T2_29["T2.29 Trace a cited precedent back to its approv"]:::done
   end
   subgraph T3[T3 Apply]
     T3_1["T3.1 Drizzle migrations, Postgres journal, pg-bo"]:::done
