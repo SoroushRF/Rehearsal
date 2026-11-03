@@ -8,7 +8,6 @@ import {
   summaryCountKey,
 } from "@rehearsal/core";
 import { duplicateInvoiceGroup } from "@rehearsal/planner";
-import { INCIDENT } from "@rehearsal/testkit";
 import { type DecidedIntent, type Intent, stepIdOf } from "./agent";
 import { type ApplyResult, actionFor, type Contexts, type Ports, vendorOf } from "./modes";
 
@@ -33,7 +32,12 @@ export async function applyCompetent(
   decided: readonly DecidedIntent[],
   ports: Ports,
   ctx: Contexts,
-  opts: { taskId: string; policy: BillingPolicy },
+  opts: {
+    taskId: string;
+    policy: BillingPolicy;
+    /** The task's own incident window: the charge listing that finds an invoice's earliest charge. */
+    window: { createdGte: string; createdLt: string };
+  },
 ): Promise<ApplyResult> {
   const log: string[] = [];
   const outcomes = new Map<string, "confirmed" | "not_confirmed">();
@@ -74,7 +78,7 @@ export async function applyCompetent(
           return `policy covers ${opts.policy.currency} only`;
         const customer = String(t.customer);
         const charges = await stripe.query(
-          { kind: "stripe.charges.byCustomerInWindow", customerId: customer, ...INCIDENT.window },
+          { kind: "stripe.charges.byCustomerInWindow", customerId: customer, ...opts.window },
           new Date().toISOString(),
           stripeCtx,
         );

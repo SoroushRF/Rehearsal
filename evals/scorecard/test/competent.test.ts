@@ -64,13 +64,18 @@ function operational(records: ReturnType<typeof planningWorld>["records"]) {
   return { world, ports, ctx };
 }
 
-async function run(id: string, before?: (w: FakeWorld) => void) {
+async function run(
+  id: string,
+  before?: (w: FakeWorld) => void,
+  window: { createdGte: string; createdLt: string } = INCIDENT.window,
+) {
   const { intents, records } = await decide(id);
   const op = operational(records);
   before?.(op.world);
   const result = await applyCompetent(intents, op.ports, op.ctx, {
     taskId: id,
     policy: policyFor(task(id)),
+    window,
   });
   return { ...op, result, records };
 }
@@ -115,6 +120,25 @@ describe("competent script (T1.25)", () => {
       world.refunds.filter((r) => r.charge === c03.chargeIds[1]).length +
       world.credits.filter((c) => c.chargeId === c03.chargeIds[1]).length;
     expect(remedies).toBe(1);
+  });
+
+  it("lists charges in the task's own incident window, not the development one", async () => {
+    const year = 365 * 86_400;
+    const earlier = (iso: string) => new Date(Date.parse(iso) - year * 1000).toISOString();
+    const lastYear = (w: FakeWorld) => {
+      for (const c of w.charges.values()) if (c.created !== undefined) c.created -= year;
+    };
+    const window = {
+      createdGte: earlier(INCIDENT.window.createdGte),
+      createdLt: earlier(INCIDENT.window.createdLt),
+    };
+    const { world, records } = await run("B1", lastYear, window);
+    const duplicates = records.cases.filter((c) => c.kind === "duplicate");
+    expect(world.refunds.map((r) => r.charge).sort()).toEqual(
+      duplicates.map((c) => c.chargeIds[1]).sort(),
+    );
+    const stale = await run("B1", lastYear);
+    expect(stale.world.refunds).toEqual([]);
   });
 
   it("leaves a teammate's priority alone (T3)", async () => {

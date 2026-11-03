@@ -232,7 +232,11 @@ try {
                 })
               : applyPlan(manifest, ports, ctxOf(op), policies, caseConcurrency)
             : a.mode === "competent"
-              ? applyCompetent(intents, ports, ctxOf(op), { taskId: task.id, policy: set.policy })
+              ? applyCompetent(intents, ports, ctxOf(op), {
+                  taskId: task.id,
+                  policy: set.policy,
+                  window: set.incident.window,
+                })
               : applyCalls(intents, ports, ctxOf(op), {
                   taskId: task.id,
                   review: a.mode === "per_call",
