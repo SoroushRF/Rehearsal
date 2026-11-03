@@ -2,7 +2,7 @@ import { userInfo } from "node:os";
 import { createInterface } from "node:readline/promises";
 import { createDb, loadRegistry, memoryErased, recordMemoryErasure } from "@rehearsal/db";
 import { AgentMemoryClient, memoryConfigFromEnv } from "@rehearsal/memory";
-import { confirmationMatches, eraseOrg } from "./erase-run";
+import { confirmationMatches, databaseTarget, EraseRefused, eraseOrg } from "./erase-run";
 import { adminFor } from "./keys-run";
 
 /**
@@ -11,21 +11,30 @@ import { adminFor } from "./keys-run";
  *
  *   pnpm memory:erase-org <org>                 dry run, then type the org ID to erase
  *   pnpm memory:erase-org <org> --yes <org>     for scripts: the same ID twice, or nothing happens
+ *   ... --force                                 erase even if Postgres and memory disagree
  *
- * It always lists first with reads only (`/scopes/forget` ignores `dryRun`), records an
+ * It always lists first with reads only (`/scopes/forget` ignores `dryRun`), showing the database,
+ * memory URL, context and base scope it acts on, and refuses (exit 3) when the registry and the
+ * scope don't agree (`eraseMismatches`), unless `--force`. Then it records an
  * append-only `erased` event in Postgres before it forgets anything, then forgets and tombstones
  * the scope. From the event on, the API's sync, the planner's recall (through its plan jobs), the
  * promote panel's hint and the drift check refuse the org. The registry in Postgres is not
  * touched: plans that cite its precedents still check against it, and planning and execution
- * carry on without memory. Exits 0 erased, 1 aborted, 2 bad usage, 3 an error.
+ * carry on without memory. Exits 0 erased, 1 aborted, 2 bad usage, 3 an error or a mismatch.
  */
 
 const USAGE =
-  "usage: pnpm memory:erase-org <org> [--yes <org>]   (exit 0 erased, 1 aborted, 2 usage, 3 error)";
+  "usage: pnpm memory:erase-org <org> [--yes <org>] [--force]   (exit 0 erased, 1 aborted, 2 usage, 3 error or a target mismatch)";
 const ORG = /^[A-Za-z0-9_-]+$/;
 
 // Usage first, so a mistyped command says so before anything reads a credential.
-const args = process.argv.slice(2);
+const argv = process.argv.slice(2);
+const force = argv.includes("--force");
+if (argv.filter((a) => a === "--force").length > 1) {
+  console.error(USAGE);
+  process.exit(2);
+}
+const args = argv.filter((a) => a !== "--force");
 const yesAt = args.indexOf("--yes");
 const yes = yesAt === -1 ? null : (args[yesAt + 1] ?? "");
 const positional = args.filter((_, i) => yesAt === -1 || (i !== yesAt && i !== yesAt + 1));
@@ -96,6 +105,12 @@ try {
     orgId,
     registry: (await loadRegistry(db, orgId)).entries,
     alreadyErased: await memoryErased(db, orgId),
+    targets: {
+      database: databaseTarget(url),
+      memoryUrl: clientConfig.url,
+      context: clientConfig.context,
+    },
+    force,
     confirm: async () => yes === orgId || (await typed()),
     record: async (kind, scope, summary) => {
       await recordMemoryErasure(db, { orgId, kind, scope, summary, operator: operator() });
@@ -104,7 +119,11 @@ try {
   });
   process.exitCode = result.outcome === "erased" ? 0 : 1;
 } catch (err) {
-  console.error(`erase failed: ${err instanceof Error ? err.message : String(err)}`);
+  console.error(
+    err instanceof EraseRefused
+      ? err.message
+      : `erase failed: ${err instanceof Error ? err.message : String(err)}`,
+  );
   process.exitCode = 3;
 } finally {
   await db.$client.end();

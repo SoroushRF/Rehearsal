@@ -4,6 +4,7 @@ import {
   enqueuePrecedentSync,
   latestApproved,
   loadRegistry,
+  lockOrgMemoryShared,
   lockPrecedent,
   memoryErased,
   type PgBoss,
@@ -148,6 +149,10 @@ export function registerPrecedentRoutes(app: FastifyInstance, deps: PrecedentDep
     if (!gate.ok) return refuse(reply, gate, "run_not_found");
 
     const out = await deps.db.transaction(async (tx): Promise<Outcome> => {
+      // T1.55: the org's memory lock first, shared, in the sync's order (then the precedent's,
+      // in approvePrecedent). An erasure waiting for it commits after this promotion, and one
+      // that holds it makes this wait and then see its event.
+      await lockOrgMemoryShared(tx, run.orgId);
       const [current] = await tx
         .select({ state: runs.state, orgId: runs.orgId })
         .from(runs)
@@ -156,7 +161,7 @@ export function registerPrecedentRoutes(app: FastifyInstance, deps: PrecedentDep
       if (current.state !== "completed") {
         return [409, { error: "run_not_completed", state: current.state }];
       }
-      // T1.55: an org whose Agent Memory was erased can't sync, so a new version would only wait
+      // An org whose Agent Memory was erased can't sync, so a new version would only wait
       // forever. Refused instead; what is already in the registry stays as it is.
       if (await memoryErased(tx, run.orgId)) return [409, { error: "memory_erased" }];
 

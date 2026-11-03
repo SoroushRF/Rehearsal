@@ -2,6 +2,8 @@ import { spawn } from "node:child_process";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
+import type { PlanManifest, Receipt } from "@rehearsal/contracts";
+import { planHash } from "@rehearsal/core";
 import {
   approvePrecedent,
   createDb,
@@ -12,6 +14,7 @@ import {
   memoryErasureEventsFor,
   migrateDb,
   type PgBoss,
+  PgJournal,
   recordMemoryErasure,
   recordPrecedentEvent,
   schema,
@@ -24,14 +27,21 @@ import {
   precedentDigest,
   precedentScope,
 } from "@rehearsal/memory";
-import { PlanJob } from "@rehearsal/providers";
-import { INCIDENT } from "@rehearsal/testkit";
+import { PLANNER_JOB_ROUTES, PlanJob } from "@rehearsal/providers";
+import { billingManifest, INCIDENT } from "@rehearsal/testkit";
+import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { FakeAgentMemory } from "../../../packages/memory/test/fake-agent-memory";
 import { runDrift } from "../../../scripts/memory/drift-run";
-import { type EraseOrgRun, eraseOrg } from "../../../scripts/memory/erase-run";
+import {
+  databaseTarget,
+  type EraseOrgRun,
+  EraseRefused,
+  eraseOrg,
+} from "../../../scripts/memory/erase-run";
 import { adminFor } from "../../../scripts/memory/keys-run";
 import { buildApp } from "../src/app";
+import { storePlan } from "../src/plans";
 import { precedentCheck } from "../src/precedent-check";
 import { similarRecallerFromEnv } from "../src/precedent-similar";
 import { publisherFromEnv, syncPrecedent } from "../src/precedent-sync";
@@ -352,6 +362,449 @@ describe.skipIf(!process.env.DB_TESTS)("erasing an org's Agent Memory (real Post
     await sync;
     await erasure;
     expect(done).toBe(true);
+  });
+
+  it("holds off the erasure while a real sync is publishing, and refuses the sync after it (T1.55 review)", async () => {
+    if (publisherFor === null) throw new Error("memory not configured");
+    const real = publisherFor;
+    const orgId = `org_${crypto.randomUUID()}`;
+    await approve(orgId, record("slow"));
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let publishing: () => void = () => {};
+    const started = new Promise<void>((resolve) => {
+      publishing = resolve;
+    });
+    // The publisher stalls mid-write, inside the sync's transaction and its shared lock.
+    const slow = (org: string) => {
+      const inner = real(org);
+      return {
+        publish: async (r: PrecedentRecord) => {
+          publishing();
+          await held;
+          return inner.publish(r);
+        },
+        markWithdrawn: (id: string, version: number) => inner.markWithdrawn(id, version),
+      } as unknown as ReturnType<typeof real>;
+    };
+    const sync = syncPrecedent(
+      { orgId, precedentId: "slow", version: 1 },
+      { db, publisherFor: slow },
+    );
+    await started;
+    let erasedAt = 0;
+    const erasure = recordMemoryErasure(db, {
+      orgId,
+      kind: "erased",
+      scope: precedentScope(BASE, orgId),
+      summary: {},
+    }).then(() => {
+      erasedAt = Date.now();
+    });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(erasedAt).toBe(0);
+    release();
+    expect(await sync).toBe("activated");
+    await erasure;
+    expect(erasedAt).toBeGreaterThan(0);
+    // The copy it wrote is in the scope the erasure then forgets; the next sync writes nothing.
+    await approve(orgId, record("slow", 2));
+    const writes = fake.writes;
+    expect(
+      await syncPrecedent({ orgId, precedentId: "slow", version: 2 }, { db, publisherFor }),
+    ).toBe("org_erased");
+    expect(fake.writes).toBe(writes);
+  });
+
+  it("refuses (exit 3) when Postgres and memory disagree about the org, unless --force (T1.55 review)", async () => {
+    if (publisherFor === null) throw new Error("memory not configured");
+    // The registry knows precedents, but memory holds nothing and the scope was never registered:
+    // most likely the wrong memory context or base scope.
+    const unsynced = `org_${crypto.randomUUID()}`;
+    await approve(unsynced, record("one"));
+    const lines: string[] = [];
+    await expect(
+      eraseOrg(await eraseRun(unsynced, { log: (l) => lines.push(l) })),
+    ).rejects.toBeInstanceOf(EraseRefused);
+    expect(lines).toContain(
+      `  mismatch: the registry has 1 precedents for ${unsynced}, but memory holds nothing in its scope`,
+    );
+    expect(lines).toContain("  mismatch: the scope is absent, not registered");
+    expect(await memoryErasureEventsFor(db, unsynced)).toEqual([]);
+
+    // Memory holds a copy the registry here has never heard of: most likely the wrong database.
+    const stranger = `org_${crypto.randomUUID()}`;
+    await publisherFor(stranger).publish(record("one"));
+    const res = await cli([stranger, "--yes", stranger], cliEnv());
+    expect(res.status).toBe(3);
+    expect(res.stdout).toContain(`database:     ${databaseTarget(url)}`);
+    expect(res.stdout).toContain(`Agent Memory: ${fakeUrl}, context ctx`);
+    expect(res.stdout).toContain("base scope:   rehearsal/precedents");
+    expect(res.stdout).toContain("the registry in this database has no precedents");
+    expect(res.stdout).not.toContain("pg@");
+    expect(await memoryErasureEventsFor(db, stranger)).toEqual([]);
+    expect(inScope(stranger)).toBe(3);
+
+    // Tombstoned, but this database never recorded an erasure.
+    const elsewhere = await orgWithMemory();
+    expect((await admin("DELETE", `/scopes?path=${precedentScope(BASE, elsewhere)}`)).status).toBe(
+      204,
+    );
+    await expect(eraseOrg(await eraseRun(elsewhere))).rejects.toThrow(/disagree/);
+
+    // --force goes on.
+    const forced = await cli([stranger, "--yes", stranger, "--force"], cliEnv());
+    expect(forced.status).toBe(0);
+    expect(forced.stdout).toContain("--force: going on anyway");
+    expect(inScope(stranger)).toBe(0);
+    expect((await memoryErasureEventsFor(db, stranger)).map((e) => e.kind)).toEqual([
+      "erased",
+      "forgotten",
+    ]);
+  }, 60_000);
+
+  it("on a rerun after the tombstone, sends neither forget nor the tombstone again (T1.55 review)", async () => {
+    const orgId = await orgWithMemory();
+    expect((await eraseOrg(await eraseRun(orgId))).outcome).toBe("erased");
+    const before = fake.requests.length;
+    const lines: string[] = [];
+    const again = await eraseOrg(await eraseRun(orgId, { log: (l) => lines.push(l) }));
+    expect(again).toMatchObject({ outcome: "erased", forgotten: 0 });
+    expect(again.listing.registered).toBe("tombstoned");
+    const sent = fake.requests.slice(before).map((r) => `${r.method} ${r.path.split("?")[0]}`);
+    expect(sent.filter((r) => r.endsWith("/scopes/forget") || r.startsWith("DELETE "))).toEqual([]);
+    expect(lines).toContain(
+      `${precedentScope(BASE, orgId)} was already tombstoned and nothing in it is live; nothing was sent`,
+    );
+    const events = await memoryErasureEventsFor(db, orgId);
+    expect(events.map((e) => e.kind)).toEqual(["erased", "forgotten", "erased", "forgotten"]);
+    expect(events[3]?.summary).toEqual({
+      forgotten: 0,
+      tombstoned: true,
+      alreadyTombstoned: true,
+      forgetSent: false,
+    });
+  });
+
+  it("checks afterwards through recall too, not only the entities it listed (T1.55 review)", async () => {
+    const orgId = await orgWithMemory();
+    // A forget that leaves one copy behind which only recall finds.
+    const leaky: typeof admin = async (method, path, body) => {
+      const res = await admin(method, path, body);
+      if (path === "/scopes/forget") {
+        fake.seed(precedentScope(BASE, orgId), "precedent:late", "statement", "precedent late");
+        fake.seed(precedentScope(BASE, orgId), "precedent:late", "appliesTo", AREA);
+      }
+      return res;
+    };
+    await expect(eraseOrg(await eraseRun(orgId, { admin: leaky }))).rejects.toThrow(
+      /still has live attributes/,
+    );
+  });
+
+  it("makes a promotion wait for an erasure holding the org's lock, then refuses it (T1.55 review)", async () => {
+    const orgId = await orgWithMemory();
+    const runId = await seedRunFor(orgId);
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let locked: () => void = () => {};
+    const isLocked = new Promise<void>((resolve) => {
+      locked = resolve;
+    });
+    // What recordMemoryErasure does, held open: the exclusive lock and the uncommitted event.
+    const erasing = db.transaction(async (tx) => {
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${`rehearsal:org-memory:${orgId}`}, 0))`,
+      );
+      await tx.insert(schema.memoryErasureEvents).values({
+        orgId,
+        kind: "erased",
+        scope: precedentScope(BASE, orgId),
+        summary: {},
+      });
+      locked();
+      await held;
+    });
+    await isLocked;
+    const me = finance(orgId);
+    const app = buildApp({
+      webRoot: null,
+      precedents: { db, boss, iam: fakeIam([me]), syncEnabled: true },
+    });
+    let answered = false;
+    const promoting = app
+      .inject({
+        method: "POST",
+        url: `/api/runs/${runId}/precedents`,
+        headers: bearer(me),
+        payload: {
+          id: "raced",
+          appliesTo: AREA,
+          statement: "Refund a duplicate charge in full.",
+          conditions: [],
+          exceptions: [],
+          effectiveFrom: "2026-10-01",
+          effectiveUntil: null,
+        },
+      })
+      .then((res) => {
+        answered = true;
+        return res;
+      });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    // Without the lock it would have read no event yet and stored a version that waits forever.
+    expect(answered).toBe(false);
+    release();
+    await erasing;
+    const res = await promoting;
+    await app.close();
+    expect([res.statusCode, res.json()]).toEqual([409, { error: "memory_erased" }]);
+    expect((await loadRegistry(db, orgId)).entries.some((e) => e.id === "raced")).toBe(false);
+  });
+
+  async function seedRunFor(org: string) {
+    const runId = `run_${crypto.randomUUID()}`;
+    await db.insert(schema.runs).values({
+      id: runId,
+      orgId: org,
+      planId: `plan_${crypto.randomUUID()}`,
+      revision: 1,
+      planHash: crypto.randomUUID().replaceAll("-", "").padEnd(64, "0"),
+      approvalId: "grant_1",
+      requestedBy: "user_fin",
+      state: "completed",
+    });
+    return runId;
+  }
+
+  describe("a plan job queued before the erasure (T1.55 review)", () => {
+    /** The plan queue in memory, as pg-boss runs it for `plan` (one retry), so no other test's jobs are touched. */
+    function planQueue() {
+      const jobs: {
+        id: string;
+        state: string;
+        data: unknown;
+        output?: unknown;
+        retries: number;
+      }[] = [];
+      const find = (id: string) => jobs.find((j) => j.id === id);
+      const boss = {
+        send: async (_: string, data: unknown) => {
+          const id = crypto.randomUUID();
+          jobs.push({ id, state: "created", data, retries: 0 });
+          return id;
+        },
+        fetch: async () => {
+          const j = jobs.find((x) => x.state === "created" || x.state === "retry");
+          if (!j) return [];
+          j.state = "active";
+          return [{ id: j.id, data: j.data }];
+        },
+        getJobById: async (_: string, id: string) => find(id) ?? null,
+        fail: async (_: string, id: string, output: unknown) => {
+          const j = find(id);
+          if (!j) throw new Error("no such job");
+          j.output = output;
+          j.state = j.retries < 1 ? "retry" : "failed";
+          j.retries++;
+        },
+        complete: async (_: string, id: string, output: unknown) => {
+          const j = find(id);
+          if (!j) throw new Error("no such job");
+          j.output = output;
+          j.state = "completed";
+        },
+      } as unknown as PgBoss;
+      return { boss, jobs };
+    }
+    const worker = { authorization: "Bearer planner-secret" };
+    const basis = {
+      citations: [
+        {
+          id: "one",
+          version: 1,
+          digest: precedentDigest(record("one")),
+          appliesTo: AREA,
+          factIds: ["f1"],
+          traceId: "t1",
+        },
+      ],
+      epochs: { [AREA]: 1 },
+    };
+
+    it("is handed out and checked with memory off once the org is erased; one taken before fails and replans", async () => {
+      const orgId = await orgWithMemory();
+      const me = support(orgId, "user_1");
+      const queue = planQueue();
+      const app = buildApp({
+        webRoot: null,
+        rehearse: {
+          db,
+          boss: queue.boss,
+          iam: fakeIam([me]),
+          plannerSecret: "planner-secret",
+          precedentRegistry: (o) => planJobRegistry(db, o),
+        },
+      });
+      const inject = (method: "GET" | "POST", path: string, payload?: object, h = worker) =>
+        app.inject({ method, url: path, headers: h, ...(payload && { payload }) });
+      const rehearse = async () =>
+        (
+          await inject(
+            "POST",
+            `/api/incidents/${INCIDENT.incident}/rehearse`,
+            undefined,
+            bearer(me),
+          )
+        ).json() as { rehearsalId: string; planId: string };
+      const next = async () => {
+        const res = await inject("POST", PLANNER_JOB_ROUTES.next);
+        return { id: res.json().id as string, data: PlanJob.parse(res.json().data) };
+      };
+      const complete = (id: string, planId: string, withBasis: boolean) =>
+        inject("POST", PLANNER_JOB_ROUTES.complete.replace(":id", id), {
+          manifest: {
+            ...billingManifest(planId),
+            orgId,
+            ...(withBasis && { precedentBasis: basis }),
+          },
+          summary: "8 refunds.",
+        });
+
+      // Both queued with the registry; the first is taken with it, before the erasure.
+      const taken = await rehearse();
+      const waiting = await rehearse();
+      expect(queue.jobs.every((j) => PlanJob.parse(j.data).precedents)).toBe(true);
+      const first = await next();
+      expect(first.id).toBe(taken.rehearsalId);
+      expect(first.data.precedents).toBeDefined();
+
+      expect((await eraseOrg(await eraseRun(orgId))).outcome).toBe("erased");
+
+      // Completed with the basis it recalled before: failed as org_erased, so the queue retries.
+      const late = await complete(taken.rehearsalId, taken.planId, true);
+      expect(late.statusCode).toBe(422);
+      expect(queue.jobs[0]).toMatchObject({ state: "retry", output: { reason: "org_erased" } });
+
+      // From now on both are handed out without memory, and succeed without a basis.
+      const planOf = new Map([
+        [waiting.rehearsalId, waiting],
+        [taken.rehearsalId, taken],
+      ]);
+      for (let i = 0; i < 2; i++) {
+        const job = await next();
+        const want = planOf.get(job.id);
+        if (!want) throw new Error(`unexpected job ${job.id}`);
+        planOf.delete(job.id);
+        expect(job.data.precedents).toBeUndefined();
+        expect((await complete(job.id, want.planId, false)).statusCode).toBe(201);
+      }
+      const status = await inject(
+        "GET",
+        `/api/rehearsals/${taken.rehearsalId}`,
+        undefined,
+        bearer(me),
+      );
+      expect(status.json()).toMatchObject({ state: "stored" });
+      // A worker that recalled anyway can't store a basis for the erased org.
+      const again = await rehearse();
+      const job = await next();
+      expect(job.id).toBe(again.rehearsalId);
+      expect((await complete(job.id, again.planId, true)).statusCode).toBe(422);
+      await app.close();
+    });
+
+    it("a repair for the erased org is queued without memory too", async () => {
+      const orgId = await orgWithMemory();
+      const me = support(orgId, "user_1");
+      const manifest: PlanManifest = {
+        ...billingManifest(`plan_${crypto.randomUUID()}`),
+        orgId,
+      };
+      await storePlan(db, manifest);
+      const hash = planHash(manifest);
+      const runId = `run_${crypto.randomUUID()}`;
+      await db.insert(schema.runs).values({
+        id: runId,
+        orgId,
+        planId: manifest.planId,
+        revision: 1,
+        planHash: hash,
+        approvalId: "grant_1",
+        requestedBy: "user_1",
+        state: "partial",
+      });
+      const journal = new PgJournal(db, orgId);
+      const receipt = (
+        actionId: string,
+        outcome: Receipt["outcome"],
+        holdReason: Receipt["holdReason"] = null,
+      ): Receipt => ({
+        id: `rcpt_${crypto.randomUUID()}`,
+        actionId,
+        planHash: hash,
+        approvalId: "grant_1",
+        outcome,
+        providerRef: null,
+        observedEffect: {},
+        protection: "native_guard_with_documented_limits",
+        holdReason,
+        limitations: [],
+        recordedAt: new Date().toISOString(),
+      });
+      for (const r of [
+        receipt("refund_001", "held", {
+          kind: "query_membership_changed",
+          queryObservationId: "q_charges_001",
+          added: ["ch_fixture_001_dup"],
+          removed: [],
+        }),
+        receipt("patch_001", "confirmed"),
+        receipt("note_001", "skipped_dependency", {
+          kind: "predecessor_not_confirmed",
+          stepId: "refund_001",
+        }),
+        receipt("refund_002", "confirmed"),
+        receipt("patch_002", "confirmed"),
+        receipt("note_002", "confirmed"),
+      ]) {
+        await journal.recordReceipt(r);
+      }
+      const queue = planQueue();
+      const repair = async () => {
+        const app = buildApp({
+          webRoot: null,
+          rehearse: {
+            db,
+            boss: queue.boss,
+            iam: fakeIam([me]),
+            precedentRegistry: (o) => planJobRegistry(db, o),
+            refreshPlanning: async (_: string, records: { id: string }[]) =>
+              records.map((r) => r.id),
+          },
+        });
+        const res = await app.inject({
+          method: "POST",
+          url: `/api/plans/${manifest.planId}/repair`,
+          headers: bearer(me),
+          payload: { runId, revision: 1, planHash: hash },
+        });
+        await app.close();
+        return res;
+      };
+      // Before the erasure the repair job carries the registry; after it, not.
+      expect((await repair()).statusCode).toBe(202);
+      expect(PlanJob.parse(queue.jobs[0]?.data).precedents).toBeDefined();
+      expect((await eraseOrg(await eraseRun(orgId))).outcome).toBe("erased");
+      expect((await repair()).statusCode).toBe(202);
+      const job = PlanJob.parse(queue.jobs[1]?.data);
+      expect(job.repair).toMatchObject({ basePlanHash: hash, runId });
+      expect(job.precedents).toBeUndefined();
+    });
   });
 
   describe("after erasure, everything refuses the org; planning and execution go on", () => {
