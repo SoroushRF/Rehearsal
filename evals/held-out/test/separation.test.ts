@@ -9,10 +9,10 @@ import { loadSets } from "../src/sets";
 /**
  * T4.14: the held-out sets share nothing with the development cohort (INC-BILL-0927) or with each
  * other, a planner's brief carries none of the answers, and no planner or baseline code can reach
- * the gold.
+ * the gold. T1.40: the same holds for the generated catalog sets.
  */
 
-const sets = loadSets();
+const sets = [...loadSets(), ...loadSets("catalog")];
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 
 interface Split {

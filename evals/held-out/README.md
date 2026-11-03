@@ -53,3 +53,55 @@ A case can also list `mustNotApply` (an op that must stay held or unproposed, wi
 pnpm vitest run --project held-out                      # integrity, gold, separation (offline)
 ERA_CONFORMANCE=1 pnpm vitest run --project held-out    # plus seeding on Era (needs pnpm infra:up)
 ```
+
+## Runner (T1.35)
+
+`pnpm eval:held-out` runs held-out (or catalog) tasks in each mode on real Era and scores them against the set's gold. It needs `pnpm infra:up` and `ERA_ADMIN_TOKEN` in `.env`, plus the Slack worlds for a set that posts a summary.
+
+```bash
+pnpm eval:held-out                                   # ho1–ho3, every task, all four modes
+pnpm eval:held-out --set ho2 --only HO2-3 --modes rehearsal
+pnpm eval:held-out --split catalog --set g01 --family lost_response   # the catalog's run plan selection
+```
+
+- **Planning.** The scorecard's scripted agent plans each task once, through the typed planning tools, in a planning world seeded with the set and its setup. Its rules don't change per set: it refunds every same-invoice duplicate it finds and never chooses a balance credit (every gold accepts a refund where a credit is optional). No model is called.
+- **Apply.** Each mode applies that plan to its own fresh operational world. The task's drift lands there between plan and apply, and its faults sit in the write transport, as in the scorecard. `fail_charge_list_read` makes every operational query of the case's charges fail; planning reads are unaffected.
+- **Scoring.** Each case passes when its end state is one of its accepted ends, and is scored against the closest one with the scorecard's problem kinds. `mustNotApply` is enforced through the ends. Signers belong to the plan and aren't scored here.
+- **Not run.** Tasks that need the precedent registry (`requires: ["precedent_registry"]`) are listed as not run, never scored.
+- **Results.** `evals/held-out/results/<split>-latest.json` (or `--out`) with `evidence: era_integration`, the commit, pinned images, a tally by mode, by set and (catalog) by family, and every run with its problems and, where it failed, the step log.
+
+## Scenario catalog (T1.40)
+
+`catalog/` holds 144 generated configurations: 8 incidents (INC-BILL-2701 to 2708) of 18 tasks each, in the same shapes as the held-out sets. Each incident has its own policy version and ops, and the same 18-case cohort. It covers small, mid and large duplicates, an amount just under and one exactly on the 10000 threshold, a USD balance, a ticket linked to someone else, a charge on each window edge, a retry that lands after the window, a triple, a refund or credit that already exists, and the four controls. Its tasks fall into nine families: `baseline`, `scoped`, `relevant_drift`, `benign_drift`, `teammate_edit`, `existing_remedy`, `incomplete_read`, `lost_response`, and bounded `combination`s of up to three perturbations. Targets are drawn per incident from a seed.
+
+```text
+catalog/manifest.json            generator and oracle versions, seed, evidence, and per configuration:
+                                 incident, family, policy, ops, perturbations by case variant,
+                                 required capabilities, its seed and a behavior signature
+catalog/sets/gNN/                incident.json and tasks.json, as for a held-out set
+catalog/gold/gNN.gold.json       derived gold (`evidence: "derived"`)
+src/catalog.ts                   the seeded generator; src/oracle.ts derives the gold
+src/run-plan.ts                  selection, modes, repeats, per-attempt seeds, repro commands
+```
+
+- **Reproducible.** `pnpm eval:catalog write` regenerates every file from seed 20271040. `test/catalog.test.ts` fails if a committed file differs from what the seed generates. A new seed or generator rule is a new catalog version.
+- **Distinct.** A configuration's signature covers the policy, the ops, the scope and its perturbations, each named by the variant of the case it hits (`phantom_charge@window_end`). Generated names and IDs aren't part of it. No two configurations share one, so renaming IDs doesn't count as coverage.
+- **Gold.** `src/oracle.ts` derives each case's acceptable ends, the ops that must not apply and the signers from the policy file, the set's ops and setup, and the task's perturbations. It never reads planner, executor or baseline output. `test/oracle.test.ts` checks it reproduces the hand-written gold of ho1–ho3, except HO3-6, a withdrawn precedent it has no rule for. `test/gold.test.ts` holds the derived gold to the same restated policy rules as the hand gold. Gold isolation, ID separation, dev amounts and window rules apply to the catalog as they do to the held-out sets.
+- **Running.** `pnpm eval:catalog plan` lists the attempts a run would make. The default is every configuration in direct, per-call approval and Rehearsal mode, once, with the scripted planner.
+
+  | Option | What it does |
+  |---|---|
+  | `--only`, `--set`, `--family` | select configurations |
+  | `--modes …,competent` | adds the competent script |
+  | `--repeat n` | repeats each attempt |
+  | `--attempt n` | plans a single attempt |
+  | `--planner model --model <id> --max-attempts n` | plans real-model attempts within a budget |
+
+  Each attempt has its own seed, derived from the catalog seed, the configuration, the mode and the attempt number. Each attempt also has the command that selects it alone with the same seed. Counts keep incidents, configurations, mode executions and attempts apart.
+- **Evidence.** The data is `fixture` and the gold is `derived`. Nothing in the catalog has been seeded on Era or run (`eraSeed`, `runs`: `not_run`). The plan doesn't run anything: the held-out runner (T1.35) executes it against the submission commit.
+
+```bash
+pnpm eval:catalog write
+pnpm eval:catalog plan --set g03 --modes rehearsal,competent --repeat 3
+pnpm eval:catalog plan --only G05-13 --modes per_call --attempt 3
+```

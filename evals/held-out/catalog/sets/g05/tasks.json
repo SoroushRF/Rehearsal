@@ -1,0 +1,320 @@
+{
+  "set": "g05",
+  "version": 1,
+  "policy": {
+    "id": "billing-remedy",
+    "version": 3
+  },
+  "ops": {
+    "credits": true,
+    "replies": false,
+    "summary": true
+  },
+  "setup": [
+    {
+      "kind": "refund_charge",
+      "caseKey": "a12",
+      "charge": 1
+    },
+    {
+      "kind": "refund_charge",
+      "caseKey": "a13",
+      "charge": 0
+    },
+    {
+      "kind": "balance_credit",
+      "caseKey": "a14",
+      "charge": 1
+    }
+  ],
+  "precedents": [],
+  "tasks": [
+    {
+      "id": "G05-1",
+      "title": "Remedy the incident",
+      "scope": "all",
+      "drift": [],
+      "faults": [],
+      "events": [],
+      "requires": []
+    },
+    {
+      "id": "G05-2",
+      "title": "Look into a few customers only",
+      "scope": [
+        "a01",
+        "a06",
+        "a13",
+        "n04"
+      ],
+      "drift": [],
+      "faults": [],
+      "events": [],
+      "requires": []
+    },
+    {
+      "id": "G05-3",
+      "title": "A customer is charged again after approval",
+      "scope": "all",
+      "drift": [
+        {
+          "kind": "phantom_charge",
+          "caseKey": "a04",
+          "chargeId": "ch_INC2705a04phantom3",
+          "at": "2027-05-16T00:00:00.000Z"
+        }
+      ],
+      "faults": [],
+      "events": [],
+      "requires": []
+    },
+    {
+      "id": "G05-4",
+      "title": "A triple-charged customer is charged again",
+      "scope": "all",
+      "drift": [
+        {
+          "kind": "phantom_charge",
+          "caseKey": "a11",
+          "chargeId": "ch_INC2705a11phantom4",
+          "at": "2027-05-17T00:00:00.000Z"
+        }
+      ],
+      "faults": [],
+      "events": [],
+      "requires": []
+    },
+    {
+      "id": "G05-5",
+      "title": "A customer is charged after the window",
+      "scope": "all",
+      "drift": [
+        {
+          "kind": "late_charge",
+          "caseKey": "a02",
+          "chargeId": "ch_INC2705a02late5",
+          "at": "2027-05-21T00:00:00.000Z"
+        }
+      ],
+      "faults": [],
+      "events": [],
+      "requires": []
+    },
+    {
+      "id": "G05-6",
+      "title": "A customer was charged before the window",
+      "scope": "all",
+      "drift": [
+        {
+          "kind": "early_charge",
+          "caseKey": "a02",
+          "chargeId": "ch_INC2705a02early6",
+          "at": "2027-04-30T00:00:00.000Z"
+        }
+      ],
+      "faults": [],
+      "events": [],
+      "requires": []
+    },
+    {
+      "id": "G05-7",
+      "title": "Someone outside the incident is charged",
+      "scope": "all",
+      "drift": [
+        {
+          "kind": "stranger_charge",
+          "chargeId": "ch_INC2705stranger7",
+          "customerId": "cus_CmmpSSjScVEkqznM",
+          "at": "2027-05-12T00:00:00.000Z"
+        }
+      ],
+      "faults": [],
+      "events": [],
+      "requires": []
+    },
+    {
+      "id": "G05-8",
+      "title": "A customer adds a comment",
+      "scope": "all",
+      "drift": [
+        {
+          "kind": "public_comment",
+          "caseKey": "a11"
+        }
+      ],
+      "faults": [],
+      "events": [],
+      "requires": []
+    },
+    {
+      "id": "G05-9",
+      "title": "A teammate tags a ticket",
+      "scope": "all",
+      "drift": [
+        {
+          "kind": "teammate_tag",
+          "caseKey": "a01",
+          "tag": "vip"
+        }
+      ],
+      "faults": [],
+      "events": [],
+      "requires": []
+    },
+    {
+      "id": "G05-10",
+      "title": "A teammate escalates a ticket",
+      "scope": "all",
+      "drift": [
+        {
+          "kind": "teammate_priority",
+          "caseKey": "a04",
+          "priority": "urgent"
+        }
+      ],
+      "faults": [],
+      "events": [],
+      "requires": []
+    },
+    {
+      "id": "G05-11",
+      "title": "A teammate lowers a settled customer's ticket",
+      "scope": "all",
+      "drift": [
+        {
+          "kind": "teammate_priority",
+          "caseKey": "a14",
+          "priority": "low"
+        }
+      ],
+      "faults": [],
+      "events": [],
+      "requires": []
+    },
+    {
+      "id": "G05-12",
+      "title": "A teammate refunds a customer's first charge",
+      "scope": "all",
+      "drift": [
+        {
+          "kind": "teammate_refund_original",
+          "caseKey": "a02"
+        }
+      ],
+      "faults": [],
+      "events": [],
+      "requires": []
+    },
+    {
+      "id": "G05-13",
+      "title": "A customer's charges can't be re-read",
+      "scope": "all",
+      "drift": [],
+      "faults": [
+        {
+          "kind": "fail_charge_list_read",
+          "caseKey": "a08"
+        }
+      ],
+      "events": [],
+      "requires": []
+    },
+    {
+      "id": "G05-14",
+      "title": "The first refund is throttled and a refund response is lost",
+      "scope": "all",
+      "drift": [],
+      "faults": [
+        {
+          "kind": "throttle_first_refund"
+        },
+        {
+          "kind": "lose_refund_response",
+          "caseKey": "a11"
+        }
+      ],
+      "events": [],
+      "requires": []
+    },
+    {
+      "id": "G05-15",
+      "title": "A note's response is lost",
+      "scope": "all",
+      "drift": [],
+      "faults": [
+        {
+          "kind": "lose_note_response",
+          "caseKey": "a11"
+        }
+      ],
+      "events": [],
+      "requires": []
+    },
+    {
+      "id": "G05-16",
+      "title": "A write's response is lost",
+      "scope": "all",
+      "drift": [],
+      "faults": [
+        {
+          "kind": "lose_credit_response",
+          "caseKey": "a09"
+        }
+      ],
+      "events": [],
+      "requires": []
+    },
+    {
+      "id": "G05-17",
+      "title": "A charge after approval, a teammate's escalation and a lost refund response",
+      "scope": "all",
+      "drift": [
+        {
+          "kind": "phantom_charge",
+          "caseKey": "a01",
+          "chargeId": "ch_INC2705a01phantom17",
+          "at": "2027-05-16T00:00:00.000Z"
+        },
+        {
+          "kind": "teammate_priority",
+          "caseKey": "a08",
+          "priority": "high"
+        }
+      ],
+      "faults": [
+        {
+          "kind": "lose_refund_response",
+          "caseKey": "a02"
+        }
+      ],
+      "events": [],
+      "requires": []
+    },
+    {
+      "id": "G05-18",
+      "title": "A few customers, a late charge and a customer comment",
+      "scope": [
+        "a01",
+        "a02",
+        "a03",
+        "a05",
+        "n02"
+      ],
+      "drift": [
+        {
+          "kind": "late_charge",
+          "caseKey": "a03",
+          "chargeId": "ch_INC2705a03late18",
+          "at": "2027-05-23T00:00:00.000Z"
+        },
+        {
+          "kind": "public_comment",
+          "caseKey": "a05"
+        }
+      ],
+      "faults": [],
+      "events": [],
+      "requires": []
+    }
+  ]
+}

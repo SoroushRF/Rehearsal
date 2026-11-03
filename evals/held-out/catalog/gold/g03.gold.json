@@ -1,0 +1,3598 @@
+{
+  "set": "g03",
+  "version": 1,
+  "split": "catalog",
+  "evidence": "derived",
+  "authoredAt": "2026-10-29",
+  "inputs": {
+    "incident": "c23bfaa5e416098b84c6876f09815a4177fc086d84988a633b35113da22bcca3",
+    "tasks": "38881b48c1c6b4f1ddb6851d8a6eb2dc515902a5e80f758fda296bf0c5dd0331",
+    "policy": "3d871a9247f1799f0eca4844c90100cd155fd1cf2452b57087978fd5f0ce50ca"
+  },
+  "ends": {
+    "r0_c0_n0_y0_any": {
+      "refunds": 0,
+      "credits": 0,
+      "notesMax": 0,
+      "repliesMax": 0,
+      "priority": null
+    },
+    "r0_c0_n0_y0_normal": {
+      "refunds": 0,
+      "credits": 0,
+      "notesMax": 0,
+      "repliesMax": 0,
+      "priority": "normal"
+    },
+    "r0_c1_n0_y0_any": {
+      "refunds": 0,
+      "credits": 1,
+      "notesMax": 0,
+      "repliesMax": 0,
+      "priority": null
+    },
+    "r0_c1_n0_y0_normal": {
+      "refunds": 0,
+      "credits": 1,
+      "notesMax": 0,
+      "repliesMax": 0,
+      "priority": "normal"
+    },
+    "r0_c1_n1_y0_any": {
+      "refunds": 0,
+      "credits": 1,
+      "notesMax": 1,
+      "repliesMax": 0,
+      "priority": null
+    },
+    "r0_c1_n1_y0_high": {
+      "refunds": 0,
+      "credits": 1,
+      "notesMax": 1,
+      "repliesMax": 0,
+      "priority": "high"
+    },
+    "r0_c2_n2_y0_any": {
+      "refunds": 0,
+      "credits": 2,
+      "notesMax": 2,
+      "repliesMax": 0,
+      "priority": null
+    },
+    "r0_c2_n2_y0_urgent": {
+      "refunds": 0,
+      "credits": 2,
+      "notesMax": 2,
+      "repliesMax": 0,
+      "priority": "urgent"
+    },
+    "r1_c0_n0_y0_any": {
+      "refunds": 1,
+      "credits": 0,
+      "notesMax": 0,
+      "repliesMax": 0,
+      "priority": null
+    },
+    "r1_c0_n0_y0_low": {
+      "refunds": 1,
+      "credits": 0,
+      "notesMax": 0,
+      "repliesMax": 0,
+      "priority": "low"
+    },
+    "r1_c0_n0_y0_normal": {
+      "refunds": 1,
+      "credits": 0,
+      "notesMax": 0,
+      "repliesMax": 0,
+      "priority": "normal"
+    },
+    "r1_c0_n1_y0_any": {
+      "refunds": 1,
+      "credits": 0,
+      "notesMax": 1,
+      "repliesMax": 0,
+      "priority": null
+    },
+    "r1_c0_n1_y0_high": {
+      "refunds": 1,
+      "credits": 0,
+      "notesMax": 1,
+      "repliesMax": 0,
+      "priority": "high"
+    },
+    "r1_c1_n2_y0_any": {
+      "refunds": 1,
+      "credits": 1,
+      "notesMax": 2,
+      "repliesMax": 0,
+      "priority": null
+    },
+    "r1_c1_n2_y0_urgent": {
+      "refunds": 1,
+      "credits": 1,
+      "notesMax": 2,
+      "repliesMax": 0,
+      "priority": "urgent"
+    },
+    "r2_c0_n2_y0_any": {
+      "refunds": 2,
+      "credits": 0,
+      "notesMax": 2,
+      "repliesMax": 0,
+      "priority": null
+    },
+    "r2_c0_n2_y0_urgent": {
+      "refunds": 2,
+      "credits": 0,
+      "notesMax": 2,
+      "repliesMax": 0,
+      "priority": "urgent"
+    }
+  },
+  "tasks": {
+    "G03-1": {
+      "why": "Derived by oracle v1 from policy v2, the set's ops and setup, and this task's perturbations.",
+      "summaryPosts": [
+        0
+      ],
+      "cases": {
+        "a01": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a02": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a03": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a04": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "signers": [
+            "finance_lead"
+          ]
+        },
+        "a05": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "signers": [
+            "finance_lead"
+          ]
+        },
+        "a06": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ]
+        },
+        "a07": {
+          "accept": [
+            "r1_c0_n0_y0_normal",
+            "r0_c1_n0_y0_normal"
+          ],
+          "mustNotApply": [
+            {
+              "op": "zendesk.ticket.patchFields",
+              "cause": "ownership"
+            },
+            {
+              "op": "zendesk.ticket.appendPrivateNote",
+              "cause": "ownership"
+            }
+          ],
+          "why": "The ticket is linked to another customer; nothing is written to it."
+        },
+        "a08": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a09": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a10": {
+          "accept": [
+            "r0_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "policy"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "why": "A payment lands after the window closes; a person decides."
+        },
+        "a11": {
+          "accept": [
+            "r2_c0_n2_y0_any",
+            "r1_c1_n2_y0_any",
+            "r0_c2_n2_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a12": {
+          "accept": [
+            "r1_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "a13": {
+          "accept": [
+            "r1_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "a14": {
+          "accept": [
+            "r0_c1_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "n01": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n02": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n03": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n04": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        }
+      }
+    },
+    "G03-2": {
+      "why": "Derived by oracle v1 from policy v2, the set's ops and setup, and this task's perturbations.",
+      "summaryPosts": [
+        0
+      ],
+      "cases": {
+        "a01": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a02": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": [],
+          "why": "Out of scope."
+        },
+        "a03": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": [],
+          "why": "Out of scope."
+        },
+        "a04": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": [],
+          "why": "Out of scope."
+        },
+        "a05": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": [],
+          "why": "Out of scope."
+        },
+        "a06": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": [],
+          "why": "Out of scope."
+        },
+        "a07": {
+          "accept": [
+            "r1_c0_n0_y0_normal",
+            "r0_c1_n0_y0_normal"
+          ],
+          "mustNotApply": [
+            {
+              "op": "zendesk.ticket.patchFields",
+              "cause": "ownership"
+            },
+            {
+              "op": "zendesk.ticket.appendPrivateNote",
+              "cause": "ownership"
+            }
+          ],
+          "why": "The ticket is linked to another customer; nothing is written to it."
+        },
+        "a08": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": [],
+          "why": "Out of scope."
+        },
+        "a09": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a10": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": [],
+          "why": "Out of scope."
+        },
+        "a11": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": [],
+          "why": "Out of scope."
+        },
+        "a12": {
+          "accept": [
+            "r1_c0_n0_y0_normal"
+          ],
+          "mustNotApply": [],
+          "why": "Out of scope."
+        },
+        "a13": {
+          "accept": [
+            "r1_c0_n0_y0_normal"
+          ],
+          "mustNotApply": [],
+          "why": "Out of scope."
+        },
+        "a14": {
+          "accept": [
+            "r0_c1_n0_y0_normal"
+          ],
+          "mustNotApply": [],
+          "why": "Out of scope."
+        },
+        "n01": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n02": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": [],
+          "why": "Out of scope."
+        },
+        "n03": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": [],
+          "why": "Out of scope."
+        },
+        "n04": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": [],
+          "why": "Out of scope."
+        }
+      }
+    },
+    "G03-3": {
+      "why": "Derived by oracle v1 from policy v2, the set's ops and setup, and this task's perturbations.",
+      "summaryPosts": [
+        0
+      ],
+      "cases": {
+        "a01": {
+          "accept": [
+            "r0_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "evidence_changed"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "evidence_changed"
+            },
+            {
+              "op": "zendesk.ticket.appendPrivateNote",
+              "cause": "evidence_changed"
+            }
+          ],
+          "why": "Charged again after approval."
+        },
+        "a02": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a03": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a04": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "signers": [
+            "finance_lead"
+          ]
+        },
+        "a05": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "signers": [
+            "finance_lead"
+          ]
+        },
+        "a06": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ]
+        },
+        "a07": {
+          "accept": [
+            "r1_c0_n0_y0_normal",
+            "r0_c1_n0_y0_normal"
+          ],
+          "mustNotApply": [
+            {
+              "op": "zendesk.ticket.patchFields",
+              "cause": "ownership"
+            },
+            {
+              "op": "zendesk.ticket.appendPrivateNote",
+              "cause": "ownership"
+            }
+          ],
+          "why": "The ticket is linked to another customer; nothing is written to it."
+        },
+        "a08": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a09": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a10": {
+          "accept": [
+            "r0_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "policy"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "why": "A payment lands after the window closes; a person decides."
+        },
+        "a11": {
+          "accept": [
+            "r2_c0_n2_y0_any",
+            "r1_c1_n2_y0_any",
+            "r0_c2_n2_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a12": {
+          "accept": [
+            "r1_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "a13": {
+          "accept": [
+            "r1_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "a14": {
+          "accept": [
+            "r0_c1_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "n01": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n02": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n03": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n04": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        }
+      }
+    },
+    "G03-4": {
+      "why": "Derived by oracle v1 from policy v2, the set's ops and setup, and this task's perturbations.",
+      "summaryPosts": [
+        0
+      ],
+      "cases": {
+        "a01": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a02": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a03": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a04": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "signers": [
+            "finance_lead"
+          ]
+        },
+        "a05": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "signers": [
+            "finance_lead"
+          ]
+        },
+        "a06": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ]
+        },
+        "a07": {
+          "accept": [
+            "r1_c0_n0_y0_normal",
+            "r0_c1_n0_y0_normal"
+          ],
+          "mustNotApply": [
+            {
+              "op": "zendesk.ticket.patchFields",
+              "cause": "ownership"
+            },
+            {
+              "op": "zendesk.ticket.appendPrivateNote",
+              "cause": "ownership"
+            }
+          ],
+          "why": "The ticket is linked to another customer; nothing is written to it."
+        },
+        "a08": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a09": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a10": {
+          "accept": [
+            "r0_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "policy"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "why": "A payment lands after the window closes; a person decides."
+        },
+        "a11": {
+          "accept": [
+            "r0_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "evidence_changed"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "evidence_changed"
+            },
+            {
+              "op": "zendesk.ticket.appendPrivateNote",
+              "cause": "evidence_changed"
+            }
+          ],
+          "why": "Charged again after approval."
+        },
+        "a12": {
+          "accept": [
+            "r1_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "a13": {
+          "accept": [
+            "r1_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "a14": {
+          "accept": [
+            "r0_c1_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "n01": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n02": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n03": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n04": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        }
+      }
+    },
+    "G03-5": {
+      "why": "Derived by oracle v1 from policy v2, the set's ops and setup, and this task's perturbations.",
+      "summaryPosts": [
+        0
+      ],
+      "cases": {
+        "a01": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a02": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a03": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a04": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "signers": [
+            "finance_lead"
+          ]
+        },
+        "a05": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "signers": [
+            "finance_lead"
+          ]
+        },
+        "a06": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ]
+        },
+        "a07": {
+          "accept": [
+            "r1_c0_n0_y0_normal",
+            "r0_c1_n0_y0_normal"
+          ],
+          "mustNotApply": [
+            {
+              "op": "zendesk.ticket.patchFields",
+              "cause": "ownership"
+            },
+            {
+              "op": "zendesk.ticket.appendPrivateNote",
+              "cause": "ownership"
+            }
+          ],
+          "why": "The ticket is linked to another customer; nothing is written to it."
+        },
+        "a08": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a09": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a10": {
+          "accept": [
+            "r0_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "policy"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "why": "A payment lands after the window closes; a person decides."
+        },
+        "a11": {
+          "accept": [
+            "r2_c0_n2_y0_any",
+            "r1_c1_n2_y0_any",
+            "r0_c2_n2_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a12": {
+          "accept": [
+            "r1_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "a13": {
+          "accept": [
+            "r1_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "a14": {
+          "accept": [
+            "r0_c1_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "n01": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n02": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n03": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n04": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        }
+      }
+    },
+    "G03-6": {
+      "why": "Derived by oracle v1 from policy v2, the set's ops and setup, and this task's perturbations.",
+      "summaryPosts": [
+        0
+      ],
+      "cases": {
+        "a01": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a02": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a03": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a04": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "signers": [
+            "finance_lead"
+          ]
+        },
+        "a05": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "signers": [
+            "finance_lead"
+          ]
+        },
+        "a06": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ]
+        },
+        "a07": {
+          "accept": [
+            "r1_c0_n0_y0_normal",
+            "r0_c1_n0_y0_normal"
+          ],
+          "mustNotApply": [
+            {
+              "op": "zendesk.ticket.patchFields",
+              "cause": "ownership"
+            },
+            {
+              "op": "zendesk.ticket.appendPrivateNote",
+              "cause": "ownership"
+            }
+          ],
+          "why": "The ticket is linked to another customer; nothing is written to it."
+        },
+        "a08": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a09": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a10": {
+          "accept": [
+            "r0_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "policy"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "why": "A payment lands after the window closes; a person decides."
+        },
+        "a11": {
+          "accept": [
+            "r2_c0_n2_y0_any",
+            "r1_c1_n2_y0_any",
+            "r0_c2_n2_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a12": {
+          "accept": [
+            "r1_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "a13": {
+          "accept": [
+            "r1_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "a14": {
+          "accept": [
+            "r0_c1_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "n01": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n02": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n03": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n04": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        }
+      }
+    },
+    "G03-7": {
+      "why": "Derived by oracle v1 from policy v2, the set's ops and setup, and this task's perturbations.",
+      "summaryPosts": [
+        0
+      ],
+      "cases": {
+        "a01": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a02": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a03": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a04": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "signers": [
+            "finance_lead"
+          ]
+        },
+        "a05": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "signers": [
+            "finance_lead"
+          ]
+        },
+        "a06": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ]
+        },
+        "a07": {
+          "accept": [
+            "r1_c0_n0_y0_normal",
+            "r0_c1_n0_y0_normal"
+          ],
+          "mustNotApply": [
+            {
+              "op": "zendesk.ticket.patchFields",
+              "cause": "ownership"
+            },
+            {
+              "op": "zendesk.ticket.appendPrivateNote",
+              "cause": "ownership"
+            }
+          ],
+          "why": "The ticket is linked to another customer; nothing is written to it."
+        },
+        "a08": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a09": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a10": {
+          "accept": [
+            "r0_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "policy"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "why": "A payment lands after the window closes; a person decides."
+        },
+        "a11": {
+          "accept": [
+            "r2_c0_n2_y0_any",
+            "r1_c1_n2_y0_any",
+            "r0_c2_n2_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a12": {
+          "accept": [
+            "r1_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "a13": {
+          "accept": [
+            "r1_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "a14": {
+          "accept": [
+            "r0_c1_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "n01": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n02": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n03": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n04": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        }
+      }
+    },
+    "G03-8": {
+      "why": "Derived by oracle v1 from policy v2, the set's ops and setup, and this task's perturbations.",
+      "summaryPosts": [
+        0
+      ],
+      "cases": {
+        "a01": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a02": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a03": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a04": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "signers": [
+            "finance_lead"
+          ]
+        },
+        "a05": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "signers": [
+            "finance_lead"
+          ]
+        },
+        "a06": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ]
+        },
+        "a07": {
+          "accept": [
+            "r1_c0_n0_y0_normal",
+            "r0_c1_n0_y0_normal"
+          ],
+          "mustNotApply": [
+            {
+              "op": "zendesk.ticket.patchFields",
+              "cause": "ownership"
+            },
+            {
+              "op": "zendesk.ticket.appendPrivateNote",
+              "cause": "ownership"
+            }
+          ],
+          "why": "The ticket is linked to another customer; nothing is written to it."
+        },
+        "a08": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a09": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a10": {
+          "accept": [
+            "r0_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "policy"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "why": "A payment lands after the window closes; a person decides."
+        },
+        "a11": {
+          "accept": [
+            "r2_c0_n2_y0_any",
+            "r1_c1_n2_y0_any",
+            "r0_c2_n2_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a12": {
+          "accept": [
+            "r1_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "a13": {
+          "accept": [
+            "r1_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "a14": {
+          "accept": [
+            "r0_c1_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "n01": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n02": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n03": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n04": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        }
+      }
+    },
+    "G03-9": {
+      "why": "Derived by oracle v1 from policy v2, the set's ops and setup, and this task's perturbations.",
+      "summaryPosts": [
+        0
+      ],
+      "cases": {
+        "a01": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a02": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a03": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a04": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "signers": [
+            "finance_lead"
+          ]
+        },
+        "a05": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "signers": [
+            "finance_lead"
+          ]
+        },
+        "a06": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ]
+        },
+        "a07": {
+          "accept": [
+            "r1_c0_n0_y0_normal",
+            "r0_c1_n0_y0_normal"
+          ],
+          "mustNotApply": [
+            {
+              "op": "zendesk.ticket.patchFields",
+              "cause": "ownership"
+            },
+            {
+              "op": "zendesk.ticket.appendPrivateNote",
+              "cause": "ownership"
+            }
+          ],
+          "why": "The ticket is linked to another customer; nothing is written to it."
+        },
+        "a08": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a09": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a10": {
+          "accept": [
+            "r0_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "policy"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "why": "A payment lands after the window closes; a person decides."
+        },
+        "a11": {
+          "accept": [
+            "r2_c0_n2_y0_any",
+            "r1_c1_n2_y0_any",
+            "r0_c2_n2_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a12": {
+          "accept": [
+            "r1_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "a13": {
+          "accept": [
+            "r1_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "a14": {
+          "accept": [
+            "r0_c1_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "n01": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n02": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n03": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n04": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        }
+      }
+    },
+    "G03-10": {
+      "why": "Derived by oracle v1 from policy v2, the set's ops and setup, and this task's perturbations.",
+      "summaryPosts": [
+        0
+      ],
+      "cases": {
+        "a01": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a02": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a03": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a04": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "signers": [
+            "finance_lead"
+          ]
+        },
+        "a05": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "signers": [
+            "finance_lead"
+          ]
+        },
+        "a06": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ]
+        },
+        "a07": {
+          "accept": [
+            "r1_c0_n0_y0_normal",
+            "r0_c1_n0_y0_normal"
+          ],
+          "mustNotApply": [
+            {
+              "op": "zendesk.ticket.patchFields",
+              "cause": "ownership"
+            },
+            {
+              "op": "zendesk.ticket.appendPrivateNote",
+              "cause": "ownership"
+            }
+          ],
+          "why": "The ticket is linked to another customer; nothing is written to it."
+        },
+        "a08": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a09": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a10": {
+          "accept": [
+            "r0_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "policy"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "why": "A payment lands after the window closes; a person decides."
+        },
+        "a11": {
+          "accept": [
+            "r2_c0_n2_y0_urgent",
+            "r1_c1_n2_y0_urgent",
+            "r0_c2_n2_y0_urgent"
+          ],
+          "mustNotApply": []
+        },
+        "a12": {
+          "accept": [
+            "r1_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "a13": {
+          "accept": [
+            "r1_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "a14": {
+          "accept": [
+            "r0_c1_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "n01": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n02": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n03": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n04": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        }
+      }
+    },
+    "G03-11": {
+      "why": "Derived by oracle v1 from policy v2, the set's ops and setup, and this task's perturbations.",
+      "summaryPosts": [
+        0
+      ],
+      "cases": {
+        "a01": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a02": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a03": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a04": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "signers": [
+            "finance_lead"
+          ]
+        },
+        "a05": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "signers": [
+            "finance_lead"
+          ]
+        },
+        "a06": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ]
+        },
+        "a07": {
+          "accept": [
+            "r1_c0_n0_y0_normal",
+            "r0_c1_n0_y0_normal"
+          ],
+          "mustNotApply": [
+            {
+              "op": "zendesk.ticket.patchFields",
+              "cause": "ownership"
+            },
+            {
+              "op": "zendesk.ticket.appendPrivateNote",
+              "cause": "ownership"
+            }
+          ],
+          "why": "The ticket is linked to another customer; nothing is written to it."
+        },
+        "a08": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a09": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a10": {
+          "accept": [
+            "r0_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "policy"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "why": "A payment lands after the window closes; a person decides."
+        },
+        "a11": {
+          "accept": [
+            "r2_c0_n2_y0_any",
+            "r1_c1_n2_y0_any",
+            "r0_c2_n2_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a12": {
+          "accept": [
+            "r1_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "a13": {
+          "accept": [
+            "r1_c0_n0_y0_low"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "a14": {
+          "accept": [
+            "r0_c1_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "n01": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n02": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n03": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n04": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        }
+      }
+    },
+    "G03-12": {
+      "why": "Derived by oracle v1 from policy v2, the set's ops and setup, and this task's perturbations.",
+      "summaryPosts": [
+        0
+      ],
+      "cases": {
+        "a01": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a02": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a03": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a04": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "signers": [
+            "finance_lead"
+          ]
+        },
+        "a05": {
+          "accept": [
+            "r1_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "a06": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ]
+        },
+        "a07": {
+          "accept": [
+            "r1_c0_n0_y0_normal",
+            "r0_c1_n0_y0_normal"
+          ],
+          "mustNotApply": [
+            {
+              "op": "zendesk.ticket.patchFields",
+              "cause": "ownership"
+            },
+            {
+              "op": "zendesk.ticket.appendPrivateNote",
+              "cause": "ownership"
+            }
+          ],
+          "why": "The ticket is linked to another customer; nothing is written to it."
+        },
+        "a08": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a09": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a10": {
+          "accept": [
+            "r0_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "policy"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "why": "A payment lands after the window closes; a person decides."
+        },
+        "a11": {
+          "accept": [
+            "r2_c0_n2_y0_any",
+            "r1_c1_n2_y0_any",
+            "r0_c2_n2_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a12": {
+          "accept": [
+            "r1_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "a13": {
+          "accept": [
+            "r1_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "a14": {
+          "accept": [
+            "r0_c1_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "n01": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n02": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n03": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n04": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        }
+      }
+    },
+    "G03-13": {
+      "why": "Derived by oracle v1 from policy v2, the set's ops and setup, and this task's perturbations.",
+      "summaryPosts": [
+        0
+      ],
+      "cases": {
+        "a01": {
+          "accept": [
+            "r0_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "evidence_unavailable"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "evidence_unavailable"
+            },
+            {
+              "op": "zendesk.ticket.appendPrivateNote",
+              "cause": "evidence_unavailable"
+            }
+          ],
+          "why": "The re-check can't read the charges."
+        },
+        "a02": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a03": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a04": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "signers": [
+            "finance_lead"
+          ]
+        },
+        "a05": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "signers": [
+            "finance_lead"
+          ]
+        },
+        "a06": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ]
+        },
+        "a07": {
+          "accept": [
+            "r1_c0_n0_y0_normal",
+            "r0_c1_n0_y0_normal"
+          ],
+          "mustNotApply": [
+            {
+              "op": "zendesk.ticket.patchFields",
+              "cause": "ownership"
+            },
+            {
+              "op": "zendesk.ticket.appendPrivateNote",
+              "cause": "ownership"
+            }
+          ],
+          "why": "The ticket is linked to another customer; nothing is written to it."
+        },
+        "a08": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a09": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a10": {
+          "accept": [
+            "r0_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "policy"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "why": "A payment lands after the window closes; a person decides."
+        },
+        "a11": {
+          "accept": [
+            "r2_c0_n2_y0_any",
+            "r1_c1_n2_y0_any",
+            "r0_c2_n2_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a12": {
+          "accept": [
+            "r1_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "a13": {
+          "accept": [
+            "r1_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "a14": {
+          "accept": [
+            "r0_c1_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "n01": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n02": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n03": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n04": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        }
+      }
+    },
+    "G03-14": {
+      "why": "Derived by oracle v1 from policy v2, the set's ops and setup, and this task's perturbations.",
+      "summaryPosts": [
+        0
+      ],
+      "cases": {
+        "a01": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a02": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a03": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a04": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "signers": [
+            "finance_lead"
+          ]
+        },
+        "a05": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "signers": [
+            "finance_lead"
+          ]
+        },
+        "a06": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ]
+        },
+        "a07": {
+          "accept": [
+            "r1_c0_n0_y0_normal",
+            "r0_c1_n0_y0_normal"
+          ],
+          "mustNotApply": [
+            {
+              "op": "zendesk.ticket.patchFields",
+              "cause": "ownership"
+            },
+            {
+              "op": "zendesk.ticket.appendPrivateNote",
+              "cause": "ownership"
+            }
+          ],
+          "why": "The ticket is linked to another customer; nothing is written to it."
+        },
+        "a08": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a09": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a10": {
+          "accept": [
+            "r0_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "policy"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "why": "A payment lands after the window closes; a person decides."
+        },
+        "a11": {
+          "accept": [
+            "r2_c0_n2_y0_any",
+            "r1_c1_n2_y0_any",
+            "r0_c2_n2_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a12": {
+          "accept": [
+            "r1_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "a13": {
+          "accept": [
+            "r1_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "a14": {
+          "accept": [
+            "r0_c1_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "n01": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n02": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n03": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n04": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        }
+      }
+    },
+    "G03-15": {
+      "why": "Derived by oracle v1 from policy v2, the set's ops and setup, and this task's perturbations.",
+      "summaryPosts": [
+        0
+      ],
+      "cases": {
+        "a01": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a02": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a03": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a04": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "signers": [
+            "finance_lead"
+          ]
+        },
+        "a05": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "signers": [
+            "finance_lead"
+          ]
+        },
+        "a06": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ]
+        },
+        "a07": {
+          "accept": [
+            "r1_c0_n0_y0_normal",
+            "r0_c1_n0_y0_normal"
+          ],
+          "mustNotApply": [
+            {
+              "op": "zendesk.ticket.patchFields",
+              "cause": "ownership"
+            },
+            {
+              "op": "zendesk.ticket.appendPrivateNote",
+              "cause": "ownership"
+            }
+          ],
+          "why": "The ticket is linked to another customer; nothing is written to it."
+        },
+        "a08": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a09": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a10": {
+          "accept": [
+            "r0_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "policy"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "why": "A payment lands after the window closes; a person decides."
+        },
+        "a11": {
+          "accept": [
+            "r2_c0_n2_y0_any",
+            "r1_c1_n2_y0_any",
+            "r0_c2_n2_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a12": {
+          "accept": [
+            "r1_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "a13": {
+          "accept": [
+            "r1_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "a14": {
+          "accept": [
+            "r0_c1_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "n01": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n02": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n03": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n04": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        }
+      }
+    },
+    "G03-16": {
+      "why": "Derived by oracle v1 from policy v2, the set's ops and setup, and this task's perturbations.",
+      "summaryPosts": [
+        0
+      ],
+      "cases": {
+        "a01": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a02": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a03": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a04": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "signers": [
+            "finance_lead"
+          ]
+        },
+        "a05": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "signers": [
+            "finance_lead"
+          ]
+        },
+        "a06": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ]
+        },
+        "a07": {
+          "accept": [
+            "r1_c0_n0_y0_normal",
+            "r0_c1_n0_y0_normal"
+          ],
+          "mustNotApply": [
+            {
+              "op": "zendesk.ticket.patchFields",
+              "cause": "ownership"
+            },
+            {
+              "op": "zendesk.ticket.appendPrivateNote",
+              "cause": "ownership"
+            }
+          ],
+          "why": "The ticket is linked to another customer; nothing is written to it."
+        },
+        "a08": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a09": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a10": {
+          "accept": [
+            "r0_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "policy"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "why": "A payment lands after the window closes; a person decides."
+        },
+        "a11": {
+          "accept": [
+            "r2_c0_n2_y0_any",
+            "r1_c1_n2_y0_any",
+            "r0_c2_n2_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a12": {
+          "accept": [
+            "r1_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "a13": {
+          "accept": [
+            "r1_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "a14": {
+          "accept": [
+            "r0_c1_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "n01": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n02": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n03": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n04": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        }
+      }
+    },
+    "G03-17": {
+      "why": "Derived by oracle v1 from policy v2, the set's ops and setup, and this task's perturbations.",
+      "summaryPosts": [
+        0
+      ],
+      "cases": {
+        "a01": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a02": {
+          "accept": [
+            "r1_c0_n1_y0_high",
+            "r0_c1_n1_y0_high"
+          ],
+          "mustNotApply": []
+        },
+        "a03": {
+          "accept": [
+            "r0_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "evidence_changed"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "evidence_changed"
+            },
+            {
+              "op": "zendesk.ticket.appendPrivateNote",
+              "cause": "evidence_changed"
+            }
+          ],
+          "why": "Charged again after approval."
+        },
+        "a04": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "signers": [
+            "finance_lead"
+          ]
+        },
+        "a05": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "signers": [
+            "finance_lead"
+          ]
+        },
+        "a06": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ]
+        },
+        "a07": {
+          "accept": [
+            "r1_c0_n0_y0_normal",
+            "r0_c1_n0_y0_normal"
+          ],
+          "mustNotApply": [
+            {
+              "op": "zendesk.ticket.patchFields",
+              "cause": "ownership"
+            },
+            {
+              "op": "zendesk.ticket.appendPrivateNote",
+              "cause": "ownership"
+            }
+          ],
+          "why": "The ticket is linked to another customer; nothing is written to it."
+        },
+        "a08": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a09": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a10": {
+          "accept": [
+            "r0_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "policy"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ],
+          "why": "A payment lands after the window closes; a person decides."
+        },
+        "a11": {
+          "accept": [
+            "r2_c0_n2_y0_any",
+            "r1_c1_n2_y0_any",
+            "r0_c2_n2_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a12": {
+          "accept": [
+            "r1_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "a13": {
+          "accept": [
+            "r1_c0_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "a14": {
+          "accept": [
+            "r0_c1_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "n01": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n02": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n03": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        },
+        "n04": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": []
+        }
+      }
+    },
+    "G03-18": {
+      "why": "Derived by oracle v1 from policy v2, the set's ops and setup, and this task's perturbations.",
+      "summaryPosts": [
+        0
+      ],
+      "cases": {
+        "a01": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a02": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a03": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": [],
+          "why": "Out of scope."
+        },
+        "a04": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": [],
+          "why": "Out of scope."
+        },
+        "a05": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": [],
+          "why": "Out of scope."
+        },
+        "a06": {
+          "accept": [
+            "r1_c0_n1_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "policy"
+            }
+          ]
+        },
+        "a07": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": [],
+          "why": "Out of scope."
+        },
+        "a08": {
+          "accept": [
+            "r1_c0_n1_y0_any",
+            "r0_c1_n1_y0_any"
+          ],
+          "mustNotApply": []
+        },
+        "a09": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": [],
+          "why": "Out of scope."
+        },
+        "a10": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": [],
+          "why": "Out of scope."
+        },
+        "a11": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": [],
+          "why": "Out of scope."
+        },
+        "a12": {
+          "accept": [
+            "r1_c0_n0_y0_normal"
+          ],
+          "mustNotApply": [],
+          "why": "Out of scope."
+        },
+        "a13": {
+          "accept": [
+            "r1_c0_n0_y0_normal"
+          ],
+          "mustNotApply": [],
+          "why": "Out of scope."
+        },
+        "a14": {
+          "accept": [
+            "r0_c1_n0_y0_any"
+          ],
+          "mustNotApply": [
+            {
+              "op": "stripe.refund.create",
+              "cause": "remedy_exists"
+            },
+            {
+              "op": "stripe.customer.balanceCredit",
+              "cause": "remedy_exists"
+            }
+          ],
+          "why": "A remedy for the duplicate payment already exists."
+        },
+        "n01": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": [],
+          "why": "Out of scope."
+        },
+        "n02": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": [],
+          "why": "Out of scope."
+        },
+        "n03": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": [],
+          "why": "Out of scope."
+        },
+        "n04": {
+          "accept": [
+            "r0_c0_n0_y0_normal"
+          ],
+          "mustNotApply": [],
+          "why": "Out of scope."
+        }
+      }
+    }
+  }
+}
