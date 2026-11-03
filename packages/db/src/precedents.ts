@@ -127,6 +127,15 @@ export async function loadRegistry(db: Exec, orgId: string): Promise<RegistryVie
   return deriveRegistry(rows);
 }
 
+/** Every organization with a registry, for operator checks that cover them all. */
+export async function precedentOrgs(db: Exec): Promise<string[]> {
+  const rows = await db
+    .selectDistinct({ orgId: precedentEvents.orgId })
+    .from(precedentEvents)
+    .orderBy(asc(precedentEvents.orgId));
+  return rows.map((r) => r.orgId);
+}
+
 /** The newest approved version of a precedent and the area it belongs to, or null if none. */
 export async function latestApproved(db: Exec, orgId: string, precedentId: string) {
   const [row] = await db

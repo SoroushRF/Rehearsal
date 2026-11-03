@@ -35,8 +35,9 @@ Each process holds one key, with only the grants its job needs (#365, decision 0
 | `SURREAL_AGENT_MEMORY_WRITE_KEY` | API (the sync, and the promote panel's hint) | `memory:read`, `memory:write`, `scope:create` |
 | `SURREAL_AGENT_MEMORY_READ_KEY` | planner worker (recall) | `memory:read` |
 | `SURREAL_AGENT_MEMORY_ADMIN_KEY` | operator tools and the memory gate only | the key Studio issues |
+| `SURREAL_AGENT_MEMORY_READ_KEY`, in `.env.drift` | the [drift check](#drift-check-t153) (operator) | `memory:read`, on a key of its own |
 
-The planner worker refuses to start with the write or admin key, and the executor and the rehearsal worker refuse every memory key. A planner that could write memory could plant the precedent it then cites. The old shared `SURREAL_AGENT_MEMORY_KEY` is refused everywhere with a message naming its replacements. `pnpm memory:keys mint <label>` mints both keys with the admin key and prints each once; `pnpm memory:keys revoke <label>` revokes them.
+The planner worker refuses to start with the write or admin key, and the executor and the rehearsal worker refuse every memory key. A planner that could write memory could plant the precedent it then cites. The old shared `SURREAL_AGENT_MEMORY_KEY` is refused everywhere with a message naming its replacements. `pnpm memory:keys mint <label>` mints both keys with the admin key and prints each once; `pnpm memory:keys revoke <label>` revokes them. `pnpm memory:keys mint-reader <label>` mints `rehearsal-reader-<label>`, an operator's read-only key with the planner's grants, for the drift check. It is never the planner's own key and goes only in `.env.drift`. `pnpm memory:keys revoke-reader <label>` revokes it.
 
 The variable names are what the startup checks look at; the grants are what the service enforces. The memory gate mints both keys with the same grants and checks that the planner's recalls but is refused a write.
 
@@ -48,7 +49,7 @@ MEMORY_GATE=1 pnpm test:memory   # PowerShell: $env:MEMORY_GATE=1; pnpm test:mem
 
 Without `MEMORY_GATE=1` the gate is skipped and only the offline tests run (a fake that copies the semantics below). Each gate run uses its own scope under `rehearsal/test/`, mints and revokes its own narrowed keys with the admin key (`SURREAL_AGENT_MEMORY_ADMIN_KEY`), and erases the scope afterwards.
 
-**PASS**, 7/7 on 3 consecutive runs (2026-11-02, Windows 11 amd64, Node 24.11.1, about 50 s each, most of it recall). The first six checks also passed 6/6 on 3 consecutive runs on 2026-10-24, before the key check existed.
+**PASS**, 7/7 on 3 consecutive runs (2026-11-02, Windows 11 amd64, Node 24.11.1, about 50 s each, most of it recall). The first six checks also passed 6/6 on 3 consecutive runs on 2026-10-24, before the key check existed. With the drift check added (2026-11-03): 8/8 on 4 of 5 runs. The fifth run's 7/8 was the drift check hitting a 60 s test timeout (see below the table).
 
 | Check | Result |
 |---|---|
@@ -59,6 +60,61 @@ Without `MEMORY_GATE=1` the gate is skipped and only the offline tests run (a fa
 | Wrong scope: a key narrowed to a neighbouring scope gets 403 writing ours and sees nothing reading it; its forged copy of the same precedent doesn't change ours; once revoked it gets 401 | **PASS** |
 | A plan citing v1 is held once v2 is approved (`superseded` plus `epoch_changed`); a replan on v2 passes | **PASS** |
 | The API's key (#365) registers an org's scope and publishes; the planner's recalls it with a trace and is refused a write | **PASS** |
+| Drift (T1.53): plant a missing, a stale, an unmarked-withdrawal, a waiting and an unknown copy in an org scope of the gate's own; a read-only key finds exactly those five, sending only reads and recall queries, and marks the waiting version's repair as one that activates it; the sync's own calls repair the first four; the check then finds only the unknown copy, which is left alone | **PASS** on 2 of 2 runs at 180 s; one earlier run timed out at 60 s |
+
+All the drift check's hosted runs were on 2026-11-03 (Windows 11 amd64, Node 24.11.1, about 110 s for the whole gate):
+
+| Run | Drift check | Result |
+|---|---|---|
+| 1, 2 | first version, 60 s timeout | **PASS**, 8/8; the drift check took 56.6 s in run 2 |
+| 3 | same | 7/8: the drift check hit the 60 s test timeout. That was not an assertion or a service error. Most of the time goes on six recalls at 5–8 s each |
+| 4, 5 | after review: waiting versions, grace period, re-read registry; 180 s timeout | **PASS**, 8/8; the drift check took 58.7 s and 57.9 s |
+
+So the check needs about a minute on the free plan, and 180 s leaves room for a slow day. The registry in this check is rows in the test, and repair uses the calls the sync handler makes (`publish`, `markWithdrawn`), not the queue. The queue path is tested on real Postgres with the fake ([below](#drift-check-t153)).
+
+## Drift check (T1.53)
+
+Memory is derived from the registry, so the two can drift apart: a sync job fails for good, a copy is lost or changed in the service, a withdrawal's job never runs. One case was known before this check existed. Once a newer version is approved, a `withdraw` job does nothing. If that newer version's sync then fails for good, the withdrawn copy stays, and recall offers it to the planner. Admission still drops the citation, because the registry decides. The drift check compares an org's memory scope with its registry and reports where they differ.
+
+```bash
+pnpm memory:drift <org> [--repair [--activate-waiting]]   # one org, by its Clerk org ID
+pnpm memory:drift --all [--repair [--activate-waiting]]   # every org with a registry
+```
+
+It prints a summary line per org and one line per finding.
+
+| Exit code | Meaning |
+|---|---|
+| 0 | Memory matches the registry. |
+| 1 | Drift found, whether or not repairs were queued. |
+| 2 | Bad usage: an unknown flag (anything starting with `-`), no org or two, or `--activate-waiting` without `--repair`. |
+| 3 | An error: a refused credential, missing settings, an Agent Memory outage, a database failure, or an org with no registry and nothing found ("no registry for this org; check the org id"). |
+
+| Finding | Meaning | Repair |
+|---|---|---|
+| `missing` | A version is active, and memory holds nothing for it, a copy that fails readback, or a withdrawal marker. | Publish the active version. |
+| `stale` | Memory holds an older version, a version the registry never approved, or content that differs from what finance approved. | Publish the active version if it is newer than the copy, otherwise the newer waiting version (activating, see below). None only for a copy at the newest approved version with other content, or one newer than any approved version: publish never overwrites a version or goes back. |
+| `unmarked_withdrawal` | Memory still offers a version that was withdrawn, or superseded by one that was. | A `withdraw` job, or publishing the active version. If a newer version is approved and waiting, publish that one, because a `withdraw` job would do nothing (the known case above). That repair activates it. |
+| `waiting` | A version was approved longer than 10 minutes ago and never activated: its sync failed for good. The line gives its age, measured from the approval. | Publish it, which activates it. |
+| `unknown` | A `precedent:<id>` copy that the registry never approved. | None. Reported only, never deleted. |
+
+Memory has no listing, so unknown copies are found through recall: one query per area the registry knows, plus `precedent`, each at the service's cap of 50 hits. That finds what recall would offer the planner, which is the copy that matters, but not necessarily every stored entity. Entity reads run 8 at a time.
+
+**Waiting versions need `--activate-waiting`.** One kind of repair changes what execution sees: publishing a version that finance approved but whose sync failed. When that publish reads back, the sync records the version as active, as it would have the first time. Its area's epoch moves, and plans resting on the version before it are held at admission. So `--repair` alone queues only the repairs that leave the registry as it is: publishing an already-active version, or a `withdraw` marker. Repairs that would activate a waiting version are printed with `(activates it)` and `not queued: … pass --activate-waiting`. With `--activate-waiting` they are queued too. Where an activating publish is queued for a precedent, that precedent's other repairs are skipped, because the publish replaces its copy anyway.
+
+**Syncs in flight.** A precedent with a version approved in the last 10 minutes is left out and printed as `in flight`, because its own sync may still be running. The check reads the registry again after reading memory, and drops any finding whose precedent changed in between (`changed …: the registry moved mid-check; run again`).
+
+**What repair does.** It doesn't write to memory. For each repair it queues, it sends the API's own `precedent-sync` job through `enqueuePrecedentSync`, the same function and singleton key the API uses. The precedent queue has no pg-boss policy, so a singleton key alone doesn't stop a second job. Before sending, the check locks the key and looks for the same job waiting, retrying or running (`precedentSyncPending`). If it finds one, it prints `already queued` and doesn't send. Running `--repair` twice before the worker drains the queue therefore queues each job once. A job the API itself queued at the same moment could still be doubled; that's harmless, because the sync is idempotent. The API's sync handler then does the writing with its write key, under the same locks and checks as any other sync: a publish job for a withdrawn version does nothing, and a `withdraw` job never covers a newer version. The jobs only run while the API runs with Agent Memory configured. Run the check again afterwards to confirm. The check starts pg-boss only to send: it creates and updates no queues and runs no maintenance, and it fails if the API hasn't created the precedent queue yet.
+
+**What repair doesn't do.** The registry decides, and the check never changes it. It approves nothing, withdraws nothing and deletes nothing. It holds or releases a plan only in the one case above, and only with `--activate-waiting`: activating a waiting version that finance already approved.
+
+**Key.** The check holds a read-only key and `DATABASE_URL`, nothing else. Mint the key with `pnpm memory:keys mint-reader <label>` and put it in `.env.drift` (gitignored), together with `SURREAL_AGENT_MEMORY_URL`, `_CONTEXT` and `DATABASE_URL`. `pnpm memory:drift` reads that file, not `.env`, and refuses to start with the write or admin key, the old shared key, the model key, or the planner's or executor's secrets. Revoke the key with `pnpm memory:keys revoke-reader <label>`.
+
+| Evidence | Result |
+|---|---|
+| Each finding and its repair against the fake Agent Memory, the grace period, dropping findings the registry changed under, 8 reads at a time, and that the check sends only reads and recall queries (`packages/memory/test/drift.test.ts`) | **PASS**, fixture |
+| End to end on real Postgres and pg-boss with the fake (`apps/api/test/memory-drift.test.ts`, 2026-11-03, Windows 11, Node 24.11.1). `--repair` queues the three safe repairs and leaves the gap's activating publish; a second `--repair` queues nothing new (`already queued`); `--activate-waiting` adds the publish once; the API's sync handler runs the four jobs; a last check finds only the unknown copy. Also covered: a version in its grace period, a sync landing mid-check, an org with no registry, a send-only pg-boss, and the exit codes for bad usage and refused keys | **PASS**, fixture |
+| The memory gate's drift check ([above](#memory-gate)) | **PASS** on 2 of 2 runs at 180 s; one earlier run timed out at 60 s. Hosted (2026-11-03) |
 
 ## Precedent gate through the app (T1.50)
 
