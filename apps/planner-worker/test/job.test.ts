@@ -371,6 +371,22 @@ describe("plan job", () => {
     const result = await handlePlanJob(JOB, deps(model([new Error("overloaded")]), jobs));
     expect(result).toMatchObject({ kind: "failed", reason: "planner_error" });
     expect(failed[0]?.[1].message).toBe("overloaded");
+    expect(failed[0]?.[1].modelAttempts?.map((a) => a.outcome)).toEqual(["error"]);
+  });
+
+  it("stores request history even when a transient failure recovers", async () => {
+    const { jobs, completed, failed } = fakeJobs();
+    const turns = refundOneDuplicate();
+    const client = model([Object.assign(new Error("quota"), { status: 429 }), ...turns]);
+    const result = await handlePlanJob(JOB, deps(client, jobs));
+    expect(result.kind).toBe("stored");
+    expect(failed).toEqual([]);
+    expect(completed[0]?.[1].stats?.modelAttempts?.map((a) => a.outcome)).toEqual([
+      "rate_limit",
+      "succeeded",
+      "succeeded",
+      "succeeded",
+    ]);
   });
 
   it("fails a run whose read never returns at the deadline, and takes the next job", async () => {

@@ -5,6 +5,8 @@ import { type PrecedentRecall, recallBasis } from "@rehearsal/memory";
 import {
   incidentBrief,
   type MessagesClient,
+  type ModelAttempt,
+  ModelRequestError,
   PlanningLoopError,
   type PlanningReader,
   PlanningSession,
@@ -59,8 +61,9 @@ export async function handlePlanJob(
 ): Promise<PlanJobResult> {
   const job = claimed.data;
   const log = deps.log ?? (() => {});
+  const modelAttempts: ModelAttempt[] = [];
   const fail = async (reason: string, message: string): Promise<PlanJobResult> => {
-    await deps.jobs.fail(claimed.id, { reason, message });
+    await deps.jobs.fail(claimed.id, { reason, message, modelAttempts });
     return { kind: "failed", reason, message };
   };
 
@@ -131,10 +134,19 @@ export async function handlePlanJob(
       },
       signal,
       onTurn: (t: TurnLog) => log(`[${run}] turn ${t.turn}: ${describe(t)}`),
+      onModelAttempt: (attempt) => {
+        modelAttempts.push(attempt);
+        log(`[${run}] model turn ${attempt.turn} attempt ${attempt.attempt}: ${attempt.outcome}`);
+      },
     });
   } catch (err) {
     if (err instanceof PlanningLoopError) return fail(err.reason, err.message);
     if (signal.aborted) return timedOut();
+    if (err instanceof ModelRequestError) return fail(err.reason, err.message);
+    const outcome = modelAttempts.at(-1)?.outcome;
+    if (outcome && outcome !== "succeeded" && outcome !== "error" && outcome !== "aborted") {
+      return fail(`model_${outcome}`, (err as Error).message.slice(0, 2000));
+    }
     // A model or network error. Reported, so the job retries once instead of hanging until expiry.
     return fail("planner_error", (err as Error).message.slice(0, 2000));
   }
@@ -145,7 +157,7 @@ export async function handlePlanJob(
   const { planHash } = await deps.jobs.complete(claimed.id, {
     manifest: result.manifest,
     summary: result.summary.slice(0, 4000),
-    stats: { turns: result.turns, toolCalls: result.toolCalls, usage: result.usage },
+    stats: { turns: result.turns, toolCalls: result.toolCalls, usage: result.usage, modelAttempts },
   });
   log(
     `[${run}] stored ${job.planId} r1 ${planHash}: ${result.manifest.actions.length} steps, ` +

@@ -93,9 +93,10 @@ const client = gemini
         vertexai: true,
         project,
         location: process.env.GOOGLE_CLOUD_LOCATION || "global",
+        httpOptions: { retryOptions: { attempts: 1 } },
       }).models,
     )
-  : new Anthropic().messages;
+  : new Anthropic({ maxRetries: 0 }).messages;
 const jobs = plannerJobsClient(apiUrl, secret);
 // Precedent recall (#235), per org with the read-only Agent Memory key (decision 0012, #365).
 const precedents = recallersFromEnv();

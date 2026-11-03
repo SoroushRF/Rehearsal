@@ -1,6 +1,12 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type { PlanManifest, PrecedentBasis } from "@rehearsal/contracts";
 import { validateGraph } from "@rehearsal/core";
+import {
+  type ModelAttempt,
+  type ModelRetryLimits,
+  requestModel,
+  untilAborted,
+} from "./model-retry";
 import { briefMessage, type IncidentBrief, LOOP_LIMITS, promptFor } from "./prompt";
 import type { PlanningSession } from "./tools";
 
@@ -33,10 +39,13 @@ export interface PlanningLoopOptions {
     /** What the brief's precedents rest on; recorded in the manifest as given. */
     precedentBasis?: PrecedentBasis;
   };
-  limits?: Partial<Record<"maxTurns" | "maxToolCalls" | "maxTokensPerTurn", number>>;
+  limits?: Partial<
+    Record<"maxTurns" | "maxToolCalls" | "maxTokensPerTurn", number> & ModelRetryLimits
+  >;
   signal?: AbortSignal;
   /** Called after every turn, for logs. */
   onTurn?: (turn: TurnLog) => void;
+  onModelAttempt?: (attempt: ModelAttempt) => void;
 }
 
 export interface TurnLog {
@@ -82,10 +91,12 @@ export async function runPlanningLoop(opts: PlanningLoopOptions): Promise<Planni
   const messages: Anthropic.MessageParam[] = [{ role: "user", content: briefMessage(opts.brief) }];
   const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 };
   let toolCalls = 0;
+  const budget = { requests: 0, reservedOutputTokens: 0 };
 
   for (let turn = 1; turn <= limits.maxTurns; turn++) {
     opts.signal?.throwIfAborted();
-    const response = await opts.client.create(
+    const response = await requestModel(
+      opts.client,
       {
         model: opts.model,
         max_tokens: limits.maxTokensPerTurn,
@@ -98,7 +109,7 @@ export async function runPlanningLoop(opts: PlanningLoopOptions): Promise<Planni
         cache_control: { type: "ephemeral" },
         messages,
       },
-      { signal: opts.signal },
+      { turn, limits, budget, signal: opts.signal, onAttempt: opts.onModelAttempt },
     );
     usage.inputTokens += response.usage.input_tokens;
     usage.outputTokens += response.usage.output_tokens;
@@ -149,6 +160,7 @@ export async function runPlanningLoop(opts: PlanningLoopOptions): Promise<Planni
     // Sequential, in the model's order: propose tools depend on what earlier calls proposed.
     const results: Anthropic.ToolResultBlockParam[] = [];
     for (const call of calls) {
+      opts.signal?.throwIfAborted();
       // The deadline covers tool calls too: a read that never answers must not hold the run.
       const result = await untilAborted(opts.session.call(call.name, call.input), opts.signal);
       log.toolCalls.push(
@@ -168,17 +180,6 @@ export async function runPlanningLoop(opts: PlanningLoopOptions): Promise<Planni
     opts.onTurn?.(log);
   }
   throw new PlanningLoopError("turn_limit", `no finished plan after ${limits.maxTurns} turns`);
-}
-
-/** Settle with `pending`, or reject with the signal's reason as soon as it aborts. */
-function untilAborted<T>(pending: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
-  if (!signal) return pending;
-  signal.throwIfAborted();
-  return new Promise<T>((resolve, reject) => {
-    const abort = () => reject(signal.reason);
-    signal.addEventListener("abort", abort, { once: true });
-    pending.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
-  });
 }
 
 function finish(
