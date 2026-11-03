@@ -6,7 +6,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 
 ## Top blockers
 
-106 of 123 tasks done. These open tasks hold up the most other work:
+107 of 124 tasks done. These open tasks hold up the most other work:
 
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
@@ -67,7 +67,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T1.43** Reserve built-in incident IDs when allocating filed incidents [#350](https://github.com/SoroushRF/Rehearsal/issues/350) | ✅ done |  |  |
 | **T1.44** Rehearse stored plans containing public customer replies [#357](https://github.com/SoroushRF/Rehearsal/issues/357) | 🟨 ready | — | T1.45 |
 | **T1.45** Rehearse balance-credit plans from faithful disposable snapshots [#358](https://github.com/SoroushRF/Rehearsal/issues/358) | 🟥 blocked | T1.44 (T1, ready) |  |
-| **T1.49** Separate Agent Memory keys: read-only planner, write key for the API, refused elsewhere [#365](https://github.com/SoroushRF/Rehearsal/issues/365) | ✅ done |  | T1.50 |
+| **T1.49** Separate Agent Memory keys: read-only planner, write key for the API, refused elsewhere [#365](https://github.com/SoroushRF/Rehearsal/issues/365) | ✅ done |  | T1.50, T2.30 (T2) |
 | **T1.50** Precedent gate through the app: promote, sync, cite by fact ID, withdraw, refuse [#366](https://github.com/SoroushRF/Rehearsal/issues/366) | ✅ done |  | T1.51 |
 | **T1.51** Retire a withdrawn precedent's copy in Agent Memory [#367](https://github.com/SoroushRF/Rehearsal/issues/367) | ✅ done |  |  |
 
@@ -105,7 +105,8 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T2.26** History rehearsal retries bypass the pending-revision interlock [#294](https://github.com/SoroushRF/Rehearsal/issues/294) | ✅ done |  |  |
 | **T2.27** Accessibility scans race the plan entrance fade and report transient contrast failures [#295](https://github.com/SoroushRF/Rehearsal/issues/295) | ✅ done |  |  |
 | **T2.28** Missing rehearsal results are labelled Never ran after receipt-storage failure [#296](https://github.com/SoroushRF/Rehearsal/issues/296) | 👀 in review [PR #363](https://github.com/SoroushRF/Rehearsal/pull/363) | — |  |
-| **T2.29** Trace a cited precedent back to its approved version, promoter and source run [#388](https://github.com/SoroushRF/Rehearsal/issues/388) | ✅ done |  |  |
+| **T2.30** Agent Memory on the Render deployment: API write key, planner read key [#389](https://github.com/SoroushRF/Rehearsal/issues/389) | ✅ done |  |  |
+| **T2.31** Trace a cited precedent back to its approved version, promoter and source run [#388](https://github.com/SoroushRF/Rehearsal/issues/388) | ✅ done |  |  |
 
 ## T3 Apply
 
@@ -249,7 +250,8 @@ flowchart LR
     T2_26["T2.26 History rehearsal retries bypass the pendi"]:::done
     T2_27["T2.27 Accessibility scans race the plan entrance"]:::done
     T2_28["T2.28 Missing rehearsal results are labelled Nev"]:::review
-    T2_29["T2.29 Trace a cited precedent back to its approv"]:::done
+    T2_30["T2.30 Agent Memory on the Render deployment: API"]:::done
+    T2_31["T2.31 Trace a cited precedent back to its approv"]:::done
   end
   subgraph T3[T3 Apply]
     T3_1["T3.1 Drizzle migrations, Postgres journal, pg-bo"]:::done
@@ -370,6 +372,7 @@ flowchart LR
   T4_12 --> T2_21
   T2_5 --> T2_22
   T2_6 --> T2_22
+  T1_49 --> T2_30
   T3_1 --> T3_2
   T3_2 --> T3_3
   T1_9 --> T3_3
