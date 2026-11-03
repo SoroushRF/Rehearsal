@@ -6,7 +6,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 
 ## Top blockers
 
-93 of 103 tasks done. These open tasks hold up the most other work:
+94 of 104 tasks done. These open tasks hold up the most other work:
 
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
@@ -52,6 +52,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T1.41** Demo blocker: target the org tenant when injecting the phantom [#348](https://github.com/SoroushRF/Rehearsal/issues/348) | ✅ done |  |  |
 | **T1.42** Serialize org resets with planning/apply admission [#349](https://github.com/SoroushRF/Rehearsal/issues/349) | ✅ done |  |  |
 | **T1.43** Reserve built-in incident IDs when allocating filed incidents [#350](https://github.com/SoroushRF/Rehearsal/issues/350) | ✅ done |  |  |
+| **T1.49** Separate Agent Memory keys: read-only planner, write key for the API, refused elsewhere [#365](https://github.com/SoroushRF/Rehearsal/issues/365) | ✅ done |  |  |
 
 ## T2 Review & Approve
 
@@ -184,6 +185,7 @@ flowchart LR
     T1_41["T1.41 Demo blocker: target the org tenant when i"]:::done
     T1_42["T1.42 Serialize org resets with planning/apply a"]:::done
     T1_43["T1.43 Reserve built-in incident IDs when allocat"]:::done
+    T1_49["T1.49 Separate Agent Memory keys: read-only plan"]:::done
   end
   subgraph T2[T2 Review & Approve]
     T2_1["T2.1 Plan diff view from fixture bundles"]:::done
