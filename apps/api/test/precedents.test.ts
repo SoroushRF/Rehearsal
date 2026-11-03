@@ -4,11 +4,12 @@ import {
   loadRegistry,
   migrateDb,
   type PgBoss,
+  PRECEDENT_QUEUE,
   schema,
   startQueue,
 } from "@rehearsal/db";
 import type { PrecedentRecord } from "@rehearsal/memory";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app";
 import { precedentScope, syncPrecedent } from "../src/precedent-sync";
@@ -265,6 +266,11 @@ describe.skipIf(!process.env.DB_TESTS)("promoting a precedent (real Postgres)", 
 
   /** A publisher that stores what it is given, as Agent Memory would after readback. */
   const published: PrecedentRecord[] = [];
+  const marked: { id: string; version: number }[] = [];
+  const markWithdrawn = async (id: string, version: number) => {
+    marked.push({ id, version });
+    return { id, version, factIds: [], scope: "s", written: true };
+  };
   const publisherFor = () => ({
     publish: async (record: PrecedentRecord) => {
       published.push(record);
@@ -277,6 +283,7 @@ describe.skipIf(!process.env.DB_TESTS)("promoting a precedent (real Postgres)", 
         written: true,
       };
     },
+    markWithdrawn,
   });
 
   it("records the approved version as waiting, with the author set from the verified user", async () => {
@@ -328,6 +335,7 @@ describe.skipIf(!process.env.DB_TESTS)("promoting a precedent (real Postgres)", 
         publish: async () => {
           throw new Error("Agent Memory is down");
         },
+        markWithdrawn,
       }),
     };
     await expect(
@@ -423,6 +431,52 @@ describe.skipIf(!process.env.DB_TESTS)("promoting a precedent (real Postgres)", 
       await active();
       const res = await withdraw(finance(`org_${crypto.randomUUID()}`), "dup-refund", 1);
       expect(res.statusCode).toBe(404);
+    });
+
+    it("queues a job that retires the copy in Agent Memory (T1.51)", async () => {
+      const { orgId } = await active();
+      expect((await withdraw(finance(orgId), "dup-refund", 1)).statusCode).toBe(200);
+      const queued = await db.execute<{ data: unknown }>(
+        sql`select data from pgboss.job where name = ${PRECEDENT_QUEUE} and data->>'orgId' = ${orgId}`,
+      );
+      expect(queued.rows.map((r) => r.data)).toContainEqual({
+        orgId,
+        precedentId: "dup-refund",
+        version: 1,
+        kind: "withdraw",
+      });
+
+      const job = { orgId, precedentId: "dup-refund", version: 1, kind: "withdraw" };
+      expect(await syncPrecedent(job, { db, publisherFor })).toBe("marked_withdrawn");
+      expect(marked.at(-1)).toEqual({ id: "dup-refund", version: 1 });
+      // The registry is unchanged: memory only follows it.
+      expect((await list(finance(orgId)))[0]?.status).toBe("withdrawn");
+    });
+
+    it("doesn't put a withdrawn version's copy back when its publish job is redelivered", async () => {
+      const { orgId } = await active();
+      await withdraw(finance(orgId), "dup-refund", 1);
+      const before = published.length;
+      const job = { orgId, precedentId: "dup-refund", version: 1 };
+      expect(await syncPrecedent(job, { db, publisherFor })).toBe("withdrawn");
+      expect(published).toHaveLength(before);
+    });
+
+    it("leaves the copy to a newer approved version's sync, and marks nothing it can't find", async () => {
+      const { orgId, runId } = await active();
+      await withdraw(finance(orgId), "dup-refund", 1);
+      await promote(finance(orgId), runId, { ...content, statement: "Changed." });
+      const before = marked.length;
+      const job = { orgId, precedentId: "dup-refund", version: 1, kind: "withdraw" };
+      expect(await syncPrecedent(job, { db, publisherFor })).toBe("newer_version");
+
+      const other = await active();
+      const notWithdrawn = { ...job, orgId: other.orgId };
+      expect(await syncPrecedent(notWithdrawn, { db, publisherFor })).toBe("no_such_version");
+      expect(await syncPrecedent({ ...job, orgId: "org_x" }, { db, publisherFor })).toBe(
+        "no_such_version",
+      );
+      expect(marked).toHaveLength(before);
     });
 
     it("lets two withdrawals race and records only one", async () => {

@@ -3,7 +3,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { type ApiFetch, call, explain } from "../api";
 import {
-  activeFor,
   type CurrentPlan,
   cancelRehearsalPath,
   ExecutionRehearsalCancelled,
@@ -20,6 +19,7 @@ import {
   SCENARIOS,
   STAGES,
   scenarioInfo,
+  startBlocked,
   stateCopy,
 } from "../execution-rehearsal";
 import { shortHash } from "../format";
@@ -121,12 +121,8 @@ export function ExecutionRehearsalPanel({
   }
 
   const rehearsals = newestFirst(list.data);
-  const running = activeFor(rehearsals, plan, scenario);
-  const blocked = editing
-    ? "Create the revision first; a rehearsal runs the exact stored plan."
-    : running
-      ? `${scenarioInfo(scenario).title} is already ${stateCopy[running.state].label.toLowerCase()} for revision ${plan.revision}.`
-      : null;
+  const blockedFor = (id: RehearsalScenarioId) => startBlocked(rehearsals, plan, id, editing);
+  const blocked = blockedFor(scenario);
 
   return (
     <Panel>
@@ -195,6 +191,7 @@ export function ExecutionRehearsalPanel({
               r={r}
               current={plan}
               onRetry={() => start.mutate(r.scenario.id)}
+              retryBlocked={blockedFor(r.scenario.id)}
               retrying={start.isPending}
               onCancel={() => cancel.mutate(r.rehearsalId)}
               cancelling={cancel.isPending && cancel.variables === r.rehearsalId}
@@ -246,6 +243,7 @@ function RehearsalRow({
   r,
   current,
   onRetry,
+  retryBlocked,
   retrying,
   onCancel,
   cancelling,
@@ -254,6 +252,8 @@ function RehearsalRow({
   r: ExecutionRehearsalSummary;
   current: CurrentPlan;
   onRetry: () => void;
+  /** Why starting this row's scenario again is refused right now, as for the main button. */
+  retryBlocked: string | null;
   retrying: boolean;
   onCancel: () => void;
   cancelling: boolean;
@@ -318,9 +318,23 @@ function RehearsalRow({
       )}
 
       {(retryable || relation !== "current") && isTerminal(r.state) && (
-        <Button size="sm" icon="play" className="mt-2" loading={retrying} onClick={onRetry}>
-          {retryable ? "Try again" : "Rehearse"} on revision {current.revision}
-        </Button>
+        <>
+          <Button
+            size="sm"
+            icon="play"
+            className="mt-2"
+            loading={retrying}
+            disabled={retryBlocked !== null}
+            onClick={onRetry}
+          >
+            {retryable ? "Try again" : "Rehearse"} on revision {current.revision}
+          </Button>
+          {retryBlocked && (
+            <p data-testid="exec-rehearsal-row-blocked" className="mt-1 text-xs text-muted">
+              {retryBlocked}
+            </p>
+          )}
+        </>
       )}
       {report}
     </li>

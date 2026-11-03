@@ -148,6 +148,28 @@ export function activeFor(
   );
 }
 
+/** Why the panel shows for a start it won't send. */
+export const CREATE_REVISION_FIRST =
+  "Create the revision first; a rehearsal runs the exact stored plan.";
+
+/**
+ * Why a rehearsal of `scenario` can't start for the plan on screen, or null when it can. Every
+ * start button asks this, the main one and each history row's, so none of them skips a check.
+ * `editing`: boxes are unchecked and no revision holds that change yet.
+ */
+export function startBlocked(
+  list: readonly ExecutionRehearsalSummary[],
+  current: CurrentPlan,
+  scenario: RehearsalScenarioId,
+  editing: boolean,
+): string | null {
+  if (editing) return CREATE_REVISION_FIRST;
+  const running = activeFor(list, current, scenario);
+  if (!running) return null;
+  const state = stateCopy[running.state].label.toLowerCase();
+  return `${scenarioInfo(scenario).title} is already ${state} for revision ${current.revision}.`;
+}
+
 /** Newest first, by when each was requested. */
 export const newestFirst = (list: readonly ExecutionRehearsalSummary[]) =>
   [...list].sort((a, b) => b.requestedAt.localeCompare(a.requestedAt));

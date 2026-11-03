@@ -85,6 +85,30 @@ export function toTriples(record: PrecedentRecord): Triple[] {
   ];
 }
 
+/**
+ * What a withdrawn precedent's three attributes are overwritten with (T1.51). Writing the same
+ * keys supersedes the approved copy, so recall stops returning it, and `/history` still holds it.
+ * The service refuses `valid_until` on attributes, so this is the only way to retire a copy. The
+ * statement is one word, so the marker scores low and is the first to fall out of a crowded top k.
+ * Postgres stays the authority: this only keeps recall from offering what the registry would drop.
+ */
+export const WithdrawalMarker = z.strictObject({
+  id: PrecedentId,
+  version: z.int().positive(),
+  withdrawn: z.literal(true),
+});
+export const WITHDRAWN_STATEMENT = "withdrawn";
+
+export function withdrawalTriples(id: string, version: number): Triple[] {
+  const marker = WithdrawalMarker.parse({ id, version, withdrawn: true });
+  const entity = { type: ENTITY_TYPE, name: entityName(marker.id) };
+  return [
+    { entity, key: "statement", value: WITHDRAWN_STATEMENT },
+    { entity, key: "version", value: String(marker.version) },
+    { entity, key: "record", value: canonicalize(marker) },
+  ];
+}
+
 /** A live attribute as Agent Memory returns it, narrowed to what readback looks at. */
 export interface StoredAttribute {
   id: string;
@@ -96,7 +120,7 @@ export interface StoredAttribute {
 
 export type Decoded =
   | { ok: true; record: PrecedentRecord; digest: Sha256Hex; factIds: string[] }
-  | { ok: false; reason: string };
+  | { ok: false; reason: string; withdrawn?: { version: number; factIds: string[] } };
 
 /** Scope paths come back with a trailing slash; we compare without it. */
 export function normalizeScope(path: string): string {
@@ -159,6 +183,21 @@ export function decodeAttributes(
   } catch {
     return { ok: false, reason: "record is not JSON" };
   }
+  const factIds = [statement.id, version.id, raw.id].sort();
+  const marker = WithdrawalMarker.safeParse(json);
+  if (marker.success) {
+    const { data } = marker;
+    if (canonicalize(data) !== raw.value) return { ok: false, reason: "marker is not canonical" };
+    if (data.id !== id) return { ok: false, reason: `marker is for "${data.id}"` };
+    if (statement.value !== WITHDRAWN_STATEMENT || version.value !== String(data.version)) {
+      return { ok: false, reason: "marker attributes disagree" };
+    }
+    return {
+      ok: false,
+      reason: `withdrawn at v${data.version}`,
+      withdrawn: { version: data.version, factIds },
+    };
+  }
   const parsed = PrecedentRecord.safeParse(json);
   if (!parsed.success) return { ok: false, reason: `record is invalid: ${parsed.error.message}` };
   const record = parsed.data;
@@ -174,6 +213,6 @@ export function decodeAttributes(
     ok: true,
     record,
     digest: precedentDigest(record),
-    factIds: [statement.id, version.id, raw.id].sort(),
+    factIds,
   };
 }
