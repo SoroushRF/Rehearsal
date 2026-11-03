@@ -99,9 +99,29 @@ export function fakeApi({
           effectiveUntil: null,
           author: "user_finance",
           approvedAt: "2026-10-24T12:00:00.000Z",
+          digest: "a".repeat(64),
+          sourceRunId: "run_0",
         },
       ]
     : [];
+  // The version the plan cites, so the card can trace it to its approval.
+  if (citesPrecedent) {
+    precedents.push({
+      id: "duplicate-charge-refund",
+      version: 2,
+      appliesTo: "billing.duplicate_charge",
+      status: citesPrecedent === "held" ? "superseded" : "active",
+      statement: "A duplicate charge within 30 days is refunded in full.",
+      conditions: [],
+      exceptions: [],
+      effectiveFrom: "2026-10-01",
+      effectiveUntil: null,
+      author: "user_finance",
+      approvedAt: "2026-10-25T12:00:00.000Z",
+      digest: "d".repeat(64),
+      sourceRunId: "run_0",
+    });
+  }
   const basis = {
     citations: [
       {
@@ -312,6 +332,8 @@ export function fakeApi({
         effectiveUntil: b.effectiveUntil,
         author: "user_finance",
         approvedAt: "2026-10-24T12:00:00.000Z",
+        digest: "b".repeat(64),
+        sourceRunId: "run_1",
       });
       return json(route, 201, { precedent: { id: b.id, version: 1 }, syncEnabled: false });
     }

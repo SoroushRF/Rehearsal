@@ -1,20 +1,86 @@
-import type { PrecedentBasis } from "@rehearsal/contracts";
+import type { PrecedentBasis, PrecedentCitation } from "@rehearsal/contracts";
+import { shortHash } from "../format";
 import { explainPrecedentHold, type PrecedentCheck, type PrecedentHold } from "../precedent-holds";
+import type { Precedent } from "./PrecedentPanel";
 import { Card, Chip, Icon } from "./ui";
+
+/**
+ * Where a citation came from, by the registry. The planner decoded the cited facts into a record
+ * whose digest the citation carries; the registry holds the digest of the version finance
+ * approved. The same id, version and digest means the facts are that approved version.
+ */
+export type CitationSource =
+  | { kind: "not_loaded" }
+  | { kind: "missing" }
+  | { kind: "differs"; approved: Precedent }
+  | { kind: "matched"; approved: Precedent };
+
+export function citationSource(
+  c: PrecedentCitation,
+  registry: readonly Precedent[] | null,
+): CitationSource {
+  if (registry === null) return { kind: "not_loaded" };
+  const approved = registry.find((p) => p.id === c.id && p.version === c.version);
+  if (!approved) return { kind: "missing" };
+  return { kind: approved.digest === c.digest ? "matched" : "differs", approved };
+}
+
+function SourceLine({ c, source }: { c: PrecedentCitation; source: CitationSource }) {
+  const attrs = { "data-testid": "citation-source", "data-source": source.kind };
+  switch (source.kind) {
+    case "not_loaded":
+      return (
+        <p {...attrs} className="mt-1 text-xs text-subtle">
+          Approved version not looked up here.
+        </p>
+      );
+    case "missing":
+      return (
+        <p {...attrs} className="mt-1 text-sm text-warn">
+          This organization never approved {c.id} v{c.version}: the cited facts trace to no
+          approval.
+        </p>
+      );
+    case "differs":
+      return (
+        <p {...attrs} className="mt-1 text-sm text-warn">
+          The cited facts don't match approved {c.id} v{c.version} (digest{" "}
+          <code className="font-mono">{shortHash(c.digest)}</code>, approved{" "}
+          <code className="font-mono">{shortHash(source.approved.digest)}</code>).
+        </p>
+      );
+    case "matched": {
+      const p = source.approved;
+      return (
+        <p {...attrs} className="mt-1 text-xs text-subtle">
+          These facts are approved v{p.version} (digest{" "}
+          <code className="font-mono">{shortHash(p.digest)}</code>), promoted by{" "}
+          <code className="font-mono">{p.author}</code> on {p.approvedAt.slice(0, 10)} from run{" "}
+          <code className="font-mono">{p.sourceRunId ?? "none recorded"}</code>.
+        </p>
+      );
+    }
+  }
+}
 
 /**
  * The precedents a plan rests on, as the planner recalled them: which version, where it applies,
  * and the trace that found it. With the registry's verdict beside it, so a reviewer sees that a
  * cited precedent was replaced or withdrawn before they approve, not after. Without a verdict
  * (an example plan, or the check hasn't loaded) it says so instead of implying the citations hold.
+ * Each citation traces through its facts to the approved version, who promoted it and the run it
+ * came from (T2.29).
  */
 export function PrecedentBasisCard({
   basis,
   check,
+  registry = null,
 }: {
   basis: PrecedentBasis;
   /** The registry's answer for this exact plan; null when it wasn't asked. */
   check: PrecedentCheck | null;
+  /** Every version this organization approved (`GET /api/precedents`); null when not loaded. */
+  registry?: readonly Precedent[] | null;
 }) {
   const holds: PrecedentHold[] = check && !check.ok ? check.holds : [];
   const holdsFor = (id: string) => holds.filter((h) => "id" in h && h.id === id);
@@ -80,6 +146,7 @@ export function PrecedentBasisCard({
                     ))}
                   </ul>
                 )}
+                <SourceLine c={c} source={citationSource(c, registry)} />
                 {mine.map((h) => (
                   <p key={explainPrecedentHold(h)} className="mt-1 text-sm text-warn">
                     {explainPrecedentHold(h)}

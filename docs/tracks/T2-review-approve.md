@@ -68,6 +68,12 @@ See [beyond.md](../beyond.md) for scope, parallel work, external gates and the r
 | T2.27 | Accessibility scans wait for the plan's entrance fade | M5 | Scans measure settled colors without turning off the contrast rule or adding retries. **Done (fixture):** `violations()` waits until no finite animation runs; a regression slows animations tenfold and fails on the old scan | [#295](https://github.com/SoroushRF/Rehearsal/issues/295) | |
 | T2.28 | Steps with no recorded result aren't called "Never ran" | M5 | Neutral wording where a receipt is missing; contract docs and a regression for a committed effect whose receipt didn't settle | [#296](https://github.com/SoroushRF/Rehearsal/issues/296) | |
 
+### Agent Memory follow-ups (Nov 2026)
+
+| ID | Task | Milestone | Done when | Issue | Blocked by |
+|---|---|---|---|---|---|
+| T2.29 | Trace a cited precedent back to its approved version, promoter and source run | M5 | The citation card links each citation's fact IDs to the approved version in the Postgres registry (same id, version and digest), who promoted it and when, and its `sourceRunId`; it says so when the version was never approved, the digest differs, or the registry wasn't loaded. **Done (fixture):** `citationSource` in `PrecedentBasisCard.tsx`; `GET /api/precedents` also returns `digest` (additive); unit tests, a DB test and the precedents e2e spec. Not done: the `GET /traces/{id}` query text (the API would have to call Agent Memory on a read route) | [#388](https://github.com/SoroushRF/Rehearsal/issues/388) | — |
+
 ## Decisions
 
 _(add dated entries)_
