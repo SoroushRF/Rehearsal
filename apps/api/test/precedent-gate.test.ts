@@ -54,7 +54,8 @@ import { bearer, type Caller, fakeIam, finance, support } from "./fake-iam";
  * only then activates it; a rehearsal queues a plan job carrying the org's registry; the planner
  * worker claims it over HTTP, recalls in the org's scope with its read-only key and hands back a
  * plan that cites the precedent by version, digest, fact IDs and trace ID; withdrawing the
- * precedent then refuses approval, and a replan drops the copy Agent Memory still holds.
+ * precedent then refuses approval, its sync job retires the copy in Agent Memory (T1.51), and a
+ * replan no longer recalls it.
  *
  * Real: Postgres and pg-boss (a fresh database of its own, so no other test's jobs are claimed),
  * the API's routes, queued jobs and sync handler, and the planner worker's credential check, job
@@ -338,7 +339,7 @@ describe.skipIf(!process.env.DB_TESTS)("precedent gate through the app (T1.50)",
     // The job the promotion queued, run by the API's sync handler with its own publisher from
     // its env (the write key), as startPrecedentWorker would. A retry changes nothing.
     const [queued] = await boss.fetch(PRECEDENT_QUEUE, { batchSize: 1 });
-    expect(queued?.data).toEqual({ orgId, precedentId: body.id, version: 1 });
+    expect(queued?.data).toEqual({ orgId, precedentId: body.id, version: 1, kind: "publish" });
     const publisherFor = publisherFromEnv(apiEnv, memoryFetch ? { fetch: memoryFetch } : {});
     if (!publisherFor || !queued) throw new Error("no sync job, or memory not configured");
     expect(await syncPrecedent(queued.data, { db, publisherFor })).toBe("activated");
@@ -452,17 +453,40 @@ describe.skipIf(!process.env.DB_TESTS)("precedent gate through the app (T1.50)",
           { appliesTo: AREA, reason: "epoch_changed", plannedEpoch: 1, currentEpoch: 2 },
         ],
       });
+
+      // The withdrawal queued a job that overwrites the copy with the withdrawal marker (T1.51),
+      // run by the API's sync handler with the write key. A retry writes nothing new.
+      const [queued] = await boss.fetch(PRECEDENT_QUEUE, { batchSize: 1 });
+      expect(queued?.data).toEqual({ orgId, precedentId: ID, version: 1, kind: "withdraw" });
+      const publisherFor = publisherFromEnv(apiEnv, memoryFetch ? { fetch: memoryFetch } : {});
+      if (!publisherFor || !queued) throw new Error("no withdraw job, or memory not configured");
+      expect(await syncPrecedent(queued.data, { db, publisherFor })).toBe("marked_withdrawn");
+      expect(await syncPrecedent(queued.data, { db, publisherFor })).toBe("marked_withdrawn");
+      await boss.complete(PRECEDENT_QUEUE, queued.id);
+      const recaller = recallersFromEnv(plannerEnv, memoryFetch ? { fetch: memoryFetch } : {});
+      expect(await recaller?.(orgId).read(ID)).toMatchObject({ status: "withdrawn", version: 1 });
+      // The approved copy is superseded, not erased: history still has it.
+      const history = (await recaller?.(orgId).history(ID)) ?? [];
+      expect(history.map((h) => [h.record?.version ?? h.reason, h.superseded])).toEqual([
+        ["withdrawal marker for v1", false],
+        [1, true],
+      ]);
     },
     TIMEOUT,
   );
 
   it(
-    "replans without it: Agent Memory still holds the copy, the registry drops it",
+    "replans without it: recall no longer offers the withdrawn copy",
     async () => {
       // Another precedent in the area stays active, so the replan recalls the area again.
       await promoteAndSync(content2);
       const recaller = recallersFromEnv(plannerEnv, memoryFetch ? { fetch: memoryFetch } : {});
-      expect(await recaller?.(orgId).read(ID)).toMatchObject({ status: "valid" });
+      const recall = await recaller?.(orgId).recall(AREA);
+      expect(recall?.precedents.map((p) => p.id)).toEqual([ID_2]);
+      // The marker may still be a (low-scoring) hit; if it is, readback names it.
+      for (const r of recall?.rejected.filter((r) => r.id === ID) ?? []) {
+        expect(r.reason).toBe("withdrawn at v1");
+      }
 
       log.length = 0;
       const replanned = await rehearseAndPlan();
@@ -470,7 +494,7 @@ describe.skipIf(!process.env.DB_TESTS)("precedent gate through the app (T1.50)",
       // Withdrawal and the second activation each moved the area's epoch.
       expect(basis?.epochs).toEqual({ [AREA]: 3 });
       expect(basis?.citations.map((c) => [c.id, c.version])).toEqual([[ID_2, 1]]);
-      expect(log).toContain(`precedent ${ID} not cited: not active in the registry`);
+      expect(log.some((line) => line.includes(`precedent ${ID} `))).toBe(false);
       const approvals = (await call(fin, "GET", `/api/plans/${replanned.planId}/approvals`)).json();
       expect(approvals.precedents).toEqual({ ok: true });
     },

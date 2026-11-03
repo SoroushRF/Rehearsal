@@ -170,7 +170,8 @@ export function registerPrecedentRoutes(app: FastifyInstance, deps: PrecedentDep
    * Withdraws the active version (finance only). History isn't edited: a `withdrawn` event is
    * appended, the precedent leaves the registry snapshot and its area's epoch moves, so any plan
    * that relied on it is held once admission checks citations. A newer version that is still
-   * waiting is a separate approval and becomes active if its sync completes.
+   * waiting is a separate approval and becomes active if its sync completes. A sync job then
+   * retires the copy in Agent Memory; the withdrawal doesn't wait for it.
    */
   app.post<{ Params: { id: string } }>("/api/precedents/:id/withdraw", async (req, reply) => {
     const token = bearerToken(req);
@@ -200,6 +201,13 @@ export function registerPrecedentRoutes(app: FastifyInstance, deps: PrecedentDep
         version: active.version,
         kind: "withdrawn",
         actorUserId: gate.person.userId,
+      });
+      // Retire the copy in Agent Memory too, so recall stops offering it (T1.51).
+      await enqueuePrecedentSync(deps.boss, tx, {
+        orgId,
+        precedentId: id,
+        version: active.version,
+        kind: "withdraw",
       });
       return [200, { precedent: { id, version: active.version, status: "withdrawn" } }];
     });

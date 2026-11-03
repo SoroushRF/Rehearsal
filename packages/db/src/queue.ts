@@ -48,11 +48,16 @@ export const PLAN_QUEUE_OPTIONS = {
 
 export const PRECEDENT_QUEUE = "precedent-sync";
 
-/** Which approved precedent version to publish to Agent Memory. The worker loads the record itself. */
+/**
+ * Which approved precedent version to publish to Agent Memory, or to overwrite there with the
+ * withdrawal marker once it is withdrawn (T1.51). The worker loads the record itself. Jobs queued
+ * before `kind` existed are publishes.
+ */
 export const PrecedentSyncJob = z.object({
   orgId: z.string().min(1),
   precedentId: z.string().min(1),
   version: z.int().positive(),
+  kind: z.enum(["publish", "withdraw"]).default("publish"),
 });
 export type PrecedentSyncJob = z.infer<typeof PrecedentSyncJob>;
 
@@ -125,15 +130,20 @@ export async function enqueueApply(boss: PgBoss, tx: DrizzleTx, job: ApplyJob): 
   if (!id) throw new Error(`apply job for ${job.runId} was not enqueued`);
 }
 
-/** Enqueue inside the promotion's transaction: the `approved` event and its sync job commit together. */
+/**
+ * Enqueue inside the transaction that appends the event: the `approved` (or `withdrawn`) event and
+ * its sync job commit together.
+ */
 export async function enqueuePrecedentSync(
   boss: PgBoss,
   tx: DrizzleTx,
-  job: PrecedentSyncJob,
+  input: z.input<typeof PrecedentSyncJob>,
 ): Promise<void> {
-  // A suppressed send means a job for this exact version is already queued, which is fine.
-  await boss.send(PRECEDENT_QUEUE, PrecedentSyncJob.parse(job), {
+  const job = PrecedentSyncJob.parse(input);
+  const key = `${job.orgId}:${job.precedentId}:${job.version}`;
+  // A suppressed send means the same job for this exact version is already queued, which is fine.
+  await boss.send(PRECEDENT_QUEUE, job, {
     db: fromDrizzle(tx, sql),
-    singletonKey: `${job.orgId}:${job.precedentId}:${job.version}`,
+    singletonKey: job.kind === "publish" ? key : `${key}:${job.kind}`,
   });
 }
