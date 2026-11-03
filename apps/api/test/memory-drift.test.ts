@@ -1,7 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
-  approvePrecedent,
   createDb,
   enqueuePrecedentSync,
   loadRegistry,
@@ -11,6 +10,7 @@ import {
   type PrecedentSyncJob,
   precedentSyncPending,
   recordPrecedentEvent,
+  schema,
   startPrecedentSender,
   startQueue,
 } from "@rehearsal/db";
@@ -123,7 +123,8 @@ describe.skipIf(!process.env.DB_TESTS)("memory drift check and repair (real Post
       clock: { now: () => new Date("2026-10-24T12:00:00Z") },
     });
   /** An hour on: everything approved in the test is past the grace period. */
-  const later = () => new Date(Date.now() + 60 * 60_000);
+  const approvedAt = new Date("2026-10-24T12:00:00Z");
+  const later = () => new Date(approvedAt.getTime() + 60 * 60_000);
   let boss: PgBoss;
 
   beforeAll(async () => {
@@ -135,7 +136,9 @@ describe.skipIf(!process.env.DB_TESTS)("memory drift check and repair (real Post
   });
 
   async function approve(orgId: string, r: PrecedentRecord) {
-    await approvePrecedent(db, {
+    await db.insert(schema.precedentEvents).values({
+      kind: "approved",
+      at: approvedAt,
       orgId,
       precedentId: r.id,
       version: r.version,
@@ -271,6 +274,7 @@ describe.skipIf(!process.env.DB_TESTS)("memory drift check and repair (real Post
       orgs: [orgId],
       readerFor,
       enqueue,
+      now: () => approvedAt,
       log: (l) => lines.push(l),
     });
     expect(run).toMatchObject({ findings: 0, queued: 0, noRegistry: [] });

@@ -1,7 +1,6 @@
 import type { PlanManifest, Receipt } from "@rehearsal/contracts";
 import { operationKey, planHash, type RepairRefresh } from "@rehearsal/core";
 import {
-  createDb,
   type Db,
   migrateDb,
   type PgBoss,
@@ -13,6 +12,7 @@ import {
 import { PLANNER_JOB_ROUTES, PlanJob } from "@rehearsal/providers";
 import { billingManifest, INCIDENT } from "@rehearsal/testkit";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { isolatedTestDatabase } from "../../../packages/db/test/isolated-db";
 import { buildApp } from "../src/app";
 import { loadPlan, storePlan } from "../src/plans";
 import { checkJobBasis, type RehearseDeps } from "../src/rehearse";
@@ -219,17 +219,19 @@ describe("a returned plan's precedent basis", () => {
 
 // Needs a real Postgres: `pnpm infra:up` then `DB_TESTS=1 pnpm --filter @rehearsal/api test`.
 describe.skipIf(!process.env.DB_TESTS)("rehearse through the plan queue (real Postgres)", () => {
-  const url = process.env.DATABASE_URL ?? "postgres://rehearsal:rehearsal@localhost:5432/rehearsal";
-  const db = createDb(url);
+  const database = isolatedTestDatabase();
+  const { db, url } = database;
   let boss: PgBoss;
   const worker = { authorization: `Bearer ${SECRET}` };
 
   beforeAll(async () => {
+    await database.create();
     await migrateDb(db);
     boss = await startQueue(url);
   });
   afterAll(async () => {
     await boss?.stop({ graceful: false });
+    await database.drop();
   });
 
   const appFor = (me: Caller) =>
@@ -248,16 +250,13 @@ describe.skipIf(!process.env.DB_TESTS)("rehearse through the plan queue (real Po
       headers: bearer(me),
     });
     const { rehearsalId, planId } = queued.json();
-    // Other runs may have left jobs behind; take ours, whatever is ahead of it.
-    for (let i = 0; i < 50; i++) {
-      const res = await app.inject({
-        method: "POST",
-        url: PLANNER_JOB_ROUTES.next,
-        headers: worker,
-      });
-      expect(res.statusCode).toBe(200);
-      if (res.json().id === rehearsalId) break;
-    }
+    const claimed = await app.inject({
+      method: "POST",
+      url: PLANNER_JOB_ROUTES.next,
+      headers: worker,
+    });
+    expect(claimed.statusCode).toBe(200);
+    expect(claimed.json().id).toBe(rehearsalId);
     const manifest = { ...billingManifest(planId), orgId: me.orgId };
     return { app, me, rehearsalId, planId, manifest };
   }
@@ -440,19 +439,21 @@ describe.skipIf(!process.env.DB_TESTS)("rehearse through the plan queue (real Po
 
 const PHANTOM = "ch_fixture_001_dup";
 
-// In this file, not its own: claiming jobs from the shared queue must not race the tests above.
+// Its own database isolates both plan jobs and world locks from the other suites.
 describe.skipIf(!process.env.DB_TESTS)("repair a held run (T1.37, real Postgres)", () => {
-  const url = process.env.DATABASE_URL ?? "postgres://rehearsal:rehearsal@localhost:5432/rehearsal";
-  const db = createDb(url);
+  const database = isolatedTestDatabase();
+  const { db, url } = database;
   let boss: PgBoss;
   const worker = { authorization: `Bearer ${SECRET}` };
 
   beforeAll(async () => {
+    await database.create();
     await migrateDb(db);
     boss = await startQueue(url);
   });
   afterAll(async () => {
     await boss?.stop({ graceful: false });
+    await database.drop();
   });
 
   const refreshed: [string, RepairRefresh[]][] = [];
