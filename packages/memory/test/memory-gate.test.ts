@@ -1,6 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { type EraseEventKind, eraseOrg } from "../../../scripts/memory/erase-run";
-import { adminFor, keyNames, mintPair, revokeOld, rotate } from "../../../scripts/memory/keys-run";
+import {
+  adminFor,
+  KeyCommandUnsafe,
+  keyNames,
+  mintPair,
+  revokeOld,
+  rotate,
+} from "../../../scripts/memory/keys-run";
 import { checkPrecedentBasis, citePrecedents, type RegistrySnapshot } from "../src/citations";
 import { AgentMemoryClient, AgentMemoryError } from "../src/client";
 import { memoryKeyGrants, precedentScope } from "../src/config";
@@ -323,7 +330,21 @@ describe.skipIf(!LIVE)("memory gate (hosted Agent Memory)", () => {
       .catch((e: unknown) => e);
     expect(denied).toMatchObject({ status: 403 });
 
-    const { kept, revoked } = await revokeOld(admin, rotateLabel, () => {});
+    // The old keys were used last: something still runs on them, so --revoke-old refuses.
+    const lines: string[] = [];
+    await expect(revokeOld(admin, rotateLabel, (l) => lines.push(l))).rejects.toBeInstanceOf(
+      KeyCommandUnsafe,
+    );
+    // What the service reported, for the record (names and times only; never a key).
+    console.log(`[gate] revoke-old check, refused:\n${lines.join("\n")}`);
+    expect(lines.some((l) => l.includes("after") && l.includes("something still runs"))).toBe(true);
+    // The new pair used last, as after a finished deploy: it goes ahead.
+    expect(await as(second.api).publish(r2)).toMatchObject({ written: false });
+    expect(await as(second.planner).read(r1.id)).toMatchObject({ status: "valid", record: r2 });
+    lines.length = 0;
+    const { kept, revoked, failed } = await revokeOld(admin, rotateLabel, (l) => lines.push(l));
+    console.log(`[gate] revoke-old check, passed:\n${lines.join("\n")}`);
+    expect(failed).toEqual([]);
     expect(kept.generation).toBe(2);
     expect(revoked.sort()).toEqual(Object.values(keyNames(rotateLabel, 1)).sort());
     await expect(as(first.planner).read(r1.id)).rejects.toMatchObject({ status: 401 });

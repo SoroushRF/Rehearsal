@@ -70,7 +70,7 @@ export class FakeAgentMemory {
     const grant = this.keys.get(auth?.replace(/^Bearer /, "") ?? "");
     if (grant === undefined) return json(401, { message: "invalid api key" });
     const token = auth?.replace(/^Bearer /, "") ?? "";
-    for (const k of this.named.values()) if (k.key === token) k.lastUsedAt = this.#now();
+    for (const k of this.named.values()) if (k.key === token) k.lastUsedAt = this.#keyNow();
 
     const route = url.pathname.replace(/^\/api\/v1\/ctx/, "");
     const named = route.match(/^\/keys(?:\/([^/]+))?$/);
@@ -122,6 +122,13 @@ export class FakeAgentMemory {
     return new Date(this.#tick).toISOString();
   }
 
+  /** Key creation and use, a second apart each time, so their order shows in `GET /keys`. */
+  #keyTick = Date.parse("2026-10-24T08:00:00Z");
+  #keyNow(): string {
+    this.#keyTick += 1000;
+    return new Date(this.#keyTick).toISOString();
+  }
+
   /** Grants as `memoryKeyGrants` spells them: `memory:read` / `memory:write` lists of `<path>/*`. */
   #mintKey(body: { name?: unknown; grants?: Record<string, string[]> }) {
     if (typeof body.name !== "string" || body.name === "") return json(422, "name required");
@@ -133,7 +140,7 @@ export class FakeAgentMemory {
       read: region(body.grants?.["memory:read"]),
       write: region(body.grants?.["memory:write"]),
     });
-    this.named.set(body.name, { key, createdAt: this.#now(), lastUsedAt: null });
+    this.named.set(body.name, { key, createdAt: this.#keyNow(), lastUsedAt: null });
     return json(201, { name: body.name, key });
   }
 
