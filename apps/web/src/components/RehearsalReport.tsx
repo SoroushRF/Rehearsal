@@ -35,11 +35,13 @@ export function RehearsalReportToggle({
   rehearsalId,
   current,
   manifest,
+  label = "Compare with what was expected",
 }: {
   apiFetch: ApiFetch;
   rehearsalId: string;
   current: CurrentPlan;
   manifest: PlanManifest | null;
+  label?: string;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -51,7 +53,7 @@ export function RehearsalReportToggle({
         onClick={() => setOpen((o) => !o)}
         data-testid="exec-report-toggle"
       >
-        {open ? "Hide report" : "Compare with what was expected"}
+        {open ? "Hide report" : label}
       </Button>
       {open && (
         <RehearsalReportLoader
@@ -76,12 +78,7 @@ function RehearsalReportLoader({
   current: CurrentPlan;
   manifest: PlanManifest | null;
 }) {
-  const key = useTenantKey();
-  const q = useQuery({
-    queryKey: key("execution-rehearsal-report", rehearsalId),
-    queryFn: () => call(apiFetch, ExecutionRehearsalReportView, rehearsalReportPath(rehearsalId)),
-    retry: false,
-  });
+  const q = useRehearsalReport(apiFetch, rehearsalId);
   if (q.isPending) return <p className="mt-3 text-sm text-subtle">Loading the report…</p>;
   if (q.isError) {
     const none = q.error instanceof RefusedError && q.error.status === 404;
@@ -92,6 +89,16 @@ function RehearsalReportLoader({
     );
   }
   return <RehearsalReportView view={q.data} current={current} manifest={manifest} />;
+}
+
+/** A finished rehearsal's stored report. One cached query, whichever view asks first. */
+export function useRehearsalReport(apiFetch: ApiFetch, rehearsalId: string) {
+  const key = useTenantKey();
+  return useQuery({
+    queryKey: key("execution-rehearsal-report", rehearsalId),
+    queryFn: () => call(apiFetch, ExecutionRehearsalReportView, rehearsalReportPath(rehearsalId)),
+    retry: false,
+  });
 }
 
 export function RehearsalReportView({
