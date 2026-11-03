@@ -12,8 +12,8 @@ export interface SimilarRecaller {
 }
 export type SimilarRecallerFor = (orgId: string) => SimilarRecaller;
 
-/** Hosted recall takes 5–8 s (docs/agent-memory.md); past this the panel says it couldn't check. */
-export const SIMILAR_TIMEOUT_MS = 10_000;
+/** Draft-text recall exceeded 10 s in the hosted gate; the advisory panel has a 30 s budget. */
+export const SIMILAR_TIMEOUT_MS = 30_000;
 
 /**
  * Recall takes the closest hits across every area and the route filters to one area afterwards,

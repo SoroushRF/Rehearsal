@@ -1,7 +1,7 @@
 import type { PlanManifest } from "@rehearsal/contracts";
 import { type BillingPolicy, type BillingPolicyV1, fingerprint } from "@rehearsal/core";
 import {
-  createDb,
+  type createDb,
   loadRegistry,
   migrateDb,
   type PgBoss,
@@ -25,8 +25,8 @@ import {
   ZENDESK_TICKET_PROJECTION,
 } from "@rehearsal/providers";
 import { INCIDENT, incidentRecords } from "@rehearsal/testkit";
-import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { isolatedTestDatabase } from "../../../packages/db/test/isolated-db";
 import { FakeAgentMemory } from "../../../packages/memory/test/fake-agent-memory";
 import {
   clientWithKey,
@@ -45,6 +45,7 @@ import { handlePlanJob, type PlanJobContext } from "../../planner-worker/src/job
 import { recallersFromEnv } from "../../planner-worker/src/precedents";
 import { buildApp } from "../src/app";
 import { loadPlan } from "../src/plans";
+import { similarRecallerFromEnv } from "../src/precedent-similar";
 import { publisherFromEnv, syncPrecedent } from "../src/precedent-sync";
 import { bearer, type Caller, fakeIam, finance, support } from "./fake-iam";
 
@@ -65,13 +66,8 @@ import { bearer, type Caller, fakeIam, finance, support } from "./fake-iam";
  * MEMORY_GATE=1, which runs against the hosted service in a throwaway scope it erases afterwards.
  */
 
-const URL_ = process.env.DATABASE_URL ?? "postgres://rehearsal:rehearsal@localhost:5432/rehearsal";
-const GATE_DB = "rehearsal_precedent_gate";
-const gateUrl = (() => {
-  const u = new URL(URL_);
-  u.pathname = `/${GATE_DB}`;
-  return u.toString();
-})();
+const database = isolatedTestDatabase();
+const { url: gateUrl } = database;
 const SECRET = "planner-gate-secret";
 // Hosted recall takes 5–10 s a query (docs/agent-memory.md); a plan recalls once per area.
 const TIMEOUT = LIVE ? 180_000 : 30_000;
@@ -218,11 +214,8 @@ describe.skipIf(!process.env.DB_TESTS)("precedent gate through the app (T1.50)",
 
   beforeAll(async () => {
     // A fresh database of its own: its plan and sync queues hold only this run's jobs.
-    const admin = createDb(URL_);
-    await admin.execute(sql.raw(`DROP DATABASE IF EXISTS ${GATE_DB} WITH (FORCE)`));
-    await admin.execute(sql.raw(`CREATE DATABASE ${GATE_DB}`));
-    await admin.$client.end();
-    db = createDb(gateUrl);
+    await database.create();
+    db = database.db;
     await migrateDb(db);
     boss = await startQueue(gateUrl);
 
@@ -256,7 +249,16 @@ describe.skipIf(!process.env.DB_TESTS)("precedent gate through the app (T1.50)",
     app = buildApp({
       webRoot: null,
       iam,
-      precedents: { db, boss, iam, syncEnabled: true },
+      plans: { db, iam },
+      precedents: {
+        db,
+        boss,
+        iam,
+        syncEnabled: true,
+        similar: similarRecallerFromEnv(apiEnv, {
+          ...(memoryFetch && { fetch: memoryFetch }),
+        }),
+      },
       rehearse: {
         db,
         boss,
@@ -273,7 +275,7 @@ describe.skipIf(!process.env.DB_TESTS)("precedent gate through the app (T1.50)",
   afterAll(async () => {
     await app?.close();
     await boss?.stop({ graceful: false });
-    await db?.$client.end();
+    await database.drop();
     if (LIVE) {
       for (const name of Object.values(keyNames)) await revokeKey(name);
       await eraseScope(base, [orgScope, base]);
@@ -370,6 +372,25 @@ describe.skipIf(!process.env.DB_TESTS)("precedent gate through the app (T1.50)",
   );
 
   it(
+    "queries similar active precedents with the API write key through the promote route",
+    async () => {
+      const started = Date.now();
+      const hint = await call(fin, "POST", `/api/runs/${runIdForPromotion}/precedents/similar`, {
+        appliesTo: AREA,
+        statement: content.statement,
+      });
+      if (LIVE)
+        console.log(`hosted similar route: ${Date.now() - started} ms, ${hint.json().status}`);
+      expect(hint.statusCode).toBe(200);
+      expect(hint.json()).toMatchObject({
+        status: "ok",
+        similar: [expect.objectContaining({ id: ID, version: 1, statement: content.statement })],
+      });
+    },
+    TIMEOUT,
+  );
+
+  it(
     "refuses the planner's key a write, so it can't plant or change a precedent",
     async () => {
       const config = memoryConfigFromEnv("read", plannerEnv);
@@ -427,6 +448,28 @@ describe.skipIf(!process.env.DB_TESTS)("precedent gate through the app (T1.50)",
       // The digest is of the record finance approved, as Postgres holds it.
       const approved = (await loadRegistry(db, orgId)).entries.find((e) => e.id === ID);
       expect(citation?.digest).toBe(precedentDigest(PrecedentRecord.parse(approved?.record)));
+
+      // T1.54: serve the worker's hosted recall diagnostics from Postgres, outside the manifest.
+      const served = await call(sup, "GET", `/api/plans/${cited.planId}`);
+      expect(served.statusCode).toBe(200);
+      const detail = served.json();
+      expect(detail.planHash).toBe(cited.planHash);
+      expect(detail.manifest).toEqual(cited.manifest);
+      expect(detail.manifest.recallDiagnostics).toBeUndefined();
+      expect(detail.recallDiagnostics).toMatchObject({
+        revision: 1,
+        diagnostics: {
+          recalled: true,
+          areas: [
+            expect.objectContaining({
+              area: AREA,
+              query: AREA,
+              traceId: citation?.traceId,
+              hits: expect.arrayContaining([expect.objectContaining({ id: ID, version: 1 })]),
+            }),
+          ],
+        },
+      });
 
       // Approval would take it: the cited precedent still holds.
       const approvals = (await call(fin, "GET", `/api/plans/${cited.planId}/approvals`)).json();
