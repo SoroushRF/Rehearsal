@@ -22,11 +22,14 @@ export type PrecedentPublisher = Pick<AgentMemoryPrecedents, "publish">;
 export type PublisherFor = (orgId: string) => PrecedentPublisher;
 
 /** Publishers built from the environment, or null when Agent Memory isn't configured (core mode). */
-export function publisherFromEnv(env: Record<string, string | undefined> = process.env) {
+export function publisherFromEnv(
+  env: Record<string, string | undefined> = process.env,
+  options: { fetch?: typeof fetch } = {},
+) {
   const config = memoryConfigFromEnv("write", env);
   if (config === null) return null;
   const { scope, ...client } = config;
-  const memory = new AgentMemoryClient(client);
+  const memory = new AgentMemoryClient({ ...client, ...options });
   const byOrg = new Map<string, PrecedentPublisher>();
   const publisherFor: PublisherFor = (orgId) => {
     let publisher = byOrg.get(orgId);
