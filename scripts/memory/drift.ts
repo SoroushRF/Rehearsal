@@ -25,7 +25,8 @@ import { driftCredentialViolations, runDrift } from "./drift-run";
  *
  * --activate-waiting also queues the repairs that activate a version approved but never synced,
  * which moves its area's epoch. Exits 0 when memory matches, 1 when it found drift (queued or
- * not), 2 on bad usage, and 3 on any error, an org with no registry included.
+ * not), 2 on bad usage, and 3 on any error, an org with no registry included. An org whose memory
+ * was erased (T1.55) is refused: exit 3 when named, skipped with a line under --all.
  */
 
 const FLAGS = ["--all", "--repair", "--activate-waiting"];
@@ -101,7 +102,9 @@ try {
     ? `; ${result.queued} sync jobs queued for the API, ${result.alreadyQueued} already queued${result.notActivated ? `, ${result.notActivated} left for --activate-waiting` : ""}`
     : "";
   console.log(`${result.findings} drift${queued}`);
-  process.exitCode = result.noRegistry.length > 0 ? 3 : result.findings > 0 ? 1 : 0;
+  // An org named on the command line whose memory was erased is refused (exit 3); --all skips it.
+  const refused = result.noRegistry.length > 0 || (!all && result.erased.length > 0);
+  process.exitCode = refused ? 3 : result.findings > 0 ? 1 : 0;
 } catch (err) {
   console.error(`drift check failed: ${err instanceof Error ? err.message : String(err)}`);
   process.exitCode = 3;

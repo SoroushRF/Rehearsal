@@ -20,7 +20,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { authorize, bearerToken, refuse, requirePerson } from "./iam";
 import { loadPlan, loadPlanById } from "./plans";
-import { INCIDENTS, type RehearseDeps, registryForJob } from "./rehearse";
+import { INCIDENTS, jobPrecedents, type RehearseDeps } from "./rehearse";
 
 const { runs, stepAttempts } = schema;
 
@@ -196,9 +196,7 @@ export function registerRepairRoute(app: FastifyInstance, deps: RehearseDeps) {
       incidentId: manifest.incidentId,
       planId: plan.planId,
       requestedBy: gate.person.userId,
-      ...(deps.precedentRegistry && {
-        precedents: registryForJob(await deps.precedentRegistry(orgId)),
-      }),
+      ...(await jobPrecedents(deps, orgId)),
       ...(filed && {
         incident: {
           incidentId: filed.incidentId,

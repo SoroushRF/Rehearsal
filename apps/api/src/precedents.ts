@@ -5,6 +5,7 @@ import {
   latestApproved,
   loadRegistry,
   lockPrecedent,
+  memoryErased,
   type PgBoss,
   recordPrecedentEvent,
   schema,
@@ -92,7 +93,10 @@ export interface SimilarPrecedent {
   sameId: boolean;
 }
 export interface SimilarResponse {
-  /** `off`: Agent Memory isn't configured. `unavailable`: recall failed or timed out. */
+  /**
+   * `off`: Agent Memory isn't configured, or the org's memory was erased. `unavailable`: recall
+   * failed or timed out.
+   */
   status: "ok" | "off" | "unavailable";
   similar: SimilarPrecedent[];
 }
@@ -152,6 +156,9 @@ export function registerPrecedentRoutes(app: FastifyInstance, deps: PrecedentDep
       if (current.state !== "completed") {
         return [409, { error: "run_not_completed", state: current.state }];
       }
+      // T1.55: an org whose Agent Memory was erased can't sync, so a new version would only wait
+      // forever. Refused instead; what is already in the registry stays as it is.
+      if (await memoryErased(tx, run.orgId)) return [409, { error: "memory_erased" }];
 
       const latest = await latestApproved(tx, run.orgId, body.data.id);
       if (latest && latest.appliesTo !== body.data.appliesTo) {
@@ -233,7 +240,10 @@ export function registerPrecedentRoutes(app: FastifyInstance, deps: PrecedentDep
     }
 
     const answer = (out: SimilarResponse) => reply.code(200).send(out);
-    if (!deps.similar) return answer({ status: "off", similar: [] });
+    // An org whose Agent Memory was erased (T1.55) is never recalled from: memory is off for it.
+    if (!deps.similar || (await memoryErased(deps.db, run.orgId))) {
+      return answer({ status: "off", similar: [] });
+    }
 
     const { appliesTo, statement, id } = body.data;
     // Read once to skip a recall nothing could match; read again after it (below), because a

@@ -342,3 +342,30 @@ export const planRecallDiagnostics = pgTable(
   },
   (t) => [primaryKey({ columns: [t.orgId, t.planId, t.revision] })],
 );
+
+/**
+ * T1.55: per-org Agent Memory erasure, written only by `pnpm memory:erase-org`. Append-only.
+ * `erased` is written before the org's memory scope is forgotten, so a crash in between leaves
+ * the org refused (no sync, recall, hint or drift repair) rather than half-erased and still
+ * served; `forgotten` is written once the scope is erased and tombstoned. Any `erased` row refuses
+ * the org from then on. It changes nothing in `precedent_events`: the registry still decides.
+ */
+export const memoryErasureEvents = pgTable(
+  "memory_erasure_events",
+  {
+    seq: bigserial("seq", { mode: "number" }).primaryKey(),
+    orgId: text("org_id").notNull(),
+    kind: text("kind").$type<"erased" | "forgotten">().notNull(),
+    /** The org's memory scope (`precedentScope`). */
+    scope: text("scope").notNull(),
+    /** What the dry run listed (`erased`), or what the service reported forgetting. */
+    summary: jsonb("summary").notNull(),
+    /** Who ran the command, as the operator's machine reports it. */
+    operator: text("operator"),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index().on(t.orgId),
+    check("memory_erasure_events_kind", sql`${t.kind} in ('erased', 'forgotten')`),
+  ],
+);
