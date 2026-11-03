@@ -196,3 +196,52 @@ Google sign-in initially requested organization creation because the real owner'
 had no memberships; Rehearsal Demo contained test users only. The owner explicitly
 authorized joining that existing organization as `org:owner`; the membership was created.
 No new organization, email invitation or authorization bypass was used.
+
+
+## Public main restored (2026-11-03)
+
+The owner made public `SoroushRF/Rehearsal` the development and deployment source again.
+All five Git-backed services now target its `main`: `rehearsal-api`, `rehearsal-iam`,
+`rehearsal-planner`, `rehearsal-executor` and `rehearsal-rehearsal`. All five are live on
+`9f680627e1338a723ba788a632d07dcf2e20fe78` (PRs #408–#410), by 23:23:10 UTC.
+Auto-deploy remains off; a merge alone does not release a simulator or worker.
+
+The API receives only the Agent Memory write key, the planner only the read key; both
+also receive URL/context. IAM, executor and rehearsal worker receive no memory setting.
+The release keys were verified in a disposable scope: publish/readback and planner recall
+passed, planner writes returned 403, and the scope was forgotten and tombstoned afterwards.
+The planner's new ready log reports `precedents on`; executor and rehearsal worker each
+report consuming their own queue. IAM reports its mTLS listener on 3443.
+
+Before deploy, database reads found no active runs, rehearsals or planner jobs. The first
+ten migration hashes match the public history. The private demo's `0010_world_resets`
+remains in the database/history, unused by public code. Drizzle orders migrations by their
+journal timestamp: public `0010_plan_recall_diagnostics` and `0011_memory_erasures` are newer,
+and post-deploy readback confirms both applied and both tables exist. No migration ledger
+or historical row was rewritten, and no simulator was reset.
+
+Evidence:
+
+- API deployment `dep-dbl6od61egvs73duikq0`; IAM `dep-dbl6pb3m8hqs73cgcpt0`;
+  planner `dep-dbl6pb0m7kps739ef60g`; executor `dep-dbl6pbbm8hqs73cgcqsg`;
+  rehearsal worker `dep-dbl6pbe1egvs73dulptg`.
+- Post-deploy DB job `job-dbl6pb942hec739p0r8g`: succeeded; both memory tables exist,
+  both expected migration hashes are recorded, and no created/retry/active jobs remained.
+- Cloud smoke `job-dbl6q6142hec739p3il0`, after all five deploys: succeeded. All nine
+  worlds, writability flags/token minting, Postgres, IAM mTLS/refusal, public pages,
+  health, fixture replay and signed-out plan refusal passed.
+- Cloud memory job `job-dbl6q60m7kps739ehlgg`: succeeded using the deployed API environment,
+  publishing/readback and recalling in a disposable org scope. The operator then forgot and
+  tombstoned only that probe scope.
+- Full local DB suite: 2,088 passed, 141 skipped. Modern Git OpenSSL was used; the large
+  local checkout used a 15 s test timeout. Typecheck, tracked-source Biome and web build
+  passed. Each implementation PR also passed clean Linux CI, including plain `pnpm lint`.
+- Hosted Agent Memory: final rotation/drift/disposable-erasure checks passed three
+  consecutive runs; expanded app gate 6/6 passed on three final runs. Its IAM, model and
+  planning-world reads are fixtures; its Postgres and Agent Memory are real.
+
+This establishes deployment connectivity, worker startup and hosted memory behavior.
+No fresh signed-in plan/review/approve/apply flow was run for this release, and it does
+not establish a new Era application acceptance run. No real organization was erased.
+Hosted `lastUsedAt` remains unreliable: successful timestamp checks cannot prove old keys
+are idle. Rotation still requires checking every deployed instance before revocation.
