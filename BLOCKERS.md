@@ -6,7 +6,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 
 ## Top blockers
 
-107 of 124 tasks done. These open tasks hold up the most other work:
+108 of 125 tasks done. These open tasks hold up the most other work:
 
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
@@ -67,9 +67,10 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T1.43** Reserve built-in incident IDs when allocating filed incidents [#350](https://github.com/SoroushRF/Rehearsal/issues/350) | ✅ done |  |  |
 | **T1.44** Rehearse stored plans containing public customer replies [#357](https://github.com/SoroushRF/Rehearsal/issues/357) | 🟨 ready | — | T1.45 |
 | **T1.45** Rehearse balance-credit plans from faithful disposable snapshots [#358](https://github.com/SoroushRF/Rehearsal/issues/358) | 🟥 blocked | T1.44 (T1, ready) |  |
-| **T1.49** Separate Agent Memory keys: read-only planner, write key for the API, refused elsewhere [#365](https://github.com/SoroushRF/Rehearsal/issues/365) | ✅ done |  | T1.50, T2.30 (T2) |
+| **T1.49** Separate Agent Memory keys: read-only planner, write key for the API, refused elsewhere [#365](https://github.com/SoroushRF/Rehearsal/issues/365) | ✅ done |  | T1.50, T1.52, T2.30 (T2) |
 | **T1.50** Precedent gate through the app: promote, sync, cite by fact ID, withdraw, refuse [#366](https://github.com/SoroushRF/Rehearsal/issues/366) | ✅ done |  | T1.51 |
 | **T1.51** Retire a withdrawn precedent's copy in Agent Memory [#367](https://github.com/SoroushRF/Rehearsal/issues/367) | ✅ done |  |  |
+| **T1.52** README: Agent Memory in the architecture diagram, plus citation and promote screenshots [#390](https://github.com/SoroushRF/Rehearsal/issues/390) | ✅ done |  |  |
 
 ## T2 Review & Approve
 
@@ -223,6 +224,7 @@ flowchart LR
     T1_49["T1.49 Separate Agent Memory keys: read-only plan"]:::done
     T1_50["T1.50 Precedent gate through the app: promote, s"]:::done
     T1_51["T1.51 Retire a withdrawn precedent's copy in Age"]:::done
+    T1_52["T1.52 README: Agent Memory in the architecture d"]:::done
   end
   subgraph T2[T2 Review & Approve]
     T2_1["T2.1 Plan diff view from fixture bundles"]:::done
@@ -349,6 +351,7 @@ flowchart LR
   T1_39 --> T1_45
   T1_49 --> T1_50
   T1_50 --> T1_51
+  T1_49 --> T1_52
   T3_1 --> T2_2
   T2_2 --> T2_4
   T2_3 --> T2_4
