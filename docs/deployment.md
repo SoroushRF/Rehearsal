@@ -97,16 +97,33 @@ a ticket or a shared document: each goes from the terminal straight into its one
    `SURREAL_AGENT_MEMORY_READ_KEY` with the new read key. Nothing else changes: the URL and
    context stay, and the executor and rehearsal worker still get no memory setting.
 3. **Deploy both** services.
-4. **Check that the app reports precedents on.** The planner's ready log ends with
-   `precedents on`. The API logs no "Agent Memory not configured" warning, and
-   `GET /api/precedents` answers `syncEnabled: true`. If either reports off, the old pair is
-   still live: fix the field and redeploy before going on.
+4. **Check the new keys are the ones in use.**
+   - In Render, check the deploy replaced every instance of both services: nothing may still
+     run with the old value.
+   - The planner's ready log ends with `precedents on`. The API logs no "Agent Memory not
+     configured" warning, and `GET /api/precedents` answers `syncEnabled: true`. If either
+     reports off, fix the field and redeploy before going on.
+   - Use both new keys: open a completed run's promote panel (the API's key), and plan for an
+     org with active precedents (the planner's).
+   - `pnpm memory:keys status <label>` lists every generation with when the service says it
+     was created and last used, and says whether `--revoke-old` would go ahead. Both new keys
+     should show a `lastUsedAt`, and no old key a use after them or in the last 15 minutes.
+     It prints no key.
+
+   `lastUsedAt` is a hint, not proof. On the hosted service it stayed empty for a pair that was
+   used, and for another pair it was set on first use and then didn't move (gate, 2026-11-03).
+   So a new key can show "never used" while it works, and an old key still in use can look
+   idle. The deploy check above is what shows the old keys are free.
 5. **Revoke the old pair.** `pnpm memory:keys rotate <label> --revoke-old` revokes every
    generation older than the newest pair, never the newest, and refuses if there is nothing
-   older. It prints when each kept key was last used; a service still on an old key now gets
-   401, so check step 4 again afterwards.
+   older. Before revoking anything it prints the same check as `status` and refuses (exit 3)
+   when a kept key shows no use, or an old key shows a use after the kept key's last use or in
+   the last 15 minutes. `--force` revokes anyway: use it only when step 4's deploy check passed
+   and the refusal comes from `lastUsedAt` lagging. It exits 3 if any revoke failed; run it
+   again. A service still on an old key now gets 401, so check step 4 again afterwards.
 
-If a key leaked, do the same steps without waiting between them. To erase one organization's
+If a key leaked, do the same steps without waiting between them, and revoke with `--force`:
+the old keys will still look recently used. To erase one organization's
 Agent Memory instead, see `pnpm memory:erase-org` in
 [agent-memory.md](agent-memory.md#erasing-an-orgs-memory-t155). It is an operator command with
 the admin key and the deployment's `DATABASE_URL`, and no service setting changes. Render's
