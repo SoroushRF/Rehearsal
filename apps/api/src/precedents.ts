@@ -4,7 +4,9 @@ import {
   enqueuePrecedentSync,
   latestApproved,
   loadRegistry,
+  lockOrgMemoryShared,
   lockPrecedent,
+  memoryErased,
   type PgBoss,
   recordPrecedentEvent,
   schema,
@@ -92,7 +94,10 @@ export interface SimilarPrecedent {
   sameId: boolean;
 }
 export interface SimilarResponse {
-  /** `off`: Agent Memory isn't configured. `unavailable`: recall failed or timed out. */
+  /**
+   * `off`: Agent Memory isn't configured, or the org's memory was erased. `unavailable`: recall
+   * failed or timed out.
+   */
   status: "ok" | "off" | "unavailable";
   similar: SimilarPrecedent[];
 }
@@ -144,6 +149,10 @@ export function registerPrecedentRoutes(app: FastifyInstance, deps: PrecedentDep
     if (!gate.ok) return refuse(reply, gate, "run_not_found");
 
     const out = await deps.db.transaction(async (tx): Promise<Outcome> => {
+      // T1.55: the org's memory lock first, shared, in the sync's order (then the precedent's,
+      // in approvePrecedent). An erasure waiting for it commits after this promotion, and one
+      // that holds it makes this wait and then see its event.
+      await lockOrgMemoryShared(tx, run.orgId);
       const [current] = await tx
         .select({ state: runs.state, orgId: runs.orgId })
         .from(runs)
@@ -152,6 +161,9 @@ export function registerPrecedentRoutes(app: FastifyInstance, deps: PrecedentDep
       if (current.state !== "completed") {
         return [409, { error: "run_not_completed", state: current.state }];
       }
+      // An org whose Agent Memory was erased can't sync, so a new version would only wait
+      // forever. Refused instead; what is already in the registry stays as it is.
+      if (await memoryErased(tx, run.orgId)) return [409, { error: "memory_erased" }];
 
       const latest = await latestApproved(tx, run.orgId, body.data.id);
       if (latest && latest.appliesTo !== body.data.appliesTo) {
@@ -233,7 +245,10 @@ export function registerPrecedentRoutes(app: FastifyInstance, deps: PrecedentDep
     }
 
     const answer = (out: SimilarResponse) => reply.code(200).send(out);
-    if (!deps.similar) return answer({ status: "off", similar: [] });
+    // An org whose Agent Memory was erased (T1.55) is never recalled from: memory is off for it.
+    if (!deps.similar || (await memoryErased(deps.db, run.orgId))) {
+      return answer({ status: "off", similar: [] });
+    }
 
     const { appliesTo, statement, id } = body.data;
     // Read once to skip a recall nothing could match; read again after it (below), because a

@@ -9,6 +9,8 @@ import { planHash, validateGraph } from "@rehearsal/core";
 import {
   type Db,
   loadIncident,
+  loadRegistry,
+  memoryErased,
   OrgWorldBusy,
   type PgBoss,
   PLAN_QUEUE,
@@ -53,9 +55,10 @@ export interface RehearseDeps {
   plannerSecret?: string;
   /**
    * The org's precedent registry (#235). A plan job carries it so the planner cites only active
-   * versions, and the returned basis is checked against it. Absent: plans carry no basis.
+   * versions, and the returned basis is checked against it. Absent, or null for an org (one whose
+   * Agent Memory was erased, T1.55; see `planJobRegistry`): its plans carry no basis.
    */
-  precedentRegistry?: (orgId: string) => Promise<RegistrySnapshot>;
+  precedentRegistry?: (orgId: string) => Promise<RegistrySnapshot | null>;
   /**
    * Seeds a new org's own Era tenants before its first plan (#330), so the planner never reads an
    * empty world. Absent: nothing is seeded (the shared tenant, tests).
@@ -134,9 +137,7 @@ export function registerRehearseRoutes(app: FastifyInstance, deps: RehearseDeps)
       incidentId: req.params.id,
       planId: `plan_${randomUUID()}`,
       requestedBy: gate.person.userId,
-      ...(deps.precedentRegistry && {
-        precedents: registryForJob(await deps.precedentRegistry(gate.person.orgId)),
-      }),
+      ...(await jobPrecedents(deps, gate.person.orgId)),
       ...(filed && {
         incident: {
           incidentId: filed.incidentId,
@@ -209,7 +210,7 @@ export function registerRehearseRoutes(app: FastifyInstance, deps: RehearseDeps)
       await deps.boss.fail(PLAN_QUEUE, job.id, { reason: "malformed_job", message: "bad payload" });
       return reply.code(204).send();
     }
-    return { id: job.id, data: data.data };
+    return { id: job.id, data: await withoutErasedMemory(deps.db, data.data) };
   });
 
   app.post<{ Params: { id: string } }>(PLANNER_JOB_ROUTES.complete, async (req, reply) => {
@@ -219,14 +220,23 @@ export function registerRehearseRoutes(app: FastifyInstance, deps: RehearseDeps)
     const found = await activeJob(deps, req.params.id, reply);
     if (!found) return reply;
 
-    const refuse = async (detail: string) => {
-      await deps.boss.fail(PLAN_QUEUE, found.job.id, { reason: "rejected_plan", message: detail });
+    const refuse = async (detail: string, reason = "rejected_plan") => {
+      await deps.boss.fail(PLAN_QUEUE, found.job.id, { reason, message: detail });
       return reply.code(422).send({ error: "rejected_plan", detail });
     };
     const parsed = PlanManifest.safeParse(body.data.manifest);
     if (!parsed.success) return refuse("manifest does not match contracts v1");
     const m = parsed.data;
-    const job = found.data;
+    // Read as `/next` would hand it out now: with memory off if the org was erased since queueing.
+    const job = await withoutErasedMemory(deps.db, found.data);
+    if (job !== found.data && m.precedentBasis) {
+      // Taken with memory before the erasure: the basis rests on a scope that is gone. Failed, so
+      // the queue's retry plans it again, and `/next` then hands it out without memory.
+      return refuse(
+        "the org's Agent Memory was erased after this job was taken; it is planned again without memory",
+        "org_erased",
+      );
+    }
     if (m.orgId !== job.orgId || m.planId !== job.planId || m.incidentId !== job.incidentId) {
       return refuse("manifest is for another org, plan or incident than the job");
     }
@@ -286,6 +296,38 @@ export function registryForJob(snapshot: RegistrySnapshot): PlanJobRegistry {
     active: [...snapshot.active].map(([id, v]) => ({ id, version: v.version, digest: v.digest })),
     epochs: Object.fromEntries(snapshot.epochs),
   };
+}
+
+/** What a plan job carries about precedents: nothing when the org has no registry to offer. */
+export async function jobPrecedents(
+  deps: Pick<RehearseDeps, "precedentRegistry">,
+  orgId: string,
+): Promise<{ precedents?: PlanJobRegistry }> {
+  const snapshot = await deps.precedentRegistry?.(orgId);
+  return snapshot ? { precedents: registryForJob(snapshot) } : {};
+}
+
+/**
+ * The registry a plan job offers the planner, read from Postgres; null for an org whose Agent
+ * Memory was erased (T1.55). That org's job goes out with memory off, as in core mode: the
+ * planner recalls nothing, and the plan has no precedent basis. Planning, approval and admission
+ * work as for any plan without one; plans made before the erasure still check against Postgres.
+ */
+export async function planJobRegistry(db: Db, orgId: string): Promise<RegistrySnapshot | null> {
+  if (await memoryErased(db, orgId)) return null;
+  return (await loadRegistry(db, orgId)).snapshot;
+}
+
+/**
+ * A plan job as the planner may use it now (T1.55). One queued before its org's Agent Memory was
+ * erased still carries the registry; from the `erased` event on it is handed out, and its plan
+ * checked, as if queued with memory off: no registry, so no recall and no basis. Returns the job
+ * itself when nothing changes.
+ */
+export async function withoutErasedMemory(db: Db, job: PlanJob): Promise<PlanJob> {
+  if (!job.precedents || !(await memoryErased(db, job.orgId))) return job;
+  const { precedents: _, ...rest } = job;
+  return rest;
 }
 
 /**

@@ -61,6 +61,8 @@ function refusalText(err: unknown, action: string): string {
     }
     if (r.error === "not_active")
       return "That version isn't active, so there is nothing to withdraw.";
+    if (r.error === "memory_erased")
+      return "This organization's Agent Memory was erased, so new precedents can't be promoted.";
   }
   return explain(err);
 }

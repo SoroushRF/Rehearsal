@@ -215,6 +215,7 @@ describe.skipIf(!process.env.DB_TESTS)("memory drift check and repair (real Post
       alreadyQueued: 0,
       notActivated: 1,
       noRegistry: [],
+      erased: [],
     });
     expect(fake.writes).toBe(writes);
     expect(findingLines(first.lines)).toEqual([
@@ -340,6 +341,7 @@ describe.skipIf(!process.env.DB_TESTS)("memory drift check and repair (real Post
       alreadyQueued: 0,
       notActivated: 0,
       noRegistry: [orgId],
+      erased: [],
     });
     expect(lines).toEqual([
       `${orgId} (${precedentScope(BASE, orgId)}): 0 checked, 0 drift`,

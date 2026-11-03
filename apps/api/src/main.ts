@@ -1,12 +1,5 @@
 import type { BillingPolicy } from "@rehearsal/core";
-import {
-  createDb,
-  enqueuePlan,
-  loadRegistry,
-  type PgBoss,
-  startQueue,
-  withOrgWorlds,
-} from "@rehearsal/db";
+import { createDb, enqueuePlan, type PgBoss, startQueue, withOrgWorlds } from "@rehearsal/db";
 import { iamClientViolations } from "@rehearsal/iam/boot";
 import type { PlanJob } from "@rehearsal/providers";
 import policyV1 from "../../../scenarios/billing/policy.v1.json" with { type: "json" };
@@ -21,6 +14,7 @@ import { publisherFromEnv, startPrecedentWorker } from "./precedent-sync";
 import { eraProblemInjector } from "./problems";
 import { rehearsalTenantActive } from "./rehearsal-operator";
 import { rehearsalTokenDepsFromEnv } from "./rehearsal-tokens";
+import { planJobRegistry } from "./rehearse";
 import { eraPlanningRefresher } from "./repair";
 import { tenantTokenDepsFromEnv } from "./tenant-tokens";
 
@@ -95,7 +89,8 @@ const rehearse = apply && {
   boss: apply.boss,
   iam,
   plannerSecret: process.env.PLANNER_WORKER_SECRET,
-  precedentRegistry: async (orgId: string) => (await loadRegistry(apply.db, orgId)).snapshot,
+  // T1.55: an org whose Agent Memory was erased plans with memory off (no precedent basis).
+  precedentRegistry: (orgId: string) => planJobRegistry(apply.db, orgId),
   // Each org plans in its own tenant (#330): seed it before the first plan job.
   enqueue: (job: PlanJob) =>
     enqueuePlan(apply.db, apply.boss, job, () => ensureOrgSeeded(job.orgId)),

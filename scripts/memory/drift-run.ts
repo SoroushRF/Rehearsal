@@ -1,4 +1,4 @@
-import { type Db, loadRegistry, type PrecedentSyncJob } from "@rehearsal/db";
+import { type Db, loadRegistry, memoryErased, type PrecedentSyncJob } from "@rehearsal/db";
 import {
   DRIFT_GRACE_MS,
   type DriftReader,
@@ -52,13 +52,16 @@ export interface DriftRunResult {
   notActivated: number;
   /** Orgs with no registry and nothing found: most likely a mistyped org ID. */
   noRegistry: string[];
+  /** Orgs whose Agent Memory was erased (T1.55): refused, never read or repaired. */
+  erased: string[];
 }
 
 /**
  * The drift check behind `pnpm memory:drift` (T1.53), for each org in turn: read the registry,
  * compare memory with it, read the registry again and drop what changed in between, print one
  * line per finding, and with `enqueue` queue the sync job that fixes each one. Nothing here writes
- * to Agent Memory, and unknown copies are only reported.
+ * to Agent Memory, and unknown copies are only reported. An org whose memory was erased is
+ * refused before anything is read (T1.55).
  */
 export async function runDrift(run: DriftRun): Promise<DriftRunResult> {
   const result: DriftRunResult = {
@@ -67,9 +70,16 @@ export async function runDrift(run: DriftRun): Promise<DriftRunResult> {
     alreadyQueued: 0,
     notActivated: 0,
     noRegistry: [],
+    erased: [],
   };
   const graceMs = run.graceMs ?? DRIFT_GRACE_MS;
   for (const orgId of run.orgs) {
+    // An erased org's memory stays empty: a repair would publish into it again, so don't look.
+    if (await memoryErased(run.db, orgId)) {
+      result.erased.push(orgId);
+      run.log(`${orgId}: refused: its Agent Memory was erased (pnpm memory:erase-org)`);
+      continue;
+    }
     const before = (await loadRegistry(run.db, orgId)).entries;
     const report = await findDrift(run.readerFor(orgId), before, {
       graceMs,

@@ -1,4 +1,14 @@
+import { appendFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { type EraseEventKind, eraseOrg } from "../../../scripts/memory/erase-run";
+import {
+  adminFor,
+  keyNames,
+  listKeys,
+  mintPair,
+  revokeOld,
+  rotate,
+} from "../../../scripts/memory/keys-run";
 import { checkPrecedentBasis, citePrecedents, type RegistrySnapshot } from "../src/citations";
 import { AgentMemoryClient, AgentMemoryError } from "../src/client";
 import { memoryKeyGrants, precedentScope } from "../src/config";
@@ -24,6 +34,14 @@ import {
 // The memory gate (build plan §7) on hosted SurrealDB Agent Memory: publish, recall, trace
 // inspection, replace and read history, wrong-scope denial, and a changed approved precedent
 // holding the plan that cited it. Run with MEMORY_GATE=1 and the SURREAL_AGENT_MEMORY_* vars.
+// MEMORY_GATE_LOG=<file> also appends what the service answered to the probes marked [gate]
+// (names, times and statuses; never a key), since a passing test's console output isn't shown.
+function gateNote(line: string): void {
+  console.log(line);
+  const file = process.env.MEMORY_GATE_LOG;
+  if (file) appendFileSync(file, `${line}\n`);
+}
+
 describe.skipIf(!LIVE)("memory gate (hosted Agent Memory)", () => {
   const run = runId();
   const scope = `rehearsal/test/gate-${run}`;
@@ -36,6 +54,11 @@ describe.skipIf(!LIVE)("memory gate (hosted Agent Memory)", () => {
   // T1.53: drift planted in an org scope of its own, read with a read-only key.
   const driftScope = precedentScope(scope, `org_drift_${run}`);
   const readerKeyName = `gate-reader-${run}`;
+  // T1.55: rotation in labels of its own, erasure in an org scope of its own.
+  const rotateLabel = `gaterot-${run}`;
+  const rotateScope = precedentScope(scope, `org_rotate_${run}`);
+  const eraseOrgId = `org_erase_${run}`;
+  const eraseScopePath = precedentScope(scope, eraseOrgId);
   const id = `duplicate-charge-${run}`;
   const query = "duplicate charge refund";
   const v1 = precedent({ id });
@@ -58,8 +81,11 @@ describe.skipIf(!LIVE)("memory gate (hosted Agent Memory)", () => {
 
   afterAll(async () => {
     if (!LIVE) return;
-    for (const name of [keyName, apiKeyName, plannerKeyName, readerKeyName]) await revokeKey(name);
-    await eraseScope(scope, [orgScope, driftScope, neighbour, scope]);
+    const rotated = [1, 2].flatMap((g) => Object.values(keyNames(rotateLabel, g)));
+    for (const name of [keyName, apiKeyName, plannerKeyName, readerKeyName, ...rotated]) {
+      await revokeKey(name);
+    }
+    await eraseScope(scope, [orgScope, driftScope, rotateScope, eraseScopePath, neighbour, scope]);
   });
 
   it("publishes a precedent and validates it on readback", async () => {
@@ -283,5 +309,131 @@ describe.skipIf(!LIVE)("memory gate (hosted Agent Memory)", () => {
     expect(await reader.read(withdrawn.id)).toMatchObject({ status: "withdrawn", version: 1 });
     expect(await reader.read(waiting.id)).toMatchObject({ status: "valid", record: waiting });
     // Six recalls at 5–8 s each, plus eight publishes: past the 60 s default on a slow day.
+  }, 180_000);
+
+  it("rotates the keys: the old pair works until --revoke-old, then only the new one does (T1.55)", async () => {
+    const admin = adminFor(liveConfig());
+    const grants = memoryKeyGrants(scope);
+    const as = (key: string) =>
+      new AgentMemoryPrecedents(clientWithKey(key), { scope: rotateScope });
+    const r1 = precedent({ id: `rotate-${run}` });
+    const r2 = { ...r1, version: 2, statement: v2.statement };
+
+    const first = await mintPair(admin, rotateLabel, 1, grants);
+    expect(await as(first.api).publish(r1)).toMatchObject({ written: true, scope: rotateScope });
+    expect(await as(first.planner).read(r1.id)).toMatchObject({ status: "valid", record: r1 });
+    await expect(revokeOld(admin, rotateLabel, () => {})).rejects.toThrow(/only one/);
+
+    const second = await rotate(admin, rotateLabel, grants);
+    expect(second.names).toEqual(keyNames(rotateLabel, 2));
+    // Both generations work while the services move to the new pair.
+    expect(await as(second.api).publish(r2)).toMatchObject({ written: true, version: 2 });
+    expect(await as(second.planner).read(r1.id)).toMatchObject({ status: "valid", record: r2 });
+    expect(await as(first.planner).read(r1.id)).toMatchObject({ status: "valid", record: r2 });
+    expect(await as(first.api).publish(r2)).toMatchObject({ written: false });
+    // What GET /keys says about use after each step (T1.55 review): names and times only.
+    const uses = async (step: string) => {
+      const keys = (await listKeys(admin)).filter((k) => k.name.includes(rotateLabel));
+      gateNote(
+        `[gate] keys after ${step}: ${keys.map((k) => `${k.name} ${k.lastUsedAt ?? "never used"}`).join("; ")}`,
+      );
+    };
+    await uses("g1 write + read, g2 write + read, then g1 planner read + g1 api read-only publish");
+    // The new planner key is still read-only.
+    const denied = await clientWithKey(second.planner)
+      .writeTriples(rotateScope, [
+        { entity: { type: "concept", name: `precedent:${r1.id}` }, key: "statement", value: "x" },
+      ])
+      .catch((e: unknown) => e);
+    expect(denied).toMatchObject({ status: 403 });
+    await uses("a denied write with the g2 planner key");
+    const recalled = await as(second.planner)
+      .recall(r1.appliesTo)
+      .then(
+        (r) => `${r.precedents.length} precedent(s)`,
+        (e: unknown) => `error ${String(e)}`,
+      );
+    gateNote(`[gate] recall with the g2 planner key: ${recalled}`);
+    await uses("a recall query with the g2 planner key");
+    // The new API key writes last, as after a finished deploy.
+    const r3 = { ...r1, version: 3, statement: `${v2.statement} (v3)` };
+    expect(await as(second.api).publish(r3)).toMatchObject({ written: true, version: 3 });
+    await uses("a write with the g2 API key");
+
+    // The check's verdict rests on lastUsedAt, which the hosted service doesn't keep reliably
+    // (gate, 2026-11-03: the old pair, used for a write and two reads, read "never used"), so
+    // the gate records it and revokes with --force; the verdicts are covered by keys.test.ts.
+    const lines: string[] = [];
+    const { kept, revoked, failed } = await revokeOld(admin, rotateLabel, (l) => lines.push(l), {
+      force: true,
+    });
+    gateNote(`[gate] revoke-old check:\n${lines.join("\n")}`);
+    // The check is printed before the first revoke.
+    const checkAt = lines.findIndex((l) => l.startsWith("Check before revoking"));
+    expect(checkAt).toBeGreaterThanOrEqual(0);
+    expect(lines.findIndex((l) => l.endsWith(": revoked"))).toBeGreaterThan(checkAt);
+    expect(failed).toEqual([]);
+    expect(kept.generation).toBe(2);
+    expect(revoked.sort()).toEqual(Object.values(keyNames(rotateLabel, 1)).sort());
+    await expect(as(first.planner).read(r1.id)).rejects.toMatchObject({ status: 401 });
+    await expect(as(first.api).read(r1.id)).rejects.toMatchObject({ status: 401 });
+    expect(await as(second.planner).read(r1.id)).toMatchObject({ status: "valid", record: r3 });
+    expect(await as(second.api).publish(r3)).toMatchObject({ written: false });
+  }, 120_000);
+
+  it("erases one org's scope: the dry run lists and changes nothing, then erase leaves recall nothing (T1.55)", async () => {
+    const admin = adminFor(liveConfig());
+    const org = new AgentMemoryPrecedents(client, { scope: eraseScopePath });
+    const e1 = precedent({ id: `erase-${run}` });
+    await org.publish(e1);
+    const registry = [{ id: e1.id, appliesTo: e1.appliesTo }];
+    const events: EraseEventKind[] = [];
+    const run_ = {
+      admin,
+      client,
+      baseScope: scope,
+      orgId: eraseOrgId,
+      registry,
+      alreadyErased: false,
+      record: async (kind: EraseEventKind) => {
+        events.push(kind);
+      },
+      log: () => {},
+    };
+
+    const dry = await eraseOrg({ ...run_, confirm: async () => false });
+    expect(dry.outcome).toBe("aborted");
+    expect(dry.listing).toMatchObject({ scope: eraseScopePath, registered: "registered" });
+    expect(dry.listing.entities).toEqual([{ name: `precedent:${e1.id}`, live: 3, history: 3 }]);
+    expect(events).toEqual([]);
+    expect(await org.read(e1.id)).toMatchObject({ status: "valid", record: e1 });
+
+    const done = await eraseOrg({ ...run_, confirm: async () => true });
+    expect(done.outcome).toBe("erased");
+    expect(events).toEqual(["erased", "forgotten"]);
+    expect(await org.read(e1.id)).toEqual({ status: "absent" });
+    expect((await org.recall(e1.appliesTo)).precedents).toEqual([]);
+    // Tombstoned: the API's publish can't put it back.
+    await expect(org.publish(e1)).rejects.toMatchObject({ status: 400 });
+
+    // T1.55 review: what forget answers on a tombstoned scope, for the record.
+    const probe = await admin("POST", "/scopes/forget", { path: eraseScopePath });
+    gateNote(
+      `[gate] POST /scopes/forget on a tombstoned scope → ${probe.status} ${(await probe.text()).slice(0, 200)}`,
+    );
+    // A rerun finds it tombstoned and sends neither forget nor the tombstone again.
+    const rerun: string[] = [];
+    const again = await eraseOrg({
+      ...run_,
+      alreadyErased: true,
+      confirm: async () => true,
+      log: (l) => rerun.push(l),
+    });
+    expect(again).toMatchObject({ outcome: "erased", forgotten: 0 });
+    expect(again.listing.registered).toBe("tombstoned");
+    expect(rerun).toContain(
+      `${eraseScopePath} was already tombstoned and nothing in it is live; nothing was sent`,
+    );
+    expect(events).toEqual(["erased", "forgotten", "erased", "forgotten"]);
   }, 180_000);
 });
