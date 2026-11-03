@@ -1,9 +1,11 @@
+import { appendFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { type EraseEventKind, eraseOrg } from "../../../scripts/memory/erase-run";
 import {
   adminFor,
   KeyCommandUnsafe,
   keyNames,
+  listKeys,
   mintPair,
   revokeOld,
   rotate,
@@ -33,6 +35,14 @@ import {
 // The memory gate (build plan §7) on hosted SurrealDB Agent Memory: publish, recall, trace
 // inspection, replace and read history, wrong-scope denial, and a changed approved precedent
 // holding the plan that cited it. Run with MEMORY_GATE=1 and the SURREAL_AGENT_MEMORY_* vars.
+// MEMORY_GATE_LOG=<file> also appends what the service answered to the probes marked [gate]
+// (names, times and statuses; never a key), since a passing test's console output isn't shown.
+function gateNote(line: string): void {
+  console.log(line);
+  const file = process.env.MEMORY_GATE_LOG;
+  if (file) appendFileSync(file, `${line}\n`);
+}
+
 describe.skipIf(!LIVE)("memory gate (hosted Agent Memory)", () => {
   const run = runId();
   const scope = `rehearsal/test/gate-${run}`;
@@ -322,6 +332,14 @@ describe.skipIf(!LIVE)("memory gate (hosted Agent Memory)", () => {
     expect(await as(second.planner).read(r1.id)).toMatchObject({ status: "valid", record: r2 });
     expect(await as(first.planner).read(r1.id)).toMatchObject({ status: "valid", record: r2 });
     expect(await as(first.api).publish(r2)).toMatchObject({ written: false });
+    // What GET /keys says about use after each step (T1.55 review): names and times only.
+    const uses = async (step: string) => {
+      const keys = (await listKeys(admin)).filter((k) => k.name.includes(rotateLabel));
+      gateNote(
+        `[gate] keys after ${step}: ${keys.map((k) => `${k.name} ${k.lastUsedAt ?? "never used"}`).join("; ")}`,
+      );
+    };
+    await uses("g1 write + read, g2 write + read, then g1 planner read + g1 api read-only publish");
     // The new planner key is still read-only.
     const denied = await clientWithKey(second.planner)
       .writeTriples(rotateScope, [
@@ -329,28 +347,40 @@ describe.skipIf(!LIVE)("memory gate (hosted Agent Memory)", () => {
       ])
       .catch((e: unknown) => e);
     expect(denied).toMatchObject({ status: 403 });
+    await uses("a denied write with the g2 planner key");
+    const recalled = await as(second.planner)
+      .recall(r1.appliesTo)
+      .then(
+        (r) => `${r.precedents.length} precedent(s)`,
+        (e: unknown) => `error ${String(e)}`,
+      );
+    gateNote(`[gate] recall with the g2 planner key: ${recalled}`);
+    await uses("a recall query with the g2 planner key");
+    // The new API key writes last, as after a finished deploy.
+    const r3 = { ...r1, version: 3, statement: `${v2.statement} (v3)` };
+    expect(await as(second.api).publish(r3)).toMatchObject({ written: true, version: 3 });
+    await uses("a write with the g2 API key");
 
-    // The old keys were used last: something still runs on them, so --revoke-old refuses.
+    // The old keys were used seconds ago: something may still run on them, so it refuses.
     const lines: string[] = [];
     await expect(revokeOld(admin, rotateLabel, (l) => lines.push(l))).rejects.toBeInstanceOf(
       KeyCommandUnsafe,
     );
-    // What the service reported, for the record (names and times only; never a key).
-    console.log(`[gate] revoke-old check, refused:\n${lines.join("\n")}`);
-    expect(lines.some((l) => l.includes("after") && l.includes("something still runs"))).toBe(true);
-    // The new pair used last, as after a finished deploy: it goes ahead.
-    expect(await as(second.api).publish(r2)).toMatchObject({ written: false });
-    expect(await as(second.planner).read(r1.id)).toMatchObject({ status: "valid", record: r2 });
+    gateNote(`[gate] revoke-old check, refused:\n${lines.join("\n")}`);
+    expect(lines.some((l) => l.includes("problem:") && l.includes(first.names.api))).toBe(true);
+    // Measured 15 min on: the old keys have gone quiet, so it goes ahead.
     lines.length = 0;
-    const { kept, revoked, failed } = await revokeOld(admin, rotateLabel, (l) => lines.push(l));
-    console.log(`[gate] revoke-old check, passed:\n${lines.join("\n")}`);
+    const { kept, revoked, failed } = await revokeOld(admin, rotateLabel, (l) => lines.push(l), {
+      now: Date.now() + 15 * 60_000 + 1000,
+    });
+    gateNote(`[gate] revoke-old check, passed:\n${lines.join("\n")}`);
     expect(failed).toEqual([]);
     expect(kept.generation).toBe(2);
     expect(revoked.sort()).toEqual(Object.values(keyNames(rotateLabel, 1)).sort());
     await expect(as(first.planner).read(r1.id)).rejects.toMatchObject({ status: 401 });
     await expect(as(first.api).read(r1.id)).rejects.toMatchObject({ status: 401 });
-    expect(await as(second.planner).read(r1.id)).toMatchObject({ status: "valid", record: r2 });
-    expect(await as(second.api).publish(r2)).toMatchObject({ written: false });
+    expect(await as(second.planner).read(r1.id)).toMatchObject({ status: "valid", record: r3 });
+    expect(await as(second.api).publish(r3)).toMatchObject({ written: false });
   }, 120_000);
 
   it("erases one org's scope: the dry run lists and changes nothing, then erase leaves recall nothing (T1.55)", async () => {
@@ -387,5 +417,25 @@ describe.skipIf(!LIVE)("memory gate (hosted Agent Memory)", () => {
     expect((await org.recall(e1.appliesTo)).precedents).toEqual([]);
     // Tombstoned: the API's publish can't put it back.
     await expect(org.publish(e1)).rejects.toMatchObject({ status: 400 });
-  }, 120_000);
+
+    // T1.55 review: what forget answers on a tombstoned scope, for the record.
+    const probe = await admin("POST", "/scopes/forget", { path: eraseScopePath });
+    gateNote(
+      `[gate] POST /scopes/forget on a tombstoned scope → ${probe.status} ${(await probe.text()).slice(0, 200)}`,
+    );
+    // A rerun finds it tombstoned and sends neither forget nor the tombstone again.
+    const lines: string[] = [];
+    const again = await eraseOrg({
+      ...run_,
+      alreadyErased: true,
+      confirm: async () => true,
+      log: (l) => lines.push(l),
+    });
+    expect(again).toMatchObject({ outcome: "erased", forgotten: 0 });
+    expect(again.listing.registered).toBe("tombstoned");
+    expect(lines).toContain(
+      `${eraseScopePath} was already tombstoned and nothing in it is live; nothing was sent`,
+    );
+    expect(events).toEqual(["erased", "forgotten", "erased", "forgotten"]);
+  }, 180_000);
 });

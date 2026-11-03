@@ -189,7 +189,7 @@ describe("pnpm memory:keys rotate against the fake (T1.55)", () => {
     );
   });
 
-  it("--revoke-old checks use first: a kept key never used, or an old key used after it, refuses (T1.55 review)", async () => {
+  it("--revoke-old checks use first: a kept key never used, an old key used after it or in the last 15 min, refuses (T1.55 review)", async () => {
     const w = world();
     await w.admin("POST", "/scopes", { path: ORG_SCOPE });
     const first = await mintPair(w.admin, "prod", 1, GRANTS);
@@ -215,14 +215,25 @@ describe("pnpm memory:keys rotate against the fake (T1.55)", () => {
     expect(w.lines.some((l) => l.includes(`problem: ${first.names.api} was used at`))).toBe(true);
     expect(w.fake.named.size).toBe(4);
 
-    // The new key used last: the old one was only used during the move. Goes ahead.
+    // The new key used last, but the old one was used a minute ago: it may still be in use.
     expect(await works(w, "api", second.api)).toBe(true);
+    const oldUse = Date.parse(w.fake.named.get(first.names.api)?.lastUsedAt ?? "");
     w.lines.length = 0;
-    const done = await revokeOld(w.admin, "prod", w.log);
+    await expect(
+      revokeOld(w.admin, "prod", w.log, { now: oldUse + 60_000 }),
+    ).rejects.toBeInstanceOf(KeyCommandUnsafe);
+    expect(w.lines).toContain(
+      `  problem: ${first.names.api} was used at ${new Date(oldUse).toISOString()}, less than 15 min ago: something may still run on it`,
+    );
+    expect(w.fake.named.size).toBe(4);
+
+    // The old keys quiet for 15 min: the old one was only used during the move. Goes ahead.
+    w.lines.length = 0;
+    const done = await revokeOld(w.admin, "prod", w.log, { now: oldUse + 15 * 60_000 });
     expect(done.revoked.sort()).toEqual(Object.values(keyNames("prod")).sort());
     expect(done.failed).toEqual([]);
     expect(w.lines).toContain(
-      "  ok: both kept keys are in use, and no old key was used after them",
+      "  ok: both kept keys are in use, and no old key was used after them or in the last 15 min",
     );
   });
 

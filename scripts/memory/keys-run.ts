@@ -293,17 +293,32 @@ export async function rotate(
   };
 }
 
+/** How long an old key must go unused before --revoke-old revokes it (see `revokeOldCheck`). */
+export const OLD_KEY_IDLE_MS = 15 * 60_000;
+
+export interface RevokeOldTiming {
+  /** The time to measure idleness against; the local clock by default. */
+  now?: number;
+  idleMs?: number;
+}
+
 /**
  * Whether revoking `old` could cut off a deployed service, from what `GET /keys` says about use.
- * Each kept key must have been used: until then nothing shows a service runs on it. And no old
- * key may have been used after the kept key of the same role was last used: then something still
- * runs on the old one. An old key used after the new pair was minted is expected (the services
- * run on it until their deploy finishes), so only use after the new key's last use counts.
+ * Each kept key must have been used: until then nothing shows a service runs on it. No old key
+ * may have been used after the kept key of the same role was last used: then something still runs
+ * on the old one. And no old key may have been used in the last `idleMs` (15 min): the hosted
+ * service does not move `lastUsedAt` on every request (gate, 2026-11-03), so a recent use is
+ * enough to say something may still run on it. An old key used after the new pair was minted is
+ * expected (the services run on it until their deploy finishes), so the check asks for the old
+ * keys to have gone quiet, not for them never to have been used since.
  */
 export function revokeOldCheck(
   kept: Generation,
   old: readonly Generation[],
+  timing: RevokeOldTiming = {},
 ): { lines: string[]; problems: string[] } {
+  const now = timing.now ?? Date.now();
+  const idleMs = timing.idleMs ?? OLD_KEY_IDLE_MS;
   const lines: string[] = [];
   const problems: string[] = [];
   for (const role of ["api", "planner"] as const) {
@@ -320,6 +335,10 @@ export function revokeOldCheck(
       if (o.lastUsedAt && k.lastUsedAt && time(o.lastUsedAt) > time(k.lastUsedAt)) {
         problems.push(
           `${o.name} was used at ${o.lastUsedAt}, after ${k.name} was last used: something still runs on it`,
+        );
+      } else if (o.lastUsedAt && now - time(o.lastUsedAt) < idleMs) {
+        problems.push(
+          `${o.name} was used at ${o.lastUsedAt}, less than ${Math.round(idleMs / 60_000)} min ago: something may still run on it`,
         );
       }
     }
@@ -349,7 +368,7 @@ export async function revokeOld(
   admin: Admin,
   label: string,
   log: (line: string) => void,
-  options: { force?: boolean } = {},
+  options: { force?: boolean } & RevokeOldTiming = {},
 ) {
   const live = await generations(admin, label);
   refuseAmbiguous(live, label);
@@ -368,19 +387,19 @@ export async function revokeOld(
   for (const g of newer) {
     log(`left alone: generation ${g.generation} is incomplete and newer than the kept pair`);
   }
-  const check = revokeOldCheck(kept, old);
+  const check = revokeOldCheck(kept, old, options);
   log(`Check before revoking, from GET /keys (keeping generation ${kept.generation}):`);
   for (const line of check.lines) log(`  ${line}`);
   for (const p of check.problems) log(`  problem: ${p}`);
   if (check.problems.length > 0 && !options.force) {
     throw new KeyCommandUnsafe(
-      `refused, nothing revoked: deploy the new pair and let both services use it (pnpm memory:keys status ${label}), or pass --force to revoke anyway`,
+      `refused, nothing revoked: finish the deploy, let both services use the new pair, and wait until the old keys have gone 15 min unused (pnpm memory:keys status ${label}); or pass --force to revoke anyway`,
     );
   }
   log(
     check.problems.length > 0
       ? "  --force: revoking anyway"
-      : "  ok: both kept keys are in use, and no old key was used after them",
+      : "  ok: both kept keys are in use, and no old key was used after them or in the last 15 min",
   );
   const names = old.flatMap((g) => keysOf(g).map((k) => k.name));
   const revoked = await revokeKeys(admin, names, log);
