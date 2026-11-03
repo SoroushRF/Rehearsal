@@ -1,5 +1,15 @@
-import { planHash } from "@rehearsal/core";
-import { createDb, type Db, migrateDb, type PgBoss, PLAN_QUEUE, startQueue } from "@rehearsal/db";
+import type { PlanManifest, Receipt } from "@rehearsal/contracts";
+import { operationKey, planHash, type RepairRefresh } from "@rehearsal/core";
+import {
+  createDb,
+  type Db,
+  migrateDb,
+  type PgBoss,
+  PgJournal,
+  PLAN_QUEUE,
+  schema,
+  startQueue,
+} from "@rehearsal/db";
 import { PLANNER_JOB_ROUTES, PlanJob } from "@rehearsal/providers";
 import { billingManifest, INCIDENT } from "@rehearsal/testkit";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -424,6 +434,271 @@ describe.skipIf(!process.env.DB_TESTS)("rehearse through the plan queue (real Po
     expect(await status(app, rehearsalId, me)).toMatchObject({
       state: "retrying",
       error: { reason: "turn_limit", message: "no finished plan after 40 turns" },
+    });
+  });
+});
+
+const PHANTOM = "ch_fixture_001_dup";
+
+// In this file, not its own: claiming jobs from the shared queue must not race the tests above.
+describe.skipIf(!process.env.DB_TESTS)("repair a held run (T1.37, real Postgres)", () => {
+  const url = process.env.DATABASE_URL ?? "postgres://rehearsal:rehearsal@localhost:5432/rehearsal";
+  const db = createDb(url);
+  let boss: PgBoss;
+  const worker = { authorization: `Bearer ${SECRET}` };
+
+  beforeAll(async () => {
+    await migrateDb(db);
+    boss = await startQueue(url);
+  });
+  afterAll(async () => {
+    await boss?.stop({ graceful: false });
+  });
+
+  const refreshed: [string, RepairRefresh[]][] = [];
+  const appFor = (me: Caller, refresh = true) =>
+    buildApp({
+      webRoot: null,
+      rehearse: {
+        db,
+        boss,
+        iam: fakeIam([me]),
+        plannerSecret: SECRET,
+        ...(refresh && {
+          refreshPlanning: async (orgId: string, records: RepairRefresh[]) => {
+            refreshed.push([orgId, records]);
+            return records.map((r) => r.id);
+          },
+        }),
+      },
+    });
+
+  const receipt = (
+    hash: string,
+    actionId: string,
+    outcome: Receipt["outcome"],
+    holdReason: Receipt["holdReason"] = null,
+  ): Receipt => ({
+    id: `rcpt_${crypto.randomUUID()}`,
+    actionId,
+    planHash: hash,
+    approvalId: "grant_1",
+    outcome,
+    providerRef: null,
+    observedEffect: {},
+    protection: "native_guard_with_documented_limits",
+    holdReason,
+    limitations: [],
+    recordedAt: new Date().toISOString(),
+  });
+
+  /**
+   * A stored revision 1 whose run ended like the phantom demo: case 001's refund held on a new
+   * charge and its note skipped; case 001's priority patch and all of case 002 confirmed.
+   */
+  async function heldRun(runState = "partial") {
+    const me = support(`org_${crypto.randomUUID()}`, "user_1");
+    const manifest: PlanManifest = {
+      ...billingManifest(`plan_${crypto.randomUUID()}`),
+      orgId: me.orgId,
+    };
+    await storePlan(db, manifest);
+    const hash = planHash(manifest);
+    const runId = `run_${crypto.randomUUID()}`;
+    await db.insert(schema.runs).values({
+      id: runId,
+      orgId: me.orgId,
+      planId: manifest.planId,
+      revision: 1,
+      planHash: hash,
+      approvalId: "grant_1",
+      requestedBy: "user_1",
+      state: runState,
+    });
+    const journal = new PgJournal(db, me.orgId);
+    for (const r of [
+      receipt(hash, "refund_001", "held", {
+        kind: "query_membership_changed",
+        queryObservationId: "q_charges_001",
+        added: [PHANTOM],
+        removed: [],
+      }),
+      receipt(hash, "patch_001", "confirmed"),
+      receipt(hash, "note_001", "skipped_dependency", {
+        kind: "predecessor_not_confirmed",
+        stepId: "refund_001",
+      }),
+      receipt(hash, "refund_002", "confirmed"),
+      receipt(hash, "patch_002", "confirmed"),
+      receipt(hash, "note_002", "confirmed"),
+    ]) {
+      await journal.recordReceipt(r);
+    }
+    return { me, manifest, hash, runId };
+  }
+
+  const repair = (app: ReturnType<typeof appFor>, me: Caller, planId: string, payload: object) =>
+    app.inject({
+      method: "POST",
+      url: `/api/plans/${planId}/repair`,
+      headers: bearer(me),
+      payload,
+    });
+
+  /** Claim the queued job as the planner worker would. */
+  async function claim(app: ReturnType<typeof appFor>, jobId: string) {
+    for (let i = 0; i < 50; i++) {
+      const res = await app.inject({
+        method: "POST",
+        url: PLANNER_JOB_ROUTES.next,
+        headers: worker,
+      });
+      expect(res.statusCode).toBe(200);
+      if (res.json().id === jobId) return PlanJob.parse(res.json().data);
+    }
+    throw new Error("job never claimed");
+  }
+
+  it("refreshes the copy, queues a job for the open case, and stores the repair as revision 2", async () => {
+    const { me, manifest, hash, runId } = await heldRun();
+    const app = appFor(me);
+    const res = await repair(app, me, manifest.planId, { runId, revision: 1, planHash: hash });
+    expect(res.statusCode).toBe(202);
+    expect(res.json()).toMatchObject({
+      planId: manifest.planId,
+      baseRevision: 1,
+      revision: 2,
+      state: "queued",
+      openCases: ["case_001"],
+      refreshed: [PHANTOM],
+    });
+    expect(res.json().kept.sort()).toEqual(["note_002", "patch_001", "patch_002", "refund_002"]);
+    expect(refreshed.at(-1)).toEqual([
+      me.orgId,
+      [{ vendor: "stripe", kind: "charge", id: PHANTOM }],
+    ]);
+
+    const job = await claim(app, res.json().rehearsalId);
+    expect(job.repair).toMatchObject({ basePlanHash: hash, runId, openCases: ["case_001"] });
+    expect(job.repair?.stopped).toContainEqual({
+      id: "refund_001",
+      why: `held: ${PHANTOM} newly matched its query`,
+    });
+
+    const complete = (m: PlanManifest) =>
+      app.inject({
+        method: "POST",
+        url: route(PLANNER_JOB_ROUTES.complete, res.json().rehearsalId),
+        headers: worker,
+        payload: { manifest: m, summary: "repaired" },
+      });
+    // A repair that edits a kept step is refused, and the job fails rather than storing it.
+    const r2 = structuredClone({ ...manifest, revision: 2, parentRevision: 1 });
+    const edited = structuredClone(r2);
+    const kept = edited.actions.find((a) => a.id === "refund_002");
+    if (kept) kept.rationale = "edited after the fact";
+    const refused = await complete(edited);
+    expect(refused.statusCode).toBe(422);
+    expect(refused.json().detail).toMatch(/kept step refund_002 changed/);
+    expect((await loadPlan(db, me.orgId, manifest.planId, 2)).kind).toBe("not_found");
+  });
+
+  it("stores a valid repair as the next revision with its own hash", async () => {
+    const { me, manifest, hash, runId } = await heldRun();
+    const app = appFor(me);
+    const res = await repair(app, me, manifest.planId, { runId, revision: 1, planHash: hash });
+    const jobId = res.json().rehearsalId;
+    await claim(app, jobId);
+    const r2 = structuredClone({ ...manifest, revision: 2, parentRevision: 1 });
+    const done = await app.inject({
+      method: "POST",
+      url: route(PLANNER_JOB_ROUTES.complete, jobId),
+      headers: worker,
+      payload: { manifest: r2, summary: "repaired" },
+    });
+    expect(done.statusCode).toBe(201);
+    expect(done.json()).toMatchObject({ planId: manifest.planId, revision: 2 });
+    expect(done.json().planHash).not.toBe(hash);
+    const stored = await loadPlan(db, me.orgId, manifest.planId);
+    expect(stored).toMatchObject({ kind: "found", latestRevision: 2 });
+    const status = await app.inject({
+      method: "GET",
+      url: `/api/rehearsals/${jobId}`,
+      headers: bearer(me),
+    });
+    expect(status.json()).toMatchObject({ state: "stored", revision: 2 });
+
+    // Revision 1 is no longer the latest: repairing it again is refused.
+    const again = await repair(app, me, manifest.planId, { runId, revision: 1, planHash: hash });
+    expect(again.statusCode).toBe(409);
+    expect(again.json()).toMatchObject({ error: "stale_revision", latestRevision: 2 });
+  });
+
+  it("refuses what a repair can't make safe", async () => {
+    const held = await heldRun();
+    const app = appFor(held.me);
+    const body = { runId: held.runId, revision: 1, planHash: held.hash };
+
+    // The hash must be the stored revision's; the run must be one of this revision's.
+    expect(
+      (await repair(app, held.me, held.manifest.planId, { ...body, planHash: "0".repeat(64) }))
+        .statusCode,
+    ).toBe(409);
+    expect(
+      (await repair(app, held.me, held.manifest.planId, { ...body, runId: "run_other" }))
+        .statusCode,
+    ).toBe(404);
+    // Strict: a body carrying steps is refused.
+    expect(
+      (await repair(app, held.me, held.manifest.planId, { ...body, actions: [] })).statusCode,
+    ).toBe(400);
+    // A member can't spend model tokens; another org doesn't see the plan.
+    const m = member(held.me.orgId);
+    expect((await repair(appFor(m), m, held.manifest.planId, body)).statusCode).toBe(403);
+    const stranger = support(`org_${crypto.randomUUID()}`);
+    expect((await repair(appFor(stranger), stranger, held.manifest.planId, body)).statusCode).toBe(
+      404,
+    );
+    // Without a refresher, a hold that needs the copy refreshed can't be repaired.
+    const noRefresh = await repair(appFor(held.me, false), held.me, held.manifest.planId, body);
+    expect(noRefresh.json()).toMatchObject({ error: "not_repairable" });
+
+    // A run still applying can settle more steps.
+    const active = await heldRun("applying");
+    expect(
+      (
+        await repair(appFor(active.me), active.me, active.manifest.planId, {
+          runId: active.runId,
+          revision: 1,
+          planHash: active.hash,
+        })
+      ).json(),
+    ).toMatchObject({ error: "work_in_progress" });
+
+    // A send whose outcome is unknown is reconciled by resuming the run, never replanned around.
+    const unknown = await heldRun();
+    const refund = unknown.manifest.actions.find((a) => a.id === "refund_001");
+    if (!refund) throw new Error("no refund");
+    await db.insert(schema.stepAttempts).values({
+      id: `att_${crypto.randomUUID()}`,
+      orgId: unknown.me.orgId,
+      planHash: unknown.hash,
+      actionId: "refund_001",
+      operationKey: operationKey(unknown.me.orgId, unknown.manifest.planId, refund),
+      attemptNo: 1,
+      state: "unknown_outcome",
+      request: {},
+      preparedAt: new Date(),
+    });
+    const inFlight = await repair(appFor(unknown.me), unknown.me, unknown.manifest.planId, {
+      runId: unknown.runId,
+      revision: 1,
+      planHash: unknown.hash,
+    });
+    expect(inFlight.statusCode).toBe(409);
+    expect(inFlight.json()).toMatchObject({
+      error: "not_repairable",
+      detail: expect.stringMatching(/refund_001 has a send in flight/),
     });
   });
 });

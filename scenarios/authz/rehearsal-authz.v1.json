@@ -150,6 +150,11 @@
       "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
     },
     {
+      "action": "POST /api/plans/:id/repair",
+      "rbac": { "anyOf": ["rehearsal:rehearse:incident"] },
+      "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
+    },
+    {
       "action": "POST /api/plans/:id/apply",
       "rbac": { "anyOf": ["rehearsal:apply:plan"] },
       "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]

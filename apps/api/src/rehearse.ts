@@ -29,6 +29,7 @@ import {
   requirePerson,
 } from "./iam";
 import { loadPlan, storePlan } from "./plans";
+import { type RepairRefresher, repairProblem } from "./repair";
 import { workerRole } from "./tenant-tokens";
 
 /**
@@ -56,6 +57,11 @@ export interface RehearseDeps {
   ensureSeeded?: (orgId: string) => Promise<void>;
   /** Production seeding and enqueue share the reset lock and commit the job before releasing it. */
   enqueue?: (job: PlanJob) => Promise<string | null>;
+  /**
+   * T1.37: copies records a hold found in the org's operational world into its planning world.
+   * Absent: a repair that needs a refreshed copy is refused.
+   */
+  refreshPlanning?: RepairRefresher;
 }
 
 /** Incidents this deployment can rehearse. The planner worker loads the brief by ID. */
@@ -173,7 +179,12 @@ export function registerRehearseRoutes(app: FastifyInstance, deps: RehearseDeps)
       ...((state === "failed" || state === "retrying") && {
         error: { reason: output.reason, message: output.message },
       }),
-      ...(state === "stored" && { planHash: output.planHash, summary: output.summary }),
+      ...(state === "stored" && {
+        planHash: output.planHash,
+        // Revision 1 unless the job was a repair (T1.37); older outputs didn't record it.
+        revision: typeof output.revision === "number" ? output.revision : 1,
+        summary: output.summary,
+      }),
     };
   });
 
@@ -211,7 +222,11 @@ export function registerRehearseRoutes(app: FastifyInstance, deps: RehearseDeps)
     if (m.orgId !== job.orgId || m.planId !== job.planId || m.incidentId !== job.incidentId) {
       return refuse("manifest is for another org, plan or incident than the job");
     }
-    if (m.revision !== 1 || m.parentRevision !== null || m.excluded.length > 0) {
+    if (job.repair) {
+      // A repair (T1.37) is checked against the stored base and its receipts, not the job's copy.
+      const problem = await repairProblem(deps.db, job.repair, m);
+      if (problem) return refuse(problem);
+    } else if (m.revision !== 1 || m.parentRevision !== null || m.excluded.length > 0) {
       return refuse("a planner run produces revision 1 only");
     }
     // An out-of-scope incident plans nothing; the model's reason is what the reviewer needs to see.
@@ -228,7 +243,7 @@ export function registerRehearseRoutes(app: FastifyInstance, deps: RehearseDeps)
       // A repeat of a completion that stored but didn't finish the job is fine; anything else isn't.
       // Compare canonical hashes: JSONB doesn't keep key order, so the stored copy reads back
       // reordered. loadPlan has already checked the stored row against its own hash.
-      const existing = await loadPlan(deps.db, m.orgId, m.planId, 1);
+      const existing = await loadPlan(deps.db, m.orgId, m.planId, m.revision);
       if (existing.kind !== "found" || existing.plan.planHash !== planHash(m)) {
         return refuse("plan ID already holds another plan");
       }
@@ -236,10 +251,13 @@ export function registerRehearseRoutes(app: FastifyInstance, deps: RehearseDeps)
     }
     await deps.boss.complete(PLAN_QUEUE, found.job.id, {
       planHash: stored.planHash,
+      revision: m.revision,
       summary: body.data.summary,
       ...body.data.stats,
     });
-    return reply.code(201).send({ planId: m.planId, revision: 1, planHash: stored.planHash });
+    return reply
+      .code(201)
+      .send({ planId: m.planId, revision: m.revision, planHash: stored.planHash });
   });
 
   app.post<{ Params: { id: string } }>(PLANNER_JOB_ROUTES.fail, async (req, reply) => {
@@ -253,7 +271,7 @@ export function registerRehearseRoutes(app: FastifyInstance, deps: RehearseDeps)
   });
 }
 
-function registryForJob(snapshot: RegistrySnapshot): PlanJobRegistry {
+export function registryForJob(snapshot: RegistrySnapshot): PlanJobRegistry {
   return {
     active: [...snapshot.active].map(([id, v]) => ({ id, version: v.version, digest: v.digest })),
     epochs: Object.fromEntries(snapshot.epochs),

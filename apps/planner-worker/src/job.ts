@@ -4,12 +4,14 @@ import type { BillingPolicy, WorldContext } from "@rehearsal/core";
 import { type PrecedentRecall, recallBasis } from "@rehearsal/memory";
 import {
   incidentBrief,
+  keptSteps,
   type MessagesClient,
   type ModelAttempt,
   ModelRequestError,
   PlanningLoopError,
   type PlanningReader,
   PlanningSession,
+  repairBrief,
   runPlanningLoop,
   storedIncidentBrief,
   type TurnLog,
@@ -71,8 +73,20 @@ export async function handlePlanJob(
   if (job.incident && job.incident.incidentId !== job.incidentId) {
     return fail("unknown_incident", "the job's incident is not the one it names");
   }
-  const brief = job.incident ? storedIncidentBrief(job.incident) : incidentBrief(job.incidentId);
-  if (!brief) return fail("unknown_incident", `no brief for ${job.incidentId}`);
+  const incident = job.incident ? storedIncidentBrief(job.incident) : incidentBrief(job.incidentId);
+  if (!incident) return fail("unknown_incident", `no brief for ${job.incidentId}`);
+  // A repair (T1.37) plans only the open cases of its base revision, on top of what it applied.
+  const { repair } = job;
+  if (
+    repair &&
+    (repair.base.orgId !== job.orgId ||
+      repair.base.planId !== job.planId ||
+      repair.base.incidentId !== job.incidentId)
+  ) {
+    return fail("invalid_repair", "the repair's base is another org, plan or incident");
+  }
+  const brief = repair ? repairBrief(incident, repair) : incident;
+  if (!brief) return fail("invalid_repair", "an open case has no customer in the incident brief");
 
   let recalled: Awaited<ReturnType<typeof recallBasis>> = null;
   if (job.precedents) {
@@ -113,7 +127,9 @@ export async function handlePlanJob(
     ...(deps.customerReplies && {
       customerNames: Object.fromEntries(brief.customers.map((c) => [c.customerId, c.name])),
     }),
+    ...(repair && { summaryId: `run_summary_r${repair.base.revision + 1}` }),
   });
+  if (repair) session.adopt(keptSteps(repair));
   const timeoutMs = deps.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const signal = AbortSignal.timeout(timeoutMs);
   const timedOut = () => fail("timeout", `no plan within ${timeoutMs} ms`);
@@ -131,6 +147,7 @@ export async function handlePlanJob(
         planId: job.planId,
         adapters: deps.adapters,
         ...(basis && { precedentBasis: basis }),
+        ...(repair && { repairOf: repair.base }),
       },
       signal,
       onTurn: (t: TurnLog) => log(`[${run}] turn ${t.turn}: ${describe(t)}`),
@@ -160,7 +177,7 @@ export async function handlePlanJob(
     stats: { turns: result.turns, toolCalls: result.toolCalls, usage: result.usage, modelAttempts },
   });
   log(
-    `[${run}] stored ${job.planId} r1 ${planHash}: ${result.manifest.actions.length} steps, ` +
+    `[${run}] stored ${job.planId} r${result.manifest.revision} ${planHash}: ${result.manifest.actions.length} steps, ` +
       `${result.turns} turns, ${result.toolCalls} tool calls`,
   );
   return { kind: "stored", planId: job.planId, planHash };

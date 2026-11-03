@@ -20,6 +20,7 @@ import { publisherFromEnv, startPrecedentWorker } from "./precedent-sync";
 import { eraProblemInjector } from "./problems";
 import { rehearsalTenantActive } from "./rehearsal-operator";
 import { rehearsalTokenDepsFromEnv } from "./rehearsal-tokens";
+import { eraPlanningRefresher } from "./repair";
 import { tenantTokenDepsFromEnv } from "./tenant-tokens";
 
 /**
@@ -83,6 +84,9 @@ if (apply && publisherFor) await startPrecedentWorker(apply.boss, { db: apply.db
 else if (apply) {
   console.warn("Agent Memory not configured; promoted precedents will wait for a sync");
 }
+// T1.37: a repair copies records its run's holds found into the org's planning world, under the
+// same lock as reset and seeding. Only when this API holds the Era admin token.
+const planningRefresher = eraPlanningRefresher();
 const rehearse = apply && {
   db: apply.db,
   boss: apply.boss,
@@ -92,6 +96,10 @@ const rehearse = apply && {
   // Each org plans in its own tenant (#330): seed it before the first plan job.
   enqueue: (job: PlanJob) =>
     enqueuePlan(apply.db, apply.boss, job, () => ensureOrgSeeded(job.orgId)),
+  ...(planningRefresher && {
+    refreshPlanning: (orgId: string, records: Parameters<typeof planningRefresher>[1]) =>
+      withOrgWorlds(apply.db, orgId, () => planningRefresher(orgId, records)),
+  }),
 };
 // Live demo (#331): only when this API holds the Era admin token. Each org's own tenant, seeded first.
 const problemInjector = eraProblemInjector();

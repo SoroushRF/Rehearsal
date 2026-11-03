@@ -62,6 +62,11 @@ export interface PlanningSessionOptions {
   credits?: boolean;
   /** Billing unless set. The server picks it from the incident's kind; the model never does. */
   mode?: PlanningMode;
+  /**
+   * The run summary's step ID. A repair (T1.37) names its own, because the base revision's summary
+   * already reported on another run and an operation key is never reused with other content.
+   */
+  summaryId?: string;
   clock?: Clock;
 }
 
@@ -223,6 +228,8 @@ export class PlanningSession {
   readonly #queries = new Map<string, QueryObservation>();
   readonly #actions: Action[] = [];
   readonly #lastChargeQueries = new Map<string, QueryObservation>();
+  /** Steps an earlier revision already applied (T1.37); carried as they are, never re-proposed. */
+  readonly #adopted = new Set<string>();
 
   constructor(opts: PlanningSessionOptions) {
     if (opts.ctx.world !== "planning") {
@@ -265,6 +272,24 @@ export class PlanningSession {
     return this.#opts.mode ?? "billing";
   }
 
+  /**
+   * Repair (T1.37): start from the steps an earlier revision already applied, with the evidence
+   * they cite. They stay byte-for-byte as approved, so the executor adopts their receipts by
+   * operation key instead of sending them again; proposing one of them again is refused.
+   */
+  adopt(kept: Pick<PlanManifest, "actions" | "observations" | "queryObservations">): void {
+    if (this.#actions.length > 0 || this.#observations.size > 0 || this.#queries.size > 0) {
+      throw new Error("adopt applied steps before any tool call");
+    }
+    for (const o of kept.observations) this.#observations.set(o.id, structuredClone(o));
+    for (const q of kept.queryObservations) this.#queries.set(q.id, structuredClone(q));
+    for (const a of kept.actions) {
+      if (a.kind === "slack.message.postSummary") throw new Error("a summary is never adopted");
+      this.#actions.push(Action.parse(a));
+      this.#adopted.add(a.id);
+    }
+  }
+
   /** What the finished plan still misses for the brief's customers, in this session's mode. */
   coverageOf(customers: readonly { customerId: string; requesterId: string }[]) {
     if (this.mode === "backlog") {
@@ -297,14 +322,16 @@ export class PlanningSession {
     promptVersion: string;
     adapters: Record<string, string>;
     precedentBasis?: PrecedentBasis;
+    /** A repair (T1.37) is the next revision of its base, and keeps the base's exclusions. */
+    repairOf?: Pick<PlanManifest, "revision" | "excluded">;
   }): PlanManifest {
     return {
       schemaVersion: 1,
       orgId: meta.orgId,
       incidentId: meta.incidentId,
       planId: meta.planId,
-      revision: 1,
-      parentRevision: null,
+      revision: meta.repairOf ? meta.repairOf.revision + 1 : 1,
+      parentRevision: meta.repairOf?.revision ?? null,
       target: { environment: "operational" },
       versions: {
         planner: {
@@ -323,7 +350,7 @@ export class PlanningSession {
       observations: this.observations,
       queryObservations: this.queryObservations,
       actions: this.actions,
-      excluded: [],
+      excluded: structuredClone(meta.repairOf?.excluded ?? []),
       ...(meta.precedentBasis && { precedentBasis: meta.precedentBasis }),
     };
   }
@@ -444,6 +471,11 @@ export class PlanningSession {
   }
 
   #add(action: Action): Action {
+    if (this.#adopted.has(action.id)) {
+      throw new Refusal(
+        `${action.id} was already applied by an earlier revision; it stays as it is`,
+      );
+    }
     if (this.#actions.some((a) => a.id === action.id)) {
       throw new Refusal(`${action.id} is already proposed`);
     }
@@ -506,7 +538,13 @@ export class PlanningSession {
         (a.kind === "stripe.refund.create" || a.kind === "stripe.customer.balanceCredit") &&
         (a.obligationId === obligationId || a.args.chargeId === chargeId),
     );
-    if (prior) throw new Refusal(`already remedied by ${prior.id}`);
+    if (prior) {
+      throw new Refusal(
+        this.#adopted.has(prior.id)
+          ? `already remedied by ${prior.id}, which an earlier revision applied; it stays as it is`
+          : `already remedied by ${prior.id}`,
+      );
+    }
     // Every excess charge of an invoice must point to the same paid original. Pair cycles
     // must never turn three payments into three refunds.
     const group = duplicateInvoiceGroup(population, t.invoice);
@@ -719,10 +757,10 @@ export class PlanningSession {
     if (refunds.length === 0)
       throw new Refusal("no refund is proposed, so there is nothing to sum up");
     const action = this.#add({
-      id: SUMMARY_ID,
+      id: this.#opts.summaryId ?? SUMMARY_ID,
       kind: "slack.message.postSummary",
       caseId: "run",
-      obligationId: SUMMARY_ID,
+      obligationId: this.#opts.summaryId ?? SUMMARY_ID,
       // It counts every step, so it runs after all of them, held or not.
       dependsOn: steps,
       requiredRole: "support_lead",
@@ -861,10 +899,10 @@ export class PlanningSession {
       throw new Refusal("no ticket is followed up, so there is nothing to sum up");
     }
     const action = this.#add({
-      id: SUMMARY_ID,
+      id: this.#opts.summaryId ?? SUMMARY_ID,
       kind: "slack.message.postSummary",
       caseId: "run",
-      obligationId: SUMMARY_ID,
+      obligationId: this.#opts.summaryId ?? SUMMARY_ID,
       dependsOn: steps,
       requiredRole: "support_lead",
       evidence: [],

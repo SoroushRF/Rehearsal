@@ -38,6 +38,8 @@ export interface PlanningLoopOptions {
     adapters: Record<string, string>;
     /** What the brief's precedents rest on; recorded in the manifest as given. */
     precedentBasis?: PrecedentBasis;
+    /** A repair (T1.37): the base revision this plan replaces, kept steps already adopted. */
+    repairOf?: Pick<PlanManifest, "revision" | "excluded">;
   };
   limits?: Partial<
     Record<"maxTurns" | "maxToolCalls" | "maxTokensPerTurn", number> & ModelRetryLimits
@@ -197,6 +199,7 @@ function finish(
     promptVersion: promptFor(opts.session.mode).version,
     adapters: opts.meta.adapters,
     precedentBasis: opts.meta.precedentBasis,
+    repairOf: opts.meta.repairOf,
   });
   const coverage = opts.session.coverageOf(opts.brief.customers);
   if (coverage.length > 0) {
