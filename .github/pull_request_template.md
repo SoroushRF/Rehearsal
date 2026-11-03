@@ -3,7 +3,8 @@
 <!-- One or two sentences. -->
 
 - **Track / task:** <!-- e.g. T3 / T3.2 -->
-- **Closes:** <!-- #issue, if one exists -->
+<!-- Replace N below with the issue number, or remove the line when there is no issue. -->
+Closes #N
 - **Demo moment it moves:** <!-- e.g. phantom hold, approve once, lost-response recovery -->
 
 ## Evidence

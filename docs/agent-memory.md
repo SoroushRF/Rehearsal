@@ -209,9 +209,9 @@ Before finance promotes, the panel can show the active precedents in the same ar
 - `POST /api/runs/:id/precedents/similar` takes `{ appliesTo, statement, id? }` (Zod, strict) and needs `rehearsal:promote:precedent` in the run's org, like promotion itself. A run in another org is a 404, and a run that hasn't completed is a 409.
 - It recalls in the org's scope with the **API's own key** (the write key's `memory:read` grant), never the planner's, asking for the service's cap of 50 hits because the area filter runs after the cut. The planner is still the only process whose recall feeds a plan.
 - The registry decides what is shown, read again after recall returns so a withdrawal that lands mid-recall still counts. A hit appears only if Postgres lists that exact version and digest as active, in the same area. The statement shown is read from Postgres, not from recall, so a withdrawn precedent whose copy memory still holds, or a copy that is a version behind, is dropped.
-- It always answers `200` with a status: `ok`, `off` (Agent Memory isn't configured) or `unavailable` (recall failed or took over 10 s). The panel says which, and says nothing blocks (a 403 says a finance lead is needed instead). An empty answer reads "None found among the closest matches", not "none exist". Recall is skipped when the registry has nothing active in the area.
+- It always answers `200` with a status: `ok`, `off` (Agent Memory isn't configured) or `unavailable` (recall failed or took over 30 s). The panel says which, and says nothing blocks (a 403 says a finance lead is needed instead). An empty answer reads "None found among the closest matches", not "none exist". Recall is skipped when the registry has nothing active in the area.
 - Nothing is stored, queued or approved, the promote route never calls it, and the promote button doesn't wait for it, so promotion works the same with memory off or failing. The plan hash isn't involved.
-- A failed recall is logged with the org, the error kind and the HTTP status only. The client takes no abort signal, so entity reads still in flight when the 10 s deadline passes run to their own timeout and are ignored.
+- A failed recall is logged with the org, the error kind and the HTTP status only. The client takes no abort signal, so entity reads still in flight when the 30 s deadline passes run to their own timeout and are ignored.
 
 | Evidence | Level |
 |---|---|
@@ -236,3 +236,21 @@ Found probing the hosted service on 2026-10-24 (context `rehearsal-precedents`, 
 11. **A tombstone is permanent.** After `DELETE /scopes`, registering the same path again returns `201`, but writes there are still `400 unknown scope node`. `GET /scopes` lists tombstoned paths with a `tombstonedAt`, which is how the erase command's listing tells them apart (probed 2026-11-03).
 12. **`lastUsedAt` in `GET /keys` is not a record of use.** In gate run 5 (2026-11-03) generation 1 of a label was used for a write and two reads, and still listed `lastUsedAt` empty. Generation 2's keys got a `lastUsedAt` on first use, and it didn't move after a write, a denied write and a recall over the next 15 s or so. Run 4 failed the same way, which fits, but recorded nothing more. Whether it is set later, sampled or batched, two runs can't say. So `--revoke-old`'s check can refuse on what it sees but can't show that nothing runs on an old key; the runbook relies on the deploy check.
 13. **`/scopes/forget` on a tombstoned scope** returns `200 {"forgotten":0}`, as for a scope never registered (Surprise 10), not an error (gate run 5, 2026-11-03; run 4 sent it too, but its answer was not kept). The erase command doesn't send it on a rerun unless something there still reads as live.
+
+## Public release verification (2026-11-03)
+
+The final T1.55 library gate passed all 139 memory tests, including the revised rotation,
+drift and disposable-scope erasure checks. Rotation still uses `--force` inside the test's
+throwaway label: this verifies the keys and revocation, not the reliability of `lastUsedAt`.
+The probes again observed used old keys reporting no use and new timestamps not advancing.
+
+The hosted app gate now checks the similar-precedents route with the API's write key and
+serves the planner's recall diagnostics from Postgres without changing the manifest/hash.
+All six checks passed. One earlier similar request exceeded the old 10 s advisory deadline;
+the panel now has a 30 s budget and promotion remains independent. The successful measured
+request took 7.8 s. IAM, model and planning reads in this gate are fixtures; Postgres and
+Agent Memory are real. This does not establish an Era or signed-in Render workflow.
+
+T1.57 also covers erasure during a job's last ordinary attempt: recovery strips the stored
+registry and grants only the needed retry under the same job id, in one transaction fenced
+to the active attempt. Jobs already without memory cannot replenish that recovery.
