@@ -179,7 +179,10 @@ export const RehearsalStepReport = z.strictObject({
   actionId: z.string().min(1),
   /** From the scenario, written before the run; never derived from the result. */
   expected: RehearsalStepOutcome,
-  /** Null when the step never ran (the run failed or was cancelled first). */
+  /**
+   * Null when no result was recorded: the run failed or was cancelled before one was. That doesn't
+   * prove the step wasn't sent; a send can land and its receipt fail to settle.
+   */
   result: RehearsalStepResult.nullable(),
   verification: RehearsalVerification,
 });
@@ -237,7 +240,8 @@ export const ExecutionRehearsalReport = z
         });
       }
     }
-    // A step with no recorded result never ran, so nothing about it can count as verified.
+    // A step with no recorded result has no established outcome, so nothing about it can count
+    // as verified.
     const unknown = report.steps.some(
       (s) =>
         s.result === null ||
