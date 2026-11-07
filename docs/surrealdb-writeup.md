@@ -1,6 +1,6 @@
-# Rehearsal and SurrealDB Agent Memory (draft for the SurrealDB blog)
+# Rehearsal and SurrealDB Agent Memory (for the SurrealDB blog)
 
-**Status: draft for team review**, refreshed 2026-11-07 to cover the memory work merged through PR #411 and a signed-in run on the deployed app. This answers SurrealDB's questions for their blog post. Facts here are checked against the code on `main`. Evidence is labelled the way the rest of the repository labels it. Items marked **TODO** need the team.
+**Status: ready to share**, refreshed 2026-11-07 to cover the memory work merged through PR #411 and a signed-in run on the deployed app. This answers SurrealDB's questions for their blog post. Facts here are checked against the code on `main`. Evidence is labelled the way the rest of the repository labels it.
 
 The planner model is Gemini (`gemini-4-argon` on Vertex AI); the plans in the screenshots say "planned by gemini-4-argon".
 
@@ -146,10 +146,10 @@ Not everything passed first time: one recall hit our 30 s client timeout, and ou
 
 ## What we learned
 
-[`docs/agent-memory.md`](agent-memory.md) ("Surprises") lists thirteen behaviours we found while building against the hosted service. Suggested split (**TODO (team): confirm**):
+[`docs/agent-memory.md`](agent-memory.md) ("Surprises") lists thirteen behaviours we found while building against the hosted service. The team's call:
 
 - **In the post**, as design lessons: attributes are kept per scope, so readback filters to exactly our scope (2); `valid_until` only applies to relations, so we retire a copy by superseding it (7); a tombstoned scope can never be written again, which is what makes erasure final (11).
-- **Sent to SurrealDB directly** (Discord, or a reply to Ned), since they read as bugs or doc gaps: `Idempotency-Key` is ignored on `/facts` (1); a `/` in an entity name makes it unreadable (3); `/scopes/forget` ignores `dryRun` and erases for real (4); `lastUsedAt` in `GET /keys` doesn't track use (12).
+- **Not in the post.** The ones that read as bugs or doc gaps go to SurrealDB directly, in the reply to Ned: `Idempotency-Key` is ignored on `/facts` (1); a `/` in an entity name makes it unreadable (3); `/scopes/forget` ignores `dryRun` and erases for real (4); `lastUsedAt` in `GET /keys` doesn't track use (12).
 
 ## For the post
 
