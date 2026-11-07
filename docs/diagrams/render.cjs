@@ -1,4 +1,4 @@
-const { chromium } = require(process.argv[2]);
+const { chromium } = require(require("node:path").resolve(process.argv[2]));
 const fs = require("node:fs"),
   path = require("node:path");
 const [, , , mmdPath, outDir] = process.argv;
@@ -68,7 +68,11 @@ const themes = {
     await page
       .locator("#d")
       .screenshot({ path: path.join(outDir, `agent-memory-flow-${name}.png`) });
-    fs.writeFileSync(path.join(outDir, `agent-memory-flow-${name}.svg`), svg);
+    // Biome lints SVGs: drop Mermaid's redundant role and give the drawing a title.
+    const clean = svg
+      .replace(' role="graphics-document document"', "")
+      .replace(/(<svg[^>]*>)/, "$1<title>How Rehearsal uses SurrealDB Agent Memory</title>");
+    fs.writeFileSync(path.join(outDir, `agent-memory-flow-${name}.svg`), clean);
     await page.close();
   }
   await browser.close();
