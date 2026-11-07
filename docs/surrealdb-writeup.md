@@ -1,6 +1,6 @@
 # Rehearsal and SurrealDB Agent Memory (draft for the SurrealDB blog)
 
-**Status: draft.** This answers SurrealDB's questions for their blog post. Facts here are checked against the code on `main`. Evidence is labelled the way the rest of the repository labels it. Items marked **TODO** need the team.
+**Status: draft for team review**, refreshed 2026-11-07 to cover the memory work merged through PR #411 and a signed-in run on the deployed app. This answers SurrealDB's questions for their blog post. Facts here are checked against the code on `main`. Evidence is labelled the way the rest of the repository labels it. Items marked **TODO** need the team.
 
 ## Rehearsal in one paragraph
 
@@ -77,6 +77,14 @@ kept.set(p.id, { precedent: p, citation: { id: p.id, version: p.version, digest:
 
 The plan's hash covers these citations, so a reviewer approves exactly what was cited.
 
+### Why each precedent was recalled
+
+Every plan also stores a short record of the recall itself: for each area, the query sent, the trace ID, the hits with their fact IDs, and every precedent that was dropped, with the reason and the stage (`recall` when memory's copy was missing, withdrawn or out of date; `registry` when memory had it but Postgres says another version is in force). The review page shows it under "Why these precedents". It lives in Postgres beside the plan revision, never in the plan itself, so it explains the citations without changing the hash a reviewer approves.
+
+### A hint before promoting
+
+When finance drafts a new precedent, the promote panel recalls the closest active precedents in the same area, so two people don't promote the same decision twice. It's advisory only: the registry filters what's shown, nothing is stored, and promotion never waits for it. If memory is slow or off, the panel says so and promotion works the same.
+
 ## How the model-free apply step fits
 
 The executor holds no model key and no memory key. At admission it checks the plan's citations against Postgres alone. If a precedent was withdrawn, superseded or changed after the plan was made, the step is held:
@@ -98,9 +106,9 @@ The plan also records an epoch for every area it consulted. If a precedent the p
 
 | SurrealDB asked about | What Rehearsal does |
 |---|---|
-| Scoping per organization | One scope per organization, `rehearsal/precedents/org-<hash>`. Readback ignores any attribute outside that exact scope. |
+| Scoping per organization | One scope per organization, `rehearsal/precedents/org-<hash>`. Readback ignores any attribute outside that exact scope. Erasing an organization forgets and tombstones its scope and nothing else ([below](#keeping-memory-honest-over-time)). |
 | Superseding on withdrawal | When finance withdraws a precedent, a job overwrites its three attributes with a withdrawal marker. Writing the same keys supersedes the approved copy, so recall stops returning it, and `/history` keeps it. Postgres has already dropped it by then; the marker keeps recall tidy. |
-| Tracing a memory to its source | Every citation carries fact IDs and the `/query` trace ID. In the review UI, a citation links to the approved version in Postgres, who promoted it and when, and the run it was promoted from. |
+| Tracing a memory to its source | Every citation carries fact IDs and the `/query` trace ID, and `GET /traces/{id}` names the query and the facts it returned. In the review UI, a citation links to the approved version in Postgres, who promoted it and when, and the run it was promoted from; "Why these precedents" shows what recall returned and what it dropped. |
 | Memory shared across agents | One writer and one reader per organization, each with its own key. The API writes with a write key, the planner reads with a read-only key, and every other process refuses memory keys at startup. We keep it narrow on purpose: memory informs planning and never authorizes execution. |
 
 The keys come from one definition. Both the minting script and the tests use it:
@@ -116,26 +124,44 @@ export function memoryKeyGrants(baseScope: string) {
 }
 ```
 
+## Keeping memory honest over time
+
+Memory is derived from the registry, so we treat it like a replica and give operators three tools:
+
+- **Drift check** (`pnpm memory:drift <org> [--repair]`). It compares an organization's scope with its registry using a read-only key of its own, and reports a missing copy, a stale version, a withdrawal that was never marked, a version still waiting, and copies the registry never approved. `--repair` queues fixes through the same sync job that normally writes memory; the check itself only reads.
+- **Key rotation** (`pnpm memory:keys rotate <label>`). It mints the next write/read pair with the same grants and leaves the old pair working until the new one is deployed; `--revoke-old` then revokes it.
+- **Per-organization erasure** (`pnpm memory:erase-org <org>`). A dry run with reads only, a typed confirmation, an append-only `erased` row in Postgres first (from then on the sync, recall, the hint and promotion all refuse that organization), then `POST /scopes/forget` and `DELETE /scopes`, then a read-back check that nothing is still live. The registry keeps its history and stays the authority.
+
 ## Evidence
 
-Two gates ran against the hosted service on 2026-11-02 and 2026-11-03, three runs each, all passing:
-- the memory gate (7/7): publish and read back; recall with fact IDs and a trace ID; `GET /traces/{id}`; replacing v1 with v2, with history kept; scope isolation between keys; a plan citing v1 held once v2 is approved; and the key check, where the API's key publishes and the planner's can recall but not write;
-- the app gate (5/5), through the real API routes, the sync job and the planner's job handler: promote → sync → active, the plan cites by fact ID and trace ID, withdraw → approval refused (`409`), and a replan drops the withdrawn copy.
+Against the hosted Agent Memory service:
+- **Memory gate**, the library against the real service: publish and read back; recall with fact IDs and a trace ID; `GET /traces/{id}`; replacing v1 with v2 with history kept; scope isolation between keys; a plan citing v1 held once v2 is approved; the planner's key recalls but can't write; drift; key rotation; per-org erasure in a disposable scope. Passed on repeated runs from 2026-10-24 to 2026-11-03; the final suite passed three runs in a row.
+- **App gate**, through the real API routes, the sync job and the planner's job handler on real Postgres: promote → sync → active; the plan cites by fact ID and trace ID; withdraw → approval refused (`409`); a replan drops the withdrawn copy; the promote hint; recall diagnostics served from Postgres. 6/6 on three runs. Its IAM, model and planning-world reads were fixtures.
+- **Deployment.** Since 2026-11-03 the public Render deployment runs with Agent Memory on: the API holds only the write key, the planner only the read key, and the executor and rehearsal worker hold none. A cloud job published, read back and recalled in a disposable scope with the deployed keys.
+- **Signed-in run on the deployed app** (2026-11-05, real model, real Agent Memory, Era simulator worlds). Rehearsed `INC-BILL-0927` (8 customers, 32 steps, $648.77 CAD), approved it and applied it: 32 of 32 steps done. Promoted `duplicate-charge-refund v1` from that run; it showed "Waiting for sync", then "Active" once the sync had written it and read it back. Rehearsed again: the new plan cites `duplicate-charge-refund v1` with 3 fact IDs and the recall trace ID, and "Why these precedents" shows the query. Withdrew it: the new plan shows "Held · Changed since planning" and approval is refused until it is replanned. The page refuses before the click, using the same registry check as `POST /api/plans/:id/approvals`; the `409 precedent_changed` itself is covered by the app gate above. Screenshots: [`docs/acceptance/agent-memory-prod-2026-11-05/`](acceptance/agent-memory-prod-2026-11-05/).
 
-These used a scripted model and testkit planning reads. They were not acceptance runs of a deployed app. Details are in [`docs/agent-memory.md`](agent-memory.md).
+Not everything passed first time: one recall hit our 30 s client timeout, and our key-rotation check had to change because `lastUsedAt` didn't reflect use. Details are in [`docs/agent-memory.md`](agent-memory.md).
 
 ## What we learned
 
-[`docs/agent-memory.md`](agent-memory.md) ("Surprises") lists eight behaviours we found while building against the hosted service. Two are examples: `valid_until` is accepted only on relations, so we retire a copy by superseding it instead; and attributes are kept per scope. **TODO (team):** decide which of these to share with SurrealDB.
+[`docs/agent-memory.md`](agent-memory.md) ("Surprises") lists thirteen behaviours we found while building against the hosted service. Suggested split (**TODO (team): confirm**):
+
+- **In the post**, as design lessons: attributes are kept per scope, so readback filters to exactly our scope (2); `valid_until` only applies to relations, so we retire a copy by superseding it (7); a tombstoned scope can never be written again, which is what makes erasure final (11).
+- **Sent to SurrealDB directly** (Discord, or a reply to Ned), since they read as bugs or doc gaps: `Idempotency-Key` is ignored on `/facts` (1); a `/` in an entity name makes it unreadable (3); `/scopes/forget` ignores `dryRun` and erases for real (4); `lastUsedAt` in `GET /keys` doesn't track use (12).
 
 ## For the post
 
 - **Repo:** https://github.com/SoroushRF/Rehearsal
-- **Video:** **TODO.** The current video predates Agent Memory; a new one is #16.
+- **Live app:** https://rehearsal-api-40b8.onrender.com/app
+- **Video:** the Devpost video (https://vimeo.com/1239349254) predates Agent Memory. Two new cuts in the same style are rendered (4K): an Agent Memory cut (2:23) and a product walkthrough (4:26). **TODO:** upload them and add the links here.
 - **Architecture diagram:** the diagram above, or the one in the README.
-- **Screenshots (TODO, from a real run with memory on):**
-  1. the promote panel, where finance promotes a decision from a finished run;
-  2. a plan's citation card, with the precedent and its fact IDs;
-  3. the citation traced to its approved version, promoter and source run;
-  4. a held step after a precedent was withdrawn.
-- **Team names, titles and handles: TODO.** GitHub: @SoroushRF, @parsaabbasian, @ArtinMe, @skhdemo.
+- **Screenshots** (signed-in run on the deployed app, in [`docs/acceptance/agent-memory-prod-2026-11-05/`](acceptance/agent-memory-prod-2026-11-05/)):
+  1. the promote panel, where finance promotes a decision from a finished run: `04-promote-form-filled.jpg`, `06-precedent-active.jpg`;
+  2. a plan's citation card, with the precedent, its fact IDs, trace ID, approved version, promoter and source run, and "Why these precedents": `09-plan-cites-precedent-crop.png`;
+  3. the review page after the precedent was withdrawn, with approval refused: `13-approval-refused-held-crop.png`;
+  4. the rest of the flow (plan review, approval, receipts, withdrawal): `01` to `12`.
+- **Team** (no titles: all four had similar roles on the project):
+  - Soroush Baraouf, [LinkedIn](https://www.linkedin.com/in/soroush-baraouf/)
+  - Sepehr Khodadadi, [LinkedIn](https://www.linkedin.com/in/sepehrkh/)
+  - Artin Bozorgmehri, [LinkedIn](https://www.linkedin.com/in/artin-bozorgmehri/)
+  - Parsa Abbasian, [LinkedIn](https://www.linkedin.com/in/ParsaAbbasian/)

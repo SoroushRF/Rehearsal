@@ -180,8 +180,9 @@ The signed-in cloud flow then passed with the owner's explicit approval:
   unverified for this manifest; the successful operational-world simulator apply does
   not establish disposable-world rehearsal support for replies.
 
-Agent Memory and Slack summaries are not configured in this deployment yet (their
-services/code remain available). Planning and operational worlds now intentionally
+Slack summaries are not configured in this deployment yet (the service and code remain
+available). Agent Memory was not configured at this point either; it has been on since
+2026-11-03 ([Public main restored](#public-main-restored-2026-11-03)). Planning and operational worlds now intentionally
 differ because the approved simulator apply ran; do not reset while a run is active.
 
 Render required a card despite the credit; the owner added it. The temporary empty
