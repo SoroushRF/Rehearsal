@@ -15,7 +15,7 @@ Billing teams make the same judgement calls again and again. For example: "a dup
 One rule shapes everything: **Agent Memory is a recall index, never an authority.** A Postgres registry (`precedent_events`) decides which precedent version is active. Memory helps the planner find precedents. It never approves anything, and the model-free executor never reads it.
 
 ```mermaid
-flowchart LR
+flowchart TB
   F[Finance promotes a precedent] -->|approved event| PG[(Postgres registry<br/>precedent_events)]
   PG -->|outbox job| API[API sync<br/>write key]
   API -->|publish, read back, check hash| AM[(Agent Memory<br/>scope per org)]
@@ -159,7 +159,7 @@ Not everything passed first time: one recall hit our 30 s client timeout, and ou
   - Agent Memory (2:23): https://youtu.be/y7ceO5wuWys
   - Product walkthrough (4:26): https://youtu.be/K8Gj8XxElzU
   - The Devpost launch video (https://vimeo.com/1239349254) predates Agent Memory.
-- **Architecture diagram:** the diagram above, or the one in the README.
+- **Architecture diagram:** the diagram above, rendered as PNG and SVG (light and dark) in [`docs/diagrams/`](diagrams/), e.g. [`agent-memory-flow-light.png`](diagrams/agent-memory-flow-light.png). The README has the whole-system one.
 - **Screenshots** (signed-in run on the deployed app, in [`docs/acceptance/agent-memory-prod-2026-11-05/`](acceptance/agent-memory-prod-2026-11-05/)):
   1. the promote panel, where finance promotes a decision from a finished run: `04-promote-form-filled.jpg`, `06-precedent-active.jpg`;
   2. a plan's citation card, with the precedent, its fact IDs, trace ID, approved version, promoter and source run, and "Why these precedents": `09-plan-cites-precedent-crop.png`;
