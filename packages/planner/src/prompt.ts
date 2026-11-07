@@ -9,7 +9,7 @@ import type { PlanningMode } from "./tools";
 export const PROMPT_ID = "billing-remedy.v2";
 
 /** The model the planner uses unless PLANNER_MODEL pins another. Never an unpinned alias. */
-export const DEFAULT_PLANNER_MODEL = "claude-sonnet-5-5";
+export const DEFAULT_PLANNER_MODEL = "gemini-4-argon";
 
 export const LOOP_LIMITS = {
   /** Model turns. A turn may hold several tool calls. */

@@ -133,7 +133,7 @@ From there, more of the company's systems join the same graph, and operators run
 
 ## Built with
 
-TypeScript, React, Vite, Tailwind, Fastify, Zod, Postgres, Drizzle, pg-boss, Clerk, Era, Anthropic, SurrealDB Agent Memory, Vitest, Playwright, Biome.
+TypeScript, React, Vite, Tailwind, Fastify, Zod, Postgres, Drizzle, pg-boss, Clerk, Era, Gemini on Vertex AI, SurrealDB Agent Memory, Vitest, Playwright, Biome.
 
 ## Run it locally
 

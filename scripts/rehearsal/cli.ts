@@ -191,13 +191,13 @@ async function doctor(): Promise<boolean> {
   }
   // A warning, not a failure: everything but a model-planned rehearsal runs without one.
   const planner = loadEnv(ENV_FILES.planner);
-  const model = planner.PLANNER_MODEL ?? "claude-sonnet-5-5";
+  const model = planner.PLANNER_MODEL ?? "gemini-4-argon";
   const hasModel = model.startsWith("gemini-")
     ? Boolean(planner.GOOGLE_CLOUD_PROJECT)
     : Boolean(planner.ANTHROPIC_API_KEY);
   if (!hasModel) {
     console.log(
-      `warn planner: no credentials for ${model} in .env.planner (ANTHROPIC_API_KEY, or GOOGLE_CLOUD_PROJECT for gemini-*)`,
+      `warn planner: no credentials for ${model} in .env.planner (GOOGLE_CLOUD_PROJECT for gemini-*, or ANTHROPIC_API_KEY for claude-*)`,
     );
   }
   return ok;
