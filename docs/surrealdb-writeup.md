@@ -2,6 +2,8 @@
 
 **Status: draft for team review**, refreshed 2026-11-07 to cover the memory work merged through PR #411 and a signed-in run on the deployed app. This answers SurrealDB's questions for their blog post. Facts here are checked against the code on `main`. Evidence is labelled the way the rest of the repository labels it. Items marked **TODO** need the team.
 
+The planner model is Gemini (`gemini-4-argon` on Vertex AI); the plans in the screenshots say "planned by gemini-4-argon".
+
 ## Rehearsal in one paragraph
 
 Rehearsal is "terraform plan" for AI agents doing batch fintech operations. An agent plans a billing remediation (Stripe refunds, Zendesk ticket updates) inside a simulated copy of the company. A reviewer approves the exact plan once, and the approval is bound to the plan's hash. A deterministic executor, with no model, applies it to the real systems. Before each step it re-checks what the plan assumed, and it holds anything that went stale.
@@ -153,7 +155,10 @@ Not everything passed first time: one recall hit our 30 s client timeout, and ou
 
 - **Repo:** https://github.com/SoroushRF/Rehearsal
 - **Live app:** https://rehearsal-api-40b8.onrender.com/app
-- **Video:** the Devpost video (https://vimeo.com/1239349254) predates Agent Memory. Two new cuts in the same style are rendered (4K): an Agent Memory cut (2:23) and a product walkthrough (4:26). **TODO:** upload them and add the links here.
+- **Video:**
+  - Agent Memory (2:23): https://youtu.be/y7ceO5wuWys
+  - Product walkthrough (4:26): https://youtu.be/K8Gj8XxElzU
+  - The Devpost launch video (https://vimeo.com/1239349254) predates Agent Memory.
 - **Architecture diagram:** the diagram above, or the one in the README.
 - **Screenshots** (signed-in run on the deployed app, in [`docs/acceptance/agent-memory-prod-2026-11-05/`](acceptance/agent-memory-prod-2026-11-05/)):
   1. the promote panel, where finance promotes a decision from a finished run: `04-promote-form-filled.jpg`, `06-precedent-active.jpg`;
