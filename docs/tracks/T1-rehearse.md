@@ -112,6 +112,17 @@ See [beyond.md](../beyond.md) for scope, parallel work, external gates and the r
 | T1.57 | Recover an erased-memory plan after its normal retry is spent | M5 | **Done (fixture):** atomically strip the stored job snapshot, fence the active attempt and grant only the retry needed to replan; the polled job id remains stable. Real pg-boss tests cover exhausted ordinary retry, successful memory-free completion and refusal without replenishing a memory-free job. | [#406](https://github.com/SoroushRF/Rehearsal/issues/406) | T1.55 |
 | T1.58 | Hosted verification and public Render release | M5 | **Done:** all five Git-backed Render services target public `main` and run `9f68062`; separate API/write and planner/read keys are configured and planner startup says `precedents on`. Both public memory migrations are present; post-release connectivity smoke passed all nine worlds, Postgres, IAM and public/signed-out checks. Hosted memory suite 139/139, with final rotation/drift/erasure checks passing 3 consecutive runs; hosted app gate 6/6 on 3 final runs verifies similar recall with the API key and stored diagnostics. Actual release keys publish/read/recall and refuse planner writes; disposable probe cleaned up. PR template uses `Closes #N`. Full DB suite 2088 passed, 141 skipped; typecheck, tracked-source lint, web build and Linux CI green. Evidence and limits: [deployment.md](../deployment.md#public-main-restored-2026-11-03). | [#407](https://github.com/SoroushRF/Rehearsal/issues/407) | T1.56, T1.57 |
 
+## Startup roadmap (Nov 2026)
+
+Work toward running on real provider accounts. None of it is started; evidence levels are set when each task runs.
+
+| ID | Task | Milestone | Done when | Issue | Blocked by |
+|---|---|---|---|---|---|
+| T1.59 | Plan against live Stripe and Zendesk with read-only credentials | M5 | The planner builds a plan from a Stripe test-mode account and a Zendesk sandbox with no Era world; it holds no write credential | [#415](https://github.com/SoroushRF/Rehearsal/issues/415) | [T2.35](https://github.com/SoroushRF/Rehearsal/issues/421) |
+| T1.60 | Read-set snapshot: rehearse a plan in a disposable world built from what it read | M5 | A plan made from live reads is rehearsed in a disposable Era world; reply and credit plans rehearse; the report states what the snapshot could not reproduce | [#416](https://github.com/SoroushRF/Rehearsal/issues/416) | [T1.59](https://github.com/SoroushRF/Rehearsal/issues/415) |
+| T1.61 | Shadow mode: check a batch that already ran, read-only | M5 | On a seeded world with one missed customer and one double refund, the report finds both; the run holds no write credential | [#417](https://github.com/SoroushRF/Rehearsal/issues/417) | [T1.59](https://github.com/SoroushRF/Rehearsal/issues/415), [T4.31](https://github.com/SoroushRF/Rehearsal/issues/440) |
+| T1.62 | Nightly conformance jobs for Era and Stripe test mode | M5 | Both jobs run nightly and on demand; a failure is visible on the repository; no secret is printed | [#418](https://github.com/SoroushRF/Rehearsal/issues/418) | — |
+
 ## Decisions
 
 - **2026-10-22:** The planner worker has no database. It takes `plan` jobs and hands back manifests through `/internal/planner/jobs/*` with its own secret; the API checks each manifest against its job before storing revision 1. See [0006](../decisions/0006-planner-jobs-through-api.md).
