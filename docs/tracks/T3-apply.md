@@ -59,6 +59,23 @@ See [beyond.md](../beyond.md) for scope, parallel work, external gates and the r
 | T3.19 | _Benchmark:_ Fewer guard re-reads without losing freshness | M5 | Re-reads are combined or removed only where freshness and ordering stay the same; race tests pass; calls measured before and after on the scorecard. **Code done (fixture), Era scorecard measurement pending:** a refund's guard takes the charge from the customer-window query it re-runs in the same call (same projection version) and the one-remedy check reuses that read, so 4 guard reads become 2; the fixture happy path drops from 12 guard reads to 8. Every fact is still read inside the same guard call, before this step's send; no read crosses a write or a step | [#286](https://github.com/SoroushRF/Rehearsal/issues/286) | |
 | T3.20 | _Benchmark:_ Latency tracking across the full path | M5 | Each delivery appends a `run.timings` event: planning, approval wait and queue spans from stored timestamps; execution time; provider calls by purpose (guard, precondition, write, reconcile, read, compensation) with failures; retry count and backoff wait. **Done (fixture)**, Era timings not yet taken | [#287](https://github.com/SoroushRF/Rehearsal/issues/287) | |
 
+## Startup roadmap (Nov 2026)
+
+Work toward running on real provider accounts. None of it is started; evidence levels are set when each task runs.
+
+| ID | Task | Milestone | Done when | Issue | Blocked by |
+|---|---|---|---|---|---|
+| T3.21 | Split `executor.ts` into admission, step and reconcile modules | M5 | `executor.ts` only wires modules together; every existing test passes unchanged | [#428](https://github.com/SoroushRF/Rehearsal/issues/428) | — |
+| T3.22 | Operation-type registry: add an operation without touching the engine | M5 | No `kind` literals in the engine outside the registry; a fake seventh operation runs end to end through the registry alone | [#429](https://github.com/SoroushRF/Rehearsal/issues/429) | [T3.21](https://github.com/SoroushRF/Rehearsal/issues/428) |
+| T3.23 | Stripe write adapter for real refund states: a pending refund waits, it does not hold | M5 | Pending and failed refunds are recorded as such in Stripe test mode; dependents wait or are never sent | [#430](https://github.com/SoroushRF/Rehearsal/issues/430) | [T2.35](https://github.com/SoroushRF/Rehearsal/issues/421) |
+| T3.24 | Stripe webhook ingestion to settle pending refunds | M5 | A pending refund settles from a signed webhook, and from the fallback read when the webhook is dropped; duplicates and other orgs change nothing | [#431](https://github.com/SoroushRF/Rehearsal/issues/431) | [T3.23](https://github.com/SoroushRF/Rehearsal/issues/430) |
+| T3.25 | Zendesk adapter for real accounts: auth, subdomain and the full status set | M5 | Patch, private note and public reply pass against a real Zendesk sandbox, including a lost response; Era behavior unchanged | [#432](https://github.com/SoroushRF/Rehearsal/issues/432) | [T2.35](https://github.com/SoroushRF/Rehearsal/issues/421) |
+| T3.26 | The operation marker is visible to the customer in public replies | M5 | The customer-visible text is exactly the approved body; a lost response on a reply is still resolved by read | [#433](https://github.com/SoroushRF/Rehearsal/issues/433) | — |
+| T3.27 | Lock a target across plans so two plans cannot remedy the same charge | M5 | Two plans on the same charge run concurrently on Postgres: one refund is sent, the other step is held with a typed reason | [#434](https://github.com/SoroushRF/Rehearsal/issues/434) | [T4.29](https://github.com/SoroushRF/Rehearsal/issues/438) |
+| T3.28 | Enforce tenancy and append-only history in the database | M5 | Each database role fails to read another org's rows or to update or delete history; full database suite passes | [#435](https://github.com/SoroushRF/Rehearsal/issues/435) | — |
+| T3.29 | Hash-chained receipts and a command that verifies the chain | M5 | Editing or deleting any row makes `verify` fail at that row; a run export verifies offline | [#436](https://github.com/SoroushRF/Rehearsal/issues/436) | — |
+| T3.30 | One provider rate budget across workers, and traces for every run | M5 | Two workers on one org stay under a configured budget; one run's trace shows every provider call with its purpose | [#437](https://github.com/SoroushRF/Rehearsal/issues/437) | — |
+
 ## Decisions
 
 _(add dated entries)_

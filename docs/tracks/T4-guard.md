@@ -74,6 +74,16 @@ See [beyond.md](../beyond.md) for scope, parallel work, external gates and the r
 | T4.27 | Note and reply guards check only the ticket fields they use (benchmark owner: @SoroushRF) | M5 | Appends ignore priority-only drift while retaining identity, ownership, status and refund dependency checks; patches retain the full check. Era scripted scorecard: 27/28, zero invalid allows, duplicates or wrongful holds; T3/T10 pass. Self-reviewed; user waived cross-track review in #289 | [#273](https://github.com/SoroushRF/Rehearsal/issues/273) | — |
 | T4.28 | Guard a refund on its invoice, not on every charge of the customer (benchmark owner: @SoroushRF) | M5 | Refund admission compares only the refunded invoice's charges, with a complete enumeration still required; a third charge on the same invoice still holds; the T1.34 task passes for Rehearsal. **Done (fixture):** `guardAction` compares a refund's customer-window query on the members of the refunded charge's invoice, plus any member whose invoice the read can't name. A charge moving onto or off that invoice holds; a refunded charge with no recorded invoice keeps the whole-query check; other steps citing the query are unchanged. The rehearsal phantom now carries the refunded invoice, so `phantom_membership` still holds. `packages/planner/test/other-invoice.test.ts` flipped: B11 confirms, a same-invoice third charge holds. Credits keep the whole-query check. Self-reviewed at the user's instruction. Not yet: the B11 Era run (T1.34) | [#282](https://github.com/SoroushRF/Rehearsal/issues/282) | T1.34 |
 
+## Startup roadmap (Nov 2026)
+
+Work toward running on real provider accounts. None of it is started; evidence levels are set when each task runs.
+
+| ID | Task | Milestone | Done when | Issue | Blocked by |
+|---|---|---|---|---|---|
+| T4.29 | Derive obligation keys on the server from the target | M5 | Two actions on the same charge with different planner-supplied IDs resolve to one obligation; existing bundles unchanged | [#438](https://github.com/SoroushRF/Rehearsal/issues/438) | — |
+| T4.30 | Pin the plan hash: RFC 8785 test vectors and golden hashes per manifest version | M5 | The vectors pass; adding a defaulted schema field does not change any golden hash | [#439](https://github.com/SoroushRF/Rehearsal/issues/439) | — |
+| T4.31 | Completeness audit: a disposition for every customer in scope | M5 | A plan that leaves out one eligible customer is reported incomplete with the outstanding amount; a held step shows as unresolved; no model call | [#440](https://github.com/SoroushRF/Rehearsal/issues/440) | [T4.29](https://github.com/SoroushRF/Rehearsal/issues/438) |
+
 ## Decisions
 
 - **2026-10-24.** Authorization is permissions, decided by a separate IAM service and enforced by the API and the executor ([0014](../decisions/0014-iam-permission-based-authorization.md), proposed).
