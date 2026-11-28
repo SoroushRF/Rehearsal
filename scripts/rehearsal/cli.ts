@@ -23,6 +23,8 @@ const ERA_CORE = [
   "zendesk-operational",
 ];
 const ERA_SLACK = ["slack-planning", "slack-operational"];
+/** Every compose profile, so `down` stops the execution-rehearsal worlds too. */
+const ALL_PROFILES = ["--profile", "full", "--profile", "rehearsal"];
 const ENV_FILES = { api: ".env", planner: ".env.planner", executor: ".env.executor" } as const;
 /** Optional: the execution-rehearsal worker (T3.16). Without it, rehearsals stay queued. */
 const REHEARSAL_ENV = ".env.rehearsal";
@@ -189,13 +191,13 @@ async function doctor(): Promise<boolean> {
   }
   // A warning, not a failure: everything but a model-planned rehearsal runs without one.
   const planner = loadEnv(ENV_FILES.planner);
-  const model = planner.PLANNER_MODEL ?? "claude-sonnet-5-5";
+  const model = planner.PLANNER_MODEL ?? "gemini-4-argon";
   const hasModel = model.startsWith("gemini-")
     ? Boolean(planner.GOOGLE_CLOUD_PROJECT)
     : Boolean(planner.ANTHROPIC_API_KEY);
   if (!hasModel) {
     console.log(
-      `warn planner: no credentials for ${model} in .env.planner (ANTHROPIC_API_KEY, or GOOGLE_CLOUD_PROJECT for gemini-*)`,
+      `warn planner: no credentials for ${model} in .env.planner (GOOGLE_CLOUD_PROJECT for gemini-*, or ANTHROPIC_API_KEY for claude-*)`,
     );
   }
   return ok;
@@ -428,7 +430,7 @@ const commands: Record<string, () => boolean | Promise<boolean>> = {
   smoke,
   reset: () => run("pnpm", ["-s", "demo:reset"], { ...process.env, ...loadEnv(ENV_FILES.api) }),
   stop,
-  down: () => stop() && run("docker", [...COMPOSE, "--profile", "full", "down"]),
+  down: () => stop() && run("docker", [...COMPOSE, ...ALL_PROFILES, "down"]),
   status,
 };
 

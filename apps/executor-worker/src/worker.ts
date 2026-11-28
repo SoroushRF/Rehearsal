@@ -9,11 +9,20 @@ import {
   executeRun,
   PLAN_LOCKED,
   type ProviderPort,
+  pathTimings,
   type RunAdmit,
+  RunMeter,
   type RunOutcome,
   type WorldContext,
 } from "@rehearsal/core";
-import { ApplyJob, type Db, loadRegistry, PgApplyStore, PgJournal } from "@rehearsal/db";
+import {
+  ApplyJob,
+  type Db,
+  loadRegistry,
+  PgApplyStore,
+  PgJournal,
+  runPathTimes,
+} from "@rehearsal/db";
 
 /** Everything the executor needs except the per-job store and journal. */
 export interface WorkerContext {
@@ -65,6 +74,9 @@ export async function handleApplyJob(
   if (!parsed.success) return { kind: "skipped", reason: "malformed apply job" };
   const job = parsed.data;
   const store = new PgApplyStore(ctx.db);
+  const deliveryStartedAt = ctx.clock.now().toISOString();
+  // T3.20: one meter per delivery. The guard and the compensator get their own counted ports.
+  const meter = new RunMeter();
 
   const run = await store.loadRun(job.orgId, job.runId);
   if (
@@ -78,7 +90,7 @@ export async function handleApplyJob(
   const deps = (): Parameters<typeof executeRun>[1] => ({
     store,
     journal: new PgJournal(ctx.db, job.orgId),
-    providers: ctx.providers,
+    providers: meter.providers(ctx.providers),
     worlds: ctx.worlds,
     clock: ctx.clock,
     policies: ctx.policies,
@@ -88,21 +100,30 @@ export async function handleApplyJob(
     },
     admit: ctx.admit,
     newId: (prefix) => `${prefix}_${randomUUID()}`,
-    guard: createReadGuard({ providers: ctx.providers, worlds: ctx.worlds, clock: ctx.clock }),
+    guard: createReadGuard({
+      providers: meter.providers(ctx.providers, "guard"),
+      worlds: ctx.worlds,
+      clock: ctx.clock,
+    }),
     compensate: createCompensator({
-      providers: ctx.providers,
+      providers: meter.providers(ctx.providers, "compensation"),
       worlds: ctx.worlds,
       clock: ctx.clock,
     }),
     ...ctx.executor,
+    sleep: meter.sleep(ctx.executor?.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)))),
   });
+  const timed = async (outcome: RunOutcome) => {
+    await recordTimings(ctx, job, meter, deliveryStartedAt, outcome);
+    return outcome;
+  };
 
   if (!(await store.transitionRun(job.orgId, job.runId, ["approved", "applying"], "applying"))) {
     const state = await store.runState(job.orgId, job.runId);
     if (state === "cancelled") {
       // A cancelled run sends nothing, but the executor still resolves any earlier send whose
       // outcome is unknown through reads. Its state stays "cancelled".
-      const outcome = await executeRun(job, deps());
+      const outcome = await timed(await executeRun(job, deps()));
       if (outcome.refusal === PLAN_LOCKED) throw new RetryLater(PLAN_LOCKED);
       // The read-only pass stopped on an error (journal down): try it again. The run stays
       // cancelled either way, and the reaper picks it up while a send is still in flight.
@@ -118,7 +139,7 @@ export async function handleApplyJob(
 
   // A thrown error (journal down, an adapter bug) propagates: pg-boss retries, and the journal
   // makes the re-run safe. Past the last try the run stays `applying` for the reaper.
-  const outcome: RunOutcome = await executeRun(job, deps());
+  const outcome: RunOutcome = await timed(await executeRun(job, deps()));
 
   if (outcome.refusal === PLAN_LOCKED) {
     // The plan's lock is held: by another revision, or by an earlier delivery of this same job
@@ -155,4 +176,29 @@ export async function handleApplyJob(
     console.error(`run ${job.runId} finished ${outcome.state} but is ${now}; state not written`);
   }
   return { kind: "ran", outcome };
+}
+
+/**
+ * T3.20: append where this delivery's time went to the run's events (`run.timings`). Diagnostics
+ * only: a delivery that deferred on the plan lock ran nothing and records nothing, and a failure
+ * here is logged, never allowed to change the run's outcome or its state.
+ */
+async function recordTimings(
+  ctx: WorkerContext,
+  job: ApplyJob,
+  meter: RunMeter,
+  deliveryStartedAt: string,
+  outcome: RunOutcome,
+): Promise<void> {
+  if (outcome.refusal === PLAN_LOCKED) return;
+  try {
+    const times = await runPathTimes(ctx.db, job.orgId, job.runId);
+    const timings = meter.timings(
+      pathTimings({ ...times, deliveryStartedAt }),
+      ctx.executor?.caseConcurrency ?? 1,
+    );
+    await new PgJournal(ctx.db, job.orgId).appendEvent(job.runId, "run.timings", timings);
+  } catch (err) {
+    console.error(`run ${job.runId}: timings not recorded: ${String(err)}`);
+  }
 }

@@ -1,0 +1,214 @@
+{
+  "incident": "INC-BILL-2706",
+  "summary": "A June invoice-sync bug charged customers more than once.",
+  "window": {
+    "createdGte": "2027-06-04T00:00:00.000Z",
+    "createdLt": "2027-06-18T00:00:00.000Z"
+  },
+  "ids": {
+    "prefix": "INC2706",
+    "ticketBase": 9606001
+  },
+  "cases": [
+    {
+      "key": "a01",
+      "kind": "duplicate",
+      "customerId": "cus_UsGCczFEvmjJRpbM",
+      "name": "Lumen Outfitters",
+      "email": "billing@lumen-outfitters.example",
+      "requesterId": 3006000,
+      "amountMinor": 4095,
+      "currency": "cad",
+      "chargedAt": "2027-06-07T15:00:00.000Z"
+    },
+    {
+      "key": "a02",
+      "kind": "duplicate",
+      "customerId": "cus_OrXDUSofYGvvUPeL",
+      "name": "Dune Archives",
+      "email": "payables@dune-archives.example",
+      "requesterId": 3006001,
+      "amountMinor": 9143,
+      "currency": "cad",
+      "chargedAt": "2027-06-14T11:00:00.000Z"
+    },
+    {
+      "key": "a03",
+      "kind": "duplicate",
+      "customerId": "cus_MKttkbkpYHSAdPnf",
+      "name": "Tidewater Woodworks",
+      "email": "ap@tidewater-woodworks.example",
+      "requesterId": 3006002,
+      "amountMinor": 9997,
+      "currency": "cad",
+      "chargedAt": "2027-06-13T17:00:00.000Z"
+    },
+    {
+      "key": "a04",
+      "kind": "duplicate",
+      "customerId": "cus_QtdSyZlWUQGPMWtX",
+      "name": "Nimbus Ceramics",
+      "email": "admin@nimbus-ceramics.example",
+      "requesterId": 3006003,
+      "amountMinor": 10000,
+      "currency": "cad",
+      "chargedAt": "2027-06-05T10:00:00.000Z"
+    },
+    {
+      "key": "a05",
+      "kind": "duplicate",
+      "customerId": "cus_gqHiVscvJCzEhGfv",
+      "name": "Fern Mills",
+      "email": "admin@fern-mills.example",
+      "requesterId": 3006004,
+      "amountMinor": 43562,
+      "currency": "cad",
+      "chargedAt": "2027-06-10T12:00:00.000Z"
+    },
+    {
+      "key": "a06",
+      "kind": "duplicate",
+      "customerId": "cus_vFEkybbinnqSRhLY",
+      "name": "Kelp Hydroponics",
+      "email": "finance@kelp-hydroponics.example",
+      "requesterId": 3006005,
+      "amountMinor": 6254,
+      "currency": "cad",
+      "chargedAt": "2027-06-12T19:00:00.000Z",
+      "billingCurrency": "usd"
+    },
+    {
+      "key": "a07",
+      "kind": "duplicate",
+      "customerId": "cus_ELEtAuWgUikHKLMH",
+      "name": "Birch Surveying",
+      "email": "admin@birch-surveying.example",
+      "requesterId": 3006006,
+      "amountMinor": 4347,
+      "currency": "cad",
+      "chargedAt": "2027-06-05T14:00:00.000Z",
+      "ticketExternalId": "cus_lTIJDHLmddEflFpn"
+    },
+    {
+      "key": "a08",
+      "kind": "duplicate",
+      "customerId": "cus_ueZGeFiHSWSTktGx",
+      "name": "Zephyr Kitchens",
+      "email": "finance@zephyr-kitchens.example",
+      "requesterId": 3006007,
+      "amountMinor": 5011,
+      "currency": "cad",
+      "chargedAt": "2027-06-04T00:00:00.000Z"
+    },
+    {
+      "key": "a09",
+      "kind": "duplicate",
+      "customerId": "cus_LbmZEsRqYVlUshRf",
+      "name": "Harbor Signals",
+      "email": "admin@harbor-signals.example",
+      "requesterId": 3006008,
+      "amountMinor": 9456,
+      "currency": "cad",
+      "chargedAt": "2027-06-17T23:58:00.000Z"
+    },
+    {
+      "key": "a10",
+      "kind": "duplicate",
+      "customerId": "cus_oRtWpgHeKCJNQMrp",
+      "name": "Harbor Veterinary",
+      "email": "ops@harbor-veterinary.example",
+      "requesterId": 3006009,
+      "amountMinor": 4475,
+      "currency": "cad",
+      "chargedAt": "2027-06-17T23:59:00.000Z"
+    },
+    {
+      "key": "a11",
+      "kind": "triple",
+      "customerId": "cus_EpGHsIwVWOyChOCu",
+      "name": "Birch Veterinary",
+      "email": "payables@birch-veterinary.example",
+      "requesterId": 3006010,
+      "amountMinor": 2550,
+      "currency": "cad",
+      "chargedAt": "2027-06-11T06:00:00.000Z"
+    },
+    {
+      "key": "a12",
+      "kind": "duplicate",
+      "customerId": "cus_ZdtviTRPxwkpaZRw",
+      "name": "Harbor Hydroponics",
+      "email": "finance@harbor-hydroponics.example",
+      "requesterId": 3006011,
+      "amountMinor": 5641,
+      "currency": "cad",
+      "chargedAt": "2027-06-05T16:00:00.000Z"
+    },
+    {
+      "key": "a13",
+      "kind": "duplicate",
+      "customerId": "cus_ngVbsSbdnPcWNaTk",
+      "name": "Iris Studio",
+      "email": "ops@iris-studio.example",
+      "requesterId": 3006012,
+      "amountMinor": 6829,
+      "currency": "cad",
+      "chargedAt": "2027-06-07T07:00:00.000Z"
+    },
+    {
+      "key": "a14",
+      "kind": "duplicate",
+      "customerId": "cus_STuUHiOQIeSRoYMw",
+      "name": "Umber Hydroponics",
+      "email": "billing@umber-hydroponics.example",
+      "requesterId": 3006013,
+      "amountMinor": 2091,
+      "currency": "cad",
+      "chargedAt": "2027-06-08T16:00:00.000Z"
+    },
+    {
+      "key": "n01",
+      "kind": "control_distinct",
+      "customerId": "cus_EvpwwtorrqEdJfLC",
+      "name": "Granite Surveying",
+      "email": "accounts@granite-surveying.example",
+      "requesterId": 3006014,
+      "amountMinor": 4096,
+      "currency": "cad",
+      "chargedAt": "2027-06-11T20:00:00.000Z"
+    },
+    {
+      "key": "n02",
+      "kind": "control_other_currency",
+      "customerId": "cus_dkGaLJGgPZmWJyhl",
+      "name": "Pinecrest Mills",
+      "email": "ops@pinecrest-mills.example",
+      "requesterId": 3006015,
+      "amountMinor": 5133,
+      "currency": "usd",
+      "chargedAt": "2027-06-09T10:00:00.000Z"
+    },
+    {
+      "key": "n03",
+      "kind": "control_outside_window",
+      "customerId": "cus_NWUuBDOlqfawHVAA",
+      "name": "Fern Cartography",
+      "email": "accounts@fern-cartography.example",
+      "requesterId": 3006016,
+      "amountMinor": 5585,
+      "currency": "cad",
+      "chargedAt": "2027-06-01T00:00:00.000Z"
+    },
+    {
+      "key": "n04",
+      "kind": "control_failed_retry",
+      "customerId": "cus_bdKnissGCEnGKyeF",
+      "name": "Nimbus Woodworks",
+      "email": "admin@nimbus-woodworks.example",
+      "requesterId": 3006017,
+      "amountMinor": 4628,
+      "currency": "cad",
+      "chargedAt": "2027-06-13T13:00:00.000Z"
+    }
+  ]
+}

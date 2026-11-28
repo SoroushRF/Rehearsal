@@ -1,8 +1,14 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type { PlanManifest, PrecedentBasis } from "@rehearsal/contracts";
 import { validateGraph } from "@rehearsal/core";
+import {
+  type ModelAttempt,
+  type ModelRetryLimits,
+  requestModel,
+  untilAborted,
+} from "./model-retry";
 import { briefMessage, type IncidentBrief, LOOP_LIMITS, promptFor } from "./prompt";
-import type { PlanningSession } from "./tools";
+import { type PlanningSession, REFUND_INSTEAD, type RefusalReason } from "./tools";
 
 /**
  * T1.5: the bounded tool loop. The model sees only the planning tools, so it has no shell, browser
@@ -32,17 +38,23 @@ export interface PlanningLoopOptions {
     adapters: Record<string, string>;
     /** What the brief's precedents rest on; recorded in the manifest as given. */
     precedentBasis?: PrecedentBasis;
+    /** A repair (T1.37): the base revision this plan replaces, kept steps already adopted. */
+    repairOf?: Pick<PlanManifest, "revision" | "excluded">;
   };
-  limits?: Partial<Record<"maxTurns" | "maxToolCalls" | "maxTokensPerTurn", number>>;
+  limits?: Partial<
+    Record<"maxTurns" | "maxToolCalls" | "maxTokensPerTurn", number> & ModelRetryLimits
+  >;
   signal?: AbortSignal;
   /** Called after every turn, for logs. */
   onTurn?: (turn: TurnLog) => void;
+  onModelAttempt?: (attempt: ModelAttempt) => void;
 }
 
 export interface TurnLog {
   turn: number;
   stopReason: Anthropic.StopReason | null;
-  toolCalls: { name: string; ok: boolean; error?: string }[];
+  /** A refused call's typed reason (T1.39), so a run's rejected calls can be counted by kind. */
+  toolCalls: { name: string; ok: boolean; error?: string; reason?: RefusalReason }[];
   usage: Anthropic.Usage;
 }
 
@@ -82,10 +94,12 @@ export async function runPlanningLoop(opts: PlanningLoopOptions): Promise<Planni
   const messages: Anthropic.MessageParam[] = [{ role: "user", content: briefMessage(opts.brief) }];
   const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 };
   let toolCalls = 0;
+  const budget = { requests: 0, reservedOutputTokens: 0 };
 
   for (let turn = 1; turn <= limits.maxTurns; turn++) {
     opts.signal?.throwIfAborted();
-    const response = await opts.client.create(
+    const response = await requestModel(
+      opts.client,
       {
         model: opts.model,
         max_tokens: limits.maxTokensPerTurn,
@@ -98,7 +112,7 @@ export async function runPlanningLoop(opts: PlanningLoopOptions): Promise<Planni
         cache_control: { type: "ephemeral" },
         messages,
       },
-      { signal: opts.signal },
+      { turn, limits, budget, signal: opts.signal, onAttempt: opts.onModelAttempt },
     );
     usage.inputTokens += response.usage.input_tokens;
     usage.outputTokens += response.usage.output_tokens;
@@ -149,17 +163,26 @@ export async function runPlanningLoop(opts: PlanningLoopOptions): Promise<Planni
     // Sequential, in the model's order: propose tools depend on what earlier calls proposed.
     const results: Anthropic.ToolResultBlockParam[] = [];
     for (const call of calls) {
+      opts.signal?.throwIfAborted();
       // The deadline covers tool calls too: a read that never answers must not hold the run.
       const result = await untilAborted(opts.session.call(call.name, call.input), opts.signal);
       log.toolCalls.push(
         result.ok
           ? { name: call.name, ok: true }
-          : { name: call.name, ok: false, error: result.error },
+          : { name: call.name, ok: false, error: result.error, reason: result.reason },
       );
       results.push({
         type: "tool_result",
         tool_use_id: call.id,
-        content: JSON.stringify(result.ok ? result.result : { error: result.error }),
+        content: JSON.stringify(
+          result.ok
+            ? result.result
+            : {
+                error: result.error,
+                reason: result.reason,
+                ...(REFUND_INSTEAD.has(result.reason) && { refundInstead: true }),
+              },
+        ),
         ...(!result.ok && { is_error: true }),
       });
     }
@@ -168,17 +191,6 @@ export async function runPlanningLoop(opts: PlanningLoopOptions): Promise<Planni
     opts.onTurn?.(log);
   }
   throw new PlanningLoopError("turn_limit", `no finished plan after ${limits.maxTurns} turns`);
-}
-
-/** Settle with `pending`, or reject with the signal's reason as soon as it aborts. */
-function untilAborted<T>(pending: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
-  if (!signal) return pending;
-  signal.throwIfAborted();
-  return new Promise<T>((resolve, reject) => {
-    const abort = () => reject(signal.reason);
-    signal.addEventListener("abort", abort, { once: true });
-    pending.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
-  });
 }
 
 function finish(
@@ -196,6 +208,7 @@ function finish(
     promptVersion: promptFor(opts.session.mode).version,
     adapters: opts.meta.adapters,
     precedentBasis: opts.meta.precedentBasis,
+    repairOf: opts.meta.repairOf,
   });
   const coverage = opts.session.coverageOf(opts.brief.customers);
   if (coverage.length > 0) {

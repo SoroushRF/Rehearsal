@@ -1,0 +1,214 @@
+{
+  "incident": "INC-BILL-2703",
+  "summary": "A March checkout timeout made customers pay again for the same invoice.",
+  "window": {
+    "createdGte": "2027-03-04T00:00:00.000Z",
+    "createdLt": "2027-03-18T00:00:00.000Z"
+  },
+  "ids": {
+    "prefix": "INC2703",
+    "ticketBase": 9603001
+  },
+  "cases": [
+    {
+      "key": "a01",
+      "kind": "duplicate",
+      "customerId": "cus_QAtOYQHOusEGpFZt",
+      "name": "Birch Print Co",
+      "email": "accounts@birch-print-co.example",
+      "requesterId": 3003000,
+      "amountMinor": 2648,
+      "currency": "cad",
+      "chargedAt": "2027-03-06T19:00:00.000Z"
+    },
+    {
+      "key": "a02",
+      "kind": "duplicate",
+      "customerId": "cus_UbdYIbZcbbcyjGPp",
+      "name": "Juniper Forge",
+      "email": "finance@juniper-forge.example",
+      "requesterId": 3003001,
+      "amountMinor": 8269,
+      "currency": "cad",
+      "chargedAt": "2027-03-13T13:00:00.000Z"
+    },
+    {
+      "key": "a03",
+      "kind": "duplicate",
+      "customerId": "cus_VuUMGncbZkPiqRQe",
+      "name": "Cedar Robotics",
+      "email": "ap@cedar-robotics.example",
+      "requesterId": 3003002,
+      "amountMinor": 9997,
+      "currency": "cad",
+      "chargedAt": "2027-03-11T15:00:00.000Z"
+    },
+    {
+      "key": "a04",
+      "kind": "duplicate",
+      "customerId": "cus_rvQVoFlFIGJMAImi",
+      "name": "Juniper Mills",
+      "email": "admin@juniper-mills.example",
+      "requesterId": 3003003,
+      "amountMinor": 10000,
+      "currency": "cad",
+      "chargedAt": "2027-03-10T07:00:00.000Z"
+    },
+    {
+      "key": "a05",
+      "kind": "duplicate",
+      "customerId": "cus_WGGxbqfuXosrHRvC",
+      "name": "Cobalt Forge",
+      "email": "payables@cobalt-forge.example",
+      "requesterId": 3003004,
+      "amountMinor": 43355,
+      "currency": "cad",
+      "chargedAt": "2027-03-08T17:00:00.000Z"
+    },
+    {
+      "key": "a06",
+      "kind": "duplicate",
+      "customerId": "cus_vlndPTjBuRqYNsKY",
+      "name": "Maple Veterinary",
+      "email": "ops@maple-veterinary.example",
+      "requesterId": 3003005,
+      "amountMinor": 1957,
+      "currency": "cad",
+      "chargedAt": "2027-03-16T19:00:00.000Z",
+      "billingCurrency": "usd"
+    },
+    {
+      "key": "a07",
+      "kind": "duplicate",
+      "customerId": "cus_QBWbluFJevuIVvoi",
+      "name": "Willow Mills",
+      "email": "accounts@willow-mills.example",
+      "requesterId": 3003006,
+      "amountMinor": 1647,
+      "currency": "cad",
+      "chargedAt": "2027-03-09T09:00:00.000Z",
+      "ticketExternalId": "cus_pWmbuwZwVxYWZqiF"
+    },
+    {
+      "key": "a08",
+      "kind": "duplicate",
+      "customerId": "cus_hvAKwaFJMMAFurAC",
+      "name": "Onyx Surveying",
+      "email": "ops@onyx-surveying.example",
+      "requesterId": 3003007,
+      "amountMinor": 9020,
+      "currency": "cad",
+      "chargedAt": "2027-03-04T00:00:00.000Z"
+    },
+    {
+      "key": "a09",
+      "kind": "duplicate",
+      "customerId": "cus_KomUAIPPjTCIdpzp",
+      "name": "Nimbus Textiles",
+      "email": "billing@nimbus-textiles.example",
+      "requesterId": 3003008,
+      "amountMinor": 5622,
+      "currency": "cad",
+      "chargedAt": "2027-03-17T23:58:00.000Z"
+    },
+    {
+      "key": "a10",
+      "kind": "duplicate",
+      "customerId": "cus_NtXMCaaVovtcAJjy",
+      "name": "Iris Surveying",
+      "email": "payables@iris-surveying.example",
+      "requesterId": 3003009,
+      "amountMinor": 2307,
+      "currency": "cad",
+      "chargedAt": "2027-03-17T23:59:00.000Z"
+    },
+    {
+      "key": "a11",
+      "kind": "triple",
+      "customerId": "cus_eJwYsdIyvlhnSIOh",
+      "name": "Dune Print Co",
+      "email": "admin@dune-print-co.example",
+      "requesterId": 3003010,
+      "amountMinor": 3542,
+      "currency": "cad",
+      "chargedAt": "2027-03-14T10:00:00.000Z"
+    },
+    {
+      "key": "a12",
+      "kind": "duplicate",
+      "customerId": "cus_OmOjqktviYaVIvfu",
+      "name": "Basalt Tutoring",
+      "email": "accounts@basalt-tutoring.example",
+      "requesterId": 3003011,
+      "amountMinor": 6176,
+      "currency": "cad",
+      "chargedAt": "2027-03-08T20:00:00.000Z"
+    },
+    {
+      "key": "a13",
+      "kind": "duplicate",
+      "customerId": "cus_nfQWyInHLgrCRQsd",
+      "name": "Onyx Dental",
+      "email": "ap@onyx-dental.example",
+      "requesterId": 3003012,
+      "amountMinor": 6136,
+      "currency": "cad",
+      "chargedAt": "2027-03-16T07:00:00.000Z"
+    },
+    {
+      "key": "a14",
+      "kind": "duplicate",
+      "customerId": "cus_ckxPsumHgMCTudTp",
+      "name": "Yarrow Optics",
+      "email": "billing@yarrow-optics.example",
+      "requesterId": 3003013,
+      "amountMinor": 2553,
+      "currency": "cad",
+      "chargedAt": "2027-03-12T13:00:00.000Z"
+    },
+    {
+      "key": "n01",
+      "kind": "control_distinct",
+      "customerId": "cus_VZAXiEfpdvfJvinV",
+      "name": "Maple Courier",
+      "email": "ap@maple-courier.example",
+      "requesterId": 3003014,
+      "amountMinor": 8733,
+      "currency": "cad",
+      "chargedAt": "2027-03-05T14:00:00.000Z"
+    },
+    {
+      "key": "n02",
+      "kind": "control_other_currency",
+      "customerId": "cus_suQTfixhipxTbsUu",
+      "name": "Moss Glassworks",
+      "email": "ops@moss-glassworks.example",
+      "requesterId": 3003015,
+      "amountMinor": 4807,
+      "currency": "usd",
+      "chargedAt": "2027-03-14T09:00:00.000Z"
+    },
+    {
+      "key": "n03",
+      "kind": "control_outside_window",
+      "customerId": "cus_WeixUPlcwSMLFjPw",
+      "name": "Dune Studio",
+      "email": "ops@dune-studio.example",
+      "requesterId": 3003016,
+      "amountMinor": 8725,
+      "currency": "cad",
+      "chargedAt": "2027-02-27T00:00:00.000Z"
+    },
+    {
+      "key": "n04",
+      "kind": "control_failed_retry",
+      "customerId": "cus_fHLVeoDTULdWNWNl",
+      "name": "Amber Forge",
+      "email": "payables@amber-forge.example",
+      "requesterId": 3003017,
+      "amountMinor": 7287,
+      "currency": "cad",
+      "chargedAt": "2027-03-06T18:00:00.000Z"
+    }
+  ]
+}

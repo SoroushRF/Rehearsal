@@ -402,6 +402,12 @@ export interface ResolvedCharge {
   amountMinor: number;
   currency: string;
   created: number;
+  /**
+   * The refunded charge's invoice, so a phantom is a duplicate of the same invoice (T4.28 admits a
+   * new charge on another one). Null when the plan recorded none. Absent on scenarios resolved
+   * before T4.28; the injected charge then has no invoice, which still holds.
+   */
+  invoice?: string | null;
 }
 
 export type ResolvedChallenge =
@@ -463,6 +469,7 @@ interface RefundBinding {
   customerId: string;
   amountMinor: number;
   currency: string;
+  invoice: string | null;
   windowStart: number;
   windowEnd: number;
 }
@@ -604,6 +611,7 @@ function bindChallenge(
           amountMinor: refund.amountMinor,
           currency: refund.currency,
           created,
+          invoice: refund.invoice,
         },
       };
       return {
@@ -768,7 +776,17 @@ function bindRefund(manifest: Evidence, selector: StepSelector): RefundBinding |
   if (windowStart === null || windowEnd === null || windowEnd <= windowStart) {
     return `${query.id} has a window that cannot be placed on a timeline`;
   }
-  return { action, query, customerId, amountMinor, currency, windowStart, windowEnd };
+  const invoice = observation.projection.invoice;
+  return {
+    action,
+    query,
+    customerId,
+    amountMinor,
+    currency,
+    invoice: typeof invoice === "string" && invoice.length > 0 ? invoice : null,
+    windowStart,
+    windowEnd,
+  };
 }
 
 function findAction(actions: readonly Action[], selector: StepSelector): Action | string {
@@ -900,6 +918,7 @@ export function injectChargeRecord(
     amount_captured: charge.amountMinor,
     amount_refunded: 0,
     currency: charge.currency,
+    invoice: charge.invoice ?? null,
     status: "succeeded",
     created: charge.created,
     refunded: false,

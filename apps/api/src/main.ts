@@ -1,12 +1,5 @@
 import type { BillingPolicy } from "@rehearsal/core";
-import {
-  createDb,
-  enqueuePlan,
-  loadRegistry,
-  type PgBoss,
-  startQueue,
-  withOrgWorlds,
-} from "@rehearsal/db";
+import { createDb, enqueuePlan, type PgBoss, startQueue, withOrgWorlds } from "@rehearsal/db";
 import { iamClientViolations } from "@rehearsal/iam/boot";
 import type { PlanJob } from "@rehearsal/providers";
 import policyV1 from "../../../scenarios/billing/policy.v1.json" with { type: "json" };
@@ -16,10 +9,13 @@ import { buildApp } from "./app";
 import type { ApplyDeps } from "./apply";
 import { iamClientFromEnv } from "./iam";
 import { ensureOrgSeeded, resetIdleOrgWorlds, workerHasWork } from "./org-worlds";
+import { similarRecallerFromEnv } from "./precedent-similar";
 import { publisherFromEnv, startPrecedentWorker } from "./precedent-sync";
 import { eraProblemInjector } from "./problems";
 import { rehearsalTenantActive } from "./rehearsal-operator";
 import { rehearsalTokenDepsFromEnv } from "./rehearsal-tokens";
+import { planJobRegistry } from "./rehearse";
+import { eraPlanningRefresher } from "./repair";
 import { tenantTokenDepsFromEnv } from "./tenant-tokens";
 
 /**
@@ -78,20 +74,30 @@ const precedents = apply && {
   boss: apply.boss,
   iam,
   syncEnabled: publisherFor !== null,
+  // T2.32: the promote panel's advisory hint recalls with the same key; it never decides anything.
+  similar: similarRecallerFromEnv(),
 };
 if (apply && publisherFor) await startPrecedentWorker(apply.boss, { db: apply.db, publisherFor });
 else if (apply) {
   console.warn("Agent Memory not configured; promoted precedents will wait for a sync");
 }
+// T1.37: a repair copies records its run's holds found into the org's planning world, under the
+// same lock as reset and seeding. Only when this API holds the Era admin token.
+const planningRefresher = eraPlanningRefresher();
 const rehearse = apply && {
   db: apply.db,
   boss: apply.boss,
   iam,
   plannerSecret: process.env.PLANNER_WORKER_SECRET,
-  precedentRegistry: async (orgId: string) => (await loadRegistry(apply.db, orgId)).snapshot,
+  // T1.55: an org whose Agent Memory was erased plans with memory off (no precedent basis).
+  precedentRegistry: (orgId: string) => planJobRegistry(apply.db, orgId),
   // Each org plans in its own tenant (#330): seed it before the first plan job.
   enqueue: (job: PlanJob) =>
     enqueuePlan(apply.db, apply.boss, job, () => ensureOrgSeeded(job.orgId)),
+  ...(planningRefresher && {
+    refreshPlanning: (orgId: string, records: Parameters<typeof planningRefresher>[1]) =>
+      withOrgWorlds(apply.db, orgId, () => planningRefresher(orgId, records)),
+  }),
 };
 // Live demo (#331): only when this API holds the Era admin token. Each org's own tenant, seeded first.
 const problemInjector = eraProblemInjector();

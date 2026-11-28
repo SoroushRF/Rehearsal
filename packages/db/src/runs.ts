@@ -1,9 +1,11 @@
+import { firstReadAt, type PathTimes } from "@rehearsal/core";
 import { and, eq, inArray, lt, or, sql } from "drizzle-orm";
 import type { PgBoss } from "pg-boss";
+import { z } from "zod";
 import { insertRunEvent } from "./events";
 import type { Db } from "./index";
 import { APPLY_QUEUE, enqueueApply } from "./queue";
-import { planVersions, runEvents, runs, stepAttempts } from "./schema";
+import { approvalGrants, planVersions, runEvents, runs, stepAttempts } from "./schema";
 
 export type CancelResult =
   | { kind: "cancelled"; runId: string }
@@ -203,4 +205,50 @@ export async function reapStuckRuns(
   // undo the sweep.
   if (handedOff.length > 0) opts.onHandOff?.(handedOff);
   return reaped;
+}
+
+/** Only the read times of a stored manifest, so a run's timings never depend on its full shape. */
+const ReadTimes = z.object({
+  observations: z.array(z.object({ capturedAt: z.string() })),
+  queryObservations: z.array(z.object({ capturedAt: z.string() })),
+});
+
+/**
+ * T3.20: the stored timestamps a run's path is timed from: the plan's first read and its storage,
+ * the approval the run applies, and the run's creation. Null for anything not found.
+ */
+export async function runPathTimes(
+  db: Db,
+  orgId: string,
+  runId: string,
+): Promise<Omit<PathTimes, "deliveryStartedAt">> {
+  const [row] = await db
+    .select({
+      runCreatedAt: runs.createdAt,
+      planStoredAt: planVersions.createdAt,
+      manifest: planVersions.manifest,
+      grantedAt: approvalGrants.grantedAt,
+    })
+    .from(runs)
+    .leftJoin(
+      planVersions,
+      and(
+        eq(planVersions.orgId, runs.orgId),
+        eq(planVersions.planId, runs.planId),
+        eq(planVersions.revision, runs.revision),
+      ),
+    )
+    .leftJoin(
+      approvalGrants,
+      and(eq(approvalGrants.orgId, runs.orgId), eq(approvalGrants.id, runs.approvalId)),
+    )
+    .where(and(eq(runs.orgId, orgId), eq(runs.id, runId)));
+  const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
+  const manifest = ReadTimes.safeParse(row?.manifest);
+  return {
+    runCreatedAt: iso(row?.runCreatedAt),
+    planStoredAt: iso(row?.planStoredAt),
+    grantedAt: iso(row?.grantedAt),
+    firstReadAt: manifest.success ? firstReadAt(manifest.data) : null,
+  };
 }

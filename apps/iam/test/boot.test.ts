@@ -7,13 +7,16 @@ import { iamClientViolations, iamServerViolations, plannerIamViolations } from "
 import { generateDevCerts } from "../src/dev-certs";
 
 const root = resolve(import.meta.dirname, "../../..");
+// tsx's CLI run by this Node, not the `.bin/tsx` shim: on Windows that's `tsx.cmd`, which spawn
+// can't start without a shell.
+const tsx = join(root, "node_modules/tsx/dist/cli.mjs");
 
 function runMain(
   script: string,
   env: NodeJS.ProcessEnv,
 ): Promise<{ code: number | null; stderr: string }> {
   return new Promise((resolvePromise) => {
-    const child = spawn(join(root, "node_modules/.bin/tsx"), [script], {
+    const child = spawn(process.execPath, [tsx, script], {
       cwd: root,
       env: { PATH: process.env.PATH, HOME: process.env.HOME, ...env },
       stdio: ["ignore", "pipe", "pipe"],

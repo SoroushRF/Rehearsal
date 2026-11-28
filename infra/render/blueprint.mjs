@@ -36,6 +36,14 @@ const certs = (role) => [
   secret(`DEPLOY_${role.toUpperCase()}_CERT_PEM`),
   secret(`DEPLOY_${role.toUpperCase()}_KEY_PEM`),
 ];
+// Agent Memory (decision 0012, #365): the API syncs with the write key, the planner recalls with the
+// read key, and no other process gets either. Keys are minted with `pnpm memory:keys mint` and set
+// in the dashboard; nothing here carries a value.
+const agentMemory = (key) => [
+  secret("SURREAL_AGENT_MEMORY_URL"),
+  secret("SURREAL_AGENT_MEMORY_CONTEXT"),
+  secret(key),
+];
 function nodeService(name, type, role, envVars, extra = {}) {
   return {
     name,
@@ -75,6 +83,7 @@ export const blueprint = {
           "REHEARSAL_WORKER_SECRET",
         ].map(generated),
         secret("VITE_CLERK_PUBLISHABLE_KEY"),
+        ...agentMemory("SURREAL_AGENT_MEMORY_WRITE_KEY"),
       ],
       {
         healthCheckPath: "/api/health",
@@ -101,6 +110,7 @@ export const blueprint = {
       value("CUSTOMER_REPLIES", "1"),
       value("BALANCE_CREDITS", "1"),
       secret("RUN_SUMMARY_CHANNEL"),
+      ...agentMemory("SURREAL_AGENT_MEMORY_READ_KEY"),
     ]),
     nodeService("rehearsal-executor", "worker", "executor", [
       database,

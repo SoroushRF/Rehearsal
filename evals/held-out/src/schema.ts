@@ -7,6 +7,8 @@ import { z } from "zod";
  */
 
 const CaseKey = z.string().regex(/^[a-z]\d{2}$/);
+/** A hand-authored held-out set (`ho1`) or a generated catalog set (`g01`, T1.40). */
+const SetId = z.string().regex(/^(?:ho\d|g\d{2})$/);
 const Instant = z.iso.datetime();
 const Priority = z.enum(["low", "normal", "high", "urgent"]);
 const ChargeId = z.string().regex(/^ch_[A-Za-z0-9]+$/);
@@ -124,7 +126,7 @@ export const Precedent = z.strictObject({
 });
 
 export const Task = z.strictObject({
-  id: z.string().regex(/^HO\d-\d+$/),
+  id: z.string().regex(/^(?:HO\d|G\d{2})-\d+$/),
   title: z.string().min(1),
   /** Cases the planner is asked about. Every case is scored, in scope or not. */
   scope: z.union([z.literal("all"), z.array(CaseKey).min(1)]),
@@ -139,7 +141,7 @@ export const Task = z.strictObject({
 export type Task = z.infer<typeof Task>;
 
 export const Tasks = z.strictObject({
-  set: z.string().regex(/^ho\d$/),
+  set: SetId,
   version: z.int().positive(),
   policy: z.strictObject({ id: z.literal("billing-remedy"), version: z.int().positive() }),
   /** What the planning session turns on, as in the scorecard's Ops, but the agent picks the remedy. */
@@ -158,6 +160,7 @@ export const Op = z.enum([
   "zendesk.ticket.appendPublicReply",
   "slack.message.postSummary",
 ]);
+export type Op = z.infer<typeof Op>;
 
 /**
  * Why an op must not apply. Product-neutral on purpose: a runner maps its own hold reasons onto
@@ -202,11 +205,15 @@ export type CaseGold = z.infer<typeof CaseGold>;
 const Sha256 = z.string().regex(/^[0-9a-f]{64}$/);
 
 export const Gold = z.strictObject({
-  set: z.string().regex(/^ho\d$/),
+  set: SetId,
   version: z.int().positive(),
-  split: z.literal("held-out"),
-  /** `authored` until a run against Era has used it; the gold itself never becomes evidence. */
-  evidence: z.literal("authored"),
+  /** `catalog` for a generated set (T1.40); its gold is derived by the oracle, not written by hand. */
+  split: z.enum(["held-out", "catalog"]),
+  /**
+   * `authored` by hand, or `derived` from the policy and the task by `src/oracle.ts` (T1.40).
+   * Neither is evidence: the gold never becomes `era_integration`.
+   */
+  evidence: z.enum(["authored", "derived"]),
   authoredAt: z.iso.date(),
   /** Digests of the inputs the gold was written against. Changing an input means re-authoring. */
   inputs: z.strictObject({ incident: Sha256, tasks: Sha256, policy: Sha256 }),

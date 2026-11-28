@@ -1,6 +1,6 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type { PlanManifest } from "@rehearsal/contracts";
-import { type BillingPolicyV1, fingerprint } from "@rehearsal/core";
+import { type BillingPolicyV1, fingerprint, planHash } from "@rehearsal/core";
 import { precedentDigest } from "@rehearsal/memory";
 import {
   BACKLOG_PROMPT_VERSION,
@@ -20,7 +20,7 @@ import {
   zendeskTicketProjection,
 } from "@rehearsal/providers";
 import { INCIDENT, incidentRecords, problemRecords } from "@rehearsal/testkit";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import policy from "../../../scenarios/billing/policy.v1.json" with { type: "json" };
 import { handlePlanJob, type PlanJobContext } from "../src/job";
 
@@ -167,6 +167,99 @@ function deps(client: MessagesClient, jobs: PlannerJobsClient): PlanJobContext {
 }
 
 describe("plan job", () => {
+  it("repairs a held run: plans only the open case, on top of the steps already applied", async () => {
+    const first = fakeJobs();
+    await handlePlanJob(JOB, deps(model(refundOneDuplicate()), first.jobs));
+    const base = { ...(first.completed[0]?.[1].manifest as PlanManifest) };
+    const held = `refund_${duplicate.chargeIds[1]}`;
+    const kept = base.actions.filter((a) => a.id !== held).map((a) => a.id);
+    const repairJob: ClaimedPlanJob = {
+      ...JOB,
+      data: {
+        ...JOB.data,
+        repair: {
+          base,
+          basePlanHash: "a".repeat(64),
+          runId: "run_1",
+          kept,
+          openCases: [`case_${duplicate.customerId}`],
+          stopped: [{ id: held, why: "held: a new charge matched its query" }],
+        },
+      },
+    };
+    const prompts: unknown[] = [];
+    const results: unknown[] = [];
+    const other = records.cases.find((c) => c.kind === "duplicate" && c !== duplicate);
+    if (!other) throw new Error("one duplicate only");
+    const turns = [
+      reply([
+        ["list_customer_charges", { customerId: duplicate.customerId }],
+        // A step the base already applied can't be proposed again.
+        [
+          "propose_duplicate_refund",
+          {
+            chargeId: other.chargeIds[1],
+            duplicateOfChargeId: other.chargeIds[0],
+            rationale: "again",
+          },
+        ],
+        [
+          "propose_duplicate_refund",
+          {
+            chargeId: duplicate.chargeIds[1],
+            duplicateOfChargeId: duplicate.chargeIds[0],
+            rationale: "Charged twice for one invoice.",
+          },
+        ],
+      ]),
+      reply([]),
+    ];
+    const client: MessagesClient = {
+      async create(req) {
+        prompts.push(req.messages[0]?.content);
+        results.push(req.messages.at(-1)?.content);
+        return model(turns.splice(0, 1)).create(req);
+      },
+    };
+    const { jobs, completed, failed } = fakeJobs();
+    await handlePlanJob(repairJob, deps(client, jobs));
+    expect(failed).toEqual([]);
+    const repaired = completed[0]?.[1].manifest as PlanManifest;
+    expect(repaired).toMatchObject({ revision: 2, parentRevision: 1, planId: JOB.data.planId });
+    expect(repaired.actions.map((a) => a.id).sort()).toEqual(base.actions.map((a) => a.id).sort());
+    for (const id of kept) {
+      expect(repaired.actions.find((a) => a.id === id)).toEqual(
+        base.actions.find((a) => a.id === id),
+      );
+    }
+    expect(String(prompts[0])).toContain("This repairs revision 1");
+    expect(String(prompts[0])).toContain(`Customers who reported it (1):`);
+    expect(JSON.stringify(results[1])).toContain("which an earlier revision applied");
+  });
+
+  it("refuses a repair whose base is another plan", async () => {
+    const { jobs, failed } = fakeJobs();
+    const first = fakeJobs();
+    await handlePlanJob(JOB, deps(model(refundOneDuplicate()), first.jobs));
+    const base = first.completed[0]?.[1].manifest as PlanManifest;
+    const job: ClaimedPlanJob = {
+      ...JOB,
+      data: {
+        ...JOB.data,
+        repair: {
+          base: { ...base, planId: "plan_other" },
+          basePlanHash: "a".repeat(64),
+          runId: "run_1",
+          kept: [],
+          openCases: [`case_${duplicate.customerId}`],
+          stopped: [],
+        },
+      },
+    };
+    await handlePlanJob(job, deps(model([]), jobs));
+    expect(failed[0]?.[1]).toMatchObject({ reason: "invalid_repair" });
+  });
+
   it("plans in the planning world and hands revision 1 to the API", async () => {
     const { jobs, completed, failed } = fakeJobs();
     const result = await handlePlanJob(JOB, deps(model(refundOneDuplicate()), jobs));
@@ -371,6 +464,22 @@ describe("plan job", () => {
     const result = await handlePlanJob(JOB, deps(model([new Error("overloaded")]), jobs));
     expect(result).toMatchObject({ kind: "failed", reason: "planner_error" });
     expect(failed[0]?.[1].message).toBe("overloaded");
+    expect(failed[0]?.[1].modelAttempts?.map((a) => a.outcome)).toEqual(["error"]);
+  });
+
+  it("stores request history even when a transient failure recovers", async () => {
+    const { jobs, completed, failed } = fakeJobs();
+    const turns = refundOneDuplicate();
+    const client = model([Object.assign(new Error("quota"), { status: 429 }), ...turns]);
+    const result = await handlePlanJob(JOB, deps(client, jobs));
+    expect(result.kind).toBe("stored");
+    expect(failed).toEqual([]);
+    expect(completed[0]?.[1].stats?.modelAttempts?.map((a) => a.outcome)).toEqual([
+      "rate_limit",
+      "succeeded",
+      "succeeded",
+      "succeeded",
+    ]);
   });
 
   it("fails a run whose read never returns at the deadline, and takes the next job", async () => {
@@ -493,6 +602,67 @@ describe("plan job with precedents", () => {
       epochs: { [AREA]: 3 },
     });
   });
+
+  it("sends why each precedent was recalled beside the manifest, never in it (T1.54)", async () => {
+    // Observations are stamped with the clock; freeze it so two runs can produce the same plan.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-01T12:00:00.000Z"));
+    try {
+      await sameManifestWhateverTheDiagnostics();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  async function sameManifestWhateverTheDiagnostics() {
+    const { jobs, completed } = fakeJobs();
+    const job = withRegistry([{ id: record.id, version: 2, digest }]);
+    await handlePlanJob(job, {
+      ...deps(model(refundOneDuplicate()), jobs),
+      precedents: memory([]),
+    });
+    const body = completed[0]?.[1];
+    expect(body?.stats?.recallDiagnostics).toEqual({
+      recalled: true,
+      areas: [
+        {
+          area: AREA,
+          query: AREA,
+          traceId: "trace_1",
+          hits: [{ id: record.id, version: 2, factIds: ["f1", "f2"], hitIds: ["h1"] }],
+          dropped: [],
+        },
+      ],
+    });
+    const manifest = body?.manifest as PlanManifest;
+    expect(JSON.stringify(manifest)).not.toContain("recallDiagnostics");
+    expect(JSON.stringify(manifest)).not.toContain("hitIds");
+
+    // The same recall with a different account of it (recall also ruled one out, and found
+    // the precedent through other hits) produces the same manifest, so the same hash.
+    const ruledOut = fakeJobs();
+    await handlePlanJob(job, {
+      ...deps(model(refundOneDuplicate()), ruledOut.jobs),
+      precedents: () => ({
+        recall: async () => {
+          const same = await memory([])(JOB.data.orgId).recall();
+          return {
+            ...same,
+            precedents: same.precedents.map((p) => ({ ...p, hitIds: ["h7", "h8"] })),
+            rejected: [{ id: "gone-rule", reason: "withdrawn at v1" }],
+          };
+        },
+      }),
+    });
+    const other = ruledOut.completed[0]?.[1];
+    expect(other?.stats?.recallDiagnostics?.areas[0]).toMatchObject({
+      hits: [{ id: record.id, hitIds: ["h7", "h8"] }],
+      dropped: [{ id: "gone-rule", reason: "withdrawn at v1", stage: "recall" }],
+    });
+    expect(other?.stats?.recallDiagnostics).not.toEqual(body?.stats?.recallDiagnostics);
+    expect(other?.manifest).toEqual(manifest);
+    expect(planHash(other?.manifest as PlanManifest)).toBe(planHash(manifest));
+  }
 
   it("doesn't cite or show a precedent the registry no longer lists as active", async () => {
     const { jobs, completed } = fakeJobs();

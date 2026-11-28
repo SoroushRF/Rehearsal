@@ -96,8 +96,11 @@ const READ_BACK = [
   "read back, not re-sent",
 ];
 
+/** What a step's line needs: an operational receipt, or a simulated step's result. */
+export type StepResult = Pick<Receipt, "outcome" | "providerRef" | "holdReason" | "limitations">;
+
 /** One line per receipt: what happened to this step and why. `kind` is the step's operation. */
-export function explainReceipt(r: Receipt, kind?: string): string {
+export function explainReceipt(r: StepResult, kind?: string): string {
   switch (r.outcome) {
     // Say "read back" only when the receipt's own limitations show a read happened.
     case "confirmed": {
@@ -155,6 +158,13 @@ export function describeEvent(e: RunEvent): string {
       return r.success
         ? `${r.data.actionId}: ${outcomeLabel[r.data.outcome]}. ${explainReceipt(r.data)}`
         : "Receipt recorded.";
+    }
+    case "run.timings": {
+      const ms = (v: unknown) => (typeof v === "number" ? `${(v / 1000).toFixed(1)} s` : "n/a");
+      const calls = (p.calls ?? {}) as Record<string, { calls?: number }>;
+      const count = Object.values(calls).reduce((n, c) => n + (c.calls ?? 0), 0);
+      const retries = (p.retries ?? {}) as { count?: number };
+      return `Timings: executed in ${ms(p.executeMs)}, ${count} provider calls, ${retries.count ?? 0} retries.`;
     }
     case "run.finished":
       return `Run finished: ${String(p.state)}${p.error ? ` (${String(p.error)})` : ""}.`;

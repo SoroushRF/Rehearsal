@@ -39,9 +39,19 @@ all services. Postgres rejects external connections.
    address, then fill the certificate fields and deploy. Certificates last 90 days.
 5. For Slack summaries set the planner's `RUN_SUMMARY_CHANNEL` to a channel present in
    the seeded Slack world. Without a value summaries stay disabled. Public replies and
-   balance credits are enabled. Agent Memory is optional: configure its three settings
-   on API (write key) and planner (read-only key) separately to enable it. Without them,
-   the application reports that precedent synchronization is unavailable.
+   balance credits are enabled.
+6. Agent Memory is optional. The Blueprint asks for `SURREAL_AGENT_MEMORY_URL` and
+   `SURREAL_AGENT_MEMORY_CONTEXT` on the API and the planner, plus
+   `SURREAL_AGENT_MEMORY_WRITE_KEY` on the API only and `SURREAL_AGENT_MEMORY_READ_KEY`
+   on the planner only. The executor and rehearsal worker get no memory setting, and
+   refuse every memory key at startup. Mint the pair locally with
+   `pnpm memory:keys mint <label>` (the API's write key and the planner's read key)
+   and paste each straight into its one service's field;
+   never commit it or put it in a shared environment group. Leave all three of a
+   service's fields empty to run without memory: the application then reports that
+   precedent synchronization is unavailable. Setting only some of them stops it at
+   startup. To replace the pair later, follow
+   [Rotating the Agent Memory keys](#rotating-the-agent-memory-keys-t155).
 
 The launcher constructs private HTTP URLs from Blueprint host references and writes
 only that service's PEM/Google files to a private temporary directory. IAM uses mTLS
@@ -72,7 +82,57 @@ and approved plans in Postgres even if worlds are reseeded.
 The fallback remains a Linux VM running Compose if Render cannot run the private stack.
 A public saved replay is fixture evidence until replaced by an export of an actual run.
 
+## Rotating the Agent Memory keys (T1.55)
+
+Run these locally, in the repository root, with the operator's `SURREAL_AGENT_MEMORY_ADMIN_KEY`
+in `.env`. `<label>` is the one the current pair was minted with. The old pair keeps working
+until step 5, so nothing stops while the services are redeployed. Never paste a key into chat,
+a ticket or a shared document: each goes from the terminal straight into its one service's field.
+
+1. **Rotate.** `pnpm memory:keys rotate <label>` mints the next generation
+   (`rehearsal-api-<label>-g<N>` and `rehearsal-planner-<label>-g<N>`) with the same grants and
+   prints each key once.
+2. **Set the new values in Render.** On `rehearsal-api`, replace
+   `SURREAL_AGENT_MEMORY_WRITE_KEY` with the new write key. On `rehearsal-planner`, replace
+   `SURREAL_AGENT_MEMORY_READ_KEY` with the new read key. Nothing else changes: the URL and
+   context stay, and the executor and rehearsal worker still get no memory setting.
+3. **Deploy both** services.
+4. **Check the new keys are the ones in use.**
+   - In Render, check the deploy replaced every instance of both services: nothing may still
+     run with the old value.
+   - The planner's ready log ends with `precedents on`. The API logs no "Agent Memory not
+     configured" warning, and `GET /api/precedents` answers `syncEnabled: true`. If either
+     reports off, fix the field and redeploy before going on.
+   - Use both new keys: open a completed run's promote panel (the API's key), and plan for an
+     org with active precedents (the planner's).
+   - `pnpm memory:keys status <label>` lists every generation with when the service says it
+     was created and last used, and says whether `--revoke-old` would go ahead. Both new keys
+     should show a `lastUsedAt`, and no old key a use after them or in the last 15 minutes.
+     It prints no key.
+
+   `lastUsedAt` is a hint, not proof. On the hosted service it stayed empty for a pair that was
+   used, and for another pair it was set on first use and then didn't move (gate, 2026-11-03).
+   So a new key can show "never used" while it works, and an old key still in use can look
+   idle. The deploy check above is what shows the old keys are free.
+5. **Revoke the old pair.** `pnpm memory:keys rotate <label> --revoke-old` revokes every
+   generation older than the newest pair, never the newest, and refuses if there is nothing
+   older. Before revoking anything it prints the same check as `status` and refuses (exit 3)
+   when a kept key shows no use, or an old key shows a use after the kept key's last use or in
+   the last 15 minutes. `--force` revokes anyway: use it only when step 4's deploy check passed
+   and the refusal comes from `lastUsedAt` lagging. It exits 3 if any revoke failed; run it
+   again. A service still on an old key now gets 401, so check step 4 again afterwards.
+
+If a key leaked, do the same steps without waiting between them, and revoke with `--force`:
+the old keys will still look recently used. To erase one organization's
+Agent Memory instead, see `pnpm memory:erase-org` in
+[agent-memory.md](agent-memory.md#erasing-an-orgs-memory-t155). It is an operator command with
+the admin key and the deployment's `DATABASE_URL`, and no service setting changes. Render's
+Postgres rejects external connections, so against Render it has to run from the private
+network; that hasn't been tried.
+
 ## Next coordinated release
+
+For planner recovery (#284 / PR #355), deploy the API before starting the new planner worker. The new worker sends `modelAttempts` on `/internal/planner/jobs/:id/fail`; the previous API's strict schema rejects that extra field with 400, leaving the job active until expiry. The updated API accepts old workers, so API-first is the compatible rolling order. For a rollback to the previous API, stop/roll back the planner worker first. Completion diagnostics are optional and an invalid/oversized diagnostic array is discarded without rejecting a valid plan.
 
 Deploy one reviewed commit to IAM, API/web, planner, executor and rehearsal worker. The API's existing pre-deploy migration applies `0009_incidents.sql`. Drain planning/apply/rehearsal jobs before the switch, update IAM before exposing the new API routes, and keep new work paused until all workers report ready at the selected commit. Existing stored plans and receipts remain history; create a fresh plan after the move to per-org tenants. The Era image services do not need a restart for these source changes.
 
@@ -120,8 +180,9 @@ The signed-in cloud flow then passed with the owner's explicit approval:
   unverified for this manifest; the successful operational-world simulator apply does
   not establish disposable-world rehearsal support for replies.
 
-Agent Memory and Slack summaries are not configured in this deployment yet (their
-services/code remain available). Planning and operational worlds now intentionally
+Slack summaries are not configured in this deployment yet (the service and code remain
+available). Agent Memory was not configured at this point either; it has been on since
+2026-11-03 ([Public main restored](#public-main-restored-2026-11-03)). Planning and operational worlds now intentionally
 differ because the approved simulator apply ran; do not reset while a run is active.
 
 Render required a card despite the credit; the owner added it. The temporary empty
@@ -136,3 +197,52 @@ Google sign-in initially requested organization creation because the real owner'
 had no memberships; Rehearsal Demo contained test users only. The owner explicitly
 authorized joining that existing organization as `org:owner`; the membership was created.
 No new organization, email invitation or authorization bypass was used.
+
+
+## Public main restored (2026-11-03)
+
+The owner made public `SoroushRF/Rehearsal` the development and deployment source again.
+All five Git-backed services now target its `main`: `rehearsal-api`, `rehearsal-iam`,
+`rehearsal-planner`, `rehearsal-executor` and `rehearsal-rehearsal`. All five are live on
+`9f680627e1338a723ba788a632d07dcf2e20fe78` (PRs #408–#410), by 23:23:10 UTC.
+Auto-deploy remains off; a merge alone does not release a simulator or worker.
+
+The API receives only the Agent Memory write key, the planner only the read key; both
+also receive URL/context. IAM, executor and rehearsal worker receive no memory setting.
+The release keys were verified in a disposable scope: publish/readback and planner recall
+passed, planner writes returned 403, and the scope was forgotten and tombstoned afterwards.
+The planner's new ready log reports `precedents on`; executor and rehearsal worker each
+report consuming their own queue. IAM reports its mTLS listener on 3443.
+
+Before deploy, database reads found no active runs, rehearsals or planner jobs. The first
+ten migration hashes match the public history. The private demo's `0010_world_resets`
+remains in the database/history, unused by public code. Drizzle orders migrations by their
+journal timestamp: public `0010_plan_recall_diagnostics` and `0011_memory_erasures` are newer,
+and post-deploy readback confirms both applied and both tables exist. No migration ledger
+or historical row was rewritten, and no simulator was reset.
+
+Evidence:
+
+- API deployment `dep-dbl6od61egvs73duikq0`; IAM `dep-dbl6pb3m8hqs73cgcpt0`;
+  planner `dep-dbl6pb0m7kps739ef60g`; executor `dep-dbl6pbbm8hqs73cgcqsg`;
+  rehearsal worker `dep-dbl6pbe1egvs73dulptg`.
+- Post-deploy DB job `job-dbl6pb942hec739p0r8g`: succeeded; both memory tables exist,
+  both expected migration hashes are recorded, and no created/retry/active jobs remained.
+- Cloud smoke `job-dbl6q6142hec739p3il0`, after all five deploys: succeeded. All nine
+  worlds, writability flags/token minting, Postgres, IAM mTLS/refusal, public pages,
+  health, fixture replay and signed-out plan refusal passed.
+- Cloud memory job `job-dbl6q60m7kps739ehlgg`: succeeded using the deployed API environment,
+  publishing/readback and recalling in a disposable org scope. The operator then forgot and
+  tombstoned only that probe scope.
+- Full local DB suite: 2,088 passed, 141 skipped. Modern Git OpenSSL was used; the large
+  local checkout used a 15 s test timeout. Typecheck, tracked-source Biome and web build
+  passed. Each implementation PR also passed clean Linux CI, including plain `pnpm lint`.
+- Hosted Agent Memory: final rotation/drift/disposable-erasure checks passed three
+  consecutive runs; expanded app gate 6/6 passed on three final runs. Its IAM, model and
+  planning-world reads are fixtures; its Postgres and Agent Memory are real.
+
+This establishes deployment connectivity, worker startup and hosted memory behavior.
+No fresh signed-in plan/review/approve/apply flow was run for this release, and it does
+not establish a new Era application acceptance run. No real organization was erased.
+Hosted `lastUsedAt` remains unreliable: successful timestamp checks cannot prove old keys
+are idle. Rotation still requires checking every deployed instance before revocation.

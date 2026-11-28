@@ -7,7 +7,13 @@ import {
   type RegistrySnapshot,
   recallBasis,
 } from "../src/citations";
-import { memoryConfigFromEnv, precedentsFromEnv } from "../src/config";
+import {
+  MEMORY_KEY_ENV,
+  MEMORY_WRITE_KEY_ENV,
+  memoryConfigFromEnv,
+  memoryKeyGrants,
+  precedentsFromEnv,
+} from "../src/config";
 import { type PrecedentRecord, precedentDigest } from "../src/precedent";
 import type { PrecedentRecall } from "../src/precedents";
 import { precedent, setup } from "./fixtures";
@@ -135,33 +141,74 @@ describe("citePrecedents", () => {
 });
 
 describe("config from env", () => {
-  const env = {
+  const base = {
     SURREAL_AGENT_MEMORY_URL: "https://mem.test",
     SURREAL_AGENT_MEMORY_CONTEXT: "ctx",
-    SURREAL_AGENT_MEMORY_KEY: "sp-key",
   };
+  const api = { ...base, SURREAL_AGENT_MEMORY_WRITE_KEY: "sp-write" };
+  const planner = { ...base, SURREAL_AGENT_MEMORY_READ_KEY: "sp-read" };
 
   it("is core mode (null) when nothing is set", () => {
-    expect(memoryConfigFromEnv({})).toBeNull();
-    expect(memoryConfigFromEnv({ SURREAL_AGENT_MEMORY_URL: "" })).toBeNull();
-    expect(precedentsFromEnv({})).toBeNull();
+    expect(memoryConfigFromEnv("write", {})).toBeNull();
+    expect(memoryConfigFromEnv("read", { SURREAL_AGENT_MEMORY_URL: "" })).toBeNull();
+    expect(precedentsFromEnv("read", {})).toBeNull();
   });
 
   it("throws when only some variables are set, naming the missing ones", () => {
-    expect(() => memoryConfigFromEnv({ SURREAL_AGENT_MEMORY_URL: "https://mem.test" })).toThrow(
-      /SURREAL_AGENT_MEMORY_CONTEXT, SURREAL_AGENT_MEMORY_KEY/,
-    );
+    expect(() =>
+      memoryConfigFromEnv("write", { SURREAL_AGENT_MEMORY_URL: "https://mem.test" }),
+    ).toThrow(/SURREAL_AGENT_MEMORY_CONTEXT, SURREAL_AGENT_MEMORY_WRITE_KEY/);
+  });
+
+  it("gives each role only its own key: the planner's env has no write key to find", () => {
+    expect(memoryConfigFromEnv("write", api)?.apiKey).toBe("sp-write");
+    expect(memoryConfigFromEnv("read", planner)?.apiKey).toBe("sp-read");
+    // The API's env doesn't configure recall, and the planner's doesn't configure sync.
+    expect(() => memoryConfigFromEnv("read", api)).toThrow(/SURREAL_AGENT_MEMORY_READ_KEY/);
+    expect(() => memoryConfigFromEnv("write", planner)).toThrow(/SURREAL_AGENT_MEMORY_WRITE_KEY/);
+  });
+
+  it("refuses the old shared key, naming what replaced it", () => {
+    for (const access of ["read", "write", "admin"] as const) {
+      expect(() =>
+        memoryConfigFromEnv(access, { ...api, SURREAL_AGENT_MEMORY_KEY: "sp-old" }),
+      ).toThrow(/SURREAL_AGENT_MEMORY_KEY is no longer read.*WRITE_KEY.*READ_KEY/);
+    }
   });
 
   it("defaults the scope and takes an override", () => {
-    expect(memoryConfigFromEnv(env)).toEqual({
+    expect(memoryConfigFromEnv("write", api)).toEqual({
       url: "https://mem.test",
       context: "ctx",
-      apiKey: "sp-key",
+      apiKey: "sp-write",
       scope: "rehearsal/precedents",
     });
-    const store = precedentsFromEnv({ ...env, SURREAL_AGENT_MEMORY_SCOPE: "rehearsal/demo" });
+    const store = precedentsFromEnv("read", {
+      ...planner,
+      SURREAL_AGENT_MEMORY_SCOPE: "rehearsal/demo",
+    });
     expect(store?.scope).toBe("rehearsal/demo");
+  });
+
+  it("lists every key for the workers that hold none, and the writing ones for the planner", () => {
+    expect([...MEMORY_KEY_ENV].sort()).toEqual([
+      "SURREAL_AGENT_MEMORY_ADMIN_KEY",
+      "SURREAL_AGENT_MEMORY_KEY",
+      "SURREAL_AGENT_MEMORY_READ_KEY",
+      "SURREAL_AGENT_MEMORY_WRITE_KEY",
+    ]);
+    expect(MEMORY_WRITE_KEY_ENV).not.toContain("SURREAL_AGENT_MEMORY_READ_KEY");
+  });
+
+  it("mints the planner a key that can only read, below the base scope", () => {
+    expect(memoryKeyGrants("rehearsal/precedents")).toEqual({
+      api: {
+        "memory:read": ["rehearsal/precedents/*"],
+        "memory:write": ["rehearsal/precedents/*"],
+        "scope:create": ["rehearsal/precedents/*"],
+      },
+      planner: { "memory:read": ["rehearsal/precedents/*"] },
+    });
   });
 });
 

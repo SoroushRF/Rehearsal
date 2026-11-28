@@ -33,3 +33,58 @@ export const PrecedentBasis = z
     path: ["epochs"],
   });
 export type PrecedentBasis = z.infer<typeof PrecedentBasis>;
+
+/** Caps on recall diagnostics, so a misbehaving recall can't grow what is stored per plan. */
+export const RECALL_DIAGNOSTICS_LIMITS = {
+  areas: 64,
+  perArea: 64,
+  factIds: 16,
+  hitIds: 64,
+  text: 256,
+  reason: 500,
+} as const;
+const L = RECALL_DIAGNOSTICS_LIMITS;
+const DiagnosticText = z.string().min(1).max(L.text);
+
+/** A precedent recall returned for an area: readback accepted it and it's effective today. */
+export const PrecedentRecallHit = z.strictObject({
+  id: PrecedentId,
+  version: z.int().positive(),
+  factIds: z.array(DiagnosticText).max(L.factIds),
+  hitIds: z.array(DiagnosticText).max(L.hitIds),
+});
+export type PrecedentRecallHit = z.infer<typeof PrecedentRecallHit>;
+
+/**
+ * A precedent planning didn't cite, and why. `recall`: a hit pointed at it, but Agent Memory's
+ * copy was absent, invalid, withdrawn or not effective. `registry`: recall returned it, but it
+ * isn't the version and digest the Postgres registry lists as active.
+ */
+export const PrecedentRecallDrop = z.strictObject({
+  id: PrecedentId,
+  reason: z.string().min(1).max(L.reason),
+  stage: z.enum(["recall", "registry"]),
+});
+export type PrecedentRecallDrop = z.infer<typeof PrecedentRecallDrop>;
+
+/** One recall planning made: the area, the query text it sent, the trace, its hits and drops. */
+export const PrecedentRecallArea = z.strictObject({
+  area: DiagnosticText,
+  query: DiagnosticText,
+  traceId: DiagnosticText.nullable(),
+  hits: z.array(PrecedentRecallHit).max(L.perArea),
+  dropped: z.array(PrecedentRecallDrop).max(L.perArea),
+});
+export type PrecedentRecallArea = z.infer<typeof PrecedentRecallArea>;
+
+/**
+ * Why each precedent was or wasn't recalled for one plan revision (T1.54). It explains a
+ * `PrecedentBasis` and is stored beside the plan, never in the manifest, so it doesn't change
+ * the plan hash; nothing approves, holds or executes from it. `recalled` is false when nothing
+ * was active in the registry, so planning never asked Agent Memory and `areas` is empty.
+ */
+export const PrecedentRecallDiagnostics = z.strictObject({
+  recalled: z.boolean(),
+  areas: z.array(PrecedentRecallArea).max(L.areas),
+});
+export type PrecedentRecallDiagnostics = z.infer<typeof PrecedentRecallDiagnostics>;

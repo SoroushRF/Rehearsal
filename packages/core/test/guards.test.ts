@@ -465,4 +465,87 @@ describe("guardAction", () => {
       detail: "approved evidence is missing from the plan",
     });
   });
+
+  describe("a refund's query, scoped to the refunded invoice (T4.28)", () => {
+    const pair = {
+      ch_0: { ...chargeProjection, id: "ch_0", invoice: "in_1" },
+      ch_1: { ...chargeProjection, invoice: "in_1" },
+      ch_9: { ...chargeProjection, id: "ch_9", invoice: "in_9" },
+    };
+    const planned = query(["ch_0", "ch_1", "ch_9"], { projections: pair });
+    const withCharge = (id: string, invoice: unknown, from = planned) =>
+      query([...from.matchingIds, id].sort(), {
+        world: "operational",
+        projections: { ...from.projections, [id]: { ...chargeProjection, id, invoice } },
+      });
+    const check = (current: QueryObservation, action: Action = guardedRefund) =>
+      guardAction({ ...base, action, plannedQueries: [planned], currentQueries: [current] });
+
+    it("admits a new charge on another of the customer's invoices", () => {
+      expect(check(withCharge("ch_new", "in_2"))).toEqual({ decision: "admit" });
+    });
+
+    it("holds a third charge on the refunded invoice", () => {
+      expect(holdReason(check(withCharge("ch_new", "in_1")))).toEqual({
+        kind: "query_membership_changed",
+        queryObservationId: "q_charges_1",
+        added: ["ch_new"],
+        removed: [],
+      });
+    });
+
+    it.each([null, undefined, ""])("holds a new charge whose invoice is %j", (invoice) => {
+      expect(holdReason(check(withCharge("ch_new", invoice)))).toMatchObject({
+        kind: "query_membership_changed",
+        added: ["ch_new"],
+      });
+    });
+
+    it("holds when a charge of the pair moves off the invoice or leaves the query", () => {
+      const moved = query(planned.matchingIds, {
+        world: "operational",
+        projections: { ...pair, ch_0: { ...pair.ch_0, invoice: "in_2" } },
+      });
+      expect(holdReason(check(moved))).toMatchObject({ removed: ["ch_0"], added: [] });
+      const gone = query(["ch_1", "ch_9"], { projections: { ch_1: pair.ch_1, ch_9: pair.ch_9 } });
+      expect(holdReason(check(gone))).toMatchObject({ removed: ["ch_0"] });
+    });
+
+    it("holds when another invoice's charge moves onto the refunded one", () => {
+      const moved = query(planned.matchingIds, {
+        projections: { ...pair, ch_9: { ...pair.ch_9, invoice: "in_1" } },
+      });
+      expect(holdReason(check(moved))).toMatchObject({ added: ["ch_9"], removed: [] });
+    });
+
+    it("still needs a complete re-query", () => {
+      expect(holdReason(check({ ...withCharge("ch_new", "in_2"), complete: false }))).toEqual({
+        kind: "evidence_unavailable",
+        evidenceId: "q_charges_1",
+        detail: "current query enumeration is incomplete",
+      });
+    });
+
+    it("compares the whole query when the refunded charge has no invoice", () => {
+      const unplaced = query(planned.matchingIds, {
+        projections: { ...pair, ch_1: { ...pair.ch_1, invoice: null } },
+      });
+      expect(
+        holdReason(
+          guardAction({
+            ...base,
+            plannedQueries: [unplaced],
+            currentQueries: [withCharge("ch_new", "in_2", unplaced)],
+          }),
+        ),
+      ).toMatchObject({ added: ["ch_new"] });
+    });
+
+    it("leaves other steps that cite the query on the whole query", () => {
+      const cited: Action = { ...guardedPatch, evidence: [], queryEvidence: ["q_charges_1"] };
+      expect(holdReason(check(withCharge("ch_new", "in_2"), cited))).toMatchObject({
+        added: ["ch_new"],
+      });
+    });
+  });
 });

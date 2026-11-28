@@ -9,6 +9,8 @@ import {
   precedentIdOf,
   type StoredAttribute,
   toTriples,
+  WITHDRAWN_STATEMENT,
+  withdrawalTriples,
 } from "../src/precedent";
 import { precedent, SCOPE } from "./fixtures";
 
@@ -111,6 +113,43 @@ describe("toTriples", () => {
 
 describe("decodeAttributes", () => {
   const id = "duplicate-charge-refund";
+  const marker = (version = 1, markerId = id): StoredAttribute[] =>
+    withdrawalTriples(markerId, version).map((t, i) => ({
+      id: `m${i}`,
+      key: t.key,
+      value: t.value,
+      memoryCategory: "knowledge",
+      scope: [[`${SCOPE}/`]],
+    }));
+
+  it("recognizes the withdrawal marker, naming the version it retired (T1.51)", () => {
+    expect(decodeAttributes(id, SCOPE, marker(2))).toEqual({
+      ok: false,
+      reason: "withdrawn at v2",
+      withdrawn: { version: 2, factIds: ["m0", "m1", "m2"] },
+    });
+  });
+
+  it.each([
+    ["another precedent's marker", marker(1, "other"), 'marker is for "other"'],
+    [
+      "a marker whose version attribute disagrees",
+      replace("version", { value: "3" })(marker(2)),
+      "marker attributes disagree",
+    ],
+    [
+      "a marker with another statement",
+      replace("statement", { value: `${WITHDRAWN_STATEMENT}, honest` })(marker()),
+      "marker attributes disagree",
+    ],
+    [
+      "a marker that isn't canonical",
+      replace("record", { value: `{"withdrawn":true,"id":"${id}","version":1}` })(marker()),
+      "marker is not canonical",
+    ],
+  ])("fails on %s, so it reads as invalid rather than withdrawn", (_, attributes, reason) => {
+    expect(decodeAttributes(id, SCOPE, attributes)).toEqual({ ok: false, reason });
+  });
 
   it("rebuilds the record from its three attributes", () => {
     expect(decodeAttributes(id, SCOPE, stored())).toEqual({

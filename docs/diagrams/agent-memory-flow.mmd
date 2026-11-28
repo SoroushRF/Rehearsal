@@ -1,0 +1,10 @@
+flowchart TB
+  F[Finance promotes a precedent] -->|approved event| PG[(Postgres registry<br/>precedent_events)]
+  PG -->|outbox job| API[API sync<br/>write key]
+  API -->|publish, read back, check hash| AM[(Agent Memory<br/>scope per org)]
+  API -->|activated event| PG
+  AM -->|recall by area| P[Planner<br/>read key]
+  PG -->|active versions| P
+  P -->|plan cites id, version, digest, fact IDs, trace ID| R[Reviewer approves the exact plan]
+  R --> E[Executor, no model, no memory key]
+  PG -->|re-check citations at admission| E

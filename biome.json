@@ -9,6 +9,7 @@
       "!ml",
       "!docs/source",
       "!scenarios/**/cases",
+      "!evals/held-out/catalog",
       "!scenarios/**/fixtures"
     ]
   },

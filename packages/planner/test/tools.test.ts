@@ -203,9 +203,22 @@ describe("planning tools", () => {
       expect(text).not.toContain(`"${word}`);
     }
     expect(CREDIT_TOOL_SCHEMA_HASH).toBe(fingerprint(defs));
-    // Without credits the surface is exactly what it was before T1.14.
-    const refundOnly = defs.filter((d) => d.name !== "propose_balance_credit");
-    expect(planningToolDefinitions()).toEqual(refundOnly);
+    // Without credits the surface is exactly what it was before T1.14. With them, only the note
+    // and the reply say they can follow a credit too (T1.39).
+    const refundOnly = planningToolDefinitions();
+    const followUps = ["propose_refund_note", "propose_customer_reply"];
+    expect(
+      defs
+        .filter((d) => d.name !== "propose_balance_credit")
+        .map((d) =>
+          followUps.includes(d.name)
+            ? { ...d, description: refundOnly.find((r) => r.name === d.name)?.description }
+            : d,
+        ),
+    ).toEqual(refundOnly);
+    for (const name of followUps) {
+      expect(defs.find((d) => d.name === name)?.description).toMatch(/refund or balance credit/);
+    }
     expect(TOOL_SCHEMA_HASH).toBe(fingerprint(refundOnly));
   });
 

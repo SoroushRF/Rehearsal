@@ -6,10 +6,10 @@ import type { PlanningMode } from "./tools";
  * manifest names exactly the instructions and bounds that produced it. Editing either changes the
  * version; bump PROMPT_ID when the change is meant, so a reviewer can tell versions apart by name.
  */
-export const PROMPT_ID = "billing-remedy.v1";
+export const PROMPT_ID = "billing-remedy.v2";
 
 /** The model the planner uses unless PLANNER_MODEL pins another. Never an unpinned alias. */
-export const DEFAULT_PLANNER_MODEL = "claude-sonnet-5-5";
+export const DEFAULT_PLANNER_MODEL = "gemini-4-argon";
 
 export const LOOP_LIMITS = {
   /** Model turns. A turn may hold several tool calls. */
@@ -18,6 +18,12 @@ export const LOOP_LIMITS = {
   maxToolCalls: 200,
   /** Output tokens per turn. Non-streaming requests stay well under the SDK's HTTP timeout. */
   maxTokensPerTurn: 16_000,
+  /** Every request reserves its full output cap, including retries: 40 turns plus four retries. */
+  maxModelRequests: 44,
+  maxOutputTokens: 44 * 16_000,
+  requestTimeoutMs: 120_000,
+  maxRequestAttempts: 3,
+  retryDelayMs: 1_000,
   /** Agentic multistep tool use: medium is the documented starting point for Sonnet 5.5. */
   effort: "medium",
 } as const;
@@ -28,13 +34,13 @@ You can only use the tools provided. Read tools return what the planning world h
 
 For each customer in the incident report:
 1. List the customer's charges in the incident window. A duplicate is two succeeded, unrefunded charges for the same invoice with the same amount and currency. Keep the earliest paid charge of the invoice as the original and refund the later one with propose_duplicate_refund.
-   Only if propose_balance_credit is among your tools: for a small duplicate, credit the customer's invoice balance with it instead of refunding. If it refuses, refund the charge. Never propose both for one duplicate.
+   Only if propose_balance_credit is among your tools: for a small duplicate, credit the customer's invoice balance with it instead of refunding. Never propose both for one duplicate. A refused tool call says why in its "reason". Refund the charge instead only when the credit refusal has "refundInstead": true (reasons credit_limit, customer_currency, credits_off, no_credit_policy). Any other reason (already_remedied, already_refunded, not_duplicate, policy_currency, and so on) is about the duplicate itself: a refund would be refused too, so don't try one.
 2. If no charge pair is a duplicate (different amounts, another currency, outside the window, already refunded), propose nothing for that customer. Say why in your final summary.
-3. For each refund you proposed, find the customer's support ticket with list_requester_tickets. Use the ticket whose external_id is the customer's Stripe ID. Then:
+3. For each refund or credit you proposed, find the customer's support ticket with list_requester_tickets. Use the ticket whose external_id is the customer's Stripe ID. Then:
    - propose_ticket_priority to "high", unless the ticket is already high or urgent;
-   - propose_refund_note on that ticket, so the customer's ticket records the refund;
-   - propose_customer_reply on that ticket, so the customer hears the refund went out. If it refuses, leave the reply out.
-4. Never propose steps for a customer who isn't in the report, and never propose a ticket step for a customer without a refund.
+   - propose_refund_note on that ticket with the refund's or credit's step ID, so the customer's ticket records it;
+   - propose_customer_reply on that ticket with the same step ID, so the customer hears it went out. If it refuses, leave the reply out.
+4. Never propose steps for a customer who isn't in the report, and never propose a ticket step for a customer without a refund or credit.
 5. Last, if you proposed any refund, call propose_run_summary once so the team's channel hears what the run did. If it refuses, leave it out.
 
 Rationales are shown to the reviewer verbatim. Keep each to one plain sentence that names the evidence (charge IDs, invoice, amounts in minor units with currency).
@@ -89,6 +95,15 @@ export interface IncidentBrief {
   window: { createdGte: string; createdLt: string };
   /** The customers who reported the problem. What happened to each is for the agent to find out. */
   customers: { customerId: string; name: string; requesterId: string }[];
+  /**
+   * A repair (T1.37): the revision being repaired, the steps it already applied (kept as they are)
+   * and why the rest stopped. The customers above are then only the cases still open.
+   */
+  repair?: {
+    baseRevision: number;
+    kept: { id: string; kind: string; caseId: string }[];
+    stopped: { id: string; why: string }[];
+  };
   /** Finance-approved precedents recalled for this org, already checked against the registry. */
   precedents?: {
     id: string;
@@ -116,8 +131,21 @@ export function briefMessage(brief: IncidentBrief): string {
     `Customers who reported it (${brief.customers.length}):`,
     ...rows,
     ...precedentLines(brief.precedents ?? []),
-    "Plan the remediation.",
+    ...repairLines(brief.repair),
+    brief.repair ? "Plan the remaining work for these customers only." : "Plan the remediation.",
   ].join("\n");
+}
+
+/** What a repair already did and why the rest stopped. Facts from the run's receipts, not advice. */
+function repairLines(repair: IncidentBrief["repair"]): string[] {
+  if (!repair) return [];
+  return [
+    `This repairs revision ${repair.baseRevision}, whose run stopped part-way. The planning world has been refreshed with records the run found.`,
+    "Already applied, kept exactly as they are (proposing one again is refused):",
+    ...repair.kept.map((k) => `- ${k.id}: ${k.kind} (${k.caseId})`),
+    "Stopped, and replaced by what you plan now:",
+    ...repair.stopped.map((h) => `- ${h.id}: ${h.why}`),
+  ];
 }
 
 /**

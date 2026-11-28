@@ -46,13 +46,50 @@ export const PLAN_QUEUE_OPTIONS = {
   expireInSeconds: 900,
 } as const;
 
+/**
+ * An erasure invalidates an in-flight memory basis even on the last ordinary attempt. Strip the
+ * snapshot and grant exactly the retry needed for recovery, atomically with failure. Removing
+ * `precedents` makes this a one-time transition; later model failures keep their normal limit.
+ * The attempt fence prevents a late worker from changing a newer claim. The job id stays stable.
+ */
+export async function retryPlanWithoutMemory(
+  db: Db,
+  boss: PgBoss,
+  attempt: { id: string; retryCount: number },
+): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const changed = await tx.execute(sql`
+      update pgboss.job
+      set data = data - 'precedents', retry_limit = greatest(retry_limit, retry_count + 1)
+      where name = ${PLAN_QUEUE} and id = ${attempt.id}::uuid and state = 'active'
+        and retry_count = ${attempt.retryCount} and data ? 'precedents'
+      returning id`);
+    if (changed.rows.length === 0) return false;
+    await boss.fail(
+      PLAN_QUEUE,
+      attempt,
+      {
+        reason: "org_erased",
+        message: "replanning without the erased org's memory",
+      },
+      { db: fromDrizzle(tx, sql) },
+    );
+    return true;
+  });
+}
+
 export const PRECEDENT_QUEUE = "precedent-sync";
 
-/** Which approved precedent version to publish to Agent Memory. The worker loads the record itself. */
+/**
+ * Which approved precedent version to publish to Agent Memory, or to overwrite there with the
+ * withdrawal marker once it is withdrawn (T1.51). The worker loads the record itself. Jobs queued
+ * before `kind` existed are publishes.
+ */
 export const PrecedentSyncJob = z.object({
   orgId: z.string().min(1),
   precedentId: z.string().min(1),
   version: z.int().positive(),
+  kind: z.enum(["publish", "withdraw"]).default("publish"),
 });
 export type PrecedentSyncJob = z.infer<typeof PrecedentSyncJob>;
 
@@ -125,15 +162,70 @@ export async function enqueueApply(boss: PgBoss, tx: DrizzleTx, job: ApplyJob): 
   if (!id) throw new Error(`apply job for ${job.runId} was not enqueued`);
 }
 
-/** Enqueue inside the promotion's transaction: the `approved` event and its sync job commit together. */
+/**
+ * Enqueue inside the transaction that appends the event: the `approved` (or `withdrawn`) event and
+ * its sync job commit together.
+ */
 export async function enqueuePrecedentSync(
   boss: PgBoss,
   tx: DrizzleTx,
-  job: PrecedentSyncJob,
+  input: z.input<typeof PrecedentSyncJob>,
 ): Promise<void> {
-  // A suppressed send means a job for this exact version is already queued, which is fine.
-  await boss.send(PRECEDENT_QUEUE, PrecedentSyncJob.parse(job), {
+  const job = PrecedentSyncJob.parse(input);
+  // PRECEDENT_QUEUE has no policy, so pg-boss 12 doesn't dedupe on singletonKey alone: sending
+  // the same job twice queues it twice. That's safe (the sync is idempotent: a repeat writes
+  // nothing and appends no second event), only wasteful. `precedentSyncPending` checks first.
+  await boss.send(PRECEDENT_QUEUE, job, {
     db: fromDrizzle(tx, sql),
-    singletonKey: `${job.orgId}:${job.precedentId}:${job.version}`,
+    singletonKey: precedentSyncKey(job),
   });
+}
+
+/** The singleton key a precedent sync job is sent with: one per org, precedent, version and kind. */
+export function precedentSyncKey(input: z.input<typeof PrecedentSyncJob>): string {
+  const job = PrecedentSyncJob.parse(input);
+  const key = `${job.orgId}:${job.precedentId}:${job.version}`;
+  return job.kind === "publish" ? key : `${key}:${job.kind}`;
+}
+
+/**
+ * True when the same sync job is already waiting, retrying or running, for a caller that may send
+ * it again (the drift repair, T1.53). Takes a transaction-scoped lock on the key first, so two
+ * callers that both check before sending can't both send.
+ */
+export async function precedentSyncPending(
+  tx: Parameters<Parameters<Db["transaction"]>[0]>[0],
+  input: z.input<typeof PrecedentSyncJob>,
+): Promise<boolean> {
+  const key = precedentSyncKey(input);
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${`rehearsal:precedent-sync:${key}`}, 0))`,
+  );
+  const rows = await tx.execute(
+    sql`select 1 from pgboss.job where name = ${PRECEDENT_QUEUE} and singleton_key = ${key} and state in ('created', 'retry', 'active') limit 1`,
+  );
+  return rows.rows.length > 0;
+}
+
+/**
+ * pg-boss for an operator tool that only sends precedent sync jobs: no maintenance, schedule or
+ * schema migration, and no queue created or updated (the API owns them). Throws when the API
+ * hasn't created the precedent queue yet.
+ */
+export async function startPrecedentSender(url = process.env.DATABASE_URL): Promise<PgBoss> {
+  if (!url) throw new Error("DATABASE_URL is not set");
+  const boss = new PgBoss({
+    connectionString: url,
+    supervise: false,
+    schedule: false,
+    migrate: false,
+    createSchema: false,
+  });
+  boss.on("error", (err) => console.error("pg-boss error", err));
+  await boss.start();
+  if ((await boss.getQueue(PRECEDENT_QUEUE)) === null) {
+    await boss.stop({ graceful: false });
+    throw new Error(`queue ${PRECEDENT_QUEUE} doesn't exist yet; start the API once first`);
+  }
+  return boss;
 }

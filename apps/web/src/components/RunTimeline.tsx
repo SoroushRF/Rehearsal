@@ -12,6 +12,7 @@ import {
   outcomeLabel,
   RunEvents,
   type RunView,
+  type StepResult,
 } from "../runs";
 import { Alert, Card, Chip, Icon, type IconName, Skeleton, Spinner, type Tone } from "./ui";
 
@@ -136,8 +137,6 @@ export function RunReport({
   manifest: PlanManifest;
 }) {
   const receipts = latestReceipts(events);
-  const counts = new Map<ReceiptOutcome, number>();
-  for (const r of receipts.values()) counts.set(r.outcome, (counts.get(r.outcome) ?? 0) + 1);
   const running = !FINISHED.includes(run.state);
 
   return (
@@ -160,6 +159,45 @@ export function RunReport({
         </span>
       </header>
 
+      <StepOutcomes manifest={manifest} results={receipts} running={running} />
+
+      <details className="group border-t border-line px-4 py-3 text-sm sm:px-5">
+        <summary className="flex cursor-pointer list-none items-center gap-1.5 font-medium text-muted hover:text-ink">
+          <Icon name="chevron" className="h-4 w-4 transition-transform group-open:rotate-90" />
+          Event log ({events.length})
+        </summary>
+        <ol className="mt-3 space-y-1.5">
+          {events.map((e) => (
+            <li key={e.seq} className="flex gap-3">
+              <span className="tnum w-[4.5rem] shrink-0 font-mono text-xs leading-5 text-subtle">
+                {new Date(e.at).toLocaleTimeString()}
+              </span>
+              <span className="text-muted">{describeEvent(e)}</span>
+            </li>
+          ))}
+        </ol>
+      </details>
+    </Card>
+  );
+}
+
+/**
+ * The outcome bar, the counts and one row per step: what an apply did, or what a simulation of it
+ * did in a replica (ExecutionRehearsalPanel), shown the same way.
+ */
+export function StepOutcomes({
+  manifest,
+  results,
+  running,
+}: {
+  manifest: PlanManifest;
+  results: ReadonlyMap<string, StepResult>;
+  running: boolean;
+}) {
+  const counts = new Map<ReceiptOutcome, number>();
+  for (const r of results.values()) counts.set(r.outcome, (counts.get(r.outcome) ?? 0) + 1);
+  return (
+    <>
       <div className="px-4 pt-4 sm:px-5">
         <div
           className="flex h-2 gap-0.5 overflow-hidden rounded-full"
@@ -169,11 +207,11 @@ export function RunReport({
           {manifest.actions.map((a) => (
             <span
               key={a.id}
-              className={`h-full flex-1 ${SEGMENT[receipts.get(a.id)?.outcome ?? "pending"]}`}
+              className={`h-full flex-1 ${SEGMENT[results.get(a.id)?.outcome ?? "pending"]}`}
             />
           ))}
         </div>
-        {receipts.size > 0 && (
+        {results.size > 0 && (
           <p className="mt-2 text-sm text-muted">
             {[...counts].map(([o, n]) => `${n} ${outcomeLabel[o].toLowerCase()}`).join(" · ")}
           </p>
@@ -182,7 +220,7 @@ export function RunReport({
 
       <ol className="mt-3 divide-y divide-line border-t border-line">
         {manifest.actions.map((a) => {
-          const r = receipts.get(a.id);
+          const r = results.get(a.id);
           const step = r ? STEP[r.outcome] : null;
           return (
             <li
@@ -227,23 +265,6 @@ export function RunReport({
           );
         })}
       </ol>
-
-      <details className="group border-t border-line px-4 py-3 text-sm sm:px-5">
-        <summary className="flex cursor-pointer list-none items-center gap-1.5 font-medium text-muted hover:text-ink">
-          <Icon name="chevron" className="h-4 w-4 transition-transform group-open:rotate-90" />
-          Event log ({events.length})
-        </summary>
-        <ol className="mt-3 space-y-1.5">
-          {events.map((e) => (
-            <li key={e.seq} className="flex gap-3">
-              <span className="tnum w-[4.5rem] shrink-0 font-mono text-xs leading-5 text-subtle">
-                {new Date(e.at).toLocaleTimeString()}
-              </span>
-              <span className="text-muted">{describeEvent(e)}</span>
-            </li>
-          ))}
-        </ol>
-      </details>
-    </Card>
+    </>
   );
 }

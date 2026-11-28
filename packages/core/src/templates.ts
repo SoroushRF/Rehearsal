@@ -10,6 +10,9 @@ import type { ResolvedBindings } from "./ports";
 const TEMPLATES: Record<string, (v: Readonly<Record<string, string | number>>) => string> = {
   "refund-confirmed@1": (v) =>
     `Refund ${v.refundId} for ${formatCad(Number(v.amountMinor))} has been issued for the duplicate charge.`,
+  // T1.39: a duplicate settled as a balance credit. Its balance transaction yields no bindable ID.
+  "credit-applied@1": (v) =>
+    `A balance credit of ${formatCad(Number(v.amountMinor))} has been applied for the duplicate charge.`,
   // Live demo (#331): a support backlog follow-up. It states only what the plan itself did.
   "backlog-followup@1": () =>
     "Flagged in a support backlog review: this ticket was waiting for a first reply.",
@@ -67,6 +70,11 @@ const REPLY_TEMPLATES: Record<string, ReplyTemplate> = {
     values: { customerName: "name", amountMinor: "minor" },
     render: (v) =>
       `Hi ${v.customerName},\n\nWe've refunded ${formatCad(Number(v.amountMinor))} for the duplicate charge on your account. Sorry for the trouble.`,
+  },
+  "credit-applied@1": {
+    values: { customerName: "name", amountMinor: "minor" },
+    render: (v) =>
+      `Hi ${v.customerName},\n\nWe've added a credit of ${formatCad(Number(v.amountMinor))} to your account balance for the duplicate charge. Sorry for the trouble.`,
   },
   "backlog-followup@1": {
     values: { customerName: "name" },

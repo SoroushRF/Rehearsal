@@ -3,14 +3,16 @@ import { describe, expect, it } from "vitest";
 import { loadSets } from "../src/sets";
 
 // T4.14: every held-out set is well formed, reproducible, and seeds the shapes its kinds promise.
+// T1.40: so is every generated catalog set.
 
-const sets = loadSets();
+const heldOut = loadSets();
+const sets = [...heldOut, ...loadSets("catalog")];
 
 const unix = (iso: string) => Date.parse(iso) / 1000;
 
 describe("held-out sets", () => {
   it("has at least three", () => {
-    expect(sets.map((s) => s.id)).toEqual(["ho1", "ho2", "ho3"]);
+    expect(heldOut.map((s) => s.id)).toEqual(["ho1", "ho2", "ho3"]);
   });
 });
 

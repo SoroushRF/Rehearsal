@@ -1,0 +1,214 @@
+{
+  "incident": "INC-BILL-2705",
+  "summary": "A May webhook outage re-sent charges that had already succeeded.",
+  "window": {
+    "createdGte": "2027-05-04T00:00:00.000Z",
+    "createdLt": "2027-05-18T00:00:00.000Z"
+  },
+  "ids": {
+    "prefix": "INC2705",
+    "ticketBase": 9605001
+  },
+  "cases": [
+    {
+      "key": "a01",
+      "kind": "duplicate",
+      "customerId": "cus_BMIjcDbsLQfyFuIQ",
+      "name": "Vantage Print Co",
+      "email": "admin@vantage-print-co.example",
+      "requesterId": 3005000,
+      "amountMinor": 4498,
+      "currency": "cad",
+      "chargedAt": "2027-05-08T07:00:00.000Z"
+    },
+    {
+      "key": "a02",
+      "kind": "duplicate",
+      "customerId": "cus_sBWDZuDVpyuRERuz",
+      "name": "Onyx Textiles",
+      "email": "admin@onyx-textiles.example",
+      "requesterId": 3005001,
+      "amountMinor": 7235,
+      "currency": "cad",
+      "chargedAt": "2027-05-09T16:00:00.000Z"
+    },
+    {
+      "key": "a03",
+      "kind": "duplicate",
+      "customerId": "cus_BKZaYqEvhvbKZpeO",
+      "name": "Zephyr Signals",
+      "email": "ap@zephyr-signals.example",
+      "requesterId": 3005002,
+      "amountMinor": 9997,
+      "currency": "cad",
+      "chargedAt": "2027-05-08T07:00:00.000Z"
+    },
+    {
+      "key": "a04",
+      "kind": "duplicate",
+      "customerId": "cus_LQLwMQtFvvHhxWDA",
+      "name": "Ember Archives",
+      "email": "finance@ember-archives.example",
+      "requesterId": 3005003,
+      "amountMinor": 10000,
+      "currency": "cad",
+      "chargedAt": "2027-05-16T07:00:00.000Z"
+    },
+    {
+      "key": "a05",
+      "kind": "duplicate",
+      "customerId": "cus_bYXSAxbWnjKnBVNk",
+      "name": "Elm Mills",
+      "email": "billing@elm-mills.example",
+      "requesterId": 3005004,
+      "amountMinor": 27327,
+      "currency": "cad",
+      "chargedAt": "2027-05-15T19:00:00.000Z"
+    },
+    {
+      "key": "a06",
+      "kind": "duplicate",
+      "customerId": "cus_dxZswdfcGVxOVikU",
+      "name": "Indigo Veterinary",
+      "email": "billing@indigo-veterinary.example",
+      "requesterId": 3005005,
+      "amountMinor": 2748,
+      "currency": "cad",
+      "chargedAt": "2027-05-16T06:00:00.000Z",
+      "billingCurrency": "usd"
+    },
+    {
+      "key": "a07",
+      "kind": "duplicate",
+      "customerId": "cus_JSdCzQQEVdabxuOW",
+      "name": "Moss Robotics",
+      "email": "payables@moss-robotics.example",
+      "requesterId": 3005006,
+      "amountMinor": 4978,
+      "currency": "cad",
+      "chargedAt": "2027-05-09T07:00:00.000Z",
+      "ticketExternalId": "cus_pzMkZkmfJowiIxkr"
+    },
+    {
+      "key": "a08",
+      "kind": "duplicate",
+      "customerId": "cus_DoRJihzqdKKxOuIo",
+      "name": "Tidewater Courier",
+      "email": "accounts@tidewater-courier.example",
+      "requesterId": 3005007,
+      "amountMinor": 5059,
+      "currency": "cad",
+      "chargedAt": "2027-05-04T00:00:00.000Z"
+    },
+    {
+      "key": "a09",
+      "kind": "duplicate",
+      "customerId": "cus_QCPdCJuRVKPktAlj",
+      "name": "Lark Telemetry",
+      "email": "billing@lark-telemetry.example",
+      "requesterId": 3005008,
+      "amountMinor": 5331,
+      "currency": "cad",
+      "chargedAt": "2027-05-17T23:58:00.000Z"
+    },
+    {
+      "key": "a10",
+      "kind": "duplicate",
+      "customerId": "cus_wIojZnPcRVVJKhDn",
+      "name": "Maple Hydroponics",
+      "email": "ops@maple-hydroponics.example",
+      "requesterId": 3005009,
+      "amountMinor": 5940,
+      "currency": "cad",
+      "chargedAt": "2027-05-17T23:59:00.000Z"
+    },
+    {
+      "key": "a11",
+      "kind": "triple",
+      "customerId": "cus_xwPOGkgNKEowshPt",
+      "name": "Fjord Freight",
+      "email": "billing@fjord-freight.example",
+      "requesterId": 3005010,
+      "amountMinor": 7826,
+      "currency": "cad",
+      "chargedAt": "2027-05-13T18:00:00.000Z"
+    },
+    {
+      "key": "a12",
+      "kind": "duplicate",
+      "customerId": "cus_zdFrRYwUoneWpqNi",
+      "name": "Alder Archives",
+      "email": "ops@alder-archives.example",
+      "requesterId": 3005011,
+      "amountMinor": 7104,
+      "currency": "cad",
+      "chargedAt": "2027-05-09T17:00:00.000Z"
+    },
+    {
+      "key": "a13",
+      "kind": "duplicate",
+      "customerId": "cus_WbizjZxiZqmyWPnI",
+      "name": "Elm Tutoring",
+      "email": "payables@elm-tutoring.example",
+      "requesterId": 3005012,
+      "amountMinor": 3781,
+      "currency": "cad",
+      "chargedAt": "2027-05-07T08:00:00.000Z"
+    },
+    {
+      "key": "a14",
+      "kind": "duplicate",
+      "customerId": "cus_AYAqUnMSfwoStWve",
+      "name": "Iris Woodworks",
+      "email": "ops@iris-woodworks.example",
+      "requesterId": 3005013,
+      "amountMinor": 4398,
+      "currency": "cad",
+      "chargedAt": "2027-05-11T19:00:00.000Z"
+    },
+    {
+      "key": "n01",
+      "kind": "control_distinct",
+      "customerId": "cus_rZErbmOhQbJYOCAe",
+      "name": "Ember Surveying",
+      "email": "admin@ember-surveying.example",
+      "requesterId": 3005014,
+      "amountMinor": 3680,
+      "currency": "cad",
+      "chargedAt": "2027-05-11T07:00:00.000Z"
+    },
+    {
+      "key": "n02",
+      "kind": "control_other_currency",
+      "customerId": "cus_OXMmfxCKuhmKTQeH",
+      "name": "Harbor Woodworks",
+      "email": "ops@harbor-woodworks.example",
+      "requesterId": 3005015,
+      "amountMinor": 2973,
+      "currency": "usd",
+      "chargedAt": "2027-05-16T17:00:00.000Z"
+    },
+    {
+      "key": "n03",
+      "kind": "control_outside_window",
+      "customerId": "cus_DPaIERSxFWyoOjDe",
+      "name": "Maple Telemetry",
+      "email": "ap@maple-telemetry.example",
+      "requesterId": 3005016,
+      "amountMinor": 8446,
+      "currency": "cad",
+      "chargedAt": "2027-05-02T00:00:00.000Z"
+    },
+    {
+      "key": "n04",
+      "kind": "control_failed_retry",
+      "customerId": "cus_sZGsQJsWqzpoVwgz",
+      "name": "Moss Brewing",
+      "email": "accounts@moss-brewing.example",
+      "requesterId": 3005017,
+      "amountMinor": 6045,
+      "currency": "cad",
+      "chargedAt": "2027-05-13T14:00:00.000Z"
+    }
+  ]
+}

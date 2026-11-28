@@ -12,6 +12,8 @@ import {
   precedentDigest,
   precedentIdOf,
   toTriples,
+  WithdrawalMarker,
+  withdrawalTriples,
 } from "./precedent";
 
 /** Slash-separated lowercase segments; the service rejects uppercase and spaces. */
@@ -20,7 +22,9 @@ const SCOPE_PATH = /^[a-z0-9_-]+(?:\/[a-z0-9_-]+)*$/;
 export type StoredPrecedent =
   | { status: "absent" }
   | { status: "invalid"; reason: string }
-  | { status: "valid"; record: PrecedentRecord; digest: Sha256Hex; factIds: string[] };
+  | { status: "valid"; record: PrecedentRecord; digest: Sha256Hex; factIds: string[] }
+  /** Overwritten with the withdrawal marker for `version` (T1.51). */
+  | { status: "withdrawn"; version: number; factIds: string[] };
 
 export interface PublishedPrecedent {
   id: string;
@@ -30,6 +34,16 @@ export interface PublishedPrecedent {
   factIds: string[];
   scope: string;
   /** False when this exact version was already stored, so nothing was sent. */
+  written: boolean;
+}
+
+export interface WithdrawnPrecedentCopy {
+  id: string;
+  version: number;
+  /** The marker's attributes, read back, sorted. */
+  factIds: string[];
+  scope: string;
+  /** False when the marker for this version was already stored, so nothing was sent. */
   written: boolean;
 }
 
@@ -145,7 +159,11 @@ export class AgentMemoryPrecedents implements PrecedentPort {
     if (stored.status !== "valid") {
       throw new PrecedentReadbackError(
         record.id,
-        stored.status === "invalid" ? stored.reason : "nothing stored",
+        stored.status === "invalid"
+          ? stored.reason
+          : stored.status === "withdrawn"
+            ? `still the withdrawal marker for v${stored.version}`
+            : "nothing stored",
       );
     }
     if (stored.digest !== digest) {
@@ -164,12 +182,48 @@ export class AgentMemoryPrecedents implements PrecedentPort {
     };
   }
 
+  /**
+   * Overwrite the stored copy of a withdrawn version with the withdrawal marker and read it back,
+   * so recall stops returning it. The caller (the API's outbox) checks the registry first; this
+   * refuses to cover a newer stored version, which would hide a precedent that may be active.
+   * Marking the same version again writes nothing.
+   */
+  async markWithdrawn(id: string, version: number): Promise<WithdrawnPrecedentCopy> {
+    const triples = withdrawalTriples(id, version);
+    await this.#client.registerScope(this.scope);
+
+    const current = await this.read(id);
+    const stored =
+      current.status === "valid"
+        ? current.record.version
+        : current.status === "withdrawn"
+          ? current.version
+          : 0;
+    if (stored > version) {
+      throw new PrecedentConflictError(id, `v${stored} is stored; v${version} is older`);
+    }
+    const written = !(current.status === "withdrawn" && current.version === version);
+    if (written) await this.#client.writeTriples(this.scope, triples);
+
+    const after = await this.read(id);
+    if (after.status !== "withdrawn" || after.version !== version) {
+      throw new PrecedentReadbackError(
+        id,
+        after.status === "invalid"
+          ? after.reason
+          : `expected the withdrawal marker for v${version}`,
+      );
+    }
+    return { id, version, factIds: after.factIds, scope: this.scope, written };
+  }
+
   /** The current stored version, from attributes in exactly our scope. */
   async read(id: string): Promise<StoredPrecedent> {
     const view = await this.#client.entity(ENTITY_TYPE, entityName(id));
     const attributes = view?.attributes ?? [];
     if (!attributes.some((a) => inExactScope(a, this.scope))) return { status: "absent" };
     const decoded = decodeAttributes(id, this.scope, attributes);
+    if (!decoded.ok && decoded.withdrawn) return { status: "withdrawn", ...decoded.withdrawn };
     if (decoded.ok) {
       return {
         status: "valid",
@@ -223,7 +277,9 @@ export class AgentMemoryPrecedents implements PrecedentPort {
     for (const [id, stored] of reads) {
       if (stored.status === "absent") rejected.push({ id, reason: "nothing stored in scope" });
       else if (stored.status === "invalid") rejected.push({ id, reason: stored.reason });
-      else if (!isEffective(stored.record, today)) {
+      else if (stored.status === "withdrawn") {
+        rejected.push({ id, reason: `withdrawn at v${stored.version}` });
+      } else if (!isEffective(stored.record, today)) {
         rejected.push({ id, reason: `not effective on ${today}` });
       } else {
         const { record } = stored;
@@ -248,7 +304,11 @@ function parseRecord(
 ): { ok: true; record: PrecedentRecord } | { ok: false; reason: string } {
   if (typeof value !== "string") return { ok: false, reason: "not a string" };
   try {
-    const parsed = PrecedentRecord.safeParse(JSON.parse(value));
+    const json: unknown = JSON.parse(value);
+    const marker = WithdrawalMarker.safeParse(json);
+    if (marker.success)
+      return { ok: false, reason: `withdrawal marker for v${marker.data.version}` };
+    const parsed = PrecedentRecord.safeParse(json);
     return parsed.success
       ? { ok: true, record: parsed.data }
       : { ok: false, reason: parsed.error.message };

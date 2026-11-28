@@ -74,3 +74,15 @@ it("refuses the execution rehearsal's admin token, worker secret and worlds", ()
     "ERA_SLACK_REHEARSAL_URL",
   ]);
 });
+
+it("holds no Agent Memory key: admission reads the Postgres registry (#365)", () => {
+  const keys = [
+    "SURREAL_AGENT_MEMORY_READ_KEY",
+    "SURREAL_AGENT_MEMORY_WRITE_KEY",
+    "SURREAL_AGENT_MEMORY_ADMIN_KEY",
+    "SURREAL_AGENT_MEMORY_KEY",
+  ];
+  expect(executorCredentialViolations(Object.fromEntries(keys.map((k) => [k, "sp-key"])))).toEqual(
+    keys,
+  );
+});

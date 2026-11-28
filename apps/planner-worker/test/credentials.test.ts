@@ -59,3 +59,18 @@ it("refuses the execution rehearsal's admin token, worker secret and worlds", ()
     "ERA_ZENDESK_REHEARSAL_URL",
   ]);
 });
+
+it("recalls with a read-only memory key and refuses one that can write (#365)", () => {
+  expect(plannerCredentialViolations({ SURREAL_AGENT_MEMORY_READ_KEY: "sp-read" })).toEqual([]);
+  expect(
+    plannerCredentialViolations({
+      SURREAL_AGENT_MEMORY_WRITE_KEY: "sp-write",
+      SURREAL_AGENT_MEMORY_ADMIN_KEY: "sp-admin",
+      SURREAL_AGENT_MEMORY_KEY: "sp-old",
+    }),
+  ).toEqual([
+    "SURREAL_AGENT_MEMORY_WRITE_KEY",
+    "SURREAL_AGENT_MEMORY_ADMIN_KEY",
+    "SURREAL_AGENT_MEMORY_KEY",
+  ]);
+});

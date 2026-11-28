@@ -1,19 +1,29 @@
 import { randomUUID } from "node:crypto";
-import { PlanManifest, StoredIncident } from "@rehearsal/contracts";
+import {
+  PlanManifest,
+  type PrecedentBasis,
+  PrecedentRecallDiagnostics,
+  StoredIncident,
+} from "@rehearsal/contracts";
 import { planHash, validateGraph } from "@rehearsal/core";
 import {
   type Db,
   loadIncident,
+  loadRegistry,
+  memoryErased,
   OrgWorldBusy,
   type PgBoss,
   PLAN_QUEUE,
   type RegistrySnapshot,
+  recordRecallDiagnostics,
+  retryPlanWithoutMemory,
 } from "@rehearsal/db";
 import { checkPrecedentBasis } from "@rehearsal/memory";
 import {
   PLANNER_JOB_ROUTES,
   PlanJob,
   type PlanJobRegistry,
+  PlanModelAttempts,
   registryOfJob,
 } from "@rehearsal/providers";
 import type { FastifyInstance, FastifyReply } from "fastify";
@@ -28,6 +38,7 @@ import {
   requirePerson,
 } from "./iam";
 import { loadPlan, storePlan } from "./plans";
+import { type RepairRefresher, repairProblem } from "./repair";
 import { workerRole } from "./tenant-tokens";
 
 /**
@@ -45,9 +56,10 @@ export interface RehearseDeps {
   plannerSecret?: string;
   /**
    * The org's precedent registry (#235). A plan job carries it so the planner cites only active
-   * versions, and the returned basis is checked against it. Absent: plans carry no basis.
+   * versions, and the returned basis is checked against it. Absent, or null for an org (one whose
+   * Agent Memory was erased, T1.55; see `planJobRegistry`): its plans carry no basis.
    */
-  precedentRegistry?: (orgId: string) => Promise<RegistrySnapshot>;
+  precedentRegistry?: (orgId: string) => Promise<RegistrySnapshot | null>;
   /**
    * Seeds a new org's own Era tenants before its first plan (#330), so the planner never reads an
    * empty world. Absent: nothing is seeded (the shared tenant, tests).
@@ -55,6 +67,11 @@ export interface RehearseDeps {
   ensureSeeded?: (orgId: string) => Promise<void>;
   /** Production seeding and enqueue share the reset lock and commit the job before releasing it. */
   enqueue?: (job: PlanJob) => Promise<string | null>;
+  /**
+   * T1.37: copies records a hold found in the org's operational world into its planning world.
+   * Absent: a repair that needs a refreshed copy is refused.
+   */
+  refreshPlanning?: RepairRefresher;
 }
 
 /** Incidents this deployment can rehearse. The planner worker loads the brief by ID. */
@@ -70,10 +87,18 @@ const Complete = z.strictObject({
       turns: z.int().nonnegative(),
       toolCalls: z.int().nonnegative(),
       usage: z.record(z.string(), z.int().nonnegative()),
+      // Optional diagnostics must never reject a valid completion after planner/API version drift.
+      modelAttempts: PlanModelAttempts.optional().catch(undefined),
+      // T1.54: stored beside the plan, not in the job output; malformed ones are dropped.
+      recallDiagnostics: PrecedentRecallDiagnostics.optional().catch(undefined),
     })
     .optional(),
 });
-const Fail = z.strictObject({ reason: z.string().max(100), message: z.string().max(2000) });
+const Fail = z.strictObject({
+  reason: z.string().max(100),
+  message: z.string().max(2000),
+  modelAttempts: PlanModelAttempts.optional().catch(undefined),
+});
 
 /** pg-boss states, as the review page should read them. A failed run is retried once. */
 const STATE = {
@@ -113,9 +138,7 @@ export function registerRehearseRoutes(app: FastifyInstance, deps: RehearseDeps)
       incidentId: req.params.id,
       planId: `plan_${randomUUID()}`,
       requestedBy: gate.person.userId,
-      ...(deps.precedentRegistry && {
-        precedents: registryForJob(await deps.precedentRegistry(gate.person.orgId)),
-      }),
+      ...(await jobPrecedents(deps, gate.person.orgId)),
       ...(filed && {
         incident: {
           incidentId: filed.incidentId,
@@ -154,17 +177,24 @@ export function registerRehearseRoutes(app: FastifyInstance, deps: RehearseDeps)
     });
     if (!gate.ok) return refuse(reply, gate, "rehearsal_not_found");
     const output = (found.job.output ?? {}) as Record<string, unknown>;
+    const attempts = PlanModelAttempts.safeParse(output.modelAttempts);
     const state = STATE[found.job.state];
     return {
       rehearsalId: found.job.id,
       planId: found.data.planId,
       incidentId: found.data.incidentId,
       state,
+      ...(attempts.success ? { modelAttempts: attempts.data } : {}),
       // The last failure, which a retry may still turn into a stored plan.
       ...((state === "failed" || state === "retrying") && {
         error: { reason: output.reason, message: output.message },
       }),
-      ...(state === "stored" && { planHash: output.planHash, summary: output.summary }),
+      ...(state === "stored" && {
+        planHash: output.planHash,
+        // Revision 1 unless the job was a repair (T1.37); older outputs didn't record it.
+        revision: typeof output.revision === "number" ? output.revision : 1,
+        summary: output.summary,
+      }),
     };
   });
 
@@ -181,7 +211,7 @@ export function registerRehearseRoutes(app: FastifyInstance, deps: RehearseDeps)
       await deps.boss.fail(PLAN_QUEUE, job.id, { reason: "malformed_job", message: "bad payload" });
       return reply.code(204).send();
     }
-    return { id: job.id, data: data.data };
+    return { id: job.id, data: await withoutErasedMemory(deps.db, data.data) };
   });
 
   app.post<{ Params: { id: string } }>(PLANNER_JOB_ROUTES.complete, async (req, reply) => {
@@ -191,18 +221,36 @@ export function registerRehearseRoutes(app: FastifyInstance, deps: RehearseDeps)
     const found = await activeJob(deps, req.params.id, reply);
     if (!found) return reply;
 
-    const refuse = async (detail: string) => {
-      await deps.boss.fail(PLAN_QUEUE, found.job.id, { reason: "rejected_plan", message: detail });
+    const refuse = async (detail: string, reason = "rejected_plan") => {
+      await deps.boss.fail(PLAN_QUEUE, found.job.id, { reason, message: detail });
       return reply.code(422).send({ error: "rejected_plan", detail });
     };
     const parsed = PlanManifest.safeParse(body.data.manifest);
     if (!parsed.success) return refuse("manifest does not match contracts v1");
     const m = parsed.data;
-    const job = found.data;
+    // Read as `/next` would hand it out now: with memory off if the org was erased since queueing.
+    const job = await withoutErasedMemory(deps.db, found.data);
+    if (job !== found.data && m.precedentBasis) {
+      // Preserve the polled job id and a bounded recovery attempt even when its normal retry
+      // was already spent. The stored payload loses its snapshot before it can be claimed again.
+      const retried = await retryPlanWithoutMemory(deps.db, deps.boss, {
+        id: found.job.id,
+        retryCount: found.job.retryCount,
+      });
+      if (!retried) return reply.code(409).send({ error: "job_not_active" });
+      return reply.code(422).send({
+        error: "rejected_plan",
+        detail: "the org's Agent Memory was erased; the job is planned again without memory",
+      });
+    }
     if (m.orgId !== job.orgId || m.planId !== job.planId || m.incidentId !== job.incidentId) {
       return refuse("manifest is for another org, plan or incident than the job");
     }
-    if (m.revision !== 1 || m.parentRevision !== null || m.excluded.length > 0) {
+    if (job.repair) {
+      // A repair (T1.37) is checked against the stored base and its receipts, not the job's copy.
+      const problem = await repairProblem(deps.db, job.repair, m);
+      if (problem) return refuse(problem);
+    } else if (m.revision !== 1 || m.parentRevision !== null || m.excluded.length > 0) {
       return refuse("a planner run produces revision 1 only");
     }
     // An out-of-scope incident plans nothing; the model's reason is what the reviewer needs to see.
@@ -219,18 +267,23 @@ export function registerRehearseRoutes(app: FastifyInstance, deps: RehearseDeps)
       // A repeat of a completion that stored but didn't finish the job is fine; anything else isn't.
       // Compare canonical hashes: JSONB doesn't keep key order, so the stored copy reads back
       // reordered. loadPlan has already checked the stored row against its own hash.
-      const existing = await loadPlan(deps.db, m.orgId, m.planId, 1);
+      const existing = await loadPlan(deps.db, m.orgId, m.planId, m.revision);
       if (existing.kind !== "found" || existing.plan.planHash !== planHash(m)) {
         return refuse("plan ID already holds another plan");
       }
       stored = { planHash: existing.plan.planHash };
     }
+    const { recallDiagnostics, ...stats } = body.data.stats ?? {};
+    await keepRecallDiagnostics(deps, m, job, stored.planHash, recallDiagnostics, req.log);
     await deps.boss.complete(PLAN_QUEUE, found.job.id, {
       planHash: stored.planHash,
+      revision: m.revision,
       summary: body.data.summary,
-      ...body.data.stats,
+      ...stats,
     });
-    return reply.code(201).send({ planId: m.planId, revision: 1, planHash: stored.planHash });
+    return reply
+      .code(201)
+      .send({ planId: m.planId, revision: m.revision, planHash: stored.planHash });
   });
 
   app.post<{ Params: { id: string } }>(PLANNER_JOB_ROUTES.fail, async (req, reply) => {
@@ -244,11 +297,43 @@ export function registerRehearseRoutes(app: FastifyInstance, deps: RehearseDeps)
   });
 }
 
-function registryForJob(snapshot: RegistrySnapshot): PlanJobRegistry {
+export function registryForJob(snapshot: RegistrySnapshot): PlanJobRegistry {
   return {
     active: [...snapshot.active].map(([id, v]) => ({ id, version: v.version, digest: v.digest })),
     epochs: Object.fromEntries(snapshot.epochs),
   };
+}
+
+/** What a plan job carries about precedents: nothing when the org has no registry to offer. */
+export async function jobPrecedents(
+  deps: Pick<RehearseDeps, "precedentRegistry">,
+  orgId: string,
+): Promise<{ precedents?: PlanJobRegistry }> {
+  const snapshot = await deps.precedentRegistry?.(orgId);
+  return snapshot ? { precedents: registryForJob(snapshot) } : {};
+}
+
+/**
+ * The registry a plan job offers the planner, read from Postgres; null for an org whose Agent
+ * Memory was erased (T1.55). That org's job goes out with memory off, as in core mode: the
+ * planner recalls nothing, and the plan has no precedent basis. Planning, approval and admission
+ * work as for any plan without one; plans made before the erasure still check against Postgres.
+ */
+export async function planJobRegistry(db: Db, orgId: string): Promise<RegistrySnapshot | null> {
+  if (await memoryErased(db, orgId)) return null;
+  return (await loadRegistry(db, orgId)).snapshot;
+}
+
+/**
+ * A plan job as the planner may use it now (T1.55). One queued before its org's Agent Memory was
+ * erased still carries the registry; from the `erased` event on it is handed out, and its plan
+ * checked, as if queued with memory off: no registry, so no recall and no basis. Returns the job
+ * itself when nothing changes.
+ */
+export async function withoutErasedMemory(db: Db, job: PlanJob): Promise<PlanJob> {
+  if (!job.precedents || !(await memoryErased(db, job.orgId))) return job;
+  const { precedents: _, ...rest } = job;
+  return rest;
 }
 
 /**
@@ -268,6 +353,84 @@ export function checkJobBasis(m: PlanManifest, job: PlanJob): string | null {
   }
   const check = checkPrecedentBasis(m.precedentBasis, registryOfJob(job.precedents));
   return check.ok ? null : `plan's precedent basis doesn't hold: ${JSON.stringify(check.holds)}`;
+}
+
+/**
+ * T1.54: whether the worker's account of its recall agrees with what the API knows: recall was
+ * asked exactly when the job's registry had something active, then once for every area the
+ * basis consulted, and every cited version is among the hits of the area it applies to, or of
+ * the area whose trace found it. Null when it agrees; otherwise why not.
+ */
+export function recallDiagnosticsProblem(
+  diagnostics: PrecedentRecallDiagnostics,
+  basis: PrecedentBasis,
+  job: PlanJob,
+): string | null {
+  const offered = (job.precedents?.active.length ?? 0) > 0;
+  if (diagnostics.recalled !== offered) {
+    return offered
+      ? "says recall wasn't asked, but the job had active precedents"
+      : "says recall was asked, but the job had nothing active";
+  }
+  const areas = diagnostics.areas.map((a) => a.area);
+  if (new Set(areas).size !== areas.length) return "names an area twice";
+  const expected = offered ? Object.keys(basis.epochs).sort() : [];
+  if ([...areas].sort().join("\n") !== expected.join("\n")) {
+    return "areas differ from the ones the basis consulted";
+  }
+  for (const a of diagnostics.areas) {
+    const hits = a.hits.map((h) => h.id);
+    if (new Set(hits).size !== hits.length) return `lists a hit twice in ${a.area}`;
+  }
+  const found = (
+    area: PrecedentRecallDiagnostics["areas"][number] | undefined,
+    id: string,
+    version: number,
+  ) => area?.hits.some((h) => h.id === id && h.version === version) ?? false;
+  for (const c of basis.citations) {
+    const own = diagnostics.areas.find((a) => a.area === c.appliesTo);
+    const tracing =
+      c.traceId === null ? undefined : diagnostics.areas.find((a) => a.traceId === c.traceId);
+    if (!found(own, c.id, c.version) && !found(tracing, c.id, c.version)) {
+      return `cited ${c.id} v${c.version} is not among the hits`;
+    }
+  }
+  return null;
+}
+
+/**
+ * T1.54: keeps the planner's account of its recall beside the stored revision. It explains the
+ * basis and decides nothing, so it's kept only for a plan with a basis and only when it agrees
+ * with the job (`recallDiagnosticsProblem`); anything else, or a failure to store it, is logged
+ * and the plan stands.
+ */
+async function keepRecallDiagnostics(
+  deps: RehearseDeps,
+  m: PlanManifest,
+  job: PlanJob,
+  planHash: string,
+  diagnostics: PrecedentRecallDiagnostics | undefined,
+  log: { warn(obj: object, msg: string): void },
+) {
+  if (!diagnostics || !m.precedentBasis) return;
+  const basis = m.precedentBasis;
+  const problem = recallDiagnosticsProblem(diagnostics, basis, job);
+  if (problem) {
+    log.warn({ planId: m.planId, problem }, "recall diagnostics not stored");
+    return;
+  }
+  try {
+    await recordRecallDiagnostics(deps.db, {
+      orgId: m.orgId,
+      planId: m.planId,
+      revision: m.revision,
+      planHash,
+      basis,
+      diagnostics,
+    });
+  } catch (err) {
+    log.warn({ err, planId: m.planId }, "recall diagnostics could not be stored");
+  }
 }
 
 async function loadJob(deps: RehearseDeps, id: string) {

@@ -11,6 +11,7 @@ import {
   REHEARSAL_URL_KEYS,
   resolveRehearsalWorld,
   STRIPE_CHARGE_PROJECTION,
+  STRIPE_CUSTOMER_PROJECTION,
   stripeChargeProjection,
   type WorldConfig,
   ZENDESK_TICKET_PROJECTION,
@@ -34,6 +35,9 @@ import { z } from "zod";
  *   the read-back fails if one of them lands in a query the plan cites.
  * - A cited record the baseline already has is kept, not injected twice. Its projection is read
  *   back like any other; its other fields are the baseline's, not the templates'.
+ * - A credited customer (T1.45) is never created: the baseline must already hold it, and its
+ *   currency is read back against the plan's evidence. Every other customer field, and any balance
+ *   transaction the plan didn't read, is the baseline's. A missing customer refuses the run.
  */
 
 export type SnapshotVendor = "stripe" | "zendesk";
@@ -44,6 +48,7 @@ type Evidence = Pick<PlanManifest, "actions" | "observations" | "queryObservatio
 /** The projections the seeder can rebuild a record from, by entity. */
 const SUPPORTED: Record<string, string> = {
   "stripe.charge": STRIPE_CHARGE_PROJECTION,
+  "stripe.customer": STRIPE_CUSTOMER_PROJECTION,
   "zendesk.ticket": ZENDESK_TICKET_PROJECTION,
 };
 const QUERY_PROJECTION: Record<string, string> = {
@@ -67,6 +72,13 @@ const TicketProjection = z.strictObject({
   status: z.enum(["new", "open", "pending", "hold", "solved", "closed"]),
   requester_id: z.string().regex(/^\d+$/).nullable(),
   external_id: z.string().nullable(),
+});
+const CustomerProjection = z.strictObject({
+  id: z.string().regex(/^cus_\w+$/),
+  currency: z
+    .string()
+    .regex(/^[a-z]{3}$/)
+    .nullable(),
 });
 type ChargeProjection = z.infer<typeof ChargeProjection>;
 type TicketProjection = z.infer<typeof TicketProjection>;
@@ -93,6 +105,8 @@ export interface SnapshotSeed {
   /** Bodies for POST /_admin/tenants/{T}/inject. */
   stripe: { charges: Record<string, unknown>[] };
   zendesk: { tickets: Record<string, unknown>[] };
+  /** Credited customers (T1.45) the reset baseline must already hold. Never injected. */
+  customers: string[];
   /** Seeded fields that didn't come from the plan's evidence, as `vendor.kind.field`. */
   notFromEvidence: string[];
 }
@@ -104,8 +118,11 @@ function writeTarget(action: Evidence["actions"][number]) {
   switch (action.kind) {
     case "stripe.refund.create":
       return { vendor: "stripe", kind: "charge", id: action.args.chargeId };
+    case "stripe.customer.balanceCredit":
+      return { vendor: "stripe", kind: "customer", id: action.args.customerId };
     case "zendesk.ticket.patchFields":
     case "zendesk.ticket.appendPrivateNote":
+    case "zendesk.ticket.appendPublicReply":
       return { vendor: "zendesk", kind: "ticket", id: action.args.ticketId };
     default:
       return null;
@@ -144,19 +161,21 @@ export function supportSnapshot(plan: Evidence): SnapshotSupport {
 
   const charges = new Map<string, { projection: ChargeProjection; source: string }>();
   const tickets = new Map<string, { projection: TicketProjection; source: string }>();
-  const record = (vendor: string, source: string, projection: unknown) => {
+  const customers = new Map<string, { projection: unknown; source: string }>();
+  const record = (key: string, source: string, projection: unknown) => {
     const parsed =
-      vendor === "stripe"
+      key === "stripe.charge"
         ? ChargeProjection.safeParse(projection)
-        : TicketProjection.safeParse(projection);
+        : key === "stripe.customer"
+          ? CustomerProjection.safeParse(projection)
+          : TicketProjection.safeParse(projection);
     if (!parsed.success) {
       refusals.push(`${source}: ${parsed.error.issues.map((i) => i.path.join(".")).join(", ")}`);
       return;
     }
-    const map = (vendor === "stripe" ? charges : tickets) as Map<
-      string,
-      { projection: unknown; source: string }
-    >;
+    const map = (
+      key === "stripe.charge" ? charges : key === "stripe.customer" ? customers : tickets
+    ) as Map<string, { projection: unknown; source: string }>;
     const seen = map.get(parsed.data.id);
     if (!seen) map.set(parsed.data.id, { projection: parsed.data, source });
     else if (canonicalize(seen.projection) !== canonicalize(parsed.data)) {
@@ -177,7 +196,7 @@ export function supportSnapshot(plan: Evidence): SnapshotSupport {
     } else if (o.projection.id !== o.entity.id) {
       refusals.push(`${o.id} observes ${o.entity.id} but projects ${String(o.projection.id)}`);
     } else {
-      record(o.entity.vendor, o.id, o.projection);
+      record(key, o.id, o.projection);
     }
   }
   for (const q of plan.queryObservations) {
@@ -190,7 +209,12 @@ export function supportSnapshot(plan: Evidence): SnapshotSupport {
     } else {
       for (const id of q.matchingIds) {
         if (!q.projections[id]) refusals.push(`${q.id} matches ${id} but has no projection of it`);
-        else record(q.vendor, `${q.id}[${id}]`, q.projections[id]);
+        else
+          record(
+            `${q.vendor}.${q.vendor === "stripe" ? "charge" : "ticket"}`,
+            `${q.id}[${id}]`,
+            q.projections[id],
+          );
       }
     }
   }
@@ -212,9 +236,12 @@ export function supportSnapshot(plan: Evidence): SnapshotSupport {
       zendesk: {
         tickets: [...tickets.values()].map((t) => ticket(templates.ticket, t.projection)),
       },
+      customers: [...customers.keys()].sort(),
       notFromEvidence: [
         ...defaults("stripe", "charge", templates.charge, charges.size > 0),
         ...defaults("zendesk", "ticket", templates.ticket, tickets.size > 0),
+        // Everything but the currency (read back) is the reset baseline's own customer.
+        ...(customers.size > 0 ? ["stripe.customer.*"] : []),
       ].sort(),
     },
   };
@@ -299,17 +326,31 @@ export async function provisionSnapshot(
   const records = { stripe: seed.stripe.charges, zendesk: seed.zendesk.tickets };
   const worlds: RehearsalWorlds = {};
   for (const vendor of VENDORS) {
-    if (records[vendor].length === 0) continue;
+    if (records[vendor].length === 0 && (vendor !== "stripe" || seed.customers.length === 0)) {
+      continue;
+    }
     const config = rehearsalWorldConfig(vendor, rehearsalId, env);
     const { token } = await mintTenantToken(config, rehearsalAdminToken(env));
     const world = { ...config, tenantToken: token };
     await admin(world, "/reset", undefined, env);
+    if (vendor === "stripe") {
+      // A credit goes on an existing customer's balance; the seeder never invents one.
+      const absent = [];
+      for (const id of seed.customers) if (!(await exists("customer", world, id))) absent.push(id);
+      if (absent.length > 0) {
+        return {
+          ok: false,
+          refusals: absent.map((id) => `${id}: the rehearsal baseline has no such customer`),
+        };
+      }
+    }
     // Era doesn't dedupe /inject by ID, and the reset baseline already holds some cited records
     // (a requester's older tickets). Inject only the missing ones; the read-back then checks the
     // baseline copies' projections like any other.
     const missing = [];
     for (const record of records[vendor]) {
-      if (!(await exists(vendor, world, String(record.id)))) missing.push(record);
+      const kind = vendor === "stripe" ? "charge" : "ticket";
+      if (!(await exists(kind, world, String(record.id)))) missing.push(record);
     }
     if (missing.length > 0) {
       await admin(
@@ -354,11 +395,15 @@ function uniqueIds(rows: Record<string, unknown>[]): string[] {
   return ids;
 }
 
-async function exists(vendor: SnapshotVendor, world: WorldConfig, id: string): Promise<boolean> {
-  const path =
-    vendor === "stripe"
-      ? `/v1/charges/${encodeURIComponent(id)}`
-      : `/api/v2/tickets/${encodeURIComponent(id)}.json`;
+const PATHS = {
+  charge: (id: string) => `/v1/charges/${encodeURIComponent(id)}`,
+  customer: (id: string) => `/v1/customers/${encodeURIComponent(id)}`,
+  ticket: (id: string) => `/api/v2/tickets/${encodeURIComponent(id)}.json`,
+};
+
+async function exists(kind: keyof typeof PATHS, world: WorldConfig, id: string): Promise<boolean> {
+  const path = PATHS[kind](id);
+  const vendor: SnapshotVendor = kind === "ticket" ? "zendesk" : "stripe";
   const res = await eraFetch(world, path, { headers: { authorization: AUTH[vendor] } });
   if (res.status === 404) return false;
   if (!res.ok) throw new Error(`GET ${path} → ${res.status}`);
@@ -395,15 +440,21 @@ export async function verifySnapshot(
     }
     try {
       const id = encodeURIComponent(o.entity.id);
+      const customer = async () => {
+        const c = await read(vendor, world, `/v1/customers/${id}`);
+        return { id: c.id, currency: c.currency ?? null };
+      };
       const got =
-        vendor === "stripe"
-          ? stripeChargeProjection(await read(vendor, world, `/v1/charges/${id}`))
-          : zendeskTicketProjection(
-              (await read(vendor, world, `/api/v2/tickets/${id}.json`)).ticket as Record<
-                string,
-                unknown
-              >,
-            );
+        o.entity.kind === "customer"
+          ? await customer()
+          : vendor === "stripe"
+            ? stripeChargeProjection(await read(vendor, world, `/v1/charges/${id}`))
+            : zendeskTicketProjection(
+                (await read(vendor, world, `/api/v2/tickets/${id}.json`)).ticket as Record<
+                  string,
+                  unknown
+                >,
+              );
       compare(o.id, o.projection, got);
     } catch (err) {
       mismatches.push(`${o.id}: ${(err as Error).message}`);

@@ -22,6 +22,7 @@ import { type ProblemDeps, registerProblemRoutes } from "./problems";
 import { type RehearsalOperatorDeps, registerRehearsalOperatorRoutes } from "./rehearsal-operator";
 import { type RehearsalTokenDeps, registerRehearsalTokenRoute } from "./rehearsal-tokens";
 import { type RehearseDeps, registerRehearseRoutes } from "./rehearse";
+import { registerRepairRoute } from "./repair";
 import { type RunDeps, registerRunRoutes } from "./runs";
 import { registerTenantTokenRoute, type TenantTokenDeps } from "./tenant-tokens";
 
@@ -105,6 +106,7 @@ export function buildApp(
   if (deps.precedents) registerPrecedentRoutes(app, deps.precedents);
   else {
     app.post("/api/runs/:id/precedents", unavailable);
+    app.post("/api/runs/:id/precedents/similar", unavailable);
     app.post("/api/precedents/:id/withdraw", unavailable);
     app.get("/api/precedents", unavailable);
   }
@@ -112,8 +114,10 @@ export function buildApp(
   if (deps.rehearse) {
     registerRehearseRoutes(app, deps.rehearse);
     registerIncidentRoutes(app, deps.rehearse);
+    registerRepairRoute(app, deps.rehearse);
   } else {
     app.post("/api/incidents/:id/rehearse", unavailable);
+    app.post("/api/plans/:id/repair", unavailable);
     app.get("/api/rehearsals/:id", unavailable);
     app.post("/api/incidents", unavailable);
     app.get("/api/incidents", unavailable);

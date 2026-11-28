@@ -101,7 +101,7 @@ This run predates later merges to `main`. The final T1.28 run on the tagged subm
 
 **What's next.** Two-person approval by policy, a past-run audit view, and precedents that finance promotes after a run are built; execution rehearsal in disposable worlds is next. Native Stripe sandbox proof and real operator testing are not done.
 
-**Built with.** TypeScript, Node, React, Vite, Tailwind, Fastify, Zod, Postgres, Drizzle, pg-boss, Clerk, Playwright, Vitest, Biome, Era (Stripe and Zendesk simulators), Anthropic and Gemini models for planning, SurrealDB Agent Memory (precedents, if configured) **[fill: confirm what actually shipped]**.
+**Built with.** TypeScript, Node, React, Vite, Tailwind, Fastify, Zod, Postgres, Drizzle, pg-boss, Clerk, Playwright, Vitest, Biome, Era (Stripe and Zendesk simulators), Gemini (`gemini-4-argon` on Vertex AI) for planning, SurrealDB Agent Memory (precedents, if configured) **[fill: confirm what actually shipped]**.
 
 **Disclosures (fill in truthfully).** AI coding tools were used to write parts of this repository **[fill: which, by whom]**; prior work: **[fill]**. Partner services actually used: **[fill]**. No ML model was trained or served.
 

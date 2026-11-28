@@ -29,7 +29,7 @@ import { ExecutionRehearsalPanel } from "./ExecutionRehearsalPanel";
 import { IncidentForm } from "./IncidentForm";
 import { MembersPanel } from "./MembersPanel";
 import { PlanReview } from "./PlanReview";
-import { PrecedentPanel } from "./PrecedentPanel";
+import { PrecedentListResponse, PrecedentPanel } from "./PrecedentPanel";
 import { INCIDENT_ID, type Rehearsal, RehearseBar } from "./Rehearse";
 import { RunTimeline } from "./RunTimeline";
 import { Alert, Button, Card, Chip, Skeleton, Spinner } from "./ui";
@@ -302,8 +302,8 @@ function PageSkeleton({ what }: { what: string }) {
 const STAGES = ["Copy", "Plan", "Approve", "Apply", "Receipts"] as const;
 
 /**
- * Where the process stands, until `ProcessDiagram` lands and replaces this with one line:
- * `<ProcessDiagram active={active} />`. Approve is the gate between the two worlds.
+ * Where the process stands, as one line of the five steps; Approve is the gate between the two
+ * worlds. The change-order restyle (#353) chose this line over the circle `ProcessDiagram`.
  */
 function ProcessSlot({ active }: { active: Stage }) {
   return (
@@ -356,6 +356,12 @@ function LivePlan({
   const plan = useQuery({
     queryKey: key("plan", planId),
     queryFn: () => call(apiFetch, StoredPlan, planPath(planId)),
+  });
+  // The approved versions a citation traces to; shared with the promote panel's list.
+  const registry = useQuery({
+    queryKey: key("precedents"),
+    queryFn: () => call(apiFetch, PrecedentListResponse, "/api/precedents"),
+    enabled: (plan.data?.manifest.precedentBasis?.citations.length ?? 0) > 0,
   });
   const [unchecked, setUnchecked] = useState<ReadonlySet<string>>(new Set());
   const [lastRevision, setLastRevision] = useState<NewRevision | null>(null);
@@ -417,6 +423,8 @@ function LivePlan({
         evidence={manifest.versions.planner.model === "fixture" ? "fixture" : null}
         review={{ unchecked, onToggle: toggle }}
         precedents={approvals.data?.precedents ?? null}
+        registry={registry.data?.precedents ?? null}
+        recall={plan.data.recallDiagnostics ?? null}
         actions={
           <ApprovalPanel
             apiFetch={apiFetch}

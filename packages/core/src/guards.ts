@@ -291,9 +291,40 @@ export function guardAction(input: GuardActionInput): GuardVerdict {
       "query was not re-run",
     );
     if (isVerdict(current)) return current;
-    const verdict = diffQueryMembership(planned, current);
+    const invoice = refundedInvoice(input.action, planned);
+    const verdict =
+      invoice === null
+        ? diffQueryMembership(planned, current)
+        : diffQueryMembership(onInvoice(planned, invoice), onInvoice(current, invoice));
     if (verdict.decision === "hold") return verdict;
   }
 
   return admit();
+}
+
+/**
+ * The invoice of the charge a refund pays back, as the approved customer-window query recorded
+ * it. Null when it can't be placed on one invoice; the whole query is compared then.
+ */
+function refundedInvoice(action: Action, planned: QueryObservation): string | null {
+  if (action.kind !== "stripe.refund.create") return null;
+  if (planned.predicate.kind !== "stripe.charges.byCustomerInWindow") return null;
+  if (!planned.matchingIds.includes(action.args.chargeId)) return null;
+  const invoice = planned.projections[action.args.chargeId]?.invoice;
+  return typeof invoice === "string" && invoice.length > 0 ? invoice : null;
+}
+
+/**
+ * The members a refund's duplicate pair depends on: charges on its invoice, plus any whose
+ * invoice the read can't name, so an unplaced new charge still holds. A charge for another of
+ * the customer's invoices can't change the pair. Completeness and predicate stay as read.
+ */
+function onInvoice(query: QueryObservation, invoice: string): QueryObservation {
+  return {
+    ...query,
+    matchingIds: query.matchingIds.filter((id) => {
+      const value = query.projections[id]?.invoice;
+      return typeof value !== "string" || value.length === 0 || value === invoice;
+    }),
+  };
 }

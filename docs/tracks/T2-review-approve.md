@@ -60,6 +60,38 @@ See [beyond.md](../beyond.md) for scope, parallel work, external gates and the r
 | T2.24 | _Stretch:_ _Killer:_ Clerk verification UI | M5 | Real verification UI preserves reviewed intent through cancel/stale/retry paths | [#183](https://github.com/SoroushRF/Rehearsal/issues/183) | [T2.23](https://github.com/SoroushRF/Rehearsal/issues/182), [T2.3](https://github.com/SoroushRF/Rehearsal/issues/12) |
 | T2.25 | Distinctive startup demo design for the landing page and the review workspace | M5 | Paper/ink/lime identity, display type and a ledger-style review; fixture/saved/simulator labels, exact-hash approval and message text unchanged; no horizontal overflow, axe clean in light and dark. **Done:** tokens, fonts and ledger layout in `apps/web` only. | [#244](https://github.com/SoroushRF/Rehearsal/issues/244) | |
 
+### Post-hackathon fixes (Oct 25–28)
+
+| ID | Task | Milestone | Done when | Issue | Blocked by |
+|---|---|---|---|---|---|
+| T2.26 | History rehearsal retries respect the pending-revision interlock | M5 | Every start button, main or history row, asks one admission check; a disabled row says why; after the revision exists a row sends the new revision and hash. **Done (fixture):** `startBlocked` in `execution-rehearsal.ts`, browser regressions for failed, cancelled and older-revision rows | [#294](https://github.com/SoroushRF/Rehearsal/issues/294) | |
+| T2.27 | Accessibility scans wait for the plan's entrance fade | M5 | Scans measure settled colors without turning off the contrast rule or adding retries. **Done (fixture):** `violations()` waits until no finite animation runs; a regression slows animations tenfold and fails on the old scan | [#295](https://github.com/SoroushRF/Rehearsal/issues/295) | |
+| T2.28 | Steps with no recorded result aren't called "Never ran" | M5 | Neutral wording where a receipt is missing; contract docs and a regression for a committed effect whose receipt didn't settle | [#296](https://github.com/SoroushRF/Rehearsal/issues/296) | |
+
+### Agent Memory follow-ups (Nov 2026)
+
+| ID | Task | Milestone | Done when | Issue | Blocked by |
+|---|---|---|---|---|---|
+| T2.30 | Agent Memory on the Render deployment: API write key, planner read key | M5 | The Blueprint declares `SURREAL_AGENT_MEMORY_URL` and `_CONTEXT` on the API and planner, `_WRITE_KEY` on the API only and `_READ_KEY` on the planner only, all `sync: false`; the executor and rehearsal worker get none; `render.yaml` matches and the deployment test checks it. **Done (fixture):** `agentMemory()` in `infra/render/blueprint.mjs`, `render.yaml` regenerated, four new checks in `apps/api/test/render-deployment.test.ts`, setup step 6 in `docs/deployment.md`. Not yet: keys minted and set in Render, and a deployed run with memory on | [#389](https://github.com/SoroushRF/Rehearsal/issues/389) | T1.49 |
+| T2.31 | Trace a cited precedent back to its approved version, promoter and source run | M5 | The citation card links each citation's fact IDs to the approved version in the Postgres registry (same id, version and digest), who promoted it and when, and its `sourceRunId`; it says so when the version was never approved, the digest differs, or the registry wasn't loaded. **Done (fixture):** `citationSource` in `PrecedentBasisCard.tsx`; `GET /api/precedents` also returns `digest` (additive); unit tests, a DB test and the precedents e2e spec. Not done: the `GET /traces/{id}` query text (the API would have to call Agent Memory on a read route) | [#388](https://github.com/SoroushRF/Rehearsal/issues/388) | — |
+| T2.32 | Similar active precedents on the promote panel (advisory, never blocking) | M5 | Before finance confirms, the panel shows active precedents in the same area that recall finds similar; promotion works the same without memory. **Done (fixture plus hosted API recall):** `POST /api/runs/:id/precedents/similar` recalls in the org's scope with the API's own key, keeps only the exact active registry version and digest in the same area (statements from Postgres), and always answers 200 with `ok`, `off` or `unavailable`; a new IAM rule (`rehearsal:promote:precedent`); a debounced, non-blocking hint in `PrecedentPanel.tsx`; API tests on Postgres against the fake memory (including more than ten off-area copies, a withdrawal mid-recall and another org with the same id), web unit tests and the precedents e2e spec. Hosted app gate 6/6 on three final runs verifies the route with the API's write key; a deployed API probe also published/read back and recalled in a disposable scope. UI and IAM/model behavior in the gate remain fixture evidence. Not done: aborting entity reads that outlive the 30 s deadline (the client takes no signal). Touches no `packages/memory` code; it only uses its exports | [#397](https://github.com/SoroushRF/Rehearsal/issues/397) | — |
+
+## Startup roadmap (Nov 2026)
+
+Work toward running on real provider accounts. None of it is started; evidence levels are set when each task runs.
+
+| ID | Task | Milestone | Done when | Issue | Blocked by |
+|---|---|---|---|---|---|
+| T2.33 | Public plan submission API with per-org keys | M5 | A plan built outside the repo is submitted, reviewed, approved and applied; a forged observation is refused; keys are org-scoped | [#419](https://github.com/SoroushRF/Rehearsal/issues/419) | [T4.29](https://github.com/SoroushRF/Rehearsal/issues/438), [T2.35](https://github.com/SoroushRF/Rehearsal/issues/421) |
+| T2.34 | MCP server and TypeScript client for submitting plans | M5 | An outside agent plans the seeded incident through MCP; hold reasons come back in a form it can replan from; no approve tool | [#420](https://github.com/SoroushRF/Rehearsal/issues/420) | [T2.33](https://github.com/SoroushRF/Rehearsal/issues/419) |
+| T2.35 | Per-org provider connections and a credential broker | M5 | Planner gets read-only and executor gets write credentials per org; startup checks are allowlists; revoking a connection holds the next send | [#421](https://github.com/SoroushRF/Rehearsal/issues/421) | — |
+| T2.36 | Policy as versioned data | M5 | R1–R5 run from data-defined rules; a new rule is added without a code change; unknown rules fail closed. Needs a decision record | [#422](https://github.com/SoroushRF/Rehearsal/issues/422) | — |
+| T2.37 | Policy simulator: run a proposed policy against past plans | M5 | Lowering the finance threshold lists exactly the plans that would newly need finance; read-only | [#423](https://github.com/SoroushRF/Rehearsal/issues/423) | [T2.36](https://github.com/SoroushRF/Rehearsal/issues/422) |
+| T2.38 | Separation of duties and signed approval grants | M5 | A requester approving their own plan is refused when the option is on; a grant row inserted directly into the database fails admission | [#424](https://github.com/SoroushRF/Rehearsal/issues/424) | — |
+| T2.39 | Obligation ledger view: who is resolved, held, excluded or still owed | M5 | The eight-customer incident shows eight rows before approval and the right dispositions after a run with one hold; Playwright test | [#425](https://github.com/SoroushRF/Rehearsal/issues/425) | [T4.31](https://github.com/SoroushRF/Rehearsal/issues/440) |
+| T2.40 | More than one currency | M5 | A plan with USD and CAD refunds validates against per-currency thresholds; no cross-currency totals; CAD bundles keep their hashes | [#426](https://github.com/SoroushRF/Rehearsal/issues/426) | — |
+| T2.41 | Decision: auto-approve plans that match approved precedents | M5 | A decision record is accepted or rejected; if accepted, follow-up tasks are filed | [#427](https://github.com/SoroushRF/Rehearsal/issues/427) | [T2.36](https://github.com/SoroushRF/Rehearsal/issues/422) |
+
 ## Decisions
 
 _(add dated entries)_
@@ -67,6 +99,8 @@ _(add dated entries)_
 - **2026-10-22:** The demo currency is CAD; the seeded cohort already matches the policy ([0005](../decisions/0005-currency-cad.md)).
 
 ## Handoff log
+
+- **2026-10-28, Parsa (#294, #295, #332).** Branch `t2/294-295-review-fixes`, `apps/web` only. T2.26 and T2.27 done (fixture evidence, rows above). #332's last item, `ProcessDiagram` on the plans page, is superseded: the change-order restyle (#353) chose the one-line stage line (`ProcessSlot`) and dropped the circle diagram from the landing too, so `ProcessDiagram.tsx` is unused. Browser tests ran with `PW_CHANNEL=chrome`. Next: T2.28 (#296) in its own PR, because it touches a `packages/contracts` comment and needs a reviewer from another track.
 
 - **2026-10-25, Parsa (#332, live company UI).** Branch `t2/332-live-company`, `apps/web` only. Signed-in home is Company → Incidents → Plans, Members moved to its own secondary section (#325). `CompanyOverview` reads `GET /api/company` (tabs, counts, lime marker + run link on `changed` rows, old → new against the previous load); `IncidentForm` files `POST /api/incidents` and lists `GET /api/incidents`, each row rehearses by ID only; `RehearseBar` takes `incidentId` (default `INC-BILL-0927`). While a route is not deployed (plain 404) the GETs show the labelled `fixture` and Create problem hides. Kinds offered: `LIVE_KINDS` in `LivePlans.tsx`. **Not done:** `ProcessDiagram` (#333) not on `main` yet; `ProcessSlot` holds its place and `stageOf` gives `active`. After a run finishes the company is refetched and a "See what changed" button appears (no auto-switch, so receipts stay on screen). Evidence: `fixture` (fake API in Playwright).
 

@@ -150,6 +150,11 @@
       "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
     },
     {
+      "action": "POST /api/plans/:id/repair",
+      "rbac": { "anyOf": ["rehearsal:rehearse:incident"] },
+      "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
+    },
+    {
       "action": "POST /api/plans/:id/apply",
       "rbac": { "anyOf": ["rehearsal:apply:plan"] },
       "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
@@ -190,6 +195,11 @@
     },
     {
       "action": "POST /api/runs/:id/precedents",
+      "rbac": { "anyOf": ["rehearsal:promote:precedent"] },
+      "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
+    },
+    {
+      "action": "POST /api/runs/:id/precedents/similar",
       "rbac": { "anyOf": ["rehearsal:promote:precedent"] },
       "abac": [{ "eq": ["subject.orgId", "resource.orgId"] }]
     },

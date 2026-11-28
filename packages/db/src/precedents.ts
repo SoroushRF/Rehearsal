@@ -104,6 +104,20 @@ export async function lockPrecedent(tx: Tx, orgId: string, precedentId: string):
   );
 }
 
+/**
+ * Serializes Agent Memory writes for one precedent (T1.51): a sync's publish and a withdrawal's
+ * marker. Separate from `lockPrecedent`, so a withdrawal request never waits on Agent Memory.
+ */
+export async function lockPrecedentMemory(
+  tx: Tx,
+  orgId: string,
+  precedentId: string,
+): Promise<void> {
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${`rehearsal:precedent-memory:${orgId}:${precedentId}`}, 0))`,
+  );
+}
+
 export async function loadRegistry(db: Exec, orgId: string): Promise<RegistryView> {
   const rows = await db
     .select()
@@ -111,6 +125,15 @@ export async function loadRegistry(db: Exec, orgId: string): Promise<RegistryVie
     .where(eq(precedentEvents.orgId, orgId))
     .orderBy(asc(precedentEvents.seq));
   return deriveRegistry(rows);
+}
+
+/** Every organization with a registry, for operator checks that cover them all. */
+export async function precedentOrgs(db: Exec): Promise<string[]> {
+  const rows = await db
+    .selectDistinct({ orgId: precedentEvents.orgId })
+    .from(precedentEvents)
+    .orderBy(asc(precedentEvents.orgId));
+  return rows.map((r) => r.orgId);
 }
 
 /** The newest approved version of a precedent and the area it belongs to, or null if none. */

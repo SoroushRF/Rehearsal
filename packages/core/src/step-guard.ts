@@ -16,6 +16,7 @@ import {
   guardAction,
   type OwnWriteOverlay,
 } from "./guards";
+import { fingerprint } from "./hash";
 import type { Clock, ProviderPort, WorldContext } from "./ports";
 import { oneRemedyHold, type RemedyStep, remedyOf, type SeenCredit } from "./remedy";
 
@@ -70,19 +71,7 @@ export function createReadGuard(deps: ReadGuardDeps): StepGuard {
   return async (action: Action, context) => {
     const { manifest, confirmedReceipts } = context;
     // One re-read per record and per query, even when several planned observations cite it.
-    const currentObservations: Observation[] = [];
-    const readEntities = new Set<string>();
-    for (const id of action.evidence) {
-      const planned = manifest.observations.find((o) => o.id === id);
-      if (!planned || readEntities.has(entityKey(planned.entity))) continue;
-      readEntities.add(entityKey(planned.entity));
-      const read = await reread(deps, planned.entity.vendor, id, (provider, world) =>
-        provider.observe(planned.entity, world),
-      );
-      if (!read.ok) return read.reason;
-      currentObservations.push(read.value);
-    }
-
+    // Queries go first: a record a query just listed in full is not read again (T3.19).
     const currentQueries: QueryObservation[] = [];
     const readQueries = new Set<string>();
     for (const id of action.queryEvidence) {
@@ -98,6 +87,24 @@ export function createReadGuard(deps: ReadGuardDeps): StepGuard {
       currentQueries.push(read.value);
     }
 
+    const currentObservations: Observation[] = [];
+    const readEntities = new Set<string>();
+    for (const id of action.evidence) {
+      const planned = manifest.observations.find((o) => o.id === id);
+      if (!planned || readEntities.has(entityKey(planned.entity))) continue;
+      readEntities.add(entityKey(planned.entity));
+      const listed = listedIn(currentQueries, planned);
+      if (listed) {
+        currentObservations.push(listed);
+        continue;
+      }
+      const read = await reread(deps, planned.entity.vendor, id, (provider, world) =>
+        provider.observe(planned.entity, world),
+      );
+      if (!read.ok) return read.reason;
+      currentObservations.push(read.value);
+    }
+
     const verdict = guardAction({
       action,
       plannedObservations: manifest.observations,
@@ -108,8 +115,46 @@ export function createReadGuard(deps: ReadGuardDeps): StepGuard {
     });
     if (verdict.decision === "hold") return verdict.reason;
     const remedy = remedyOf(action);
-    return remedy ? readRemedyHold(deps, remedy, context) : null;
+    return remedy ? readRemedyHold(deps, remedy, context, currentObservations) : null;
   };
+}
+
+/** The record kind each query lists, where its rows are whole records of that kind. */
+const LISTS: Partial<Record<QueryObservation["predicate"]["kind"], string>> = {
+  "stripe.charges.byCustomerInWindow": "charge",
+};
+
+/**
+ * The planned record as a query re-read in this same guard call listed it (T3.19). Only a query
+ * that lists that kind of record under the same projection version counts, so the listed row is
+ * the same projection a direct read returns, read later. Anything else is read directly.
+ */
+function listedIn(
+  queries: readonly QueryObservation[],
+  planned: Observation,
+): Observation | undefined {
+  for (const query of queries) {
+    if (
+      query.vendor !== planned.entity.vendor ||
+      LISTS[query.predicate.kind] !== planned.entity.kind ||
+      query.projectionVersion !== planned.projectionVersion ||
+      !query.matchingIds.includes(planned.entity.id)
+    ) {
+      continue;
+    }
+    const projection = query.projections[planned.entity.id];
+    if (!projection) continue;
+    return {
+      id: `obs_${planned.entity.kind}_${planned.entity.id}`,
+      world: query.world,
+      entity: planned.entity,
+      projectionVersion: query.projectionVersion,
+      projection,
+      fingerprint: fingerprint(projection),
+      capturedAt: query.capturedAt,
+    };
+  }
+  return undefined;
 }
 
 /** The kind a Stripe reader lists invoice credits under. The id is the customer. */
@@ -195,6 +240,8 @@ export async function readRemedyHold(
   deps: ReadGuardDeps,
   step: RemedyStep,
   context: StepGuardContext,
+  /** Reads this guard call already made; the charge is read again only if it isn't among them. */
+  fresh: readonly Observation[] = [],
 ): Promise<HoldReason | null> {
   const { manifest, confirmedReceipts, priorRemedies } = context;
   if (!priorRemedies) {
@@ -204,9 +251,11 @@ export async function readRemedyHold(
       detail: "other plans' remedies for this obligation could not be listed",
     };
   }
-  const read = await reread(deps, "stripe", step.id, (provider, world) =>
-    provider.observe({ vendor: "stripe", kind: "charge", id: step.chargeId }, world),
-  );
+  const charge = { vendor: "stripe", kind: "charge", id: step.chargeId } as const;
+  const seen = fresh.find((o) => entityKey(o.entity) === entityKey(charge));
+  const read: Read<Observation> = seen
+    ? { ok: true, value: seen }
+    : await reread(deps, "stripe", step.id, (provider, world) => provider.observe(charge, world));
   if (!read.ok) return read.reason;
   const currentRefunded = read.value.projection.amount_refunded;
   if (typeof currentRefunded !== "number" || !Number.isInteger(currentRefunded)) {

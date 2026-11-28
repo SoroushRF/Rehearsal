@@ -1,6 +1,6 @@
 import { expect, type Route, test } from "@playwright/test";
 import { violations } from "./axe";
-import { V1 } from "./fake-live-api";
+import { V1, V2_HASH } from "./fake-live-api";
 
 const AT = "2026-10-25T12:00:00.000Z";
 const PLAN = "plan_happy";
@@ -45,7 +45,8 @@ function fakeApi(
   const byIdentity: Record<string, Row[]> = opts.seeded ?? {};
   const steps = new Map<string, number>();
   const requests: { identity: string; method: string; path: string; body: unknown }[] = [];
-  const revision = opts.planRevision ?? 1;
+  let revision = opts.planRevision ?? 1;
+  let planHash = V1.planHash;
 
   async function handle(route: Route) {
     const req = route.request();
@@ -58,7 +59,7 @@ function fakeApi(
     const summary = {
       planId: PLAN,
       revision,
-      planHash: V1.planHash,
+      planHash,
       incidentId: "INC-BILL-0927",
       createdAt: AT,
     };
@@ -70,6 +71,21 @@ function fakeApi(
         manifest: { ...V1.manifest, revision },
         latestRevision: revision,
       });
+    // Excluding steps stores the next revision under a new hash.
+    if (path === `/api/plans/${PLAN}/revisions` && req.method() === "POST") {
+      const { excludeActionIds } = body as { excludeActionIds: string[] };
+      revision += 1;
+      planHash = V2_HASH;
+      return json(route, 201, {
+        planId: PLAN,
+        revision,
+        parentRevision: revision - 1,
+        planHash,
+        manifest: { ...V1.manifest, revision },
+        createdAt: AT,
+        dropped: excludeActionIds.map((actionId) => ({ actionId, reason: "reviewer" })),
+      });
+    }
     if (path === `/api/plans/${PLAN}/approvals`) return json(route, 200, { grants: [] });
     if (path === `/api/plans/${PLAN}/runs`) return json(route, 200, { runs: [] });
 
@@ -87,7 +103,11 @@ function fakeApi(
     }
     if (path === `/api/plans/${PLAN}/execution-rehearsals`) {
       if (opts.refuse) return json(route, opts.refuse.status, opts.refuse.body);
-      const b = body as { scenario: { id: string; version: number }; revision: number };
+      const b = body as {
+        scenario: { id: string; version: number };
+        revision: number;
+        planHash: string;
+      };
       const same = mine.find(
         (r) => r.scenario.id === b.scenario.id && r.plan.revision === b.revision,
       );
@@ -95,7 +115,7 @@ function fakeApi(
       const created = row({
         rehearsalId: `rh${String(mine.length + 1).padStart(8, "0")}`,
         scenario: b.scenario,
-        plan: { orgId: "org_demo", planId: PLAN, revision: b.revision, planHash: V1.planHash },
+        plan: { orgId: "org_demo", planId: PLAN, revision: b.revision, planHash: b.planHash },
       });
       mine.push(created);
       steps.set(created.rehearsalId, 0);
@@ -127,7 +147,9 @@ test("a reviewer starts one rehearsal, follows it to the end, and nothing is app
   await page.route("**/api/**", api.handle);
   await page.goto("/e2e/live.html");
 
-  const start = page.getByRole("button", { name: "Rehearse revision 1" });
+  // The failure tests sit behind "Advanced"; the main button is the plain simulation.
+  await page.getByText("Advanced: test against failures").click();
+  const start = page.getByRole("button", { name: "Run this test" });
   await start.waitFor();
   await page.getByLabel(/A new duplicate charge appears/).check();
   // Two quick clicks make one request: the button is busy, then blocked by the job it started.
@@ -160,13 +182,13 @@ test("a running rehearsal can be cancelled; it stops, says so, and can be tried 
   await page.route("**/api/**", api.handle);
   await page.goto("/e2e/live.html");
 
-  await page.getByRole("button", { name: "Rehearse revision 1" }).click();
+  await page.getByRole("button", { name: "Simulate this plan" }).click();
   const item = page.getByTestId("exec-rehearsal");
   await expect(item).toHaveAttribute("data-state", "running", { timeout: 15_000 });
-  await item.getByRole("button", { name: "Cancel rehearsal" }).click();
+  await item.getByRole("button", { name: "Cancel simulation" }).click();
   await expect(item).toHaveAttribute("data-state", "cancelled", { timeout: 15_000 });
   await expect(page.getByTestId("exec-rehearsal-say")).toContainText("read back, not re-sent");
-  await expect(item.getByRole("button", { name: "Cancel rehearsal" })).toHaveCount(0);
+  await expect(item.getByRole("button", { name: "Cancel simulation" })).toHaveCount(0);
   await expect(item.getByRole("button", { name: /Try again/ })).toBeVisible();
 
   const cancels = posts(api).filter((r) => r.path.endsWith("/cancel"));
@@ -186,7 +208,7 @@ test("a progress state is followed live and a failure says why, with a way to tr
   await page.route("**/api/**", api.handle);
   await page.goto("/e2e/live.html");
 
-  await page.getByRole("button", { name: "Rehearse revision 1" }).click();
+  await page.getByRole("button", { name: "Simulate this plan" }).click();
   const item = page.getByTestId("exec-rehearsal");
   await expect(item).toHaveAttribute("data-state", "failed", { timeout: 15_000 });
   await expect(page.getByTestId("exec-rehearsal-say")).toContainText("Era was unreachable.");
@@ -211,9 +233,80 @@ test("a rehearsal of an old revision stays tied to it and the new revision needs
   await expect(item).toContainText("Not the revision you're reviewing");
 
   // The start button is for what is on screen (revision 2), not for the old job.
-  await page.getByRole("button", { name: "Rehearse revision 2" }).click();
+  await page.getByRole("button", { name: "Simulate this plan" }).click();
   await expect(page.getByTestId("exec-rehearsal")).toHaveCount(2);
   expect(posts(api)[0]?.body).toMatchObject({ revision: 2 });
+});
+
+test("while unchecked boxes have no revision, no history row can start a rehearsal", async ({
+  page,
+}) => {
+  const revision2 = { orgId: "org_demo", planId: PLAN, revision: 2, planHash: V1.planHash };
+  const api = fakeApi({
+    planRevision: 2,
+    seeded: {
+      "user_a/org_a": [
+        row({ rehearsalId: "rhfailed01", state: "failed", plan: revision2 }),
+        row({
+          rehearsalId: "rhcancel01",
+          state: "cancelled",
+          scenario: { id: "phantom_membership", version: 1 },
+          plan: revision2,
+        }),
+        row({ rehearsalId: "rholdrev01", state: "completed" }),
+      ],
+    },
+  });
+  await page.route("**/api/**", api.handle);
+  await page.goto("/e2e/live.html");
+
+  const items = page.getByTestId("exec-rehearsal");
+  await expect(items).toHaveCount(3);
+  const rowButtons = page.getByRole("button", { name: /(Try again|Simulate|Run) on revision 2/ });
+  await expect(rowButtons).toHaveCount(3);
+  for (const b of await rowButtons.all()) await expect(b).toBeEnabled();
+
+  await page.getByLabel("Include refund_001").uncheck();
+  await expect(page.getByRole("button", { name: "Simulate this plan" })).toBeDisabled();
+  for (const b of await rowButtons.all()) {
+    await expect(b).toBeDisabled();
+    // A disabled button takes no click, even a forced one.
+    await b.click({ force: true });
+  }
+  await expect(page.getByTestId("exec-rehearsal-row-blocked")).toHaveText(
+    Array(3).fill("Create the revision first; a rehearsal runs the exact stored plan."),
+  );
+  expect(posts(api)).toEqual([]);
+});
+
+test("once the revision exists, a history row rehearses that revision and its new hash", async ({
+  page,
+}) => {
+  const api = fakeApi({
+    seeded: { "user_a/org_a": [row({ rehearsalId: "rhfailed01", state: "failed" })] },
+  });
+  await page.route("**/api/**", api.handle);
+  await page.goto("/e2e/live.html");
+
+  const retry = page.getByRole("button", { name: "Try again on revision 1" });
+  await page.getByLabel("Include refund_001").uncheck();
+  await expect(retry).toBeDisabled();
+  await page.getByRole("button", { name: "Create revision 2" }).click();
+
+  const next = page.getByRole("button", { name: "Try again on revision 2" });
+  await expect(next).toBeEnabled();
+  await expect(page.getByTestId("exec-rehearsal-row-blocked")).toHaveCount(0);
+  await next.click();
+  await expect(page.getByTestId("exec-rehearsal")).toHaveCount(2);
+
+  const started = posts(api).filter((r) => r.path.endsWith("/execution-rehearsals"));
+  // Still references only: the stored plan's new revision and hash, and a scenario.
+  expect(started.map((r) => r.body)).toEqual([
+    { planId: PLAN, revision: 2, planHash: V2_HASH, scenario: { id: "clean", version: 1 } },
+  ]);
+  expect(api.requests.some((r) => /approvals|apply/.test(r.path) && r.method === "POST")).toBe(
+    false,
+  );
 });
 
 test("a refusal is explained in plain words", async ({ page }) => {
@@ -222,7 +315,7 @@ test("a refusal is explained in plain words", async ({ page }) => {
   });
   await page.route("**/api/**", api.handle);
   await page.goto("/e2e/live.html");
-  await page.getByRole("button", { name: "Rehearse revision 1" }).click();
+  await page.getByRole("button", { name: "Simulate this plan" }).click();
   await expect(page.getByTestId("exec-rehearsal-error")).toContainText("A newer revision (3)");
 });
 
@@ -250,13 +343,14 @@ test("switching organization drops the previous org's rehearsals and pending sta
   await page.goto("/e2e/live.html");
 
   await expect(page.getByTestId("exec-rehearsal")).toHaveCount(1);
+  await page.getByText("Advanced: test against failures").click();
   await page.getByLabel(/An unrelated change/).check();
 
   await page.getByRole("button", { name: "Switch to org B" }).click();
-  await expect(page.getByRole("button", { name: "Rehearse revision 1" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Simulate this plan" })).toBeVisible();
   await expect(page.getByTestId("exec-rehearsal")).toHaveCount(0);
-  // The scenario picked for A is not carried over.
-  await expect(page.getByLabel(/Clean control/)).toBeChecked();
+  // The challenge picked for A is not carried over.
+  await expect(page.getByLabel(/A new duplicate charge appears/)).toBeChecked();
 
   await page.getByRole("button", { name: "Be user A in org A" }).click();
   await expect(page.getByTestId("exec-rehearsal")).toHaveCount(1);

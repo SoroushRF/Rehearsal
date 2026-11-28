@@ -1,4 +1,5 @@
 import { IAM_CLIENT_ENV, IAM_SERVER_ENV } from "@rehearsal/iam/boot";
+import { MEMORY_WRITE_KEY_ENV } from "@rehearsal/memory";
 import { REHEARSAL_CREDENTIALS } from "@rehearsal/providers";
 
 /**
@@ -6,7 +7,8 @@ import { REHEARSAL_CREDENTIALS } from "@rehearsal/providers";
  * tenant tokens through the operator with PLANNER_WORKER_SECRET; it never holds the admin token,
  * operational-world URLs, or the executor's secret (which would mint operational tokens). It has no
  * database either: it takes jobs and stores plans through the API, so nothing it runs can write an
- * approval or a run (docs/decisions/0006-planner-jobs-through-api.md).
+ * approval or a run (docs/decisions/0006-planner-jobs-through-api.md). Its Agent Memory key only
+ * reads: a planner that could write memory could plant the precedents it then cites (#365).
  */
 export const PLANNER_FORBIDDEN = [
   "ERA_STRIPE_OPERATIONAL_URL",
@@ -21,6 +23,8 @@ export const PLANNER_FORBIDDEN = [
   ...IAM_SERVER_ENV,
   // Execution rehearsal (decision 0013): its admin token, worker secret and worlds.
   ...REHEARSAL_CREDENTIALS,
+  // Agent Memory: the API's write key, the operator's admin key and the old shared key.
+  ...MEMORY_WRITE_KEY_ENV,
 ] as const;
 
 export function plannerCredentialViolations(env: NodeJS.ProcessEnv = process.env): string[] {

@@ -1,4 +1,9 @@
-import { Sha256Hex, StoredIncident } from "@rehearsal/contracts";
+import {
+  PlanManifest,
+  type PrecedentRecallDiagnostics,
+  Sha256Hex,
+  StoredIncident,
+} from "@rehearsal/contracts";
 import { z } from "zod";
 
 /**
@@ -38,6 +43,23 @@ export const PlanJobIncident = StoredIncident.pick({
 });
 export type PlanJobIncident = z.infer<typeof PlanJobIncident>;
 
+/**
+ * T1.37: a repair of a held run (decision 0016). The worker has no database, so the job carries the
+ * base revision; the API checks the returned plan against its own stored copy, not this one.
+ */
+export const PlanJobRepair = z.strictObject({
+  base: PlanManifest,
+  basePlanHash: Sha256Hex,
+  runId: z.string().min(1),
+  /** Confirmed steps of the base, adopted verbatim. */
+  kept: z.array(z.string().min(1)),
+  /** The cases still open; only their customers are planned again. */
+  openCases: z.array(z.string().min(1)).min(1),
+  /** Why each replaced step stopped, for the brief. */
+  stopped: z.array(z.strictObject({ id: z.string().min(1), why: z.string().min(1).max(500) })),
+});
+export type PlanJobRepair = z.infer<typeof PlanJobRepair>;
+
 /** A request to rehearse one incident for one org. The plan ID is fixed when the job is created. */
 export const PlanJob = z.object({
   orgId: z.string().min(1),
@@ -47,6 +69,7 @@ export const PlanJob = z.object({
   /** Absent when precedents aren't wired (core mode): the plan then carries no basis. */
   precedents: PlanJobRegistry.optional(),
   incident: PlanJobIncident.optional(),
+  repair: PlanJobRepair.optional(),
 });
 export type PlanJob = z.infer<typeof PlanJob>;
 
@@ -65,15 +88,44 @@ export function registryOfJob(r: PlanJobRegistry): {
   };
 }
 
+/** Request history is diagnostic data, never execution authority or confirmed token usage. */
+export const PlanModelAttempt = z.strictObject({
+  turn: z.int().positive(),
+  attempt: z.int().positive(),
+  outcome: z.enum([
+    "succeeded",
+    "timeout",
+    "rate_limit",
+    "conflict",
+    "network",
+    "server_error",
+    "error",
+    "aborted",
+  ]),
+  reservedOutputTokens: z.int().positive(),
+});
+export const PlanModelAttempts = z.array(PlanModelAttempt).max(44);
+
 export interface CompletePlanJob {
   manifest: unknown;
   summary: string;
-  stats?: { turns: number; toolCalls: number; usage: Record<string, number> };
+  stats?: {
+    turns: number;
+    toolCalls: number;
+    usage: Record<string, number>;
+    modelAttempts?: z.infer<typeof PlanModelAttempts>;
+    /**
+     * Why each precedent was or wasn't recalled (T1.54). Stored beside the plan, never in the
+     * manifest. In `stats` because that object isn't strict, so an older API drops it unread.
+     */
+    recallDiagnostics?: PrecedentRecallDiagnostics;
+  };
 }
 
 export interface FailPlanJob {
   reason: string;
   message: string;
+  modelAttempts?: z.infer<typeof PlanModelAttempts>;
 }
 
 /**

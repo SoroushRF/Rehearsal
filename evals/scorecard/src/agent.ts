@@ -286,7 +286,7 @@ export async function runAgent(
       tool: "propose_run_summary",
       input: {},
       channelId: SUMMARY_CHANNEL,
-      incidentId: INCIDENT.incident,
+      incidentId: meta.incidentId,
     });
   }
 

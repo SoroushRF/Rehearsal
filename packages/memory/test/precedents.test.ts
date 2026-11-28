@@ -263,6 +263,75 @@ describe("recall", () => {
   });
 });
 
+describe("markWithdrawn (T1.51)", () => {
+  const id = "duplicate-charge-refund";
+
+  it("overwrites the copy: it reads as withdrawn, history keeps the approved version, recall drops it", async () => {
+    const { store } = setup();
+    await store.publish(precedent());
+    const marked = await store.markWithdrawn(id, 1);
+    expect(marked).toEqual({
+      id,
+      version: 1,
+      factIds: expect.any(Array),
+      scope: SCOPE,
+      written: true,
+    });
+    expect(marked.factIds).toHaveLength(3);
+    expect(await store.read(id)).toEqual({
+      status: "withdrawn",
+      version: 1,
+      factIds: marked.factIds,
+    });
+
+    const history = await store.history(id);
+    expect(history.map((h) => [h.record?.version ?? h.reason, h.superseded])).toEqual([
+      ["withdrawal marker for v1", false],
+      [1, true],
+    ]);
+
+    const recall = await store.recall("duplicate charge refund");
+    expect(recall.precedents).toEqual([]);
+    expect(recall.rejected).toEqual([{ id, reason: "withdrawn at v1" }]);
+  });
+
+  it("writes nothing when the same version is marked again, so the outbox can retry", async () => {
+    const { fake, store } = setup();
+    await store.publish(precedent());
+    const first = await store.markWithdrawn(id, 1);
+    const writes = fake.writes;
+    expect(await store.markWithdrawn(id, 1)).toEqual({ ...first, written: false });
+    expect(fake.writes).toBe(writes);
+  });
+
+  it("refuses to cover a newer stored version, or a newer marker", async () => {
+    const { fake, store } = setup();
+    await store.publish(precedent({ version: 2 }));
+    await expect(store.markWithdrawn(id, 1)).rejects.toThrow(PrecedentConflictError);
+    await store.markWithdrawn(id, 2);
+    await expect(store.markWithdrawn(id, 1)).rejects.toThrow(PrecedentConflictError);
+    expect(await store.read(id)).toMatchObject({ status: "withdrawn", version: 2 });
+    expect(fake.writes).toBe(2);
+  });
+
+  it("is replaced by the next published version", async () => {
+    const { store } = setup();
+    await store.publish(precedent());
+    await store.markWithdrawn(id, 1);
+    const v2 = precedent({ version: 2, statement: "Refund within 60 days instead." });
+    expect(await store.publish(v2)).toMatchObject({ version: 2, written: true });
+    expect(await store.read(id)).toMatchObject({ status: "valid", record: v2 });
+    const recall = await store.recall("duplicate charge refund");
+    expect(recall.precedents.map((p) => [p.id, p.version])).toEqual([[id, 2]]);
+  });
+
+  it("marks a precedent memory never held, so a lost copy can't reappear as approved", async () => {
+    const { store } = setup();
+    expect(await store.markWithdrawn(id, 1)).toMatchObject({ written: true });
+    expect(await store.read(id)).toMatchObject({ status: "withdrawn", version: 1 });
+  });
+});
+
 describe("options", () => {
   const { client } = setup();
   it("needs a valid scope and k", () => {

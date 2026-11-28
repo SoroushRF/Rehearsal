@@ -57,8 +57,8 @@ export type ScenarioInfo = { id: RehearsalScenarioId; title: string; what: strin
 export const SCENARIOS: readonly ScenarioInfo[] = [
   {
     id: "clean",
-    title: "Clean control",
-    what: "Nothing goes wrong. Shows what the plan does when the world matches the evidence.",
+    title: "Simulation",
+    what: "Runs the plan the way Apply would, in a replica of the company, with nothing going wrong.",
   },
   {
     id: "phantom_membership",
@@ -81,6 +81,11 @@ export const SCENARIOS: readonly ScenarioInfo[] = [
     what: "Something changes that doesn't concern the plan. Nothing should be held for it.",
   },
 ];
+/** The simulation: the plan run as Apply would run it, nothing injected. The panel's main button. */
+export const SIMULATION: RehearsalScenarioId = "clean";
+/** The failure tests, behind "Advanced" on the panel. */
+export const CHALLENGES = SCENARIOS.filter((s) => s.id !== SIMULATION);
+
 export const scenarioInfo = (id: RehearsalScenarioId): ScenarioInfo =>
   SCENARIOS.find((s) => s.id === id) ?? { id, title: id, what: "" };
 
@@ -146,6 +151,28 @@ export function activeFor(
     (r) =>
       !isTerminal(r.state) && r.scenario.id === scenario && relationTo(r, current) === "current",
   );
+}
+
+/** Why the panel shows for a start it won't send. */
+export const CREATE_REVISION_FIRST =
+  "Create the revision first; a rehearsal runs the exact stored plan.";
+
+/**
+ * Why a rehearsal of `scenario` can't start for the plan on screen, or null when it can. Every
+ * start button asks this, the main one and each history row's, so none of them skips a check.
+ * `editing`: boxes are unchecked and no revision holds that change yet.
+ */
+export function startBlocked(
+  list: readonly ExecutionRehearsalSummary[],
+  current: CurrentPlan,
+  scenario: RehearsalScenarioId,
+  editing: boolean,
+): string | null {
+  if (editing) return CREATE_REVISION_FIRST;
+  const running = activeFor(list, current, scenario);
+  if (!running) return null;
+  const state = stateCopy[running.state].label.toLowerCase();
+  return `${scenarioInfo(scenario).title} is already ${state} for revision ${current.revision}.`;
 }
 
 /** Newest first, by when each was requested. */

@@ -93,7 +93,7 @@ test("G1: the clean rehearsal shows the verifier's report, labelled as Era evide
   page,
 }) => {
   await openPlan(page, state.plans.main);
-  const { item, view } = await reportOf(page, "Clean control", "completed");
+  const { item, view } = await reportOf(page, "Simulation", "completed");
   await expect(item).toHaveAttribute("data-relation", "current");
   await expect(view).toHaveAttribute("data-verdict", "passed");
   await expect(view).toHaveAttribute("data-state", "completed");
@@ -151,7 +151,7 @@ test("G3: a cancelled rehearsal says cancelled, not passed, and shows what ran",
   page,
 }) => {
   await openPlan(page, state.plans.main);
-  const { item, view } = await reportOf(page, "Clean control", "cancelled");
+  const { item, view } = await reportOf(page, "Simulation", "cancelled");
   await expect(item.getByTestId("exec-rehearsal-say")).toContainText("cancelled");
   await expect(view).toHaveAttribute("data-state", "cancelled");
   await expect(view).not.toHaveAttribute("data-verdict", "passed");

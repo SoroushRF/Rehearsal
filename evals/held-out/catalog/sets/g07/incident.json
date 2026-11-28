@@ -1,0 +1,214 @@
+{
+  "incident": "INC-BILL-2707",
+  "summary": "A July payment-provider failover retried settled charges.",
+  "window": {
+    "createdGte": "2027-07-04T00:00:00.000Z",
+    "createdLt": "2027-07-18T00:00:00.000Z"
+  },
+  "ids": {
+    "prefix": "INC2707",
+    "ticketBase": 9607001
+  },
+  "cases": [
+    {
+      "key": "a01",
+      "kind": "duplicate",
+      "customerId": "cus_ZFvLhCSdFgZvtwGo",
+      "name": "Harbor Forge",
+      "email": "finance@harbor-forge.example",
+      "requesterId": 3007000,
+      "amountMinor": 3650,
+      "currency": "cad",
+      "chargedAt": "2027-07-15T06:00:00.000Z"
+    },
+    {
+      "key": "a02",
+      "kind": "duplicate",
+      "customerId": "cus_IoIiuOytiYIcWKWs",
+      "name": "Dune Telemetry",
+      "email": "finance@dune-telemetry.example",
+      "requesterId": 3007001,
+      "amountMinor": 7373,
+      "currency": "cad",
+      "chargedAt": "2027-07-09T06:00:00.000Z"
+    },
+    {
+      "key": "a03",
+      "kind": "duplicate",
+      "customerId": "cus_ICsdKsviIoBqoKcl",
+      "name": "Russet Glassworks",
+      "email": "ap@russet-glassworks.example",
+      "requesterId": 3007002,
+      "amountMinor": 9997,
+      "currency": "cad",
+      "chargedAt": "2027-07-13T08:00:00.000Z"
+    },
+    {
+      "key": "a04",
+      "kind": "duplicate",
+      "customerId": "cus_eqyeLhJmOCHvcnmG",
+      "name": "Vantage Mills",
+      "email": "admin@vantage-mills.example",
+      "requesterId": 3007003,
+      "amountMinor": 10000,
+      "currency": "cad",
+      "chargedAt": "2027-07-07T10:00:00.000Z"
+    },
+    {
+      "key": "a05",
+      "kind": "duplicate",
+      "customerId": "cus_WQmGNNnPcTPtLHAC",
+      "name": "Lumen Hydroponics",
+      "email": "ap@lumen-hydroponics.example",
+      "requesterId": 3007004,
+      "amountMinor": 27740,
+      "currency": "cad",
+      "chargedAt": "2027-07-06T14:00:00.000Z"
+    },
+    {
+      "key": "a06",
+      "kind": "duplicate",
+      "customerId": "cus_zfRemyaSwdDIWuRI",
+      "name": "Garnet Apiaries",
+      "email": "ops@garnet-apiaries.example",
+      "requesterId": 3007005,
+      "amountMinor": 6633,
+      "currency": "cad",
+      "chargedAt": "2027-07-08T15:00:00.000Z",
+      "billingCurrency": "usd"
+    },
+    {
+      "key": "a07",
+      "kind": "duplicate",
+      "customerId": "cus_svbgFWrkNvVhxAof",
+      "name": "Birch Cartography",
+      "email": "ops@birch-cartography.example",
+      "requesterId": 3007006,
+      "amountMinor": 3687,
+      "currency": "cad",
+      "chargedAt": "2027-07-16T15:00:00.000Z",
+      "ticketExternalId": "cus_hOxiabVeFNEyGHMZ"
+    },
+    {
+      "key": "a08",
+      "kind": "duplicate",
+      "customerId": "cus_ysXeiXPECWcAcvdE",
+      "name": "Lumen Kitchens",
+      "email": "payables@lumen-kitchens.example",
+      "requesterId": 3007007,
+      "amountMinor": 2498,
+      "currency": "cad",
+      "chargedAt": "2027-07-04T00:00:00.000Z"
+    },
+    {
+      "key": "a09",
+      "kind": "duplicate",
+      "customerId": "cus_lmEUlxXLPhymmKsB",
+      "name": "Kestrel Freight",
+      "email": "accounts@kestrel-freight.example",
+      "requesterId": 3007008,
+      "amountMinor": 9486,
+      "currency": "cad",
+      "chargedAt": "2027-07-17T23:58:00.000Z"
+    },
+    {
+      "key": "a10",
+      "kind": "duplicate",
+      "customerId": "cus_LppDNWveiboChOkT",
+      "name": "Ember Cartography",
+      "email": "admin@ember-cartography.example",
+      "requesterId": 3007009,
+      "amountMinor": 5429,
+      "currency": "cad",
+      "chargedAt": "2027-07-17T23:59:00.000Z"
+    },
+    {
+      "key": "a11",
+      "kind": "triple",
+      "customerId": "cus_WfffyXirnaxVrCmC",
+      "name": "Indigo Forge",
+      "email": "ap@indigo-forge.example",
+      "requesterId": 3007010,
+      "amountMinor": 4160,
+      "currency": "cad",
+      "chargedAt": "2027-07-16T09:00:00.000Z"
+    },
+    {
+      "key": "a12",
+      "kind": "duplicate",
+      "customerId": "cus_BEKURUSWcVdjLwIB",
+      "name": "Nimbus Nursery",
+      "email": "admin@nimbus-nursery.example",
+      "requesterId": 3007011,
+      "amountMinor": 2432,
+      "currency": "cad",
+      "chargedAt": "2027-07-15T12:00:00.000Z"
+    },
+    {
+      "key": "a13",
+      "kind": "duplicate",
+      "customerId": "cus_jIcwIeJyKUaQtJdX",
+      "name": "Kelp Outfitters",
+      "email": "payables@kelp-outfitters.example",
+      "requesterId": 3007012,
+      "amountMinor": 4071,
+      "currency": "cad",
+      "chargedAt": "2027-07-10T18:00:00.000Z"
+    },
+    {
+      "key": "a14",
+      "kind": "duplicate",
+      "customerId": "cus_tADfXWYQGJlaMzlw",
+      "name": "Fjord Brewing",
+      "email": "admin@fjord-brewing.example",
+      "requesterId": 3007013,
+      "amountMinor": 3735,
+      "currency": "cad",
+      "chargedAt": "2027-07-14T11:00:00.000Z"
+    },
+    {
+      "key": "n01",
+      "kind": "control_distinct",
+      "customerId": "cus_nNbOtkSENeXlHTgE",
+      "name": "Pinecrest Nursery",
+      "email": "accounts@pinecrest-nursery.example",
+      "requesterId": 3007014,
+      "amountMinor": 9208,
+      "currency": "cad",
+      "chargedAt": "2027-07-13T11:00:00.000Z"
+    },
+    {
+      "key": "n02",
+      "kind": "control_other_currency",
+      "customerId": "cus_zJZwdwlYyCRRSRep",
+      "name": "Fjord Surveying",
+      "email": "payables@fjord-surveying.example",
+      "requesterId": 3007015,
+      "amountMinor": 6862,
+      "currency": "usd",
+      "chargedAt": "2027-07-16T17:00:00.000Z"
+    },
+    {
+      "key": "n03",
+      "kind": "control_outside_window",
+      "customerId": "cus_jpDHXDHfagXVBepY",
+      "name": "Fern Kitchens",
+      "email": "billing@fern-kitchens.example",
+      "requesterId": 3007016,
+      "amountMinor": 8863,
+      "currency": "cad",
+      "chargedAt": "2027-07-02T00:00:00.000Z"
+    },
+    {
+      "key": "n04",
+      "kind": "control_failed_retry",
+      "customerId": "cus_FcOGIkbgKgtdkqLv",
+      "name": "Elm Clinics",
+      "email": "accounts@elm-clinics.example",
+      "requesterId": 3007017,
+      "amountMinor": 2716,
+      "currency": "cad",
+      "chargedAt": "2027-07-16T08:00:00.000Z"
+    }
+  ]
+}
