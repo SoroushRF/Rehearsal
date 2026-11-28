@@ -64,7 +64,7 @@ See [beyond.md](../beyond.md) for scope, parallel work, external gates and the r
 |---|---|---|---|---|---|
 | T4.11 | _Beyond:_ Allowlisted rehearsal challenges and controls | M5 | Versioned scoped phantom/conflict/lost-response challenges include benign controls. **Done (fixture):** `packages/core/src/challenges.ts`, `scenarios/billing/challenges.v1.json`, `scripts/inject/challenge.ts`. The runner still only applies `clean` (T3.16). Era: not run | [#169](https://github.com/SoroushRF/Rehearsal/issues/169) | [T1.21](https://github.com/SoroushRF/Rehearsal/issues/163), [T4.2](https://github.com/SoroushRF/Rehearsal/issues/26), [T4.4](https://github.com/SoroushRF/Rehearsal/issues/28) |
 | T4.12 | _Beyond:_ Independent verifier for observed rehearsal effects | M5 | Provider reads verify full-operation effects independently of receipt labels. **Done (fixture):** `packages/core/src/verifier.ts` judges reads, not receipt labels. The runner calls it before teardown when a `verify` hook is bound. Era: two tests in `evals/providers/test/rehearsal-run.test.ts`, not run | [#173](https://github.com/SoroushRF/Rehearsal/issues/173) | [T3.15](https://github.com/SoroushRF/Rehearsal/issues/168), [T4.11](https://github.com/SoroushRF/Rehearsal/issues/169) |
-| T4.13 | _Beyond:_ Integrated isolation and recovery acceptance gate | M5 | Real end-to-end isolation/recovery gate passes with full precedent integration. Gate spec: [T4.13-isolation-recovery-gate.md](../acceptance/T4.13-isolation-recovery-gate.md). **Run 2026-10-25 on `ca95d7a`: not passed.** 20 of 21 operator checks and 6 of 6 UI checks passed; G2's misrouted worker isn't refused ([#323](https://github.com/SoroushRF/Rehearsal/issues/323)). Script `scripts/smoke/rehearsal-gate.ts`, spec `apps/web/e2e/rehearsal-gate-live.spec.ts`. Record in the handoff log | [#175](https://github.com/SoroushRF/Rehearsal/issues/175) | [T3.16](https://github.com/SoroushRF/Rehearsal/issues/170), [T2.20](https://github.com/SoroushRF/Rehearsal/issues/172), [T2.21](https://github.com/SoroushRF/Rehearsal/issues/174), [T4.12](https://github.com/SoroushRF/Rehearsal/issues/173), [T1.8](https://github.com/SoroushRF/Rehearsal/issues/9), [T2.17](https://github.com/SoroushRF/Rehearsal/issues/147) |
+| T4.13 | _Beyond:_ Integrated isolation and recovery acceptance gate | M6 | Real end-to-end isolation/recovery gate passes with full precedent integration. Gate spec: [T4.13-isolation-recovery-gate.md](../acceptance/T4.13-isolation-recovery-gate.md). **Run 2026-10-25 on `ca95d7a`: not passed.** 20 of 21 operator checks and 6 of 6 UI checks passed; G2's misrouted worker isn't refused ([#323](https://github.com/SoroushRF/Rehearsal/issues/323)). Script `scripts/smoke/rehearsal-gate.ts`, spec `apps/web/e2e/rehearsal-gate-live.spec.ts`. Record in the handoff log | [#175](https://github.com/SoroushRF/Rehearsal/issues/175) | [T3.16](https://github.com/SoroushRF/Rehearsal/issues/170), [T2.20](https://github.com/SoroushRF/Rehearsal/issues/172), [T2.21](https://github.com/SoroushRF/Rehearsal/issues/174), [T4.12](https://github.com/SoroushRF/Rehearsal/issues/173), [T1.8](https://github.com/SoroushRF/Rehearsal/issues/9), [T2.17](https://github.com/SoroushRF/Rehearsal/issues/147) |
 | T4.14 | _Stretch:_ _Killer:_ Held-out incident datasets and independent gold | M5 | Three disjoint incident sets have independently authored hidden gold. **Owner:** @SoroushRF (benchmark task). **Done (fixture):** `evals/held-out` (sets, gold, integrity/gold/separation tests). Era seeding: `evals/held-out/test/era-seed.test.ts`, not run yet | [#179](https://github.com/SoroushRF/Rehearsal/issues/179) | [T1.2](https://github.com/SoroushRF/Rehearsal/issues/3), [T1.19](https://github.com/SoroushRF/Rehearsal/issues/144) |
 
 ## Benchmark fixes (Oct 25)
@@ -80,9 +80,28 @@ Work toward running on real provider accounts. None of it is started; evidence l
 
 | ID | Task | Milestone | Done when | Issue | Blocked by |
 |---|---|---|---|---|---|
-| T4.29 | Derive obligation keys on the server from the target | M5 | Two actions on the same charge with different planner-supplied IDs resolve to one obligation; existing bundles unchanged | [#438](https://github.com/SoroushRF/Rehearsal/issues/438) | — |
-| T4.30 | Pin the plan hash: RFC 8785 test vectors and golden hashes per manifest version | M5 | The vectors pass; adding a defaulted schema field does not change any golden hash | [#439](https://github.com/SoroushRF/Rehearsal/issues/439) | — |
-| T4.31 | Completeness audit: a disposition for every customer in scope | M5 | A plan that leaves out one eligible customer is reported incomplete with the outstanding amount; a held step shows as unresolved; no model call | [#440](https://github.com/SoroushRF/Rehearsal/issues/440) | [T4.29](https://github.com/SoroushRF/Rehearsal/issues/438) |
+| T4.29 | Derive obligation keys on the server from the target | M6 | Key = (org, verified provider account, excess charge), with no group collapse ([decision 0018](../decisions/0018-dispatch-ownership-and-obligation-claims.md)); two actions on the same charge with different planner-supplied IDs resolve to one obligation; existing bundles unchanged | [#438](https://github.com/SoroushRF/Rehearsal/issues/438) | — |
+| T4.30 | Pin the plan hash: RFC 8785 test vectors and golden hashes per manifest version | M6 | The vectors pass; adding a defaulted schema field does not change any golden hash; golden canonical bytes, hashes and `operationKey` vectors per manifest version | [#439](https://github.com/SoroushRF/Rehearsal/issues/439) | — |
+| T4.31 | Completeness audit: a disposition for every customer in scope | M7 | A plan that leaves out one eligible customer is reported incomplete with the outstanding amount; a held step shows as unresolved; no model call | [#440](https://github.com/SoroushRF/Rehearsal/issues/440) | [T4.29](https://github.com/SoroushRF/Rehearsal/issues/438) |
+
+## Code-review findings (Nov 2026)
+
+Filed from a read-only review of commit 4fc2f19; nothing was run. Evidence is `fixture` until a task says otherwise.
+
+| ID | Task | Milestone | Done when | Issue | Blocked by |
+|---|---|---|---|---|---|
+| T4.32 | A step with an empty evidence list passes its guard with no re-read | M6 | A ticket step with empty evidence is refused at admission; the run summary still passes | [#457](https://github.com/SoroushRF/Rehearsal/issues/457) | — |
+| T4.33 | The guard before a public reply ignores new comments and reassignment | M6 | A new public comment or a change of assignee holds a pending public reply; a priority-only change still admits a note | [#458](https://github.com/SoroushRF/Rehearsal/issues/458) | — |
+
+## Engine roadmap (decisions 0017–0019)
+
+**Proposed.** These rows need agreement from the owning tracks before implementation; see the linked decision in each row.
+
+| ID | Task | Milestone | Done when | Issue | Blocked by |
+|---|---|---|---|---|---|
+| T4.34 | Enforce the admission commitments v1 already stores | M6 | `ApprovalGrant.policies` is exposed and kept; editing a policy, template or projection version in place makes admission refuse a plan approved before; one documented legacy rule ([decision 0019](../decisions/0019-plan-hash-commitments-and-manifest-v2.md)) | [#469](https://github.com/SoroushRF/Rehearsal/issues/469) | — |
+| T4.35 | PlanManifest v2: one batched breaking migration | M8 | v2 binds verified account identity, policy/template/semantics digests, producer metadata, extensible bindings and server-derived labels; dual readers ship first; every v1 golden hash unchanged ([decision 0019](../decisions/0019-plan-hash-commitments-and-manifest-v2.md)) | [#470](https://github.com/SoroushRF/Rehearsal/issues/470) | [T4.30](https://github.com/SoroushRF/Rehearsal/issues/439), [T3.42](https://github.com/SoroushRF/Rehearsal/issues/468) |
+| T4.36 | Offline TypeScript verification CLI | M8 | `rehearsal check` and `verify` validate schema, DAG and policy and recompute the hash with no server, credentials or network; matches the T4.30 vectors ([decision 0019](../decisions/0019-plan-hash-commitments-and-manifest-v2.md)) | [#471](https://github.com/SoroushRF/Rehearsal/issues/471) | [T4.30](https://github.com/SoroushRF/Rehearsal/issues/439) |
 
 ## Decisions
 
@@ -90,6 +109,8 @@ Work toward running on real provider accounts. None of it is started; evidence l
 - **2026-10-21.** A missing, incomplete, or mismatched re-check holds the step as `evidence_unavailable`. It is never treated as proof that the approved rows and query membership are unchanged.
 
 ## Handoff log
+
+- **2026-11-27 (Claude session for the T1 owner, M6–M9 board sync).** Rows moved to M6–M9. New rows T4.34–T4.36 (#469–#471) are **proposed** under decision 0019 and need agreement from the T2, T3 and T4 owners before implementation. T4.29's key is now (org, verified account, excess charge) with no group collapse. Rows added for T4.32 and T4.33 (#457, #458). No code changed; no ML work (decision 0008).
 
 - **2026-10-25 (skhdemo).** #333 process diagram and two-path landing, branch `t4/333-diagram-landing`.
 - **2026-10-25 (Claude for @SoroushRF, T4.13 run).** Ran the gate on `ca95d7a`: **not passed.** A worker pointed at a shared world isn't refused ([#323](https://github.com/SoroushRF/Rehearsal/issues/323)); everything else passed. The run also found and fixed a sweeper race on cancel ([#322](https://github.com/SoroushRF/Rehearsal/pull/322)). The full record is under [2026-10-25, T4.13 gate record](#2026-10-25-t413-gate-record-g4-not-passed).
