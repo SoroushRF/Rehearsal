@@ -1,6 +1,6 @@
 # 0018: Dispatch ownership, cross-plan obligation claims, and causal receipts
 
-**Status:** proposed 2026-11-25 (Soroush, T1). Governs T3 journal/executor/locking and T4 obligation guards; requires review from T3 (@ArtinMe) and T4 (@skhdemo) before filing `T3.36`–`T3.41` or changing executor, journal, or guard code.
+**Status:** proposed 2026-11-25 (Soroush, T1). Governs T3 journal/executor/locking and T4 obligation guards; requires review from T3 (@ArtinMe) and T4 (@skhdemo) before implementation of `T3.36`–`T3.41` or any change to executor, journal, or guard code.
 
 ## Context
 

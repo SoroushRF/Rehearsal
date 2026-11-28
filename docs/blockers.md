@@ -7,7 +7,7 @@
 
 ## How it stays current
 
-A GitHub Action ([`blocker-board`](../.github/workflows/blockers.yml)) regenerates the board when an issue is opened, closed, reopened or edited, and on every push to `main`, which includes every merge. It also runs every 10 minutes, and that run picks up newly opened PRs and pushed branches. It deliberately doesn't run on PR events, so it never adds a check to anyone's PR. It publishes to the `status` branch because `main` only accepts PRs with green CI, which the Actions bot can't open for itself.
+A GitHub Action ([`blocker-board`](../.github/workflows/blockers.yml)) regenerates the board when an issue is opened, closed, reopened, edited, deleted or given a milestone, and on every push to `main`, which includes every merge. It also runs every 10 minutes, and that run picks up newly opened PRs and pushed branches. It deliberately doesn't run on PR events, so it never adds a check to anyone's PR. It publishes to the `status` branch because `main` only accepts PRs with green CI, which the Actions bot can't open for itself.
 
 Status comes from GitHub:
 
@@ -25,9 +25,9 @@ Status comes from GitHub:
 
 The [Oct 24 scope and handoff map](beyond.md) records 15 beyond, 8 optional killer and 2 additional benchmark tasks. Their rows live in the same track tables, so this generator includes cross-track blockers and reverse/transitive links without a second board. ML work is excluded from the new graph.
 
-The table columns remain the source of truth. Issue bodies and native GitHub blocked-by relationships mirror the direct edges; change all three together when a dependency changes. Editing only GitHub dependencies does not update this generated board. New rows appear on the live board after their documentation PR merges to main; issue creation alone cannot make unmerged rows appear.
+The **Blocked by** column in the track tables is the single source of truth for dependency edges. GitHub's native blocked-by relationships are not maintained (a few old issues still carry them; ignore them), and an issue body's "Blocked by" section is a copy for readers. When a dependency changes, change the table row; update the issue body in the same pass if it lists blockers. New rows appear on the live board after their documentation PR merges to main; issue creation alone cannot make unmerged rows appear.
 
-A blocker is a completion/acceptance prerequisite. Teams can build against agreed contracts and fixtures earlier. Conditional killer results and external recruitment/account gates are described in beyond.md, not encoded as fake mandatory task dependencies. T1.28 permits the early full baseline while its final beyond run waits for T4.13; T2.7 waits for deployment and the final evidence.
+A blocker is a completion/acceptance prerequisite. Teams can build against agreed contracts and fixtures earlier. Conditional killer results and external recruitment/account gates are described in beyond.md, not encoded as fake mandatory task dependencies. The milestone column follows the issue's GitHub milestone (M6–M9, or `Deferred` when it has none); M1–M5 are historical.
 
 To preview the board locally:
 

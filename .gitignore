@@ -45,3 +45,6 @@ AGENTS.local.md
 
 # Deployment credentials and operator material, never part of a build context or commit.
 .deploy/
+
+# Local agent and runtime outputs (never committed)
+outputs/

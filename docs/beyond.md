@@ -1,6 +1,8 @@
 # Beyond-full delivery and dependency map
 
-Agreed backlog, 2026-10-24: **15 beyond + 8 killer + 2 benchmark tasks**. All target M5 Ship; labels distinguish scope, not completed functionality. ML training/serving is excluded by decision 0008 and is not a prerequisite anywhere in this extension.
+> **Historical (hackathon, October 2026).** The open tasks from this map now carry M6–M9 milestones or are deferred; see [plan.md](plan.md) and the track tables. T2.7 (the submission video) is retired.
+
+Agreed backlog, 2026-10-24: **15 beyond + 8 killer + 2 benchmark tasks**. All targeted M5 Ship; labels distinguish scope, not completed functionality. ML training/serving is excluded by decision 0008 and is not a prerequisite anywhere in this extension.
 
 ## Ownership and scope
 
@@ -88,7 +90,7 @@ Before calling the selected build full, also demonstrate complete incident cover
 
 ## Maintaining the map
 
-The canonical edges are the six-column task tables in [docs/tracks](tracks/). Matching issue-body links and native GitHub blocked-by relationships are filed for every new task, plus the updated T2.7 release dependencies. Keep all three aligned when changing a prerequisite. The [live blocker board](https://github.com/SoroushRF/Rehearsal/blob/status/BLOCKERS.md) renders reverse links, transitive blockers and the full status-colored graph from those tables; see [blockers.md](blockers.md).
+The canonical edges are the six-column task tables in [docs/tracks](tracks/), and only those. GitHub's native blocked-by relationships filed for these tasks in October are no longer maintained. The [live blocker board](https://github.com/SoroushRF/Rehearsal/blob/status/BLOCKERS.md) renders reverse links, transitive blockers and the full status-colored graph from those tables; see [blockers.md](blockers.md).
 
 This backlog PR records work; merging it must not close implementation issues. Implementation PRs close their own issues only after their acceptance gates pass.
 
