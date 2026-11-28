@@ -53,15 +53,28 @@ describe("headline", () => {
     expect(headline({ ...passed, state: "failed" }, false).title).toMatch(/failed/);
     expect(headline({ ...passed, state: "cancelled" }, false).title).toMatch(/cancelled/);
   });
+
+  // T2.28: a send can land and its receipt fail to save, so a missing result proves nothing.
+  it("never says a step with no recorded result didn't run", () => {
+    const unknown = rehearsalReportFixture("unknown");
+    for (const report of [
+      { ...unknown, state: "failed" as const },
+      { ...unknown, state: "cancelled" as const },
+      unknown,
+    ]) {
+      const { title, body } = headline(report, false);
+      expect(`${title} ${body}`).not.toMatch(/never ran|not tried|didn't run/i);
+    }
+  });
 });
 
 describe("tally and observed", () => {
-  it("counts each verification, and a step with no result never ran", () => {
+  it("counts each verification, and a step with no result has none recorded", () => {
     const unknown = rehearsalReportFixture("unknown");
     const t = tally(unknown.steps);
     expect(t.unverified).toBeGreaterThan(0);
     expect(t.matched + t.mismatched + t.unverified).toBe(unknown.steps.length);
     const first = unknown.steps[0];
-    expect(first && observedLabel({ ...first, result: null })).toBe("Never ran");
+    expect(first && observedLabel({ ...first, result: null })).toBe("No result recorded");
   });
 });

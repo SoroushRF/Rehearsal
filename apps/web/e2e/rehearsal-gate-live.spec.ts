@@ -158,7 +158,7 @@ test("G3: a cancelled rehearsal says cancelled, not passed, and shows what ran",
   await expect(view).toContainText("The rehearsal was cancelled");
   await expect(view).not.toContainText("Every step read back as expected");
   await expect(step(view, "refund_001")).toContainText("Applied");
-  await expect(step(view, "note_002")).toContainText("Never ran");
+  await expect(step(view, "note_002")).toContainText("No result recorded");
   await shot(item, "G3-cancel-report");
 });
 

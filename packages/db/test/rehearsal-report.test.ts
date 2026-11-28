@@ -96,7 +96,7 @@ describe("rehearsal report verification (T4.12)", () => {
     expect(ExecutionRehearsalReport.safeParse(built).success).toBe(true);
   });
 
-  it("does not verify a step that never ran", () => {
+  it("does not verify a step with no recorded result", () => {
     const verifications = new Map(
       manifest.actions.map((action) => [
         action.id,
@@ -105,6 +105,6 @@ describe("rehearsal report verification (T4.12)", () => {
     );
     const built = report(verifications, []);
     expect(built.verdict).toBe("unknown");
-    expect(built.steps[0]?.verification.detail).toContain("never ran");
+    expect(built.steps[0]?.verification.detail).toContain("no result was recorded");
   });
 });

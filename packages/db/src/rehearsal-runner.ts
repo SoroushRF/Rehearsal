@@ -75,7 +75,7 @@ export async function rehearsalInFlight(db: Db, orgId: string, rehearsalId: stri
 /**
  * `passed` only when the run completed and every step was read as the scenario expects. A
  * mismatched read is `failed` even if another step could not be read. Anything unresolved,
- * including a step that never ran, stays `unknown`.
+ * including a step with no recorded result, stays `unknown`.
  */
 function verdictFor(
   state: "completed" | "failed" | "cancelled",
@@ -125,12 +125,13 @@ export function rehearsalReport(
     const receipt = latest.get(action.id);
     const result = receipt ? toStepResult(job, action, receipt) : null;
     const given = opts.verifications?.get(action.id);
-    // A step with no receipt never ran. Nothing read about it counts as verified.
+    // No receipt is no recorded result, not proof the step wasn't sent: a send can land and its
+    // receipt fail to settle. Nothing read about it counts as verified.
     const verification: RehearsalVerification = !result
       ? {
           status: "unverified",
           detail: opts.verifications
-            ? "the step never ran, so it cannot be verified"
+            ? "no result was recorded for this step, so it cannot be verified"
             : "the independent verifier (T4.12) has not read this step",
         }
       : (given ?? {

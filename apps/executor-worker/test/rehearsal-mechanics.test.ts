@@ -1,3 +1,4 @@
+import { ExecutionRehearsalReport } from "@rehearsal/contracts";
 import {
   type BillingPolicy,
   createCompensator,
@@ -11,14 +12,18 @@ import {
   reconcileRehearsal,
   rehearsalJournalHash,
   rehearsalTenant,
+  VERIFIER_VERSION,
 } from "@rehearsal/core";
+import { IN_FLIGHT_KEPT, rehearsalReport } from "@rehearsal/db";
 import {
   approvedGrant,
   FakeClock,
+  FIXTURE_REHEARSAL_VERSIONS,
   fakeRunAdmit,
   happyPathBundle,
   MemoryApplyStore,
   MemoryJournal,
+  rehearsalJobFixture,
   worldFromManifest,
 } from "@rehearsal/testkit";
 import { describe, expect, it } from "vitest";
@@ -264,6 +269,57 @@ describe("shared execution mechanics, separate admission (T3.14)", () => {
     expect(outcomes(pass.receipts).refund_001).toBe("confirmed");
     expect(r.world.effects.length).toBe(effects);
     expect(r.world.refunds.filter((x) => x.charge === "ch_fixture_001")).toHaveLength(1);
+  });
+
+  // T2.28 (#296): the refund lands, then its receipt can't be saved. The report has no result for
+  // it and must not claim it never ran; the verdict stays unknown and the kept tenant is said so.
+  it("reports a landed send whose receipt didn't settle as not recorded, never as not sent", async () => {
+    const s = setup();
+    const r = s.rehearsal();
+    const settle = r.journal.settle.bind(r.journal);
+    r.journal.settle = async (step) => {
+      if (step.receipt.actionId === "refund_001" && step.receipt.outcome === "confirmed") {
+        throw new Error("journal unavailable (injected)");
+      }
+      return settle(step);
+    };
+    const result = await r.run();
+    expect(r.world.refunds.filter((x) => x.charge === "ch_fixture_001")).toHaveLength(1);
+    expect(String(result.error)).toContain("journal unavailable");
+    expect(result.receipts.map((x) => x.actionId)).not.toContain("refund_001");
+    // The attempt was dispatched and never settled, which is what keeps the tenant for reads.
+    const sent = [...r.journal.attempts.values()].filter((a) => a.actionId === "refund_001");
+    expect(sent.map((a) => a.state)).toEqual(["dispatched"]);
+
+    const report = rehearsalReport(
+      {
+        ...rehearsalJobFixture(),
+        rehearsalId: RID,
+        plan: { orgId: s.manifest.orgId, planId: s.manifest.planId, revision: 1, planHash: s.hash },
+      },
+      s.manifest,
+      result.receipts,
+      {
+        state: "failed",
+        limitations: [String(result.error), IN_FLIGHT_KEPT],
+        notFromEvidence: [],
+        startedAt: "2026-10-21T12:00:00.000Z",
+        finishedAt: "2026-10-21T12:01:00.000Z",
+        versions: { ...FIXTURE_REHEARSAL_VERSIONS, verifier: VERIFIER_VERSION },
+        evidence: "fixture",
+        verifications: new Map(),
+      },
+    );
+    const refund = report.steps.find((x) => x.actionId === "refund_001");
+    expect(refund?.result).toBeNull();
+    expect(refund?.verification.status).toBe("unverified");
+    expect(refund?.verification.detail).toBe(
+      "no result was recorded for this step, so it cannot be verified",
+    );
+    expect(JSON.stringify(report)).not.toMatch(/never ran/i);
+    expect(report.verdict).toBe("unknown");
+    expect(report.limitations).toContain(IN_FLIGHT_KEPT);
+    expect(ExecutionRehearsalReport.safeParse(report).success).toBe(true);
   });
 
   it("keeps a cancelled rehearsal unresolved while its own lost send can't be read (review)", async () => {
