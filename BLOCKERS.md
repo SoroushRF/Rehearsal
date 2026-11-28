@@ -6,7 +6,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 
 ## Top blockers
 
-115 of 158 tasks done. These open tasks hold up the most other work:
+114 of 158 tasks done. These open tasks hold up the most other work:
 
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
@@ -61,14 +61,14 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T1.36** Demo Day benchmark report [#281](https://github.com/SoroushRF/Rehearsal/issues/281) | 🟥 blocked | T1.35 (T1, ready)<br>T1.25 (T1, ready) |  |
 | **T1.37** Repair an incomplete or stale plan into a new revision [#283](https://github.com/SoroushRF/Rehearsal/issues/283) | ✅ done |  |  |
 | **T1.38** Planner recovery from timeouts, rate limits and network errors [#284](https://github.com/SoroushRF/Rehearsal/issues/284) | ✅ done |  |  |
-| **T1.39** Prompt branches for credit and refund, with typed refusal reasons [#285](https://github.com/SoroushRF/Rehearsal/issues/285) | ✅ done |  | T1.45 |
+| **T1.39** Prompt branches for credit and refund, with typed refusal reasons [#285](https://github.com/SoroushRF/Rehearsal/issues/285) | 🟨 ready | — | T1.45 |
 | **T1.40** Expand the benchmark to 100–200 reproducible scenarios and repeat runs [#292](https://github.com/SoroushRF/Rehearsal/issues/292) | 🟥 blocked | T1.35 (T1, ready) |  |
 | **T1.46** T1.46: Preserve model-attempt history across whole-job planner retries [#361](https://github.com/SoroushRF/Rehearsal/issues/361) | 🟨 ready | — |  |
 | **T1.41** Demo blocker: target the org tenant when injecting the phantom [#348](https://github.com/SoroushRF/Rehearsal/issues/348) | ✅ done |  |  |
 | **T1.42** Serialize org resets with planning/apply admission [#349](https://github.com/SoroushRF/Rehearsal/issues/349) | ✅ done |  |  |
 | **T1.43** Reserve built-in incident IDs when allocating filed incidents [#350](https://github.com/SoroushRF/Rehearsal/issues/350) | ✅ done |  |  |
 | **T1.44** Rehearse stored plans containing public customer replies [#357](https://github.com/SoroushRF/Rehearsal/issues/357) | 🟨 ready | — | T1.45 |
-| **T1.45** Rehearse balance-credit plans from faithful disposable snapshots [#358](https://github.com/SoroushRF/Rehearsal/issues/358) | 🟥 blocked | T1.44 (T1, ready) |  |
+| **T1.45** Rehearse balance-credit plans from faithful disposable snapshots [#358](https://github.com/SoroushRF/Rehearsal/issues/358) | 🟥 blocked | T1.44 (T1, ready)<br>T1.39 (T1, ready) |  |
 | **T1.49** Separate Agent Memory keys: read-only planner, write key for the API, refused elsewhere [#365](https://github.com/SoroushRF/Rehearsal/issues/365) | ✅ done |  | T1.50, T1.52, T2.30 (T2) |
 | **T1.50** Precedent gate through the app: promote, sync, cite by fact ID, withdraw, refuse [#366](https://github.com/SoroushRF/Rehearsal/issues/366) | ✅ done |  | T1.51 |
 | **T1.51** Retire a withdrawn precedent's copy in Agent Memory [#367](https://github.com/SoroushRF/Rehearsal/issues/367) | ✅ done |  |  |
@@ -248,7 +248,7 @@ flowchart LR
     T1_36["T1.36 Demo Day benchmark report"]:::blocked
     T1_37["T1.37 Repair an incomplete or stale plan into a "]:::done
     T1_38["T1.38 Planner recovery from timeouts, rate limit"]:::done
-    T1_39["T1.39 Prompt branches for credit and refund, wit"]:::done
+    T1_39["T1.39 Prompt branches for credit and refund, wit"]:::ready
     T1_40["T1.40 Expand the benchmark to 100–200 reproducib"]:::blocked
     T1_46["T1.46 T1.46: Preserve model-attempt history acro"]:::ready
     T1_41["T1.41 Demo blocker: target the org tenant when i"]:::done
