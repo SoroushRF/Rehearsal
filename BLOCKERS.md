@@ -6,7 +6,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 
 ## Top blockers
 
-116 of 158 tasks done. These open tasks hold up the most other work:
+117 of 158 tasks done. These open tasks hold up the most other work:
 
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
@@ -117,7 +117,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T2.25** Distinctive startup demo design for landing and review workspace [#244](https://github.com/SoroushRF/Rehearsal/issues/244) | ✅ done |  |  |
 | **T2.26** History rehearsal retries bypass the pending-revision interlock [#294](https://github.com/SoroushRF/Rehearsal/issues/294) | ✅ done |  |  |
 | **T2.27** Accessibility scans race the plan entrance fade and report transient contrast failures [#295](https://github.com/SoroushRF/Rehearsal/issues/295) | ✅ done |  |  |
-| **T2.28** Missing rehearsal results are labelled Never ran after receipt-storage failure [#296](https://github.com/SoroushRF/Rehearsal/issues/296) | 👀 in review [PR #363](https://github.com/SoroushRF/Rehearsal/pull/363) | — |  |
+| **T2.28** Missing rehearsal results are labelled Never ran after receipt-storage failure [#296](https://github.com/SoroushRF/Rehearsal/issues/296) | ✅ done |  |  |
 | **T2.30** Agent Memory on the Render deployment: API write key, planner read key [#389](https://github.com/SoroushRF/Rehearsal/issues/389) | ✅ done |  |  |
 | **T2.31** Trace a cited precedent back to its approved version, promoter and source run [#388](https://github.com/SoroushRF/Rehearsal/issues/388) | ✅ done |  |  |
 | **T2.32** Similar active precedents on the promote panel (advisory, never blocking) [#397](https://github.com/SoroushRF/Rehearsal/issues/397) | ✅ done |  |  |
@@ -296,7 +296,7 @@ flowchart LR
     T2_25["T2.25 Distinctive startup demo design for landin"]:::done
     T2_26["T2.26 History rehearsal retries bypass the pendi"]:::done
     T2_27["T2.27 Accessibility scans race the plan entrance"]:::done
-    T2_28["T2.28 Missing rehearsal results are labelled Nev"]:::review
+    T2_28["T2.28 Missing rehearsal results are labelled Nev"]:::done
     T2_30["T2.30 Agent Memory on the Render deployment: API"]:::done
     T2_31["T2.31 Trace a cited precedent back to its approv"]:::done
     T2_32["T2.32 Similar active precedents on the promote p"]:::done
