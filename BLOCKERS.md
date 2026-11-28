@@ -58,7 +58,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T1.33** Run the scorecard with the worker's case concurrency [#278](https://github.com/SoroushRF/Rehearsal/issues/278) | ✅ done |  | T1.36 |
 | **T1.34** Scorecard task: same customer, new charge on a different invoice [#279](https://github.com/SoroushRF/Rehearsal/issues/279) | ✅ done |  | T4.28 (T4) |
 | **T1.35** Run the held-out incident sets on Era [#280](https://github.com/SoroushRF/Rehearsal/issues/280) | 🟨 ready | — | T1.36, T1.40 |
-| **T1.36** Demo Day benchmark report [#281](https://github.com/SoroushRF/Rehearsal/issues/281) | 🟥 blocked | T1.35 (T1, ready)<br>T1.25 (T1, ready) |  |
+| **T1.36** Benchmark report [#281](https://github.com/SoroushRF/Rehearsal/issues/281) | 🟥 blocked | T1.35 (T1, ready)<br>T1.25 (T1, ready) |  |
 | **T1.37** Repair an incomplete or stale plan into a new revision [#283](https://github.com/SoroushRF/Rehearsal/issues/283) | ✅ done |  |  |
 | **T1.38** Planner recovery from timeouts, rate limits and network errors [#284](https://github.com/SoroushRF/Rehearsal/issues/284) | ✅ done |  |  |
 | **T1.39** Prompt branches for credit and refund, with typed refusal reasons [#285](https://github.com/SoroushRF/Rehearsal/issues/285) | 🟨 ready | — | T1.45 |
@@ -245,7 +245,7 @@ flowchart LR
     T1_33["T1.33 Run the scorecard with the worker's case c"]:::done
     T1_34["T1.34 Scorecard task: same customer, new charge "]:::done
     T1_35["T1.35 Run the held-out incident sets on Era"]:::ready
-    T1_36["T1.36 Demo Day benchmark report"]:::blocked
+    T1_36["T1.36 Benchmark report"]:::blocked
     T1_37["T1.37 Repair an incomplete or stale plan into a "]:::done
     T1_38["T1.38 Planner recovery from timeouts, rate limit"]:::done
     T1_39["T1.39 Prompt branches for credit and refund, wit"]:::ready
