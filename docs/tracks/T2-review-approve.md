@@ -66,7 +66,7 @@ See [beyond.md](../beyond.md) for scope, parallel work, external gates and the r
 |---|---|---|---|---|---|
 | T2.26 | History rehearsal retries respect the pending-revision interlock | M5 | Every start button, main or history row, asks one admission check; a disabled row says why; after the revision exists a row sends the new revision and hash. **Done (fixture):** `startBlocked` in `execution-rehearsal.ts`, browser regressions for failed, cancelled and older-revision rows | [#294](https://github.com/SoroushRF/Rehearsal/issues/294) | |
 | T2.27 | Accessibility scans wait for the plan's entrance fade | M5 | Scans measure settled colors without turning off the contrast rule or adding retries. **Done (fixture):** `violations()` waits until no finite animation runs; a regression slows animations tenfold and fails on the old scan | [#295](https://github.com/SoroushRF/Rehearsal/issues/295) | |
-| T2.28 | Steps with no recorded result aren't called "Never ran" | M5 | Neutral wording where a receipt is missing; contract docs and a regression for a committed effect whose receipt didn't settle | [#296](https://github.com/SoroushRF/Rehearsal/issues/296) | |
+| T2.28 | Steps with no recorded result aren't called "Never ran" | M5 | Neutral wording where a receipt is missing; contract docs and a regression for a committed effect whose receipt didn't settle. **Done (fixture):** merged in PR 363 (2026-11-27) | [#296](https://github.com/SoroushRF/Rehearsal/issues/296) | |
 
 ### Agent Memory follow-ups (Nov 2026)
 
