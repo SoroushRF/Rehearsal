@@ -6,7 +6,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 
 ## Top blockers
 
-114 of 158 tasks done. These open tasks hold up the most other work:
+116 of 158 tasks done. These open tasks hold up the most other work:
 
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
@@ -15,7 +15,7 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T1.35** Run the held-out incident sets on Era [#280](https://github.com/SoroushRF/Rehearsal/issues/280) | @SoroushRF | 🟨 ready | 2 |
 | **T1.59** Plan against live Stripe and Zendesk with read-only credentials [#415](https://github.com/SoroushRF/Rehearsal/issues/415) | @SoroushRF | 🟥 blocked | 2 |
 | **T2.36** Policy as versioned data [#422](https://github.com/SoroushRF/Rehearsal/issues/422) | @parsaabbasian | 🟨 ready | 2 |
-| **T4.13** Integrated isolation and recovery acceptance gate [#175](https://github.com/SoroushRF/Rehearsal/issues/175) | @skhdemo | 🟨 ready | 2 |
+| **T4.31** Completeness audit: a disposition for every customer in scope [#440](https://github.com/SoroushRF/Rehearsal/issues/440) | @skhdemo | 🟥 blocked | 2 |
 
 ## T1 Rehearse
 
@@ -96,8 +96,8 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T2.4** Approvals endpoint: hash-bound grant and refusal test matrix [#13](https://github.com/SoroushRF/Rehearsal/issues/13) | ✅ done |  | T2.8, T2.23 |
 | **T2.5** Deploy thin slice and prove cloud workers reach the simulators [#14](https://github.com/SoroushRF/Rehearsal/issues/14) | ✅ done |  | T2.7, T2.22 |
 | **T2.6** Run timeline, receipts and held-step views (polling GET /api/runs/:id/events) [#15](https://github.com/SoroushRF/Rehearsal/issues/15) | ✅ done |  | T2.7, T2.22 |
-| **T2.7** Two-minute video script, recording, Devpost page [#16](https://github.com/SoroushRF/Rehearsal/issues/16) | 🟥 blocked | T1.28 (T1, blocked) |  |
-| **T2.8** Thin Expo approver app on the same API _(stretch)_ [#17](https://github.com/SoroushRF/Rehearsal/issues/17) | 🟨 ready | — |  |
+| **T2.7** Two-minute video script, recording, Devpost page [#16](https://github.com/SoroushRF/Rehearsal/issues/16) | ✅ done |  |  |
+| **T2.8** Thin Expo approver app on the same API _(stretch)_ [#17](https://github.com/SoroushRF/Rehearsal/issues/17) | ✅ done |  |  |
 | **T2.9** Decide currency: align policy.v1.json with the Era seed (USD vs CAD) [#40](https://github.com/SoroushRF/Rehearsal/issues/40) | ✅ done |  | T1.5 (T1) |
 | **T2.10** Rehearse button: start a plan from the review page and follow it [#116](https://github.com/SoroushRF/Rehearsal/issues/116) | ✅ done |  |  |
 | **T2.11** Saved run replay that opens without signing in [#118](https://github.com/SoroushRF/Rehearsal/issues/118) | ✅ done |  |  |
@@ -278,7 +278,7 @@ flowchart LR
     T2_4["T2.4 Approvals endpoint: hash-bound grant and re"]:::done
     T2_5["T2.5 Deploy thin slice and prove cloud workers r"]:::done
     T2_6["T2.6 Run timeline, receipts and held-step views "]:::done
-    T2_7["T2.7 Two-minute video script, recording, Devpost"]:::blocked
+    T2_7["T2.7 Two-minute video script, recording, Devpost"]:::done
     T2_9["T2.9 Decide currency: align policy.v1.json with "]:::done
     T2_10["T2.10 Rehearse button: start a plan from the rev"]:::done
     T2_11["T2.11 Saved run replay that opens without signin"]:::done
