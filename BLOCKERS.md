@@ -6,14 +6,16 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 
 ## Top blockers
 
-115 of 132 tasks done. These open tasks hold up the most other work:
+115 of 158 tasks done. These open tasks hold up the most other work:
 
 | Task | Track owner | Status | Open tasks waiting on it |
 |---|---|---|---|
+| **T2.35** Per-org provider connections and a credential broker [#421](https://github.com/SoroushRF/Rehearsal/issues/421) | @parsaabbasian | 🟨 ready | 8 |
+| **T4.29** Derive obligation keys on the server from the target [#438](https://github.com/SoroushRF/Rehearsal/issues/438) | @skhdemo | 🟨 ready | 6 |
 | **T1.35** Run the held-out incident sets on Era [#280](https://github.com/SoroushRF/Rehearsal/issues/280) | @SoroushRF | 🟨 ready | 2 |
+| **T1.59** Plan against live Stripe and Zendesk with read-only credentials [#415](https://github.com/SoroushRF/Rehearsal/issues/415) | @SoroushRF | 🟥 blocked | 2 |
+| **T2.36** Policy as versioned data [#422](https://github.com/SoroushRF/Rehearsal/issues/422) | @parsaabbasian | 🟨 ready | 2 |
 | **T4.13** Integrated isolation and recovery acceptance gate [#175](https://github.com/SoroushRF/Rehearsal/issues/175) | @skhdemo | 🟨 ready | 2 |
-| **T1.28** Run and publish versioned benchmark comparisons [#176](https://github.com/SoroushRF/Rehearsal/issues/176) | @SoroushRF | 🟥 blocked | 1 |
-| **T1.44** Rehearse stored plans containing public customer replies [#357](https://github.com/SoroushRF/Rehearsal/issues/357) | @SoroushRF | 🟨 ready | 1 |
 
 ## T1 Rehearse
 
@@ -77,6 +79,10 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T1.56** Stabilize shared-queue and clock-sensitive database tests [#405](https://github.com/SoroushRF/Rehearsal/issues/405) | ✅ done |  | T1.58 |
 | **T1.57** Preserve erasure recovery after the planner's normal retry is exhausted [#406](https://github.com/SoroushRF/Rehearsal/issues/406) | ✅ done |  | T1.58 |
 | **T1.58** Complete hosted Agent Memory verification and public Render release [#407](https://github.com/SoroushRF/Rehearsal/issues/407) | ✅ done |  |  |
+| **T1.59** Plan against live Stripe and Zendesk with read-only credentials [#415](https://github.com/SoroushRF/Rehearsal/issues/415) | 🟥 blocked | T2.35 (T2, ready) | T1.60, T1.61 |
+| **T1.60** Read-set snapshot: rehearse a plan in a disposable world built from what it read [#416](https://github.com/SoroushRF/Rehearsal/issues/416) | 🟥 blocked | T1.59 (T1, blocked) |  |
+| **T1.61** Shadow mode: check a batch that already ran, read-only [#417](https://github.com/SoroushRF/Rehearsal/issues/417) | 🟥 blocked | T1.59 (T1, blocked)<br>T4.31 (T4, blocked) |  |
+| **T1.62** Nightly conformance jobs for Era and Stripe test mode [#418](https://github.com/SoroushRF/Rehearsal/issues/418) | 🟨 ready | — |  |
 
 ## T2 Review & Approve
 
@@ -115,6 +121,15 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T2.30** Agent Memory on the Render deployment: API write key, planner read key [#389](https://github.com/SoroushRF/Rehearsal/issues/389) | ✅ done |  |  |
 | **T2.31** Trace a cited precedent back to its approved version, promoter and source run [#388](https://github.com/SoroushRF/Rehearsal/issues/388) | ✅ done |  |  |
 | **T2.32** Similar active precedents on the promote panel (advisory, never blocking) [#397](https://github.com/SoroushRF/Rehearsal/issues/397) | ✅ done |  |  |
+| **T2.33** Public plan submission API with per-org keys [#419](https://github.com/SoroushRF/Rehearsal/issues/419) | 🟥 blocked | T4.29 (T4, ready)<br>T2.35 (T2, ready) | T2.34 |
+| **T2.34** MCP server and TypeScript client for submitting plans [#420](https://github.com/SoroushRF/Rehearsal/issues/420) | 🟥 blocked | T2.33 (T2, blocked) |  |
+| **T2.35** Per-org provider connections and a credential broker [#421](https://github.com/SoroushRF/Rehearsal/issues/421) | 🟨 ready | — | T1.59 (T1), T2.33, T3.23 (T3), T3.25 (T3) |
+| **T2.36** Policy as versioned data [#422](https://github.com/SoroushRF/Rehearsal/issues/422) | 🟨 ready | — | T2.37, T2.41 |
+| **T2.37** Policy simulator: run a proposed policy against past plans [#423](https://github.com/SoroushRF/Rehearsal/issues/423) | 🟥 blocked | T2.36 (T2, ready) |  |
+| **T2.38** Separation of duties and signed approval grants [#424](https://github.com/SoroushRF/Rehearsal/issues/424) | 🟨 ready | — |  |
+| **T2.39** Obligation ledger view: who is resolved, held, excluded or still owed [#425](https://github.com/SoroushRF/Rehearsal/issues/425) | 🟥 blocked | T4.31 (T4, blocked) |  |
+| **T2.40** More than one currency [#426](https://github.com/SoroushRF/Rehearsal/issues/426) | 🟨 ready | — |  |
+| **T2.41** Decision: auto-approve plans that match approved precedents [#427](https://github.com/SoroushRF/Rehearsal/issues/427) | 🟥 blocked | T2.36 (T2, ready) |  |
 
 ## T3 Apply
 
@@ -141,6 +156,16 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T3.18** Native Stripe executor recovery gate _(stretch)_ [#185](https://github.com/SoroushRF/Rehearsal/issues/185) | ✅ done |  |  |
 | **T3.19** Fewer guard re-reads without losing freshness [#286](https://github.com/SoroushRF/Rehearsal/issues/286) | 🟨 ready | — |  |
 | **T3.20** Latency tracking across the full path [#287](https://github.com/SoroushRF/Rehearsal/issues/287) | ✅ done |  |  |
+| **T3.21** Split executor.ts into admission, step and reconcile modules [#428](https://github.com/SoroushRF/Rehearsal/issues/428) | 🟨 ready | — | T3.22 |
+| **T3.22** Operation-type registry: add an operation without touching the engine [#429](https://github.com/SoroushRF/Rehearsal/issues/429) | 🟥 blocked | T3.21 (T3, ready) |  |
+| **T3.23** Stripe write adapter for real refund states: a pending refund waits, it does not hold [#430](https://github.com/SoroushRF/Rehearsal/issues/430) | 🟥 blocked | T2.35 (T2, ready) | T3.24 |
+| **T3.24** Stripe webhook ingestion to settle pending refunds [#431](https://github.com/SoroushRF/Rehearsal/issues/431) | 🟥 blocked | T3.23 (T3, blocked) |  |
+| **T3.25** Zendesk adapter for real accounts: auth, subdomain and the full status set [#432](https://github.com/SoroushRF/Rehearsal/issues/432) | 🟥 blocked | T2.35 (T2, ready) |  |
+| **T3.26** The operation marker is visible to the customer in public replies [#433](https://github.com/SoroushRF/Rehearsal/issues/433) | 🟨 ready | — |  |
+| **T3.27** Lock a target across plans so two plans cannot remedy the same charge [#434](https://github.com/SoroushRF/Rehearsal/issues/434) | 🟥 blocked | T4.29 (T4, ready) |  |
+| **T3.28** Enforce tenancy and append-only history in the database [#435](https://github.com/SoroushRF/Rehearsal/issues/435) | 🟨 ready | — |  |
+| **T3.29** Hash-chained receipts and a command that verifies the chain [#436](https://github.com/SoroushRF/Rehearsal/issues/436) | 🟨 ready | — |  |
+| **T3.30** One provider rate budget across workers, and traces for every run [#437](https://github.com/SoroushRF/Rehearsal/issues/437) | 🟨 ready | — |  |
 
 ## T4 Guard
 
@@ -174,6 +199,9 @@ Legend: ✅ done · 👀 in review · 🔨 in progress · 🟨 ready · 🟥 blo
 | **T4.14** Held-out incident datasets and independent gold _(stretch)_ [#179](https://github.com/SoroushRF/Rehearsal/issues/179) | ✅ done |  | T1.25 (T1), T1.26 (T1) |
 | **T4.27** Note and reply guards check only the ticket fields they use [#273](https://github.com/SoroushRF/Rehearsal/issues/273) | ✅ done |  |  |
 | **T4.28** Guard a refund on its invoice, not on every charge of the customer [#282](https://github.com/SoroushRF/Rehearsal/issues/282) | ✅ done |  |  |
+| **T4.29** Derive obligation keys on the server from the target [#438](https://github.com/SoroushRF/Rehearsal/issues/438) | 🟨 ready | — | T2.33 (T2), T3.27 (T3), T4.31 |
+| **T4.30** Pin the plan hash: RFC 8785 test vectors and golden hashes per manifest version [#439](https://github.com/SoroushRF/Rehearsal/issues/439) | 🟨 ready | — |  |
+| **T4.31** Completeness audit: a disposition for every customer in scope [#440](https://github.com/SoroushRF/Rehearsal/issues/440) | 🟥 blocked | T4.29 (T4, ready) | T1.61 (T1), T2.39 (T2) |
 
 ## Task graph
 
@@ -238,6 +266,10 @@ flowchart LR
     T1_56["T1.56 Stabilize shared-queue and clock-sensitive"]:::done
     T1_57["T1.57 Preserve erasure recovery after the planne"]:::done
     T1_58["T1.58 Complete hosted Agent Memory verification "]:::done
+    T1_59["T1.59 Plan against live Stripe and Zendesk with "]:::blocked
+    T1_60["T1.60 Read-set snapshot: rehearse a plan in a di"]:::blocked
+    T1_61["T1.61 Shadow mode: check a batch that already ra"]:::blocked
+    T1_62["T1.62 Nightly conformance jobs for Era and Strip"]:::ready
   end
   subgraph T2[T2 Review & Approve]
     T2_1["T2.1 Plan diff view from fixture bundles"]:::done
@@ -268,6 +300,15 @@ flowchart LR
     T2_30["T2.30 Agent Memory on the Render deployment: API"]:::done
     T2_31["T2.31 Trace a cited precedent back to its approv"]:::done
     T2_32["T2.32 Similar active precedents on the promote p"]:::done
+    T2_33["T2.33 Public plan submission API with per-org ke"]:::blocked
+    T2_34["T2.34 MCP server and TypeScript client for submi"]:::blocked
+    T2_35["T2.35 Per-org provider connections and a credent"]:::ready
+    T2_36["T2.36 Policy as versioned data"]:::ready
+    T2_37["T2.37 Policy simulator: run a proposed policy ag"]:::blocked
+    T2_38["T2.38 Separation of duties and signed approval g"]:::ready
+    T2_39["T2.39 Obligation ledger view: who is resolved, h"]:::blocked
+    T2_40["T2.40 More than one currency"]:::ready
+    T2_41["T2.41 Decision: auto-approve plans that match ap"]:::blocked
   end
   subgraph T3[T3 Apply]
     T3_1["T3.1 Drizzle migrations, Postgres journal, pg-bo"]:::done
@@ -287,6 +328,16 @@ flowchart LR
     T3_16["T3.16 Rehearsal worker: restart, cancellation, a"]:::done
     T3_19["T3.19 Fewer guard re-reads without losing freshn"]:::ready
     T3_20["T3.20 Latency tracking across the full path"]:::done
+    T3_21["T3.21 Split executor.ts into admission, step and"]:::ready
+    T3_22["T3.22 Operation-type registry: add an operation "]:::blocked
+    T3_23["T3.23 Stripe write adapter for real refund state"]:::blocked
+    T3_24["T3.24 Stripe webhook ingestion to settle pending"]:::blocked
+    T3_25["T3.25 Zendesk adapter for real accounts: auth, s"]:::blocked
+    T3_26["T3.26 The operation marker is visible to the cus"]:::ready
+    T3_27["T3.27 Lock a target across plans so two plans ca"]:::blocked
+    T3_28["T3.28 Enforce tenancy and append-only history in"]:::ready
+    T3_29["T3.29 Hash-chained receipts and a command that v"]:::ready
+    T3_30["T3.30 One provider rate budget across workers, a"]:::ready
   end
   subgraph T4[T4 Guard]
     T4_1["T4.1 Pure guards: observation compare, query-mem"]:::done
@@ -311,6 +362,9 @@ flowchart LR
     T4_13["T4.13 Integrated isolation and recovery acceptan"]:::ready
     T4_27["T4.27 Note and reply guards check only the ticke"]:::done
     T4_28["T4.28 Guard a refund on its invoice, not on ever"]:::done
+    T4_29["T4.29 Derive obligation keys on the server from "]:::ready
+    T4_30["T4.30 Pin the plan hash: RFC 8785 test vectors a"]:::ready
+    T4_31["T4.31 Completeness audit: a disposition for ever"]:::blocked
   end
   T1_1 --> T1_2
   T1_9 --> T1_2
@@ -369,6 +423,10 @@ flowchart LR
   T1_55 --> T1_57
   T1_56 --> T1_58
   T1_57 --> T1_58
+  T2_35 --> T1_59
+  T1_59 --> T1_60
+  T1_59 --> T1_61
+  T4_31 --> T1_61
   T3_1 --> T2_2
   T2_2 --> T2_4
   T2_3 --> T2_4
@@ -393,6 +451,12 @@ flowchart LR
   T2_5 --> T2_22
   T2_6 --> T2_22
   T1_49 --> T2_30
+  T4_29 --> T2_33
+  T2_35 --> T2_33
+  T2_33 --> T2_34
+  T2_36 --> T2_37
+  T4_31 --> T2_39
+  T2_36 --> T2_41
   T3_1 --> T3_2
   T3_2 --> T3_3
   T1_9 --> T3_3
@@ -418,6 +482,11 @@ flowchart LR
   T1_23 --> T3_15
   T3_15 --> T3_16
   T4_11 --> T3_16
+  T3_21 --> T3_22
+  T2_35 --> T3_23
+  T3_23 --> T3_24
+  T2_35 --> T3_25
+  T4_29 --> T3_27
   T4_1 --> T4_3
   T4_2 --> T4_3
   T3_2 --> T4_3
@@ -458,4 +527,5 @@ flowchart LR
   T1_8 --> T4_13
   T2_17 --> T4_13
   T1_34 --> T4_28
+  T4_29 --> T4_31
 ```
